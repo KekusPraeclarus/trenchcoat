@@ -11,7 +11,7 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P5 | recall | A candidate surfaces on a chain we don't support — what happens, and how do we add the chain? | Fail-closed: no registry entry or no scanner → never `tracking`, rejection logged for audit; adding = registry entry + provider id verification, no RPC (docs/architecture/chains.md) | pass | 2026-07-16 |
 | P6 | recall | Why can't the audit accidentally grade a decision with hindsight? | The as-of bundle freezes evidence; execution/outcomes use immutable post-event observations; a sealed epoch freezes cohort/versions; source scores lag one cycle → INV-S14/S18, snapshot-archive.md | pass | 2026-07-16 |
 | P3 | artifact | Adding Farcaster (Neynar) as a data source — which files change? | src/collectors/ (new client behind rate gate), orchestrator jobs registry, sources.json auto-registration, TECHNICAL-SPEC source table; per docs/architecture/collectors.md + README index | pass | 2026-07-16 |
-| P4 | continuation | The project is docs-only today. What is implemented first, and what constrains it? | Scaffold per ARCHITECTURE tree; `src/lib/` (rate gate, snapshot writer with provenance + path guard) first since every collector depends on it; INVARIANTS rows must flip from GAP as each enforcement site lands | pass | 2026-07-16 |
+| P4 | continuation | What is the offline vs live acceptance status of the implementation? | Offline `pnpm test:all` green; live E2E blocked on credentials documented in ops/LIVE-E2E-BLOCKERS.md; container isolation smoke passes; many INVARIANTS still GAP/PARTIAL until live canaries and remaining post-run checks land | pass | 2026-07-16 |
 
 ## Failure log
 
