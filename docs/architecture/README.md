@@ -9,8 +9,8 @@ last_verified: 2026-07-16
 
 | Doc | Covers | Read before editing |
 |---|---|---|
-| [orchestrator.md](orchestrator.md) | Job registry, cron cycles, `@cursor/sdk` sessions, outbox → router (urgent bypass), alpha-queue lifecycle, audit + source scoring | `src/orchestrator/`, `src/cli.ts`, `ops/` |
-| [collectors.md](collectors.md) | Twitter scraping (burner acct), Telegram alpha listener, market-data clients, indicators incl. RSI, rate-limit gate, snapshot/provenance format | `src/collectors/`, `src/lib/` |
+| [orchestrator.md](orchestrator.md) | Job registry, cron cycles, `@cursor/sdk` sessions, outbox → router (urgent bypass), alpha-queue lifecycle, audit + ledger + source scoring, rug-dock, recovery ladder | `src/orchestrator/`, `src/cli.ts`, `ops/` |
+| [collectors.md](collectors.md) | Twitter scraping (burner acct), Telegram ingestion (preview poller + GramJS), market-data clients, security gate, new-pool feed, indicators incl. RSI, rate-limit gate, snapshot/provenance format | `src/collectors/`, `src/lib/` |
 | [agent-workspace.md](agent-workspace.md) | The bot's instructions, skills, knowledge store (index, research, narratives, sources), decision weighting, outbox, sandbox config | anything under `agent/` |
 | [chat-agent.md](chat-agent.md) | Telegram bridge, minimal-orchestrator pattern, research sub-agents | `src/chat/`, `agent/skills/chat/`, `agent/skills/deep-research/` |
 

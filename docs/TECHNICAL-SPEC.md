@@ -55,10 +55,12 @@ lean: minimum tokens for undiminished results.
    credibility penalty the same run — no waiting for the weekly audit.
 7. **Autonomous cron cycles** — launchd/cron fires every job with no human in the
    loop. On-demand runs remain available via the CLI and the chat agent.
-8. **Performance self-audit** — append-only action log (`decisions.md`) plus a
-   periodic `audit` job scoring past calls against realised outcomes into a
-   scorecard: track-call hit rate, drop precision, broadcast precision (per
-   severity, urgent included), source quality deltas.
+8. **Performance self-audit** — append-only action log (`decisions.md`, with
+   confidence and cited sources) plus a periodic `audit` job scoring past calls —
+   including `ignore`s as counterfactuals — against realised outcomes into a
+   scorecard: paper-trading P&L (the headline number), track-call hit rate, drop
+   precision, confidence calibration, broadcast precision (per severity, urgent
+   included), source quality deltas.
 9. **Broadcasts** — brief key findings pushed to an **external router** (built
    separately; routes to Telegram/Discord). Sparingly and briefly. Severity
    `urgent` (new narrative forming, sudden sentiment collapse, early chain
@@ -216,11 +218,11 @@ Minimising burn without harming results, enforced by design rather than hope:
 - Alpha sources: CoinGecko trending, DexScreener boosts, Fear & Greed in;
   CryptoPanic and LunarCrush out (no usable free tier); Neynar phase 2
   (see Alpha/news source research above)
-- Telegram channel ingestion: **GramJS user session** (2026-07-16). Bot API bots
-  cannot read channels without admin add. Implementation preference per channel:
-  poll the zero-credential `t.me/s/<channel>` HTML preview where enabled (no
-  session, no flood-wait), fall back to the GramJS session for channels without
-  previews
+- Telegram channel ingestion: **`t.me/s/` preview poller with GramJS fallback**
+  (2026-07-16). Bot API bots cannot read channels without admin add, so no bot
+  path exists. Per channel: poll the zero-credential HTML preview where enabled
+  (no session, no flood-wait), fall back to a GramJS user session for channels
+  without previews
 - Token security pre-filter: **GoPlus** (EVM, free tier) + **RugCheck** (Solana,
   keyless basic lookups) gate every research verdict (2026-07-16, see
   Signal-quality roadmap)
@@ -320,6 +322,8 @@ Niche/fast-moving tech the model may hallucinate about; create under
 - `coingecko-demo-api.md` — trending endpoint, categories semantics, 10k/mo budget
 - `playwright-twitter.md` — selectors, auth persistence, rate/ban avoidance,
   headful fallback triggers, burner-account hygiene
-- `gramjs-telegram.md` — MTProto sessions, channel message events, flood-wait
-  handling
+- `telegram-ingestion.md` — `t.me/s/` preview HTML structure and pagination;
+  GramJS MTProto sessions, channel message events, flood-wait handling
 - `telegram-bot-api.md` — long-polling, message threading, free-tier limits
+- `goplus-rugcheck.md` — token-security endpoints, flag semantics (honeypot,
+  mint authority, LP lock), free-tier limits, false-negative caveats

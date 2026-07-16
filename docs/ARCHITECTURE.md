@@ -47,11 +47,16 @@ broadcast proposal to `agent/outbox/` → orchestrator validates outbox items (s
 length, budget — `urgent` bypasses budget) and POSTs the survivors to the external
 router → inbox archived, digested alpha-queue items purged, run complete.
 
-The **Telegram listener** is a long-lived collector process (GramJS) subscribed to
-the operator's alpha-channel list. Every new message is appended to
-`agent/alpha-queue/` with provenance; the next appropriate cycle digests the queue
-and the orchestrator purges digested items (their useful content now lives in the
-knowledge store).
+**Telegram alpha ingestion** polls each channel's zero-credential `t.me/s/` HTML
+preview, falling back to a long-lived GramJS user-session listener for channels
+without previews. Every new message is appended to `agent/alpha-queue/` with
+provenance; the next appropriate cycle digests the queue and the orchestrator
+purges digested items (their useful content now lives in the knowledge store).
+
+When a run fails, a **recovery ladder** restores flow: deterministic self-healing
+(state rollback to the last completed-run commit, bounded retries, launchd
+keepalive) → a sandboxed recovery agent for state repair → operator DM for what
+only a human can do. Detail in orchestrator.md.
 
 The **external router** (separate project) fans broadcasts out to Telegram channels
 and Discord bots. We only know it exists; the sender is a stub behind an interface
@@ -78,22 +83,22 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   └── knowledge/            # niche-tech knowledge files (as created)
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, sdk sessions, outbox sender,
-│   │                         #   audit outcome maths, alpha-queue purge
+│   │                         #   audit + ledger maths, rug-dock, recovery, purge
 │   ├── collectors/
 │   │   ├── twitter/          # playwright scraper (burner acct), auth profile mgmt
-│   │   ├── telegram/         # gramjs listener → alpha queue
+│   │   ├── telegram/         # t.me/s/ preview poller + gramjs fallback → alpha queue
 │   │   └── market/           # geckoterminal, dexscreener, coingecko trending,
-│   │                         #   fear & greed, indicators
+│   │                         #   fear & greed, security gate, indicators
 │   ├── chat/                 # telegram bridge, sub-agent spawning
 │   ├── lib/                  # rate-limit gate, snapshot writer, outbox schema, run ids
 │   └── cli.ts                # `trenchcoat run <job>` / `trenchcoat auth twitter` / ...
 ├── agent/                    # RUNTIME AGENT WORKSPACE — sandbox root
 │   ├── .cursor/sandbox.json  # workspace-only fs, network denied
 │   ├── AGENTS.md             # the bot's operating instructions
-│   ├── skills/               # one skill per job + chat + research sub-agent
+│   ├── skills/               # one skill per job + chat, deep-research, recover
 │   ├── state/                # knowledge store: INDEX.md, watchlist.json,
-│   │                         #   sources.json, research/, narratives/,
-│   │                         #   decisions.md, scorecard.json
+│   │                         #   sources.json, ledger.json, research/,
+│   │                         #   narratives/, decisions.md, scorecard.json
 │   ├── inbox/                # per-run input snapshots (written by collectors)
 │   ├── alpha-queue/          # telegram channel messages awaiting digestion
 │   ├── outbox/               # broadcast proposals (validated+sent by orchestrator)
@@ -125,9 +130,11 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 Detailed per-module docs live in [architecture/](architecture/README.md):
 
 - [orchestrator.md](architecture/orchestrator.md) — jobs, cron cycles, sdk usage,
-  outbox validation, urgent bypass, audit job, alpha-queue lifecycle
+  outbox validation, urgent bypass, audit + ledger, rug-dock, recovery ladder,
+  alpha-queue lifecycle
 - [collectors.md](architecture/collectors.md) — twitter scraping, telegram
-  listener, market data, indicators, rate limiting, snapshot/provenance format
+  ingestion, market data, security gate, indicators, rate limiting,
+  snapshot/provenance format
 - [agent-workspace.md](architecture/agent-workspace.md) — the bot's instructions,
   skills, knowledge store (incl. narratives + sources), outbox, sandbox config
 - [chat-agent.md](architecture/chat-agent.md) — telegram bridge, minimal
