@@ -86,10 +86,12 @@ structured state, markdown for prose knowledge, one index for retrieval.
 - **`sources.json`** — every source we read, keyed by provenance id
   (`twitter:@handle`, `telegram:<channel>`): rolling quality score, calls
   attributed, hits/misses, **rug shills** (count + severe cumulative penalty,
-  docked deterministically the moment a candidate they surfaced hard-fails the
-  security gate), last update. Written only by the audit job and the
-  orchestrator's rug-dock path; read by every scan skill to weight evidence.
-  New sources auto-register at neutral.
+  docked deterministically the moment a candidate they posted the contract
+  address of hard-fails the security gate), last update. Written exclusively by
+  the orchestrator's model-free scoring pipeline — attribution is host-side
+  address matching over pre-session snapshot copies, never the bot's own
+  citations (see orchestrator.md, INV-S12). The bot reads it to weight evidence;
+  nothing the bot writes can move a score. New sources auto-register at neutral.
 - **`ledger.json`** — the paper-trading book: one virtual position per track-call
   (entry price/time at decision, exit at drop, mark-to-market while open).
   Kept entirely by deterministic orchestrator code (INV-S10); the bot and the

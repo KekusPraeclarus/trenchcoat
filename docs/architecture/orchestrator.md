@@ -39,9 +39,10 @@ exist and are fresh.
 
 ## Run loop
 
-Run collectors → assemble `agent/inbox/<run-id>/` → one-shot agent session →
-validate + send outbox → archive inbox → purge digested alpha-queue items →
-surface report.
+Run collectors → assemble `agent/inbox/<run-id>/` **and keep a host-side copy of
+the snapshots outside `agent/`** (the tamper-proof record scoring reads from) →
+one-shot agent session → validate + send outbox → archive inbox → purge digested
+alpha-queue items → surface report.
 
 ## Alpha-queue lifecycle
 
@@ -82,15 +83,44 @@ The paper P&L is the headline "is it doing a good job" number; lessons feed back
 into the bot's skills only via a developer edit — the bot does not rewrite its own
 instructions.
 
-## Rug-shill docking (deterministic, immediate)
+## Source scoring pipeline (model-free by construction)
 
-When the research security gate hard-fails a candidate (honeypot, live mint
-authority, unlocked LP), the orchestrator immediately docks every source whose
-provenance surfaced that candidate — no waiting for the weekly audit, no LLM in
-the loop. Shilling a rug is the worst possible signal and the penalty is severe
-and cumulative; repeat offenders are flagged for operator removal in the next
-report. This is the one non-audit write path into `sources.json`, and it is
-deterministic code, never a model session (INV-S7).
+`sources.json` is the highest-value injection target in the system: if scraped
+text could influence credibility scores, a shiller could vouch for their own
+channel or frame a rival. So every write follows one pipeline in which **no
+model-authored artifact participates** (INV-S12):
+
+```
+host-side snapshot archive ──> deterministic attribution ──> score write
+(collector output, copied      (raw item text contains the    (dock or audit
+ before the agent session)      candidate's contract/pair      scoring maths)
+                                address within the lookback
+        typed scanner/outcome    window — plain string match)
+        results (in memory) ──────────────┘
+```
+
+- **Attribution** — a source is linked to a candidate iff its *raw* items mention
+  the token's contract or pair address, matched by host code over the
+  orchestrator's own pre-session copy of snapshots. Never from the research
+  queue, `decisions.md` citations, or anything else the agent wrote: a
+  session-authored file can name any source, a raw item can only incriminate the
+  provenance that actually posted it (collector-stamped, INV-S6).
+- **Rug-shill dock (immediate)** — triggered only by the typed GoPlus/RugCheck
+  response hard-failing a candidate (honeypot, live mint authority, unlocked LP).
+  Every attributed source takes a severe cumulative penalty in the same run;
+  repeat offenders are flagged for operator removal in the next report.
+- **Audit scoring (weekly)** — the same attribution feeds outcome maths
+  (deterministic returns since mention). The audit *agent* interprets and
+  narrates; it never computes or writes scores. Its cited-provenance analysis of
+  `decisions.md` goes in the report only.
+- **Exoneration** — deterministic CA-matching will sometimes dock a source that
+  was *warning* about a rug. Accepted trade-off: the dock log records the exact
+  matched items; the audit report quotes them and may propose exonerations; the
+  only write path is the operator command `trenchcoat sources undock <id>`.
+  The model proposes, the operator disposes.
+
+Net effect: prompt injection can influence what the bot *says*, but the worst it
+can do to credibility scores is get its own channel docked.
 
 ## Failure recovery ladder
 
@@ -170,7 +200,8 @@ the recovery agent is exactly as sandboxed as every other session (INV-S11).
   ledger marking, calibration, source attribution
 - `src/orchestrator/alpha-queue.ts` — digest-then-purge lifecycle
 - `src/orchestrator/recover.ts` — recovery ladder: rollback, retry, recovery agent
-- `src/orchestrator/sources.ts` — rug-shill dock path (the only non-audit writer)
+- `src/orchestrator/sources.ts` — the sole `sources.json` writer: deterministic
+  attribution, dock, audit scoring maths, operator undock
 
 ## Gotchas and security-sensitive boundaries
 
