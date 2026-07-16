@@ -12,7 +12,8 @@ import {
 import { extractCallEvents } from "../../src/lib/call-events.js"
 import { parseIntentVerdict } from "../../src/lib/source-scoring.js"
 import { canSendBroadcast, dayKey } from "../../src/orchestrator/broadcast.js"
-import { renderSparklineSvg, buildChartManifest, svgToPngPlaceholder } from "../../src/charts/render.js"
+import { renderChartSvg, chartManifest } from "../../src/charts/render.js"
+import type { OhlcvCandle } from "../../src/collectors/market/geckoterminal.js"
 import { resolveFromCandidates } from "../../src/lib/resolve.js"
 import { firstEligibleObservation, openEntryPending, finalizeEntry } from "../../src/orchestrator/ledger.js"
 import { wilsonLowerBound } from "../../src/orchestrator/audit-math.js"
@@ -121,27 +122,15 @@ describe("prop_inv_b2_b4_budget", () => {
 })
 
 describe("charts", () => {
-  it("renders deterministic svg hashes", () => {
-    const candles = [
-      { ts: 1, open: 1, high: 2, low: 1, close: 1.5, volume: 10 },
-      { ts: 2, open: 1.5, high: 2, low: 1.4, close: 1.8, volume: 12 },
+  it("renders deterministic chart manifests", () => {
+    const candles: OhlcvCandle[] = [
+      { startTime: 0, open: 1, high: 2, low: 1, close: 1.5, volume: 10 },
+      { startTime: 60, open: 1.5, high: 2, low: 1.4, close: 1.8, volume: 12 },
     ]
-    const svg = renderSparklineSvg(candles)
-    const png = svgToPngPlaceholder(svg)
-    const m1 = buildChartManifest({
-      pair: "solana:pair",
-      timeframeMinutes: 5,
-      featureSpecVersion: 1,
-      candles,
-      imageBytes: png,
-    })
-    const m2 = buildChartManifest({
-      pair: "solana:pair",
-      timeframeMinutes: 5,
-      featureSpecVersion: 1,
-      candles,
-      imageBytes: png,
-    })
+    const svg = renderChartSvg(candles, 60)
+    expect(svg).toContain("<svg")
+    const m1 = chartManifest(candles, "pair1", 60)
+    const m2 = chartManifest(candles, "pair1", 60)
     expect(m1.imageHash).toBe(m2.imageHash)
     expect(m1.candleHash).toBe(m2.candleHash)
   })

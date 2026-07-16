@@ -1,3 +1,5 @@
+import { gatedFetch, readJsonBody } from "../../lib/http.js"
+
 export const GECKOTERMINAL_ROOT = "https://api.geckoterminal.com/api/v2"
 export const GECKOTERMINAL_API_VERSION = "20230302"
 export const FIVE_MINUTES_SECONDS = 300
@@ -22,6 +24,11 @@ export type GeckoOhlcvRequest = Readonly<{
   aggregateMinutes: 1 | 5 | 15
   limit: number
   beforeTimestamp?: number
+}>
+
+export type GeckoNewPoolsRequest = Readonly<{
+  network: string
+  page?: number
 }>
 
 export type FetchLike = (
@@ -166,6 +173,79 @@ export function buildGeckoOhlcvUrl(request: GeckoOhlcvRequest): URL {
   return url
 }
 
+export function buildGeckoNewPoolsUrl(request: GeckoNewPoolsRequest): URL {
+  if (!SAFE_NETWORK.test(request.network)) {
+    throw new TypeError("Invalid GeckoTerminal network slug")
+  }
+  if (
+    request.page !== undefined
+    && (!Number.isSafeInteger(request.page) || request.page < 1 || request.page > 100)
+  ) {
+    throw new TypeError("new-pools page must be an integer from 1 to 100")
+  }
+
+  const url = new URL(`${GECKOTERMINAL_ROOT}/networks/${request.network}/new_pools`)
+  if (request.page !== undefined) url.searchParams.set("page", String(request.page))
+  return url
+}
+
+export type GeckoPool = Readonly<{
+  id: string
+  address: string
+  network: string
+  name: string
+  createdAt?: string
+}>
+
+export function parseGeckoPools(payload: unknown): GeckoPool[] {
+  if (payload === null || typeof payload !== "object") {
+    throw new TypeError("GeckoTerminal response must be an object")
+  }
+  const data = Reflect.get(payload, "data")
+  if (!Array.isArray(data) || data.length > 100) {
+    throw new TypeError("GeckoTerminal response has an invalid pool list")
+  }
+
+  return data.map((item) => {
+    if (item === null || typeof item !== "object") throw new TypeError("Invalid GeckoTerminal pool")
+    const id = Reflect.get(item, "id")
+    const attributes = Reflect.get(item, "attributes")
+    const address = attributes !== null && typeof attributes === "object"
+      ? Reflect.get(attributes, "address")
+      : undefined
+    const name = attributes !== null && typeof attributes === "object"
+      ? Reflect.get(attributes, "name")
+      : undefined
+    const createdAt = attributes !== null && typeof attributes === "object"
+      ? Reflect.get(attributes, "pool_created_at")
+      : undefined
+    if (typeof id !== "string" || typeof address !== "string" || typeof name !== "string") {
+      throw new TypeError("GeckoTerminal pool is missing identity fields")
+    }
+    return {
+      id,
+      address,
+      network: id.split("_", 1)[0] ?? "",
+      name,
+      ...(typeof createdAt === "string" ? { createdAt } : {}),
+    }
+  })
+}
+
+export async function fetchGeckoNewPools(
+  fetcher: FetchLike,
+  request: GeckoNewPoolsRequest,
+): Promise<GeckoPool[]> {
+  const response = await gatedFetch(fetcher, buildGeckoNewPoolsUrl(request), {
+    host: "api.geckoterminal.com",
+    capacity: 25,
+    refillPerSecond: 25 / 60,
+    headers: { accept: `application/json;version=${GECKOTERMINAL_API_VERSION}` },
+  })
+  if (!response.ok) throw new Error(`GeckoTerminal new pools request failed with HTTP ${response.status}`)
+  return parseGeckoPools(await readJsonBody(response))
+}
+
 export async function fetchClosedOhlcv(
   fetcher: FetchLike,
   request: GeckoOhlcvRequest,
@@ -176,38 +256,27 @@ export async function fetchClosedOhlcv(
     throw new TypeError("timeoutMs must be an integer from 1 to 60000")
   }
 
-  const response = await fetcher(buildGeckoOhlcvUrl(request), {
-    headers: {
-      accept: `application/json;version=${GECKOTERMINAL_API_VERSION}`,
-    },
-    redirect: "error",
-    signal: AbortSignal.timeout(timeoutMs),
+  const response = await gatedFetch(fetcher, buildGeckoOhlcvUrl(request), {
+    host: "api.geckoterminal.com",
+    capacity: 25,
+    refillPerSecond: 25 / 60,
+    timeoutMs,
+    headers: { accept: `application/json;version=${GECKOTERMINAL_API_VERSION}` },
   })
 
   if (!response.ok) {
     throw new Error(`GeckoTerminal OHLCV request failed with HTTP ${response.status}`)
   }
 
-  const contentType = response.headers.get("content-type")
-  if (!contentType?.toLowerCase().includes("application/json")) {
-    throw new TypeError("GeckoTerminal returned a non-JSON response")
-  }
-
-  const declaredLength = Number(response.headers.get("content-length") ?? 0)
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-    throw new RangeError("GeckoTerminal response exceeds the size limit")
-  }
-
-  const body = await response.text()
-  if (Buffer.byteLength(body) > MAX_RESPONSE_BYTES) {
-    throw new RangeError("GeckoTerminal response exceeds the size limit")
-  }
-
   let payload: unknown
   try {
-    payload = JSON.parse(body)
-  } catch {
-    throw new TypeError("GeckoTerminal returned malformed JSON")
+    payload = await readJsonBody(response, MAX_RESPONSE_BYTES)
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new TypeError("GeckoTerminal returned malformed JSON")
+    if (error instanceof TypeError && error.message === "Expected JSON response") {
+      throw new TypeError("GeckoTerminal returned a non-JSON response")
+    }
+    throw error
   }
 
   return parseClosedOhlcv(
@@ -215,4 +284,33 @@ export async function fetchClosedOhlcv(
     request.aggregateMinutes * 60,
     asOfEpochSeconds,
   )
+}
+
+export async function fetchClosedOhlcvPages(
+  fetcher: FetchLike,
+  request: Omit<GeckoOhlcvRequest, "beforeTimestamp">,
+  asOfEpochSeconds: number,
+  maxPages: number,
+): Promise<OhlcvCandle[]> {
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+    throw new TypeError("maxPages must be an integer from 1 to 100")
+  }
+  const intervalSeconds = request.aggregateMinutes * 60
+  const candles = new Map<number, OhlcvCandle>()
+  let beforeTimestamp: number | undefined
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await fetchClosedOhlcv(
+      fetcher,
+      { ...request, ...(beforeTimestamp === undefined ? {} : { beforeTimestamp }) },
+      asOfEpochSeconds,
+    )
+    if (result.length === 0) break
+    for (const candle of result) candles.set(candle.startTime, candle)
+    const oldest = result[0]
+    if (!oldest || result.length < request.limit) break
+    beforeTimestamp = nextBeforeTimestamp(oldest.startTime, intervalSeconds)
+  }
+
+  return [...candles.values()].sort((left, right) => left.startTime - right.startTime)
 }

@@ -2,6 +2,7 @@ import { sha256Json } from "../../lib/canonical-json.js"
 import type { OhlcvCandle } from "./geckoterminal.js"
 
 export const RSI_METHOD = "wilder-close" as const
+export const FEATURE_SPEC_VERSION = 1
 
 export type InvalidRsiReason =
   | "gap"
@@ -155,5 +156,160 @@ export function computeWilderRsi(
     inputCount: candles.length,
     inputHash: inputHash(candles),
     lastClosedBarTime: last.startTime,
+  }
+}
+
+export type FeatureResult<T> = Readonly<{
+  valid: boolean
+  featureSpecVersion: typeof FEATURE_SPEC_VERSION
+  inputHash: `sha256:${string}`
+  value?: T
+  reason?: "gap" | "insufficient-history" | "invalid-parameters" | "pair-migration"
+}>
+
+function contiguous(
+  candles: readonly OhlcvCandle[],
+  intervalSeconds: number,
+  minLength: number,
+): FeatureResult<readonly OhlcvCandle[]> {
+  if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds < 1 || minLength < 1) {
+    return { valid: false, featureSpecVersion: FEATURE_SPEC_VERSION, inputHash: inputHash(candles), reason: "invalid-parameters" }
+  }
+  if (candles.length < minLength) {
+    return { valid: false, featureSpecVersion: FEATURE_SPEC_VERSION, inputHash: inputHash(candles), reason: "insufficient-history" }
+  }
+  for (let index = 1; index < candles.length; index += 1) {
+    if (candles[index]!.startTime - candles[index - 1]!.startTime !== intervalSeconds) {
+      return { valid: false, featureSpecVersion: FEATURE_SPEC_VERSION, inputHash: inputHash(candles), reason: "gap" }
+    }
+  }
+  return { valid: true, featureSpecVersion: FEATURE_SPEC_VERSION, inputHash: inputHash(candles), value: candles }
+}
+
+function invalidFeature<T>(state: FeatureResult<readonly OhlcvCandle[]>): FeatureResult<T> {
+  return {
+    valid: false,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: state.inputHash,
+    reason: state.reason ?? "invalid-parameters",
+  }
+}
+
+export function computeVolumeZScore(
+  candles: readonly OhlcvCandle[],
+  intervalSeconds: number,
+  baselineBars = 168,
+  recentBars = 24,
+): FeatureResult<number> {
+  const state = contiguous(candles, intervalSeconds, baselineBars + recentBars)
+  if (!state.valid || !state.value) return invalidFeature(state)
+  const baseline = state.value.slice(-(baselineBars + recentBars), -recentBars).map((candle) => candle.volume)
+  const recent = state.value.slice(-recentBars).map((candle) => candle.volume)
+  const mean = baseline.reduce((sum, value) => sum + value, 0) / baseline.length
+  const variance = baseline.reduce((sum, value) => sum + (value - mean) ** 2, 0) / baseline.length
+  const deviation = Math.sqrt(variance)
+  const current = recent.reduce((sum, value) => sum + value, 0) / recent.length
+  return {
+    valid: true,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: state.inputHash,
+    value: deviation === 0 ? (current === mean ? 0 : Number.POSITIVE_INFINITY) : (current - mean) / deviation,
+  }
+}
+
+export function computeEmaStructure(
+  candles: readonly OhlcvCandle[],
+  intervalSeconds: number,
+): FeatureResult<Readonly<{ ema9: number; ema21: number; ema50: number; structure: "bullish" | "bearish" | "mixed" }>> {
+  const state = contiguous(candles, intervalSeconds, 50)
+  if (!state.valid || !state.value) return invalidFeature(state)
+  const ema = (period: number): number => {
+    const multiplier = 2 / (period + 1)
+    return state.value!.slice(-period).reduce(
+      (previous, candle, index) => index === 0 ? candle.close : candle.close * multiplier + previous * (1 - multiplier),
+      state.value!.at(-period)!.close,
+    )
+  }
+  const ema9 = ema(9)
+  const ema21 = ema(21)
+  const ema50 = ema(50)
+  return {
+    valid: true,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: state.inputHash,
+    value: {
+      ema9,
+      ema21,
+      ema50,
+      structure: ema9 > ema21 && ema21 > ema50 ? "bullish" : ema9 < ema21 && ema21 < ema50 ? "bearish" : "mixed",
+    },
+  }
+}
+
+export function computeRangeBreakout(
+  candles: readonly OhlcvCandle[],
+  intervalSeconds: number,
+  lookbackBars = 168,
+): FeatureResult<"up" | "down" | "none"> {
+  const state = contiguous(candles, intervalSeconds, lookbackBars + 1)
+  if (!state.valid || !state.value) return invalidFeature(state)
+  const prior = state.value.slice(-(lookbackBars + 1), -1)
+  const latest = state.value.at(-1)!
+  const high = Math.max(...prior.map((candle) => candle.high))
+  const low = Math.min(...prior.map((candle) => candle.low))
+  return {
+    valid: true,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: state.inputHash,
+    value: latest.close > high ? "up" : latest.close < low ? "down" : "none",
+  }
+}
+
+export function computeLiquidityDelta(
+  previousUsd: number,
+  currentUsd: number,
+): FeatureResult<number> {
+  const values = [{ startTime: 0, open: previousUsd, high: previousUsd, low: previousUsd, close: previousUsd, volume: currentUsd }]
+  if (!Number.isFinite(previousUsd) || previousUsd <= 0 || !Number.isFinite(currentUsd) || currentUsd < 0) {
+    return { valid: false, featureSpecVersion: FEATURE_SPEC_VERSION, inputHash: inputHash(values), reason: "invalid-parameters" }
+  }
+  return {
+    valid: true,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: inputHash(values),
+    value: (currentUsd - previousUsd) / previousUsd,
+  }
+}
+
+export function computeBenchmarkVolatility(
+  candles: readonly OhlcvCandle[],
+  intervalSeconds: number,
+  lookbackBars = 24,
+): FeatureResult<number> {
+  const state = contiguous(candles, intervalSeconds, lookbackBars + 1)
+  if (!state.valid || !state.value) return invalidFeature(state)
+  const returns = state.value.slice(-lookbackBars).map((candle, index, values) => (
+    index === 0 ? Math.log(candle.close / state.value![state.value!.length - lookbackBars - 1]!.close) : Math.log(candle.close / values[index - 1]!.close)
+  ))
+  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length
+  return {
+    valid: true,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: state.inputHash,
+    value: Math.sqrt(returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / returns.length),
+  }
+}
+
+export function pairMigrationDiscontinuity(
+  previousPairAddress: string | undefined,
+  pairAddress: string,
+): FeatureResult<boolean> {
+  const value = previousPairAddress !== undefined && previousPairAddress !== pairAddress
+  return {
+    valid: !value,
+    featureSpecVersion: FEATURE_SPEC_VERSION,
+    inputHash: sha256Json([previousPairAddress ?? null, pairAddress]),
+    value,
+    ...(value ? { reason: "pair-migration" as const } : {}),
   }
 }

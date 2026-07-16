@@ -1,0 +1,15 @@
+{
+  "pairs": [
+    {
+      "chainId": "solana",
+      "pairAddress": "Pair111111111111111111111111111111111111111",
+      "baseToken": { "address": "Token11111111111111111111111111111111111111", "symbol": "TEST", "name": "Test" },
+      "quoteToken": { "address": "So11111111111111111111111111111111111111112", "symbol": "SOL", "name": "Wrapped SOL" },
+      "priceUsd": "1.23",
+      "liquidity": { "usd": 50000 },
+      "fdv": 500000,
+      "txns": { "h24": { "buys": 100, "sells": 100 } },
+      "url": "https://dexscreener.com/solana/pair"
+    }
+  ]
+}
