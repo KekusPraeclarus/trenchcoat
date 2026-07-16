@@ -167,8 +167,9 @@ Minimising burn without harming results, enforced by design rather than hope:
     (60 req/min on profile/boost endpoints), no key
   - CoinGecko Demo — `/search/trending` for coins + categories. 10k calls/mo, keyed
   - Alternative.me Fear & Greed — free, keyless, one call per review cycle
-  - Telegram alpha channels — GramJS (MTProto) listener on operator-provided
-    channel list → alpha queue
+  - Telegram alpha channels — `t.me/s/` preview poller (zero-credential) with
+    GramJS (MTProto) fallback for preview-disabled channels → alpha queue
+  - GoPlus (EVM, free tier) + RugCheck (Solana, keyless) — token security gate
   - Neynar (Farcaster) — phase 2 candidate, free tier confirmed
 - **Scheduling**: launchd (macOS) / cron invoking the orchestrator CLI
   (`trenchcoat run <job>`, alias `tc`)
@@ -212,6 +213,72 @@ Minimising burn without harming results, enforced by design rather than hope:
 - Alpha sources: CoinGecko trending, DexScreener boosts, Fear & Greed in;
   CryptoPanic and LunarCrush out (no usable free tier); Neynar phase 2
   (see Alpha/news source research above)
+- Telegram channel ingestion: **GramJS user session** (2026-07-16). Bot API bots
+  cannot read channels without admin add. Implementation preference per channel:
+  poll the zero-credential `t.me/s/<channel>` HTML preview where enabled (no
+  session, no flood-wait), fall back to the GramJS session for channels without
+  previews
+- Token security pre-filter: **GoPlus** (EVM, free tier) + **RugCheck** (Solana,
+  keyless basic lookups) gate every research verdict (2026-07-16, see
+  Signal-quality roadmap)
+
+## Signal-quality roadmap
+
+Accepted quality improvements beyond the base flow, in adoption order:
+
+1. **Token security pre-filter (v1)** — before any research verdict: GoPlus token
+   security API (EVM chains, free tier — the same source DexScreener's own risk
+   warnings use) and RugCheck (Solana, keyless basic report). Hard-gate on
+   honeypot/mint-authority/unlocked-LP flags; a token failing the gate is `ignore`
+   with the flag cited, no LLM time spent.
+2. **Attention–price divergence (v1)** — deterministic collector metric: mention
+   velocity (twitter/alpha-queue counts) vs price move over the same window.
+   Rising attention on a flat chart is the canonical early signal; attention
+   spike after a 3x is exit liquidity. Feeds watchlist-scan and research.
+3. **Counterfactual tracking (v1)** — `ignore` and `revisit` verdicts are logged
+   with the same provenance as `track`; the audit prices them at the same horizons.
+   Measures missed alpha and calibrates the research bar, not just the wins.
+4. **Confidence calibration (v1)** — every decision entry carries a 0–100
+   confidence; the audit plots calibration (were 80s right 80% of the time?).
+   Cheap to record, catches systematic over/under-conviction.
+5. **Paper-trading ledger (v1.5)** — a virtual position per track-call (entry at
+   decision, exit at drop), marked by the audit job. Converts the scorecard into
+   a hypothetical P&L — the single most honest "is it doing a good job" number.
+6. **New-pool feeds (v1.5)** — GeckoTerminal new-pools / DexScreener new pairs as
+   a discovery source *ahead* of social attention; strict security-gate + liquidity
+   floor since this stream is 99% garbage.
+7. **Narrative lifecycle stages (v1.5)** — `emerging → peaking → fading` on each
+   narrative file rather than a boolean; rotation = capital leaving a fading
+   narrative for an emerging one, which is exactly the urgent-broadcast case.
+8. **Neynar/Farcaster lens (phase 2)** — second social surface, real free API.
+9. **Smart-money wallet tracking (exploratory)** — free options are thin
+   (Helius free tier for Solana is the leading candidate); revisit once v1 audits
+   show what discovery actually lacks.
+
+Deliberately not adopted: DexScreener boost-count as bullish signal (it's paid
+marketing — we ingest it as attention *and* as a mild risk flag), generic news
+RSS (low trench density), Reddit sentiment (no usable free quota — see source
+research).
+
+## Operational completeness (gaps closed at design level)
+
+Identified in review as missing from the original design; owned as follows:
+
+- **State commits** — the orchestrator `git add/commit`s `agent/state/` +
+  `reports/` after every completed run (message = run id). The audit trail's
+  "git history" claim is real only if commits are automatic (INV-S8).
+- **Operator alerting** — run failures, listener death, and needs-headful-reauth
+  conditions DM the operator via the chat bot (reusing the existing bridge, not
+  the router). The watcher gets watched.
+- **Workspace concurrency** — one writer at a time: cron jobs and chat research
+  sub-agents share a workspace-level lock; chat *reads* stay lock-free.
+- **Token-usage telemetry** — per-run token counts from the sdk result land in
+  the scorecard so burn-optimisation claims are measured, not vibes.
+- **Cold start** — `trenchcoat init` seeds watchlist.json from the operator list,
+  registers initial sources at neutral score, creates empty INDEX/narratives;
+  first audit is skipped until decisions exist.
+- **Retention** — archived inboxes and stale chat reports are pruned after 30
+  days (configurable); state/ and decisions.md are never pruned.
 
 ## Open questions / pending decisions
 
@@ -219,13 +286,13 @@ Minimising burn without harming results, enforced by design rather than hope:
   the router project exists; until then the sender is a stub behind an interface
 - [ ] Broadcast budget defaults: proposed max 5/day for watch/notable; urgent
   failsafe ceiling proposed at 10/day. Tune after the first weeks of audits
-- [ ] Telegram channel ingestion: GramJS user session (any channel) vs bot-as-admin
-  (only channels we control membership of) — depends on the operator's channel list
 - [ ] Audit windows: score track-calls at +3d/+7d/+30d? Needs a few cycles of data
 - [ ] Source-score maths: rolling hit-rate vs decayed weighting — pick when the
   first audit has real attributions
 - [ ] Chart analysis depth: deterministic indicators + LLM read first; candle-image
   vision analysis later if audits show missed structure
+- [ ] Paper-ledger position sizing convention (fixed notional per call vs
+  confidence-weighted) — decide with the first ledger implementation
 - [ ] Neynar/Farcaster integration timing (phase 2)
 
 ## Knowledge files needed (manual research pending)

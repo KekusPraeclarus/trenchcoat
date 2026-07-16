@@ -54,6 +54,8 @@ enforcement site. A row flips to `ENFORCED` only when its check exists at that s
 | INV-S5 | The bot never modifies its own instructions or skills (`agent/AGENTS.md`, `agent/skills/**`) | GAP (pre-impl) | post-run check: those paths unchanged after every session, else run flagged |
 | INV-S6 | Every snapshot and alpha-queue item carries a `provenance` id; every decision entry cites the provenance ids that drove it | GAP (pre-impl) | snapshot writer makes `provenance` non-optional (type-level); post-run check on new decision entries |
 | INV-S7 | `state/sources.json` scores are written only by the audit job — never by scan/research/chat sessions | GAP (pre-impl) | post-run check: `sources.json` unchanged after non-audit sessions, else run flagged |
+| INV-S8 | Every completed run's state and report changes are committed to git before the run is marked complete | GAP (pre-impl) | run loop commits with run id as message; post-run check: clean worktree under `agent/state/` + `agent/reports/` |
+| INV-S9 | A token failing the security gate (honeypot, active mint authority, unlocked LP per GoPlus/RugCheck) can never enter `watchlist.json` as `tracking` | GAP (pre-impl) | gate result stored in the research snapshot; post-run check cross-references new `tracking` entries against it; unit tests `prop_inv_s9_*` |
 
 ## B — Broadcast and chat egress
 

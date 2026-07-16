@@ -29,17 +29,42 @@ decisions — so a run is reproducible from its inputs.
 - Human-ish pacing (randomised delays, capped pages per run) to respect the platform
   and keep the account alive. Scrape read-only; never post, like, or follow.
 
-### Telegram alpha channels (GramJS listener)
+### Telegram alpha channels (preview poller + GramJS listener)
 
-- The one long-lived collector: a GramJS (MTProto) process subscribed to the
-  operator-provided channel list, running under launchd with keepalive
-- Every new message is appended to `agent/alpha-queue/<channel>/<msg-id>.json`
-  with full provenance; digestion and purge are the orchestrator's job
-  (see orchestrator.md, INV-Q1)
-- Session credentials live under `~/.trenchcoat/telegram-session/`, same rules as
-  the browser profile
-- Respect `FLOOD_WAIT` errors absolutely; the listener is passive (no sends, no
-  joins beyond the configured list)
+Bot API bots cannot read channels without being added by an admin, so no bot path
+exists. Two ingestion modes, chosen per channel at config time:
+
+- **Preview poller (preferred)** — public channels expose a zero-credential HTML
+  preview at `t.me/s/<channel>` (paginated via `?before=<msg-id>`). Poll it on the
+  collector cycle; no session, no flood-wait, no account risk. Channels with
+  previews disabled are detected (empty message blocks) and flagged for the
+  fallback.
+- **GramJS (MTProto) listener (fallback)** — a long-lived user-session process for
+  channels without previews, running under launchd with keepalive. Session
+  credentials live under `~/.trenchcoat/telegram-session/`, same rules as the
+  browser profile. Respect `FLOOD_WAIT` absolutely; passive only (no sends, no
+  joins beyond the configured list).
+
+Both modes append every new message to `agent/alpha-queue/<channel>/<msg-id>.json`
+with full provenance and deduplicate on message id; digestion and purge are the
+orchestrator's job (see orchestrator.md, INV-Q1).
+
+### Token security (research gate)
+
+- **GoPlus** — `GET api.gopluslabs.io/api/v1/token_security/{chain_id}` (EVM
+  chains, free tier, keyed via console): honeypot, mint authority,
+  blacklist/whitelist, buy/sell tax, LP lock flags
+- **RugCheck** — `GET api.rugcheck.xyz/v1/tokens/{mint}/report` (Solana, keyless
+  basic lookups): mint/freeze authority, LP lock
+- Run by the `research` collector set before the agent session; a hard-fail flag
+  short-circuits the verdict to `ignore` without an LLM call (cheap and safe)
+
+### Attention–price divergence
+
+Deterministic metric written into watchlist-scan and research snapshots: mention
+velocity (tweet + alpha-queue counts per window, weighted by source score) against
+the price/volume move over the same window. Divergence direction is the signal:
+attention up + price flat = early; attention spiking after a large move = late.
 
 ### Market data
 
