@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: one copy per job. Replace JOBNAME and INTERVAL_SECONDS.
+     Label convention: com.trenchcoat.job.JOBNAME -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trenchcoat.job.JOBNAME</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; . "$HOME/.trenchcoat/env"; set +a; exec /usr/local/bin/trenchcoat run JOBNAME</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>INTERVAL_SECONDS</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/trenchcoat.JOBNAME.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/trenchcoat.JOBNAME.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

@@ -40,12 +40,19 @@ bridges (broadcast and chat):
 
 A cron cycle: scheduler fires `trenchcoat run <job>` → orchestrator runs the job's
 collectors (through the rate-limit gate) → snapshots land in `agent/inbox/<run-id>/`
-→ orchestrator starts a Cursor agent session (composer-2.5, cwd = `agent/`) with the
-job prompt → agent reads inbox, alpha queue (when the job digests it), and knowledge
-store; updates `agent/state/`; writes a briefing to `agent/reports/` and, rarely, a
-broadcast proposal to `agent/outbox/` → orchestrator validates outbox items (schema,
-length, budget — `urgent` bypasses budget) and POSTs the survivors to the external
-router → inbox archived, digested alpha-queue items purged, run complete.
+and are mirrored to the host-side archive (`~/.trenchcoat/archive/`, the record
+attribution and audits read from) → orchestrator starts a Cursor agent session
+(composer-2.5, cwd = `agent/`) with the job prompt → agent reads inbox, alpha queue
+(when the job digests it), and knowledge store; updates `agent/state/`; writes a
+briefing to `agent/reports/` and, rarely, a broadcast proposal to `agent/outbox/`
+→ orchestrator runs post-run integrity checks, writes as-of bundles for new
+decisions, creates entry-pending paper positions, validates outbox items (schema,
+length, budget — `urgent` bypasses budget), and stages deliveries → commits state
+and reports → purges durably digested alpha items → sends staged broadcasts with
+idempotency keys → marks the run complete. A host-side journal resumes any
+incomplete phase after a crash. Weekly audits freeze a cohort cutoff in a sealed epoch, materialise
+immutable post-event execution/outcome observations, then atomically publish the
+scorecard, ledger marks, and lagged source-score updates.
 
 **Telegram alpha ingestion** polls each channel's zero-credential `t.me/s/` HTML
 preview, falling back to a long-lived GramJS user-session listener for channels
@@ -90,15 +97,16 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   │   └── market/           # geckoterminal, dexscreener, coingecko trending,
 │   │                         #   fear & greed, security gate, indicators
 │   ├── chat/                 # telegram bridge, sub-agent spawning
-│   ├── lib/                  # rate-limit gate, snapshot writer, outbox schema, run ids
+│   ├── lib/                  # rate-limit gate, snapshot writer, outbox schema,
+│   │                         #   run ids, chain registry, token resolution
 │   └── cli.ts                # `trenchcoat run <job>` / `trenchcoat auth twitter` / ...
 ├── agent/                    # RUNTIME AGENT WORKSPACE — sandbox root
 │   ├── .cursor/sandbox.json  # workspace-only fs, network denied
 │   ├── AGENTS.md             # the bot's operating instructions
 │   ├── skills/               # one skill per job + chat, deep-research, recover
 │   ├── state/                # knowledge store: INDEX.md, watchlist.json,
-│   │                         #   sources.json, ledger.json, research/,
-│   │                         #   narratives/, decisions.md, scorecard.json
+│   │                         #   sources.json, ledger.json, research-queue.json,
+│   │                         #   research/, narratives/, decisions.md, scorecard.json
 │   ├── inbox/                # per-run input snapshots (written by collectors)
 │   ├── alpha-queue/          # telegram channel messages awaiting digestion
 │   ├── outbox/               # broadcast proposals (validated+sent by orchestrator)
@@ -139,3 +147,9 @@ Detailed per-module docs live in [architecture/](architecture/README.md):
   skills, knowledge store (incl. narratives + sources), outbox, sandbox config
 - [chat-agent.md](architecture/chat-agent.md) — telegram bridge, minimal
   orchestrator pattern, research sub-agents
+- [chains.md](architecture/chains.md), [token-resolution.md](architecture/token-resolution.md),
+  [research-queue.md](architecture/research-queue.md), [security-gate.md](architecture/security-gate.md),
+  [snapshot-archive.md](architecture/snapshot-archive.md), [audit-metrics.md](architecture/audit-metrics.md)
+  — cross-cutting contracts: chain support, candidate identity, the
+  discovery→research funnel, gate semantics, the leakage firewall, and the
+  scorecard maths

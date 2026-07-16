@@ -1,0 +1,97 @@
+import { describe, expect, it } from "vitest"
+import { mkdtempSync, symlinkSync, writeFileSync, mkdirSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { SnapshotWriter } from "../../src/lib/snapshot.js"
+import { createRunJournal, advanceRunJournal, RUN_PHASES } from "../../src/orchestrator/journal.js"
+import { normalizeEvmAddress, isValidSolanaAddress } from "../../src/lib/address.js"
+import { verifyRouterHmac, signRouterRequest, hashBody } from "../../src/lib/router-contract.js"
+import { ConfigSchema } from "../../src/lib/config.js"
+
+const seed = JSON.parse(
+  readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
+) as unknown
+
+describe("prop_inv_i4_snapshot_path_guard", () => {
+  it("rejects path traversal and symlink escape", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-snap-"))
+    const writer = new SnapshotWriter(root)
+    const envelope = {
+      source: "test",
+      fetchedAt: new Date().toISOString(),
+      trust: "untrusted-external" as const,
+      items: [{
+        provenance: "p1",
+        text: "hello",
+        ts: new Date().toISOString(),
+        ageSec: 1,
+        freshnessTier: "live" as const,
+      }],
+    }
+    await expect(writer.writeInbox("../escape", "x", envelope)).rejects.toThrow()
+    const inbox = join(root, "inbox")
+    mkdirSync(inbox, { recursive: true })
+    const outside = join(root, "outside.txt")
+    writeFileSync(outside, "nope")
+    const runDir = join(inbox, "run1")
+    mkdirSync(runDir)
+    symlinkSync(outside, join(runDir, "evil.json"))
+    await expect(writer.writeInbox("run1", "evil", envelope)).rejects.toThrow()
+  })
+})
+
+describe("journal phases", () => {
+  it("advances through the durable order exactly once", () => {
+    let journal = createRunJournal("job-2026-01-01T00-00-00-000Z")
+    const hash = `sha256:${"b".repeat(64)}` as const
+    for (const phase of RUN_PHASES.slice(1)) {
+      journal = advanceRunJournal(journal, phase, hash)
+    }
+    expect(journal.phase).toBe("complete")
+  })
+})
+
+describe("addresses", () => {
+  it("checksums EVM and validates Solana length", () => {
+    const lower = "0x742d35cc6634c0532925a3b844bc454e4438f44e"
+    expect(normalizeEvmAddress(lower).startsWith("0x")).toBe(true)
+    expect(isValidSolanaAddress("11111111111111111111111111111111")).toBe(true)
+    expect(isValidSolanaAddress("nope")).toBe(false)
+  })
+})
+
+describe("router hmac", () => {
+  it("accepts valid signatures and rejects skew", () => {
+    const key = "test-hmac-key"
+    const body = "{\"ok\":true}"
+    const ts = new Date().toISOString()
+    const nonce = "nonce-abc-12345"
+    const sig = signRouterRequest(key, "POST", "/v1/events", ts, nonce, body)
+    expect(verifyRouterHmac({
+      hmacKey: key,
+      method: "POST",
+      path: "/v1/events",
+      timestamp: ts,
+      nonce,
+      body,
+      signatureHex: sig,
+    }).ok).toBe(true)
+    expect(verifyRouterHmac({
+      hmacKey: key,
+      method: "POST",
+      path: "/v1/events",
+      timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      nonce,
+      body,
+      signatureHex: sig,
+      nowMs: Date.now(),
+    }).ok).toBe(false)
+    expect(hashBody(body).startsWith("sha256:")).toBe(true)
+  })
+})
+
+describe("config seed", () => {
+  it("parses the example seed as schema v2", () => {
+    expect(ConfigSchema.parse(seed).schema).toBe(2)
+  })
+})

@@ -48,8 +48,10 @@ lean: minimum tokens for undiminished results.
    never calculates.
 6. **Source scoring** — every Twitter account and Telegram channel we read is a
    registered source in `state/sources.json`. Snapshots carry provenance per item;
-   decisions cite their sources; the audit job attributes outcomes back to sources
-   and maintains a rolling quality score that scan skills use to weight evidence.
+   decisions cite their sources; deterministic host code extracts conservative
+   bullish CA call events and audits each from its own mention time to maintain a
+   rolling quality score that scan skills use to weight evidence. Bot decisions
+   and model-authored citations never write source scores.
    **Rug shilling is docked immediately and severely**: when a surfaced candidate
    hard-fails the security gate, every source that posted its contract address
    takes a deterministic credibility penalty the same run — no waiting for the
@@ -155,6 +157,10 @@ Minimising burn without harming results, enforced by design rather than hope:
   bodies.
 - **Per-job skills** — each cron job loads exactly one skill; the bot's always-on
   AGENTS.md stays under a strict size budget.
+- **Bounded auxiliary sessions** — ticker disambiguation and rug-warning intent
+  classification are isolated one-shot sessions, deduped/cached by input hash,
+  daily capped, and included in token telemetry; cap exhaustion never expands
+  privileges or bypasses a safety dock.
 - **Snapshot hygiene** — collectors pre-filter (deduplicate tweets, cap items per
   snapshot); inboxes are archived out of the workspace after each run; the alpha
   queue is purged once digested.
@@ -233,41 +239,115 @@ Minimising burn without harming results, enforced by design rather than hope:
 - Token security pre-filter: **GoPlus** (EVM, free tier) + **RugCheck** (Solana,
   keyless basic lookups) gate every research verdict (2026-07-16, see
   Signal-quality roadmap)
+- Multi-chain support via a **typed chain registry** mapping our chain slug to
+  every provider's id, with per-chain scanner routing; chains without a
+  registry entry or scanner are **fail-closed untrackable**. All chain access
+  is API-driven — no RPC/node infrastructure; adding a chain is a registry
+  entry + provider verification (2026-07-16, docs/architecture/chains.md)
+- Canonical candidate identity: every candidate resolves to
+  `(chain, token_address, pair_address)` before it is counted, researched, or
+  tracked. Resolution is deterministic-first; when ticker matches are
+  ambiguous, the agent makes a best-effort **model-judged disambiguation**
+  from a deterministic dossier (market cap, liquidity, chart vs the message's
+  claims), accepting only on high confidence — shortlist-bounded and inert to
+  source scoring (INV-S16). Unbound mentions stay excluded from attention
+  maths (2026-07-16, docs/architecture/token-resolution.md)
+- Audit discipline: decision-time **as-of bundles** preserve what was knowable,
+  first post-event observations price execution/outcomes, and sealed audit epochs
+  make cohorts idempotent; source scores apply with a one-cycle lag
+  (2026-07-16, docs/architecture/snapshot-archive.md, INV-S14/S18)
+- Initial audit defaults (explicitly tunable after the first cycles, in
+  docs/architecture/audit-metrics.md): horizons +24h/+72h/+7d with +72h
+  headline; hit = +20% excess return vs the chain-native benchmark;
+  paper-ledger sizing fixed $1k notional per call; source scores =
+  30-day-half-life decayed hit rate (2026-07-16)
+- Paper P&L convention: **action-realised + mark-to-market** — first eligible
+  post-track observation enters, first post-drop observation exits, otherwise
+  mark at the sealed audit cutoff; peak/MFE stays diagnostic only. Report gross
+  and conservative cost-adjusted P&L beside a fixed +72h cohort return
+  (2026-07-16)
+- Ticker-only disambiguation is fully auditable: every verdict including
+  abstains is logged with its versioned candidate feature dossier. Later raw CA
+  supplies promotion-grade ground truth; price-derived target inference is
+  proxy-labelled and exploratory. RSI tie-breakers require pre-registration,
+  a forward holdout, minimum sample, and confidence-bound improvement before a
+  reviewed deterministic promotion (2026-07-16,
+  docs/architecture/token-resolution.md)
+- Source quality is scored from conservative host-extracted bullish CA call
+  events at mention time, not inherited from the bot's decision. Warnings,
+  neutral/uncertain stance, and copies are excluded and measured; rug adjacency
+  remains separate and immediate (2026-07-16,
+  docs/architecture/audit-metrics.md, INV-S12)
+- Broadcast budget initial defaults: 5/day watch+notable, urgent failsafe
+  ceiling 10/day — config values in docs/CONFIG.md, tune after the first
+  weeks of audits (2026-07-16)
 
 ## Signal-quality roadmap
 
-Accepted quality improvements beyond the base flow, in adoption order. Items 1–7
-are **designed into the module docs** (collectors, orchestrator, agent-workspace)
-and carry invariants where warranted; 8–9 remain roadmap-only:
+Accepted quality improvements beyond the base flow, in adoption order. Items
+1–14 are **designed into the module docs** (collectors, orchestrator,
+agent-workspace, security-gate, token-resolution, snapshot-archive,
+audit-metrics) and carry invariants where warranted; 15–16 remain roadmap-only:
 
 1. **Token security pre-filter (v1)** — before any research verdict: GoPlus token
    security API (EVM chains, free tier — the same source DexScreener's own risk
    warnings use) and RugCheck (Solana, keyless basic report). Hard-gate on
    honeypot/mint-authority/unlocked-LP flags; a token failing the gate is `ignore`
-   with the flag cited, no LLM time spent.
-2. **Attention–price divergence (v1)** — deterministic collector metric: mention
-   velocity (twitter/alpha-queue counts) vs price move over the same window.
-   Rising attention on a flat chart is the canonical early signal; attention
-   spike after a 3x is exit liquidity. Feeds watchlist-scan and research.
-3. **Counterfactual tracking (v1)** — `ignore` and `revisit` verdicts are logged
+   with the flag cited, no LLM time spent. Exact mapping: security-gate.md.
+2. **Canonical identity resolution (v1)** — CA-first resolution to
+   `(chain, token_address, pair_address)` before anything is counted or
+   researched; ambiguous tickers get best-effort model-judged disambiguation
+   against a deterministic dossier, high-confidence acceptance only
+   (token-resolution.md, INV-S16). Kills wrong-asset research, mention
+   counting, and attribution.
+3. **Mention dedupe + independence clusters (v1)** — copy-paste/retweet
+   collapse and Sybil-resistant cluster counting; divergence and corroboration
+   run on *effective* mentions (collectors.md).
+4. **Attention–price divergence (v1)** — deterministic collector metric:
+   effective mention velocity vs price move over the same window, with
+   `late_attention` and `exit_liquidity_risk` veto flags. Rising attention on
+   a flat chart is the canonical early signal; attention spike after a 3x is
+   exit liquidity.
+5. **Market-quality preflight (v1)** — liquidity floor, txn count, wash-trade
+   ratio, FDV/liquidity bound on every research path, not just new pools
+   (security-gate.md). Rug flags don't catch untradeable.
+6. **Counterfactual tracking (v1)** — `ignore` and `revisit` verdicts are logged
    with the same provenance as `track`; the audit prices them at the same horizons.
    Measures missed alpha and calibrates the research bar, not just the wins.
-4. **Confidence calibration (v1)** — every decision entry carries a 0–100
-   confidence; the audit plots calibration (were 80s right 80% of the time?).
-   Cheap to record, catches systematic over/under-conviction.
-5. **Paper-trading ledger (v1.5)** — a virtual position per track-call (entry at
-   decision, exit at drop), marked by the audit job. Converts the scorecard into
-   a hypothetical P&L — the single most honest "is it doing a good job" number.
-6. **New-pool feeds (v1.5)** — GeckoTerminal new-pools / DexScreener new pairs as
-   a discovery source *ahead* of social attention; strict security-gate + liquidity
-   floor since this stream is 99% garbage.
-7. **Narrative lifecycle stages (v1.5)** — `emerging → peaking → fading` on each
-   narrative file rather than a boolean; rotation = capital leaving a fading
-   narrative for an emerging one, which is exactly the urgent-broadcast case.
-8. **Neynar/Farcaster lens (phase 2)** — second social surface, real free API.
-9. **Smart-money wallet tracking (exploratory)** — free options are thin
-   (Helius free tier for Solana is the leading candidate); revisit once v1 audits
-   show what discovery actually lacks.
+7. **Decision cards + confidence calibration (v1)** — every decision entry is a
+   structured card (thesis, horizon, invalidation, drivers, countercase,
+   confidence 0–100, gate status — agent-workspace.md); the audit plots
+   calibration per confidence bin *and per driver*.
+8. **Leakage-free audits (v1)** — as-of bundles freeze evidence-time values;
+   immutable post-event observations price execution and outcomes; sealed epoch
+   manifests freeze cohorts and versions; source scores apply with a one-cycle
+   lag so feedback loops are cut by construction
+   (snapshot-archive.md, audit-metrics.md, INV-S14/S18).
+9. **Freshness + data-quality flags (v1)** — every snapshot item carries
+   `age_sec`, a freshness tier, and provider-disagreement/missing-field flags;
+   expired social evidence can't drive a new track (collectors.md).
+10. **Paper-trading ledger (v1.5)** — a virtual position per track-call (entry at
+    the first post-decision observation, exit at the first post-drop observation),
+    marked by the audit job. Headline action P&L is reported realised + MTM,
+    gross + cost-adjusted, raw + benchmark-hedged, beside fixed-horizon cohort
+    return; hindsight peak exits are diagnostics only.
+11. **New-pool feeds (v1.5)** — GeckoTerminal new-pools / DexScreener new pairs as
+    a discovery source *ahead* of social attention; strict security-gate + liquidity
+    floor since this stream is 99% garbage.
+12. **Discovery-funnel counterfactuals (v1.5)** — everything rejected or
+    expired before research lands in a host-side discovery log and gets priced
+    at the same horizons: filter recall loss and gate catch rate are what tune
+    every threshold (audit-metrics.md).
+13. **Narrative lifecycle stages (v1.5)** — `emerging → peaking → fading` on each
+    narrative file rather than a boolean; rotation = capital leaving a fading
+    narrative for an emerging one, which is exactly the urgent-broadcast case.
+14. **Regime-stratified scorecards (v1.5)** — hit rate and calibration split by
+    macro regime (Fear & Greed + chain-benchmark volatility percentile) once
+    enough decisions exist; a bot that only works in a bull tape should say so.
+15. **Neynar/Farcaster lens (phase 2)** — second social surface, real free API.
+16. **Smart-money wallet tracking (exploratory)** — free options are thin
+    (Helius free tier for Solana is the leading candidate); revisit once v1 audits
+    show what discovery actually lacks.
 
 Deliberately not adopted: DexScreener boost-count as bullish signal (it's paid
 marketing — we ingest it as attention *and* as a mild risk flag), generic news
@@ -286,12 +366,20 @@ Identified in review as missing from the original design; owned as follows:
   commit and retry with bounds; (2) a sandboxed **recovery agent**
   (`skills/recover/`) spawns after repeated failures or integrity-check flags to
   diagnose and repair workspace state within existing invariants; (3) operator DM
-  via the chat bot for what only a human can do (headful re-auth, always) and
-  whenever the recovery agent ran. Detail in orchestrator.md; INV-S11.
-- **Workspace concurrency** — one writer at a time: cron jobs and chat research
-  sub-agents share a workspace-level lock; chat *reads* stay lock-free.
-- **Token-usage telemetry** — per-run token counts from the sdk result land in
-  the scorecard so burn-optimisation claims are measured, not vibes.
+  via the chat bot for what only a human can do (headful re-auth, always),
+  whenever the recovery agent ran, and every **exoneration proposal** (`warn`
+  intent on a rug-adjacent source) for manual undock/confirm in Telegram.
+  Detail in orchestrator.md / chat-agent.md; INV-S11 / INV-S13.
+- **Workspace concurrency** — one writer at a time: cron jobs, chat research
+  sub-agents, and recovery actions share a workspace writer lock; chat *reads*
+  stay lock-free (INV-S15, orchestrator.md).
+- **Operator contract** — env vars, config file, seed format, tunable
+  thresholds, and the CLI surface are pinned in docs/CONFIG.md; deployment and
+  procedures in ops/runbook.md + launchd templates.
+- **Token-usage telemetry** — an append-only host log records the main session
+  plus auxiliary disambiguation/intent sessions per run; the weekly scorecard
+  rolls up tokens by job/session kind alongside cache hits and useful outcomes,
+  so burn-optimisation claims are measured, not vibes.
 - **Cold start** — `trenchcoat init` seeds watchlist.json from the operator list,
   registers initial sources at neutral score, creates empty INDEX/narratives;
   first audit is skipped until decisions exist.
@@ -302,16 +390,17 @@ Identified in review as missing from the original design; owned as follows:
 
 - [ ] Router contract: exact endpoint, auth scheme, payload schema — pin down when
   the router project exists; until then the sender is a stub behind an interface
-- [ ] Broadcast budget defaults: proposed max 5/day for watch/notable; urgent
-  failsafe ceiling proposed at 10/day. Tune after the first weeks of audits
-- [ ] Audit windows: score track-calls at +3d/+7d/+30d? Needs a few cycles of data
-- [ ] Source-score maths: rolling hit-rate vs decayed weighting — pick when the
-  first audit has real attributions
 - [ ] Chart analysis depth: deterministic indicators + LLM read first; candle-image
   vision analysis later if audits show missed structure
-- [ ] Paper-ledger position sizing convention (fixed notional per call vs
-  confidence-weighted) — decide with the first ledger implementation
 - [ ] Neynar/Farcaster integration timing (phase 2)
+- [ ] Confidence-weighted paper-ledger sizing — only after calibration is proven
+  over several audit cycles (fixed $1k notional until then)
+
+Formerly open, now resolved with **initial defaults, revisit after the first
+audit cycles** (recorded under Resolved decisions): broadcast budgets (5/day +
+urgent ceiling 10), audit windows (+24h/+72h/+7d, +72h headline), source-score
+maths (30d-half-life decayed hit rate, lag-applied), ledger sizing (fixed
+$1k notional).
 
 ## Knowledge files needed (manual research pending)
 

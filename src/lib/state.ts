@@ -1,0 +1,110 @@
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { writeAtomicFile } from "./fs-atomic.js"
+import {
+  LedgerFileSchema,
+  ResearchQueueFileSchema,
+  SourcesFileSchema,
+  WatchlistFileSchema,
+  WalletsFileSchema,
+  type LedgerFile,
+  type ResearchQueueFile,
+  type SourcesFile,
+  type WatchlistFile,
+  type WalletsFile,
+} from "../contracts/schemas.js"
+
+function readOrDefault<T>(path: string, parse: (value: unknown) => T, fallback: T): T {
+  if (!existsSync(path)) return fallback
+  return parse(JSON.parse(readFileSync(path, "utf8")))
+}
+
+export class StateStore {
+  constructor(private readonly stateDir: string) {
+    mkdirSync(stateDir, { recursive: true, mode: 0o700 })
+  }
+
+  watchlistPath(): string { return join(this.stateDir, "watchlist.json") }
+  sourcesPath(): string { return join(this.stateDir, "sources.json") }
+  ledgerPath(): string { return join(this.stateDir, "ledger.json") }
+  researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
+  walletsPath(): string { return join(this.stateDir, "wallets.json") }
+  decisionsPath(): string { return join(this.stateDir, "decisions.md") }
+
+  loadWatchlist(): WatchlistFile {
+    return readOrDefault(
+      this.watchlistPath(),
+      (v) => WatchlistFileSchema.parse(v),
+      { schema: 1, entries: [] },
+    )
+  }
+
+  async saveWatchlist(file: WatchlistFile): Promise<void> {
+    await writeAtomicFile(this.watchlistPath(), `${JSON.stringify(WatchlistFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  loadSources(): SourcesFile {
+    return readOrDefault(
+      this.sourcesPath(),
+      (v) => SourcesFileSchema.parse(v),
+      { schema: 1, sources: [] },
+    )
+  }
+
+  async saveSources(file: SourcesFile): Promise<void> {
+    await writeAtomicFile(this.sourcesPath(), `${JSON.stringify(SourcesFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  loadLedger(): LedgerFile {
+    return readOrDefault(
+      this.ledgerPath(),
+      (v) => LedgerFileSchema.parse(v),
+      { schema: 1, positions: [] },
+    )
+  }
+
+  async saveLedger(file: LedgerFile): Promise<void> {
+    await writeAtomicFile(this.ledgerPath(), `${JSON.stringify(LedgerFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  loadResearchQueue(): ResearchQueueFile {
+    return readOrDefault(
+      this.researchQueuePath(),
+      (v) => ResearchQueueFileSchema.parse(v),
+      { schema: 1, entries: [] },
+    )
+  }
+
+  async saveResearchQueue(file: ResearchQueueFile): Promise<void> {
+    await writeAtomicFile(
+      this.researchQueuePath(),
+      `${JSON.stringify(ResearchQueueFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadWallets(): WalletsFile {
+    return readOrDefault(
+      this.walletsPath(),
+      (v) => WalletsFileSchema.parse(v),
+      { schema: 1, wallets: [] },
+    )
+  }
+
+  async saveWallets(file: WalletsFile): Promise<void> {
+    await writeAtomicFile(this.walletsPath(), `${JSON.stringify(WalletsFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  readDecisions(): string {
+    if (!existsSync(this.decisionsPath())) return ""
+    return readFileSync(this.decisionsPath(), "utf8")
+  }
+
+  async appendDecision(entry: string): Promise<void> {
+    const prev = this.readDecisions()
+    if (prev.length > 0 && !entry.startsWith("\n") && !prev.endsWith("\n")) {
+      await writeAtomicFile(this.decisionsPath(), `${prev}\n${entry}`)
+      return
+    }
+    await writeAtomicFile(this.decisionsPath(), `${prev}${entry}`)
+  }
+}

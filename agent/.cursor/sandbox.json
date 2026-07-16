@@ -1,0 +1,9 @@
+{
+  "type": "workspace-read-write",
+  "networkPolicy": {
+    "default": "deny"
+  },
+  "additionalReadonlyPaths": [],
+  "additionalReadWritePaths": []
+}
+

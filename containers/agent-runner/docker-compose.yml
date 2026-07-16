@@ -1,0 +1,14 @@
+services:
+  agent-runner:
+    build: .
+    read_only: true
+    tmpfs: []
+    volumes:
+      - ../../agent:/workspace/agent:rw
+    environment:
+      - HOME=/home/trench
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    network_mode: none

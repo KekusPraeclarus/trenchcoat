@@ -1,0 +1,4 @@
+X scraping permission reference placeholder.
+
+Replace this file's contents with a pointer to the operator's written permission
+artifact (path or ticket id). Never store session cookies or credentials here.

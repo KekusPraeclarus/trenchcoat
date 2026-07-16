@@ -48,16 +48,25 @@ exists. Two ingestion modes, chosen per channel at config time:
 Both modes append every new message to `agent/alpha-queue/<channel>/<msg-id>.json`
 with full provenance and deduplicate on message id; digestion and purge are the
 orchestrator's job (see orchestrator.md, INV-Q1).
+Each append writes a same-directory temporary file, fsyncs it, then atomically
+renames to the sanitised final path using create-if-absent semantics. A concurrent
+listener/job can observe the old file or the complete new file, never a partial
+message.
 
-### Token security (research gate)
+### Token security gate
 
 - **GoPlus** — `GET api.gopluslabs.io/api/v1/token_security/{chain_id}` (EVM
   chains, free tier, keyed via console): honeypot, mint authority,
   blacklist/whitelist, buy/sell tax, LP lock flags
 - **RugCheck** — `GET api.rugcheck.xyz/v1/tokens/{mint}/report` (Solana, keyless
   basic lookups): mint/freeze authority, LP lock
-- Run by the `research` collector set before the agent session; a hard-fail flag
-  short-circuits the verdict to `ignore` without an LLM call (cheap and safe)
+- Scanner selection per chain via the chain registry (chains.md); no scanner
+  coverage → fail-closed, candidate untrackable
+- Runs at research dequeue **and** as the new-pool stream filter; a typed
+  hard-fail short-circuits to `ignore` without an LLM call and triggers the
+  rug-shill dock. Exact field→flag mapping, thresholds, and the
+  market-quality preflight (liquidity, txn, wash-filter floors) live in
+  security-gate.md
 
 ### New-pool feed (discovery ahead of social)
 
@@ -66,14 +75,38 @@ This stream is overwhelmingly garbage, so it is filtered hard before the agent
 ever sees it: security gate first (GoPlus/RugCheck), then a liquidity floor and
 minimum-age/txn sanity checks. Survivors enter the snapshot as candidates with
 `provenance: "feed:new-pools"` — attention-independent discovery, often earlier
-than any tweet.
+than any tweet. Filtered-out candidates are appended to the host-side discovery
+log so the audit can price what the filters rejected (filter recall loss,
+audit-metrics.md) — thresholds get tuned by evidence, not vibes.
+
+### Mention preprocessing (dedupe + independence clusters)
+
+Deterministic preprocessing before any mention is counted:
+
+- **Resolution first** — mentions attach to canonical identities, either
+  `resolved` or `model-confirmed` from the disambiguation dossier
+  (token-resolution.md); mentions with no binding at all are excluded from
+  velocity maths
+- **Dedupe** — normalised-text fingerprint per item; retweets, copy-pastes,
+  and identical CA+template posts within the window collapse to one event
+  (`dedupe_key` on the item)
+- **Independence clusters** — host-side union-find over sources: two sources
+  link if they repeatedly co-post the same CA within a short Δt or share
+  template fingerprints. `cluster_id` lands in `sources.json`; snapshots carry
+  both `raw_mentions` and `effective_mentions` (unique clusters, per-cluster
+  contribution capped) plus `cluster_count`. Corroboration means independent
+  clusters — a Sybil farm is one voice
 
 ### Attention–price divergence
 
-Deterministic metric written into watchlist-scan and research snapshots: mention
-velocity (tweet + alpha-queue counts per window, weighted by source score) against
-the price/volume move over the same window. Divergence direction is the signal:
-attention up + price flat = early; attention spiking after a large move = late.
+Deterministic metric written into watchlist-scan and research snapshots:
+**effective** mention velocity (deduped, cluster-capped, weighted by
+start-of-run source score) against the price/volume move over the same window.
+Divergence direction is the signal: attention up + price flat = early;
+attention spiking after a large move = late. Two explicit flags accompany it:
+`late_attention` (mention z-score spikes after an already-large move) and
+`exit_liquidity_risk` (attention spike + declining liquidity + overbought RSI)
+— skills treat either as a veto on new tracks.
 
 ### Market data
 
@@ -90,12 +123,52 @@ attention up + price flat = early; attention spiking after a large move = late.
 
 ### Indicators
 
-Pure functions over OHLCV: **RSI (14, per timeframe)**, volume z-score, range
-breakout, EMA structure, liquidity delta. Computed here (deterministic, testable)
-and written alongside the raw candles so the agent interprets numbers rather than
-recomputing them. The audit job reuses the same functions to score past calls
-(e.g. RSI at decision time vs the subsequent move), so keep them pure and
-timestamp-parameterised — never "now"-dependent.
+Pure functions over OHLCV: **Wilder RSI (14, close)** on 1h and 4h timeframes,
+volume z-score (24h window vs 7d baseline), range breakout (close beyond the
+prior 7d high/low), EMA structure (9/21/50 on 1h), liquidity delta since last
+snapshot.
+
+The indicator contract is deliberately exact:
+
+- UTC-aligned, fully closed candles only; the open candle is never an input
+- candles are sorted and deduped by interval start, and a gap or duplicate makes
+  the feature invalid rather than silently interpolated
+- Wilder's initial average uses the first 14 gains/losses from 15 closes, then
+  the standard recursive smoothing; average loss zero with positive gain yields
+  100, average gain zero with positive loss yields 0, and both zero yields 50
+- at least 10 of the latest 14 intervals must have non-zero volume; otherwise
+  RSI is invalid rather than treating an inactive pool's flat print as neutral
+- each value carries interval, period, method, source, pair, input start/end,
+  last closed candle time, observed time, input count/hash, and validity reason
+- snapshots include current and previous RSI plus delta for both timeframes;
+  "rising" is never inferred from one point
+- all indicators share a `feature_spec_version`; changing maths creates a new
+  version and never retroactively relabels archived features
+- a pair migration starts a new series and emits a discontinuity flag; candles
+  from different pairs are never spliced into one RSI input
+
+`exit_liquidity_risk` uses 1h RSI ≥ 70 as its initial overbought condition,
+alongside its attention and liquidity clauses. Period, timeframes, overbought
+threshold, and minimum active bars are explicit config values. A threshold
+change creates a new config hash; historical flags are not relabelled.
+
+Computed here (deterministic, testable) and written alongside references to the
+content-addressed raw candles (snapshot-archive.md), so the agent interprets
+numbers rather than recomputing them without duplicating candle payloads in every
+run. The audit reuses the same timestamp-parameterised functions. Nothing reads
+the wall clock internally; callers pass the as-of cutoff.
+
+### Source call-event extraction
+
+Source quality uses direct mention-time outcomes, not the bot's later decision.
+Host code emits an eligible bullish call event only when raw text contains a
+validated CA/pair plus an explicit positive-call pattern. The parser is
+versioned, negation-aware, and conservative: warnings, neutral mentions,
+ambiguous stance, and copied/retweeted duplicates are excluded and counted by
+reason. It never calls a model and cannot assign one source's text to another
+provenance id. Events carry source, cluster, identity, mention time, parser
+version, matched rule id, raw-item hash, and dedupe key. Audit-metrics.md defines
+pricing and scoring.
 
 ## Rate-limit gate
 
@@ -123,10 +196,20 @@ otherwise; never tighten the loop.
 - `trust: "untrusted-external"` is mandatory on anything containing third-party text
 - **`provenance` is mandatory per item** — `twitter:@handle`,
   `telegram:<channel>`, `coingecko:trending`, etc. It must match a key in
-  `agent/state/sources.json` (or be auto-registered there at neutral score) so the
-  agent can weight evidence and the audit can attribute outcomes (INV-S6)
+  `agent/state/sources.json` (auto-registered at neutral score by the snapshot
+  writer's host-side post-step — never by an agent session, INV-S7) so the
+  agent can weight evidence and the host can trace or extract auditable source
+  call events (INV-S6)
+- **Freshness and data quality are evidence** — every item carries `age_sec`
+  and a `freshness_tier: live | stale | expired` derived from per-job
+  thresholds (e.g. OHLCV older than 2h on a 1h chart-sweep = stale). Snapshots
+  also flag missing fields and provider price disagreement (GeckoTerminal vs
+  DexScreener beyond 2%) rather than papering over them. Skills treat
+  `expired` social items as non-evidence for new tracks
 - Raw text is carried verbatim inside `items` — collectors never "clean" it in ways
   that could hide manipulation, and never promote it into keys or filenames
+  (dedupe fingerprints and cluster ids are *additional* fields, the raw text
+  stays untouched)
 
 Alpha-queue entries use the same envelope, one file per message, so digestion can
 be tracked and purged per message id.

@@ -46,6 +46,13 @@ durable thread.
   messages to the chat session (cwd = `agent/`, sandboxed, no network)
 - **Operator-only**: messages accepted from an allowlisted Telegram user id;
   everything else dropped unanswered (INV-B3)
+- **Outbound operator DMs** — the same bot is the host-side path for
+  orchestrator alerts (failures, headful re-auth, recovery-agent runs) and for
+  **exoneration proposals**: when the intent classifier returns `warn`, the
+  orchestrator DMs you a short review card (source id, quoted message, scanner
+  flags, matched CA) and waits for `undock <id>` / `confirm <id>` (or CLI).
+  These DMs are host-authored templates — never agent free-text to the operator
+  (INV-B3 still applies; only the allowlisted id receives them)
 - **Fresh research round-trip**: the sub-agent cannot fetch; when the request
   needs live data ("look at $TOKEN fresh"), the chat service runs the matching
   collectors first (same rate-limit gate, INV-R4), drops snapshots into a
