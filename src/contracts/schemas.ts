@@ -155,6 +155,177 @@ export const SourcesFileSchema = z.object({
 })
 export type SourcesFile = z.infer<typeof SourcesFileSchema>
 
+export const XHandleSchema = z.string().regex(/^[A-Za-z0-9_]{1,15}$/u)
+export const SourceLifecycleStatusSchema = z.enum([
+  "probation",
+  "managed",
+  "demoted",
+])
+
+export const SourcePerformanceSchema = z.object({
+  eligibleCalls: z.number().int().nonnegative(),
+  distinctTokens: z.number().int().nonnegative(),
+  settledCalls: z.number().int().nonnegative(),
+  hits: z.number().int().nonnegative(),
+  coverage: z.number().min(0).max(1),
+  hitMean: z.number().min(0).max(1),
+  hitLb95: z.number().min(0).max(1),
+  medianExcess72h: z.number(),
+  rugExposure: z.number().min(0).max(1),
+  lastEligibleCallAt: IsoTimestampSchema.optional(),
+  score: z.number().min(0).max(1),
+  scoreCutoff: IsoTimestampSchema,
+})
+export type SourcePerformance = z.infer<typeof SourcePerformanceSchema>
+
+export const SourceDiscoveryOriginSchema = z.enum([
+  "fyp",
+  "operator-list-1",
+  "operator-list-2",
+])
+export type SourceDiscoveryOrigin = z.infer<typeof SourceDiscoveryOriginSchema>
+
+export const SourceCandidateSchema = z.object({
+  schema: z.literal(1),
+  sourceId: SafeIdSchema,
+  handle: XHandleSchema,
+  discoveredFrom: SourceDiscoveryOriginSchema,
+  firstSeenAt: IsoTimestampSchema,
+  lastSeenAt: IsoTimestampSchema,
+  status: SourceLifecycleStatusSchema,
+  promotedAt: IsoTimestampSchema.optional(),
+  demotedAt: IsoTimestampSchema.optional(),
+  cooldownUntil: IsoTimestampSchema.optional(),
+  callsAtDemotion: z.number().int().nonnegative().optional(),
+  consecutiveBelowFloorEpochs: z.number().int().nonnegative().default(0),
+  hardDocked: z.boolean().default(false),
+  lastReviewEpoch: SafeIdSchema.optional(),
+  evidenceHash: Sha256Schema,
+})
+export type SourceCandidate = z.infer<typeof SourceCandidateSchema>
+
+export const XEngagementActionSchema = z.enum(["like", "follow", "unfollow"])
+export const XEngagementReasonCodeSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/u)
+export const XTopicLabelSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,31}$/u)
+
+export const XEngagementProposalItemSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("like"),
+    postId: z.string().regex(/^\d{5,25}$/u),
+    authorHandle: XHandleSchema,
+    reasonCode: XEngagementReasonCodeSchema,
+    topics: z.array(XTopicLabelSchema).max(8).default([]),
+    rationale: z.string().min(1).max(280),
+  }),
+  z.object({
+    action: z.literal("follow"),
+    handle: XHandleSchema,
+    reasonCode: XEngagementReasonCodeSchema,
+    topics: z.array(XTopicLabelSchema).max(8).default([]),
+    rationale: z.string().min(1).max(280),
+  }),
+  z.object({
+    action: z.literal("unfollow"),
+    handle: XHandleSchema,
+    reasonCode: XEngagementReasonCodeSchema,
+    topics: z.array(XTopicLabelSchema).max(8).default([]),
+    rationale: z.string().min(1).max(280),
+  }),
+])
+export type XEngagementProposalItem = z.infer<typeof XEngagementProposalItemSchema>
+
+export const XEngagementProposalFileSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  proposedAt: IsoTimestampSchema,
+  items: z.array(XEngagementProposalItemSchema).max(50),
+})
+export type XEngagementProposalFile = z.infer<typeof XEngagementProposalFileSchema>
+
+export const XEngagementDecisionSchema = z.object({
+  schema: z.literal(1),
+  actionId: Sha256Schema,
+  action: XEngagementActionSchema,
+  target: z.string().min(1).max(64),
+  reasonCode: XEngagementReasonCodeSchema,
+  topics: z.array(XTopicLabelSchema).max(8).default([]),
+  accepted: z.boolean(),
+  rejectReason: z.string().max(120).optional(),
+  runId: SafeIdSchema,
+  decidedAt: IsoTimestampSchema,
+})
+export type XEngagementDecision = z.infer<typeof XEngagementDecisionSchema>
+
+export const XEngagementReceiptSchema = z.object({
+  schema: z.literal(1),
+  receiptId: Sha256Schema,
+  actionId: Sha256Schema,
+  action: XEngagementActionSchema,
+  target: z.string().min(1).max(64),
+  attemptedAt: IsoTimestampSchema,
+  verified: z.boolean(),
+  ambiguous: z.boolean(),
+  error: z.string().max(500).optional(),
+})
+export type XEngagementReceipt = z.infer<typeof XEngagementReceiptSchema>
+
+export const XEngagementFileSchema = z.object({
+  schema: z.literal(1),
+  followedHandles: z.array(XHandleSchema).max(5_000),
+  likedPostIds: z.array(z.string().regex(/^\d{5,25}$/u)).max(50_000),
+  lastLikedAt: z.record(z.string(), IsoTimestampSchema).default({}),
+  lastFollowedAt: z.record(z.string(), IsoTimestampSchema).default({}),
+  pendingActionIds: z.array(Sha256Schema).max(10_000),
+  decisions: z.array(XEngagementDecisionSchema).max(100_000),
+  receipts: z.array(XEngagementReceiptSchema).max(100_000),
+  daily: z.object({
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    likes: z.number().int().nonnegative().default(0),
+    follows: z.number().int().nonnegative().default(0),
+    unfollows: z.number().int().nonnegative().default(0),
+  }),
+})
+export type XEngagementFile = z.infer<typeof XEngagementFileSchema>
+
+export const SourceLifecycleTransitionSchema = z.object({
+  schema: z.literal(1),
+  transitionId: Sha256Schema,
+  sourceId: SafeIdSchema,
+  handle: XHandleSchema,
+  action: z.enum(["promoted", "demoted"]),
+  reasonCode: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/u),
+  occurredAt: IsoTimestampSchema,
+  epochId: SafeIdSchema,
+  evidenceHash: Sha256Schema,
+  fromStatus: SourceLifecycleStatusSchema,
+  toStatus: SourceLifecycleStatusSchema,
+})
+export type SourceLifecycleTransition = z.infer<typeof SourceLifecycleTransitionSchema>
+
+export const SourceLifecycleFileSchema = z.object({
+  schema: z.literal(1),
+  managedListId: z.string().regex(/^\d+$/u).optional(),
+  managedListUrl: z.string().url().optional(),
+  candidates: z.array(SourceCandidateSchema).max(10_000),
+  transitions: z.array(SourceLifecycleTransitionSchema).max(100_000),
+  pendingTransitionIds: z.array(Sha256Schema).max(10_000),
+})
+export type SourceLifecycleFile = z.infer<typeof SourceLifecycleFileSchema>
+
+export const XListSyncReceiptSchema = z.object({
+  schema: z.literal(1),
+  syncId: Sha256Schema,
+  managedListId: z.string().regex(/^\d+$/u),
+  attemptedAt: IsoTimestampSchema,
+  desiredHandlesHash: Sha256Schema,
+  added: z.array(XHandleSchema),
+  removed: z.array(XHandleSchema),
+  verified: z.boolean(),
+  ambiguous: z.boolean(),
+  error: z.string().max(500).optional(),
+})
+export type XListSyncReceipt = z.infer<typeof XListSyncReceiptSchema>
+
 export const LedgerPositionStatusSchema = z.enum([
   "entry-pending",
   "open",

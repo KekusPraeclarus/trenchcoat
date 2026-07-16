@@ -5,13 +5,17 @@ import {
   LedgerFileSchema,
   ResearchQueueFileSchema,
   SourcesFileSchema,
+  SourceLifecycleFileSchema,
   WatchlistFileSchema,
   WalletsFileSchema,
+  XEngagementFileSchema,
   type LedgerFile,
   type ResearchQueueFile,
   type SourcesFile,
+  type SourceLifecycleFile,
   type WatchlistFile,
   type WalletsFile,
+  type XEngagementFile,
 } from "../contracts/schemas.js"
 
 function readOrDefault<T>(path: string, parse: (value: unknown) => T, fallback: T): T {
@@ -26,6 +30,8 @@ export class StateStore {
 
   watchlistPath(): string { return join(this.stateDir, "watchlist.json") }
   sourcesPath(): string { return join(this.stateDir, "sources.json") }
+  sourceLifecyclePath(): string { return join(this.stateDir, "source-lifecycle.json") }
+  xEngagementPath(): string { return join(this.stateDir, "x-engagement.json") }
   ledgerPath(): string { return join(this.stateDir, "ledger.json") }
   researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
   walletsPath(): string { return join(this.stateDir, "wallets.json") }
@@ -53,6 +59,52 @@ export class StateStore {
 
   async saveSources(file: SourcesFile): Promise<void> {
     await writeAtomicFile(this.sourcesPath(), `${JSON.stringify(SourcesFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  loadSourceLifecycle(): SourceLifecycleFile {
+    return readOrDefault(
+      this.sourceLifecyclePath(),
+      (v) => SourceLifecycleFileSchema.parse(v),
+      {
+        schema: 1,
+        candidates: [],
+        transitions: [],
+        pendingTransitionIds: [],
+      },
+    )
+  }
+
+  async saveSourceLifecycle(file: SourceLifecycleFile): Promise<void> {
+    await writeAtomicFile(
+      this.sourceLifecyclePath(),
+      `${JSON.stringify(SourceLifecycleFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadXEngagement(): XEngagementFile {
+    const today = new Date().toISOString().slice(0, 10)
+    return readOrDefault(
+      this.xEngagementPath(),
+      (v) => XEngagementFileSchema.parse(v),
+      {
+        schema: 1,
+        followedHandles: [],
+        likedPostIds: [],
+        lastLikedAt: {},
+        lastFollowedAt: {},
+        pendingActionIds: [],
+        decisions: [],
+        receipts: [],
+        daily: { day: today, likes: 0, follows: 0, unfollows: 0 },
+      },
+    )
+  }
+
+  async saveXEngagement(file: XEngagementFile): Promise<void> {
+    await writeAtomicFile(
+      this.xEngagementPath(),
+      `${JSON.stringify(XEngagementFileSchema.parse(file), null, 2)}\n`,
+    )
   }
 
   loadLedger(): LedgerFile {

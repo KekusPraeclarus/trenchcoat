@@ -1,9 +1,47 @@
 {
-  "schema": 2,
+  "schema": 4,
   "telegram_channels": [],
   "twitter": {
+    "operator_list_urls": [
+      "https://x.com/i/lists/REPLACE_WITH_FIRST_LIST_ID",
+      "https://x.com/i/lists/REPLACE_WITH_SECOND_LIST_ID"
+    ],
+    "scrape_home": true,
     "max_pages_per_run": 5,
-    "scraping_permission_ref": "ops/permissions/x-scraping.txt"
+    "managed_list": {
+      "name": "trenchcoat-sources",
+      "description": "Sources promoted by trenchcoat",
+      "capacity": 250
+    },
+    "source_lifecycle": {
+      "review_interval_hours": 24,
+      "max_transitions_per_review": 10,
+      "promotion": {
+        "min_eligible_calls": 10,
+        "min_distinct_tokens": 5,
+        "min_coverage": 0.8,
+        "min_hit_mean": 0.6,
+        "min_hit_lb95": 0.45,
+        "min_median_excess": 0.05,
+        "max_rug_exposure": 0.1,
+        "max_idle_days": 14
+      },
+      "demotion": {
+        "idle_days": 30,
+        "rug_exposure": 0.25,
+        "min_resolved_for_rug_drop": 4,
+        "coverage_floor": 0.5,
+        "score_floor": 0.4,
+        "consecutive_epochs": 2,
+        "readd_cooldown_days": 30,
+        "readd_min_new_calls": 5
+      }
+    },
+    "engagement": {
+      "enabled": true,
+      "likes_per_window": 2,
+      "like_window_minutes": 10
+    }
   },
   "research": {
     "daily_cap": 3,

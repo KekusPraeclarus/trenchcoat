@@ -26,3 +26,10 @@ config/doc change; the system never self-tunes.
 - Every vote archives input hash, prompt version, raw output, and contribution
 - Promotion/drop thresholds use both deterministic and blended floors
 - Runtime agents cannot write wallet state
+
+## Implementation note (2026-07-16)
+
+Scoring maths live in `src/wallets/scoring.ts` (INV-S19 PARTIAL). Lifecycle
+event builders exist in `src/wallets/lifecycle.ts`, but no caller yet persists
+transitions or stages `wallet.lifecycle` router events (INV-S20 GAP). Decision
+stands; wiring is incomplete.

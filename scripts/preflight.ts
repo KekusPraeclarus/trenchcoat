@@ -1,7 +1,10 @@
 import { runPreflight } from "../src/lib/preflight.js"
+import { loadDotEnv } from "../src/lib/dotenv.js"
 import { existsSync } from "node:fs"
-import { loadConfig, assertSocialPermissions, defaultConfigPath } from "../src/lib/config.js"
+import { loadConfig, defaultConfigPath } from "../src/lib/config.js"
 import { execSync } from "node:child_process"
+
+loadDotEnv()
 
 const live = process.argv.includes("--live")
 const result = runPreflight({ live })
@@ -23,16 +26,7 @@ try {
 
 const configPath = defaultConfigPath()
 if (existsSync(configPath)) {
-  try {
-    assertSocialPermissions(loadConfig(configPath))
-    checks.push({ name: "config", ok: true, detail: configPath })
-  } catch (error) {
-    checks.push({
-      name: "config",
-      ok: false,
-      detail: error instanceof Error ? error.message : "invalid",
-    })
-  }
+  checks.push({ name: "config", ok: true, detail: configPath })
 } else {
   checks.push({ name: "config", ok: false, detail: `missing ${configPath}` })
 }

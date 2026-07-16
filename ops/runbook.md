@@ -9,7 +9,7 @@ equivalents follow the same cadences.
 ~/.trenchcoat/
 ├── config.json            # operator config (docs/CONFIG.md)
 ├── env                    # mode 600, sourced by launchd plists (secrets)
-├── browser-profile/       # Twitter burner auth (never in the repo)
+├── twitter-profile/       # Twitter burner auth (never in the repo)
 ├── telegram-session/      # GramJS session (never in the repo)
 └── archive/               # host-side snapshot archive (docs/architecture/snapshot-archive.md)
 ```
@@ -25,6 +25,7 @@ not in code):
 | `chart-sweep` | hourly |
 | `watchlist-scan` | every 2h |
 | `list-scan` | every 4h |
+| `source-list-review` | daily and after a sealed audit |
 | `narrative-scan` | every 6h |
 | `research` | scheduler dequeues from the research queue, cap in config |
 | `review` | daily 07:00 |
@@ -49,6 +50,15 @@ recovery tier 1 (docs/architecture/orchestrator.md).
 - **Twitter re-auth** — on a "needs headful re-auth" DM: `tc auth twitter`,
   complete the login interactively. Never scripted (documented exception,
   docs/INVARIANTS.md).
+- **Managed source list setup** — after configuring both immutable operator
+  list URLs, run `tc auth twitter --create-managed-list`. Confirm the resulting
+  private-list ID in `tc probe twitter`. Normal jobs never create another list.
+- **Source-list dry run** — `tc source-list review --dry-run` prints deterministic
+  transitions without mutating state or X. `tc source-list sync` applies only
+  already-committed pending transitions to the persisted managed-list ID.
+- **FYP engagement** — the bot writes `reports/<run-id>/x-engagement.json`.
+  Likes default to 2 every 10 minutes (config-bounded; INV-S22 PARTIAL). Dry-run with
+  `tc x-engagement dry-run <run-id>`.
 - **Exoneration review** — on a `warn` DM: reply `undock <id>` or
   `confirm <id>` in Telegram (or the CLI equivalents). No timeout — the
   penalty stays suspended and the adjacency counter already incremented.

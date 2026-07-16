@@ -12,22 +12,41 @@ read_when:
 
 ## Purpose
 
-Deterministic code that turns the outside world into timestamped files. All network
-access in the system happens here. Collectors never interpret — no LLM calls, no
-decisions — so a run is reproducible from its inputs.
+Deterministic code that turns the outside world into timestamped files. Upstream
+market/social fetches for jobs go through collectors and the shared rate gate.
+Other host components (router delivery, Telegram chat bridge) also use the
+network, but not for collector-shaped ingestion. Collectors never interpret —
+no LLM calls, no decisions — so a run is reproducible from its inputs.
 
 ## Sources
 
 ### Twitter (Playwright)
 
 - Dedicated **burner account**; credentials and the persistent auth profile live
-  under `~/.trenchcoat/browser-profile/` (outside the repo, never inside `agent/`)
+  under `~/.trenchcoat/twitter-profile/` (outside the repo, never inside `agent/`)
 - Headless by default; when login or a challenge is detected, fail the run with a
   clear "needs headful re-auth" error — the operator runs `trenchcoat auth twitter`
   to fix it interactively. Never attempt automated challenge solving.
-- Scrape targets: token search results, specific profiles, the curated trends list
+- Scrape targets: token search results, FYP, exactly two immutable operator lists,
+  and one bot-managed private source list
 - Human-ish pacing (randomised delays, capped pages per run) to respect the platform
   and keep the account alive. Scrape read-only; never post, like, or follow.
+
+The normal collector blocks every mutating HTTP method. A separate host-only
+managed-list synchronizer is the sole exception: it may create one private list
+once and add/remove members only when the target list ID exactly matches the
+persisted managed-list ID. It blocks posts, likes, follows, reposts, DMs, and all
+other mutations (INV-R2).
+
+Accounts first seen on FYP or either immutable operator list enter host-owned
+probation for **shill scoring**. Promotion and demotion of the managed private
+list use only lagged, settled outcomes from direct bullish raw-CA call events
+(INV-S21). Operator lists themselves are never mutated.
+
+Separately, `list-scan` lets the bot choose FYP likes/follows for narrative and
+sentiment feed training. Choices are applied after the session with a default
+like throttle of 2 per 10 minutes (config-bounded; INV-S22 PARTIAL); posts,
+replies, DMs, and retweets stay blocked (INV-R2).
 
 ### Telegram alpha channels (preview poller + GramJS listener)
 

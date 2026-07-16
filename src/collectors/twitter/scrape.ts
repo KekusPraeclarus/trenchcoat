@@ -1,0 +1,171 @@
+import { existsSync } from "node:fs"
+import { join, resolve } from "node:path"
+import { chromium, type Page } from "playwright"
+import type { TrenchcoatConfig } from "../../lib/config.js"
+import { twitterProfileDir } from "../social/twitter-auth.js"
+import { parseTwitterSearchPage, type TwitterPost } from "../twitter/session.js"
+import { log } from "../../lib/log.js"
+
+export type TwitterScrapeTarget = Readonly<{
+  kind: "home" | "operator-list" | "managed-list"
+  url: string
+  label: string
+}>
+
+export type TwitterScrapeBundle = Readonly<{
+  target: TwitterScrapeTarget
+  posts: readonly TwitterPost[]
+  challenged: boolean
+}>
+
+function storageStatePath(): string {
+  return join(twitterProfileDir(), "storage-state.json")
+}
+
+export function assertTwitterSessionReady(): string {
+  const state = storageStatePath()
+  if (!existsSync(state)) {
+    throw new Error("No X session — run `pnpm dev:cli auth twitter` first")
+  }
+  return state
+}
+
+export function resolveTwitterTargets(config: TrenchcoatConfig): TwitterScrapeTarget[] {
+  const targets: TwitterScrapeTarget[] = []
+  if (config.twitter.scrape_home) {
+    targets.push({
+      kind: "home",
+      url: "https://x.com/home",
+      label: "home/fyp",
+    })
+  }
+  for (const [index, url] of config.twitter.operator_list_urls.entries()) {
+    targets.push({
+      kind: "operator-list",
+      url,
+      label: `operator-list-${index + 1}`,
+    })
+  }
+  if (config.twitter.managed_list.list_url) {
+    targets.push({
+      kind: "managed-list",
+      url: config.twitter.managed_list.list_url,
+      label: "managed-list",
+    })
+  }
+  if (targets.length === 0) {
+    throw new Error(
+      "No Twitter targets configured",
+    )
+  }
+  return targets
+}
+
+async function detectChallenge(page: Page): Promise<boolean> {
+  const url = page.url()
+  if (/\/i\/flow\/login|\/account\/access|challenge/iu.test(url)) return true
+  const login = await page.locator('input[name="text"], input[autocomplete="username"]').count().catch(() => 0)
+  const home = await page.locator('[data-testid="AppTabBar_Home_Link"]').count().catch(() => 0)
+  return login > 0 && home === 0
+}
+
+async function scrapeTarget(
+  page: Page,
+  target: TwitterScrapeTarget,
+  maxPages: number,
+): Promise<TwitterScrapeBundle> {
+  await page.goto(target.url, { waitUntil: "domcontentloaded", timeout: 60_000 })
+  await page.waitForTimeout(2_000 + Math.floor(Math.random() * 1_500))
+
+  if (await detectChallenge(page)) {
+    return { target, posts: [], challenged: true }
+  }
+
+  // Prefer "For you" tab on home when present
+  if (target.kind === "home") {
+    const forYou = page.getByRole("tab", { name: /for you/iu })
+    if (await forYou.count().catch(() => 0)) {
+      await forYou.first().click().catch(() => undefined)
+      await page.waitForTimeout(1_500)
+    }
+  }
+
+  const seen = new Map<string, TwitterPost>()
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    const batch = await parseTwitterSearchPage(page)
+    for (const post of batch) {
+      if (!seen.has(post.id)) seen.set(post.id, post)
+    }
+    await page.mouse.wheel(0, 2_800)
+    await page.waitForTimeout(1_200 + Math.floor(Math.random() * 1_800))
+  }
+
+  return {
+    target,
+    posts: [...seen.values()],
+    challenged: false,
+  }
+}
+
+/** Live read-only scrape of configured home/FYP + curated list using the burner profile */
+export async function scrapeConfiguredTwitter(
+  config: TrenchcoatConfig,
+  opts: Readonly<{ headless?: boolean }> = {},
+): Promise<TwitterScrapeBundle[]> {
+  const state = assertTwitterSessionReady()
+  const targets = resolveTwitterTargets(config)
+  const maxPages = config.twitter.max_pages_per_run
+
+  const browser = await chromium.launch({ headless: opts.headless !== false })
+  try {
+    const context = await browser.newContext({
+      storageState: resolve(state),
+      viewport: { width: 1280, height: 900 },
+    })
+    // Read-only network: block mutating methods
+    await context.route("**/*", async (route) => {
+      const method = route.request().method().toUpperCase()
+      if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+        await route.abort("blockedbyclient")
+        return
+      }
+      await route.continue()
+    })
+
+    const page = await context.newPage()
+    const results: TwitterScrapeBundle[] = []
+    const globalSeen = new Set<string>()
+    for (const target of targets) {
+      log.info("twitter scrape", { target: target.label, url: target.url })
+      const bundle = await scrapeTarget(page, target, maxPages)
+      const unique = bundle.posts.filter((post) => {
+        if (globalSeen.has(post.id)) return false
+        globalSeen.add(post.id)
+        return true
+      })
+      results.push({ ...bundle, posts: unique })
+      await page.waitForTimeout(1_000 + Math.floor(Math.random() * 1_000))
+    }
+    await context.close()
+    return results
+  } finally {
+    await browser.close()
+  }
+}
+
+export function summarizeScrape(bundles: readonly TwitterScrapeBundle[]): unknown {
+  return bundles.map((bundle) => ({
+    target: bundle.target.label,
+    url: bundle.target.url,
+    challenged: bundle.challenged,
+    count: bundle.posts.length,
+    authors: [...new Set(bundle.posts.map((p) => p.author))].slice(0, 20),
+    sample: bundle.posts.slice(0, 5).map((p) => ({
+      id: p.id,
+      author: p.author,
+      ts: p.timestamp,
+      text: p.text.length > 120 ? `${p.text.slice(0, 117)}…` : p.text,
+      url: p.url,
+    })),
+  }))
+}

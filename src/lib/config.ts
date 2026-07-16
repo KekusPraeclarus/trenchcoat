@@ -3,20 +3,57 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
+import { migrateConfigToV4 } from "../migrations/config.js"
+import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
   channel: z.string().min(1).max(128),
-  mode: z.enum(["preview", "gramjs"]),
-  consentRef: z.string().min(1).max(512),
+  mode: z.enum(["preview", "gramjs"])
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(2),
+  schema: z.literal(4),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
-    curated_list_url: z.string().url().optional(),
+    operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
+    scrape_home: z.boolean().default(true),
     max_pages_per_run: z.number().int().min(1).max(20).default(5),
-    scraping_permission_ref: z.string().min(1).max(512),
+    managed_list: z.object({
+      name: z.string().min(1).max(25).default("trenchcoat-sources"),
+      description: z.string().max(100).default("Sources promoted by trenchcoat"),
+      capacity: z.number().int().min(1).max(500).default(250),
+      list_id: z.string().regex(/^\d+$/u).optional(),
+      list_url: z.string().url().optional(),
+    }),
+    source_lifecycle: z.object({
+      review_interval_hours: z.number().int().min(1).max(168).default(24),
+      max_transitions_per_review: z.number().int().min(1).max(50).default(10),
+      promotion: z.object({
+        min_eligible_calls: z.number().int().min(1).default(10),
+        min_distinct_tokens: z.number().int().min(1).default(5),
+        min_coverage: z.number().min(0).max(1).default(0.80),
+        min_hit_mean: z.number().min(0).max(1).default(0.60),
+        min_hit_lb95: z.number().min(0).max(1).default(0.45),
+        min_median_excess: z.number().default(0.05),
+        max_rug_exposure: z.number().min(0).max(1).default(0.10),
+        max_idle_days: z.number().int().min(1).default(14),
+      }),
+      demotion: z.object({
+        idle_days: z.number().int().min(1).default(30),
+        rug_exposure: z.number().min(0).max(1).default(0.25),
+        min_resolved_for_rug_drop: z.number().int().min(1).default(4),
+        coverage_floor: z.number().min(0).max(1).default(0.50),
+        score_floor: z.number().min(0).max(1).default(0.40),
+        consecutive_epochs: z.number().int().min(1).default(2),
+        readd_cooldown_days: z.number().int().min(1).default(30),
+        readd_min_new_calls: z.number().int().min(1).default(5),
+      }),
+    }),
+    engagement: z.object({
+      enabled: z.boolean().default(true),
+      likes_per_window: z.number().int().min(0).max(20).default(2),
+      like_window_minutes: z.number().int().min(1).max(1_440).default(10),
+    }),
   }),
   research: z.object({
     daily_cap: z.number().int().min(1).max(20).default(3),
@@ -109,6 +146,23 @@ export const ConfigSchema = z.object({
     discord_webhook_url: z.string().url().optional(),
   }),
 }).superRefine((cfg, ctx) => {
+  if (cfg.twitter.operator_list_urls[0] === cfg.twitter.operator_list_urls[1]) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "twitter.operator_list_urls must contain two distinct lists",
+      path: ["twitter", "operator_list_urls"],
+    })
+  }
+  if (
+    cfg.twitter.managed_list.list_id !== undefined
+    && cfg.twitter.managed_list.list_url === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "managed list_url is required when list_id is set",
+      path: ["twitter", "managed_list"],
+    })
+  }
   if (Math.abs(cfg.wallets.deterministic_weight + cfg.wallets.llm_weight - 1) > 1e-9) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -193,20 +247,17 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(raw)
+  return ConfigSchema.parse(migrateConfigToV4(raw))
+}
+
+export async function saveConfig(
+  config: TrenchcoatConfig,
+  path = defaultConfigPath(),
+): Promise<void> {
+  const parsed = ConfigSchema.parse(config)
+  await writeAtomicFile(path, `${JSON.stringify(parsed, null, 2)}\n`, 0o600)
 }
 
 export function configHash(config: TrenchcoatConfig): `sha256:${string}` {
   return sha256Json(config as never)
-}
-
-export function assertSocialPermissions(config: TrenchcoatConfig): void {
-  if (!config.twitter.scraping_permission_ref.trim()) {
-    throw new Error("twitter.scraping_permission_ref is required")
-  }
-  for (const channel of config.telegram_channels) {
-    if (!channel.consentRef.trim()) {
-      throw new Error(`telegram channel ${channel.channel} missing consentRef`)
-    }
-  }
 }

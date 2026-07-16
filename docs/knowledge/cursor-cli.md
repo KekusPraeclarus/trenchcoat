@@ -2,6 +2,7 @@
 description: Provider knowledge — Cursor CLI local agent (login auth, not API key).
 scope: project
 status: active
+last_verified: 2026-07-16
 ---
 
 # Cursor CLI
@@ -10,15 +11,38 @@ Install: [cursor.com/docs/cli/installation](https://cursor.com/docs/cli/installa
 
 ```bash
 curl https://cursor.com/install -fsS | bash
+# ensure ~/.local/bin is on PATH
 agent login
-agent status   # must show Logged in
+agent status   # must show Logged in as …
 ```
+
+Binding decision: [ADR 003](../adr/003-cursor-cli-auth.md).
 
 ## trenchcoat harness
 
-- Binary: `agent` (or `cursor-agent`) from `~/.local/bin`
-- Headless: `agent -p --trust --sandbox enabled --workspace <agent/> --model composer-2.5`
-- Auth: operator CLI login — **not** `CURSOR_API_KEY` (optional override only)
-- Jobs are one-shot; chat may use `--resume <chatId>`
+- Binary: `agent` (symlink also appears as `cursor-agent`) under `~/.local/bin`
+- Override: `TRENCHCOAT_CURSOR_BIN`
+- Headless jobs: `agent -p --trust --sandbox enabled --workspace <abs agent/> --model composer-2.5 --output-format text`
+- Auth: operator CLI login — **not** `CURSOR_API_KEY` (optional `--api-key` escape hatch only)
+- Chat follow-ups: `--resume <chatId>` / `--continue`
 - Never interpolate scraped text into the prompt — path references only
-- Outer Linux container still mounts only `agent/`; CLI sandbox alone does not satisfy INV-I1
+- Outer Linux container still mounts only `agent/`; CLI `--sandbox` alone does not satisfy INV-I1 / INV-I5
+
+## Auth pitfalls (verified against other local CLI harnesses)
+
+Source: operator correction + patterns from a sibling project that already drives
+`agent` headlessly. Verification: `agent status` on this machine shows login;
+`@cursor/sdk` was removed from the lockfile.
+
+- Do **not** require or document `CURSOR_API_KEY` as the primary path — the
+  operator may not have one and already uses CLI login elsewhere
+- When spawning, prefer the real user home for CLI auth artifacts if the host
+  process ever redirects `HOME` (detection and spawn must agree)
+- Strip unrelated provider keys from the child env if the host injects them for
+  other collectors — otherwise the CLI can pick the wrong credential surface
+- Preflight: `agent --version` always; `agent status` / logged-in check for live
+
+## Models
+
+Default pin: `composer-2.5`. Override via session options / future config only
+after an explicit doc+config change.

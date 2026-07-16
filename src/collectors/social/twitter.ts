@@ -1,5 +1,3 @@
-import { assertSocialPermissions, type TrenchcoatConfig } from "../../lib/config.js"
-
 export type TweetFixture = Readonly<{
   id: string
   text: string
@@ -20,17 +18,4 @@ export function parseTweetFixture(raw: unknown): TweetFixture[] {
       ...(typeof r["url"] === "string" ? { url: r["url"] } : {}),
     }
   }).filter((t) => t.id && t.text)
-}
-
-export function assertTwitterPermission(config: TrenchcoatConfig): void {
-  assertSocialPermissions(config)
-  if (!config.twitter.scraping_permission_ref.trim()) {
-    throw new Error("X scraping permission ref missing")
-  }
-}
-
-/** Live Playwright burner session is operator-gated; refuse without permission ref. */
-export async function refuseOrStartLiveScrape(config: TrenchcoatConfig): Promise<never> {
-  assertTwitterPermission(config)
-  throw new Error("Live X scrape requires headful auth via `tc auth twitter` (not implemented in unit path)")
 }

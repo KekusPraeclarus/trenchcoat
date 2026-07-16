@@ -6,6 +6,7 @@ export type JobName =
   | "chart-sweep"
   | "review"
   | "audit"
+  | "source-list-review"
   | "wallet-discovery"
   | "wallet-scan-solana"
   | "wallet-scan-evm"
@@ -26,6 +27,7 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "chart-sweep", skill: "chart-sweep", description: "Chart vision sweep" },
   { name: "review", skill: "review", description: "Knowledge distillation" },
   { name: "audit", skill: "review", description: "Sealed audit epoch" },
+  { name: "source-list-review", skill: "review", description: "Deterministic X source-list lifecycle" },
   { name: "wallet-discovery", skill: "review", description: "Early buyer discovery" },
   { name: "wallet-scan-solana", skill: "review", description: "Helius wallet scan" },
   { name: "wallet-scan-evm", skill: "review", description: "Infura wallet scan" },

@@ -44,6 +44,8 @@ agent/
 │   ├── INDEX.md           # retrieval entry point — always small
 │   ├── watchlist.json
 │   ├── sources.json       # per-source quality scores (twitter accounts, tg channels)
+│   ├── source-lifecycle.json # FYP candidacy + managed-list transitions (host-only)
+│   ├── x-engagement.json  # host engagement decisions/receipts (host-only)
 │   ├── ledger.json        # paper-trading positions (deterministic, orchestrator-kept)
 │   ├── research-queue.json # candidate buffer (deterministic, orchestrator-kept)
 │   ├── research/<token>.md
@@ -100,7 +102,13 @@ structured state, markdown for prose knowledge, one index for retrieval.
   (see orchestrator.md, INV-S12/S13). Warnings, neutral/uncertain mentions, and
   copied posts are excluded from quality scoring. The bot reads it to weight
   evidence; nothing the bot writes can move a score. New sources auto-register
-  at neutral.
+  at neutral. Host-only.
+- **`source-lifecycle.json`** — FYP/operator-list probation/managed/demoted
+  candidates, immutable promote/demote history, pending sync ids, managed list
+  id. Host-only; models never write it. See [source-lifecycle.md](source-lifecycle.md).
+- **`x-engagement.json`** — ledger of the bot's like/follow choices and
+  receipts. Bot writes choices via `reports/<run-id>/x-engagement.json`; likes
+  hard-throttled to 2 / 10 minutes.
 - **`ledger.json`** — the paper-trading book: one virtual position per track-call
   (first post-decision execution reference, first post-drop reference, or
   mark-to-market while open), with gross and cost-adjusted values.
@@ -309,6 +317,8 @@ where the chat agent can surface it on request.
   dock, weekly audit scoring maths, operator undock/confirm) — scan skills read
   it; a skill that lets in-run content adjust its own source's score would let
   a shiller vouch for themselves (INV-S7/S12)
+- `source-lifecycle.json` is likewise host-only: FYP candidacy and managed-list
+  membership are never model-writable (INV-S21; source-lifecycle.md)
 - Schema changes to any state JSON or the outbox need a migration note in
   `decisions.md` and an update to this doc in the same change
 - The bot must not edit its own `AGENTS.md` or skills; audit lessons reach them

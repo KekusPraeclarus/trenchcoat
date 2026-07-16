@@ -33,7 +33,8 @@ lean: minimum tokens for undiminished results.
    (see 6). The blend rubric lives in the bot's skills, not in code.
 3. **Signal collection**
    - *Twitter* — Playwright browser (headless, headful fallback) on a dedicated
-     burner account: watched-token searches, curated trend list. No paid API.
+     burner account: watched-token searches, FYP, two immutable operator lists,
+     and one bot-managed private source list. No paid API.
    - *Telegram alpha channels* — operator-provided channel list; every new message
      lands in an **alpha queue**, digested on the next appropriate cycle, then
      purged (useful content is recorded in the knowledge store first).
@@ -224,6 +225,9 @@ Minimising burn without harming results, enforced by design rather than hope:
 
 - Project name: **trenchcoat** (2026-07-16). Repo folder rename from `trench-bot`
   is a manual operator step (open IDE workspace)
+- Agent harness auth: **Cursor CLI login** (`agent login`), not `@cursor/sdk` /
+  required `CURSOR_API_KEY` (operator correction, 2026-07-16) — ADR 003,
+  `docs/knowledge/cursor-cli.md`
 - Twitter runs on a dedicated burner account (operator decision, 2026-07-16)
 - No human-approval gate on watchlist changes; free agent control + retrospective
   audit (operator decision, 2026-07-16)

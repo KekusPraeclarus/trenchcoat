@@ -3,6 +3,8 @@ import { relative, resolve } from "node:path"
 
 const AGENT_PROTECTED_PATHS = [
   "state/sources.json",
+  "state/source-lifecycle.json",
+  "state/x-engagement.json",
   "state/ledger.json",
   "state/research-queue.json",
   "AGENTS.md",

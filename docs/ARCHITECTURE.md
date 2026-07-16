@@ -6,8 +6,10 @@ last_verified: 2026-07-16
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
+  - You need the Cursor session launch shape (CLI login, not API key).
 do_not_read_when:
   - You need project goals or dependency rationale (see TECHNICAL-SPEC.md).
+  - You need Cursor CLI install/auth details only (see knowledge/cursor-cli.md / ADR 003).
 ---
 
 # Architecture
@@ -34,17 +36,20 @@ bridges (broadcast and chat):
 ├───────────────────────────────────────────┴──────────────────▼────────────┐
 │ RUNTIME AGENT (agent/) — sandboxed, no network                             │
 │ reads inbox + alpha queue + knowledge store · weights evidence by source   │
-│ score · writes state (incl. narratives), reports, outbox proposals        │
+│ score · writes agent-owned state (narratives, decisions, outbox)          │
+│ Host-only files (sources, lifecycle, ledger, research-queue) stay host     │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 A cron cycle: scheduler fires `trenchcoat run <job>` → orchestrator runs the job's
 collectors (through the rate-limit gate) → snapshots land in `agent/inbox/<run-id>/`
 and are mirrored to the host-side archive (`~/.trenchcoat/archive/`, the record
-attribution and audits read from) → orchestrator starts a Cursor agent session
-(composer-2.5, cwd = `agent/`) with the job prompt → agent reads inbox, alpha queue
-(when the job digests it), and knowledge store; updates `agent/state/`; writes a
-briefing to `agent/reports/` and, rarely, a broadcast proposal to `agent/outbox/`
+attribution and audits read from) → orchestrator starts a **Cursor CLI** session
+(`agent -p --trust`, model composer-2.5, `--workspace` = `agent/`, auth =
+operator `agent login`) → agent reads inbox, alpha queue
+(when the job digests it), and knowledge store; updates agent-owned `agent/state/`
+entries; writes a briefing to `agent/reports/` and, rarely, a broadcast proposal
+to `agent/outbox/`
 → orchestrator runs post-run integrity checks, writes as-of bundles for new
 decisions, creates entry-pending paper positions, validates outbox items (schema,
 length, budget — `urgent` bypasses budget), and stages deliveries → commits state
@@ -89,13 +94,18 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── architecture/         # per-module docs + index
 │   └── knowledge/            # niche-tech knowledge files (as created)
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
-│   ├── orchestrator/         # job registry, run loop, sdk sessions, outbox sender,
-│   │                         #   audit + ledger maths, rug-dock, recovery, purge
+│   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
+│   │                         #   outbox sender, audit/ledger maths, source-list,
+│   │                         #   x-engagement, rug-dock, recovery, purge
 │   ├── collectors/
-│   │   ├── twitter/          # playwright scraper (burner acct), auth profile mgmt
+│   │   ├── twitter/          # playwright scrape, managed-list sync, engagement
 │   │   ├── telegram/         # t.me/s/ preview poller + gramjs fallback → alpha queue
 │   │   └── market/           # geckoterminal, dexscreener, coingecko trending,
 │   │                         #   fear & greed, security gate, indicators
+│   ├── sources/              # FYP candidacy + lagged promote/demote (ADR 004)
+│   ├── social/               # FYP engagement proposal validation / throttle
+│   ├── wallets/              # smart-wallet scoring + lifecycle events (ADR 002)
+│   ├── router/               # in-repo HMAC intake + durable fanout (ADR 001)
 │   ├── chat/                 # telegram bridge, sub-agent spawning
 │   ├── lib/                  # rate-limit gate, snapshot writer, outbox schema,
 │   │                         #   run ids, chain registry, token resolution

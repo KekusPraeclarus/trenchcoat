@@ -14,11 +14,9 @@ export type GramJsListener = Readonly<{
 
 export async function runGramJsListener(
   listener: GramJsListener,
-  consentRefs: Readonly<Record<string, string>>,
   write: (message: TelegramPreviewMessage) => Promise<void>,
 ): Promise<void> {
   await listener.subscribe(async (message) => {
-    if (!consentRefs[message.channel]?.trim()) throw new Error(`telegram channel ${message.channel} missing consentRef`)
     if (!message.text) return
     try {
       await write({

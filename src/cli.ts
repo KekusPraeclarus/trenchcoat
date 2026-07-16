@@ -2,8 +2,9 @@ import { mkdirSync, writeFileSync, existsSync, cpSync, readFileSync } from "node
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { spawn } from "node:child_process"
-import { ConfigSchema, assertSocialPermissions } from "./lib/config.js"
-import { migrateConfigToV2 } from "./migrations/config.js"
+import { loadDotEnv } from "./lib/dotenv.js"
+import { ConfigSchema } from "./lib/config.js"
+import { migrateConfigToV4 } from "./migrations/config.js"
 import { runJob } from "./orchestrator/run.js"
 import { getJob, JOBS } from "./orchestrator/jobs.js"
 import { runPreflight } from "./lib/preflight.js"
@@ -19,12 +20,29 @@ Commands:
   run <job> [--skip-agent] [--dry-collect]
   status [--heal]
   preflight [--live]
+  probe twitter [--headed]
+  source-list review [--dry-run] [--no-sync]
+  source-list sync
+  x-engagement dry-run <run-id>
+  x-engagement status
   router serve
   listen telegram
   research <subject>
+  auth twitter [--create-managed-list] [--headed]
   jobs
 `)
   process.exit(1)
+}
+
+function resolveHomes(): { agentRoot: string, archiveRoot: string } {
+  const home = join(homedir(), ".trenchcoat")
+  const agentRoot = existsSync(join(home, "agent"))
+    ? join(home, "agent")
+    : join(process.cwd(), "agent")
+  const archiveRoot = existsSync(join(home, "archive"))
+    ? join(home, "archive")
+    : join(process.cwd(), ".trenchcoat-local", "archive")
+  return { agentRoot, archiveRoot }
 }
 
 async function cmdInit(seedPath?: string): Promise<void> {
@@ -32,8 +50,7 @@ async function cmdInit(seedPath?: string): Promise<void> {
   mkdirSync(destDir, { recursive: true, mode: 0o700 })
   const seed = seedPath ?? join(process.cwd(), "config/seed.example.json")
   const raw = JSON.parse(readFileSync(seed, "utf8")) as unknown
-  const cfg = ConfigSchema.parse(migrateConfigToV2(raw))
-  assertSocialPermissions(cfg)
+  const cfg = ConfigSchema.parse(migrateConfigToV4(raw))
   writeFileSync(join(destDir, "config.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 })
   const agentSrc = join(process.cwd(), "agent")
   const agentDest = join(destDir, "agent")
@@ -46,13 +63,7 @@ async function cmdInit(seedPath?: string): Promise<void> {
 
 async function cmdRun(jobName: string, args: string[]): Promise<void> {
   getJob(jobName)
-  const home = join(homedir(), ".trenchcoat")
-  const agentRoot = existsSync(join(home, "agent"))
-    ? join(home, "agent")
-    : join(process.cwd(), "agent")
-  const archiveRoot = existsSync(join(home, "archive"))
-    ? join(home, "archive")
-    : join(process.cwd(), ".trenchcoat-local", "archive")
+  const { agentRoot, archiveRoot } = resolveHomes()
   const result = await runJob({
     job: jobName as never,
     paths: { agentRoot, archiveRoot },
@@ -137,6 +148,7 @@ async function cmdListenTelegram(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  loadDotEnv()
   const [cmd, ...rest] = process.argv.slice(2)
   if (!cmd) usage()
   switch (cmd) {
@@ -175,11 +187,88 @@ async function main(): Promise<void> {
       if (rest[0] !== "telegram") usage()
       await cmdListenTelegram()
       break
+    case "probe":
+      if (rest[0] !== "twitter") usage()
+      {
+        const { loadConfig } = await import("./lib/config.js")
+        const { scrapeConfiguredTwitter, summarizeScrape } = await import("./collectors/twitter/scrape.js")
+        const { probeSourceListSummary } = await import("./orchestrator/source-list.js")
+        const { probeEngagementSummary } = await import("./orchestrator/x-engagement.js")
+        const cfg = loadConfig()
+        const headed = rest.includes("--headed")
+        const { agentRoot } = resolveHomes()
+        const bundles = await scrapeConfiguredTwitter(cfg, { headless: !headed })
+        console.log(JSON.stringify({
+          scrape: summarizeScrape(bundles),
+          lifecycle: probeSourceListSummary(agentRoot, cfg),
+          engagement: probeEngagementSummary(agentRoot, cfg),
+        }, null, 2))
+        if (bundles.some((b) => b.challenged)) {
+          console.error("Challenge/login detected — re-run: pnpm dev:cli auth twitter")
+          process.exit(2)
+        }
+      }
+      break
+    case "source-list":
+      {
+        const sub = rest[0]
+        const { agentRoot, archiveRoot } = resolveHomes()
+        if (sub === "review") {
+          const { runSourceListReview } = await import("./orchestrator/source-list.js")
+          const report = await runSourceListReview({
+            agentRoot,
+            archiveRoot,
+            dryRun: rest.includes("--dry-run"),
+            sync: !rest.includes("--no-sync") && !rest.includes("--dry-run"),
+          })
+          console.log(JSON.stringify(report, null, 2))
+        } else if (sub === "sync") {
+          const { syncPendingSourceList } = await import("./orchestrator/source-list.js")
+          const receipt = await syncPendingSourceList({ agentRoot, archiveRoot })
+          console.log(JSON.stringify(receipt, null, 2))
+          if (receipt.ambiguous || !receipt.verified) process.exit(2)
+        } else {
+          usage()
+        }
+      }
+      break
+    case "x-engagement":
+      {
+        const sub = rest[0]
+        const { agentRoot, archiveRoot } = resolveHomes()
+        if (sub === "status") {
+          const { loadConfig } = await import("./lib/config.js")
+          const { probeEngagementSummary } = await import("./orchestrator/x-engagement.js")
+          console.log(JSON.stringify(probeEngagementSummary(agentRoot, loadConfig()), null, 2))
+        } else if (sub === "dry-run") {
+          const runId = rest[1]
+          if (!runId) usage()
+          const { processListScanEngagement } = await import("./orchestrator/x-engagement.js")
+          const report = await processListScanEngagement({
+            agentRoot,
+            archiveRoot,
+            runId: runId!,
+            dryRun: true,
+            execute: false,
+          })
+          console.log(JSON.stringify(report, null, 2))
+        } else {
+          usage()
+        }
+      }
+      break
     case "auth":
       if (rest[0] !== "twitter") usage()
       {
-        const { authTwitterInteractive } = await import("./collectors/social/twitter-auth.js")
-        await authTwitterInteractive()
+        if (rest.includes("--create-managed-list")) {
+          const { createAndPersistManagedList } = await import("./orchestrator/source-list.js")
+          const identity = await createAndPersistManagedList()
+          console.log(`Created managed list ${identity.listId}`)
+          console.log(identity.listUrl)
+        } else {
+          const { authTwitterInteractive } = await import("./collectors/social/twitter-auth.js")
+          await authTwitterInteractive()
+        }
       }
       break
     case "research":

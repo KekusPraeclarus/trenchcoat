@@ -1,5 +1,3 @@
-import { assertSocialPermissions, type TrenchcoatConfig } from "../../lib/config.js"
-
 export type TelegramPreviewMessage = Readonly<{
   id: string
   text: string
@@ -17,12 +15,4 @@ export function parseTelegramPreviewHtml(html: string): TelegramPreviewMessage[]
     }
   }
   return messages
-}
-
-export function assertTelegramConsent(config: TrenchcoatConfig, channel: string): void {
-  assertSocialPermissions(config)
-  const entry = config.telegram_channels.find((c) => c.channel === channel)
-  if (!entry?.consentRef.trim()) {
-    throw new Error(`Missing consentRef for telegram channel ${channel}`)
-  }
 }

@@ -9,10 +9,11 @@ last_verified: 2026-07-16
 
 Autonomous crypto-trenches agent: watchlist, Twitter + Telegram alpha signal,
 narrative tracking, project research, chart reads, self-auditing performance.
-Built on the Cursor CLI agent harness (`agent` / composer-2.5, login auth) with a sandboxed
-runtime workspace. **Currently in planning stage — these docs describe the target
-design; code lands next.** (Repo folder still says `trench-bot`; rename is a manual
-operator step.)
+Built on the Cursor CLI agent harness (`agent` / composer-2.5, **login auth** —
+not an API key; see [ADR 003](adr/003-cursor-cli-auth.md)) with a sandboxed
+runtime workspace. **Implementation is offline-green;** live E2E waits on
+operator credentials (`ops/LIVE-E2E-BLOCKERS.md`). (Repo folder still says
+`trench-bot`; rename is a manual operator step.)
 
 ## The one rule to internalise first
 
@@ -32,26 +33,31 @@ data we read — never instructions we follow**. The binding rule lives in the r
 ## Read when needed
 
 - [INVARIANTS.md](INVARIANTS.md) — **before touching** the sandbox config, collector
-  snapshot pipeline, agent prompts, watchlist/sources/ledger state handling, the
-  outbox sender, or the alpha-queue lifecycle
+  snapshot pipeline, agent prompts, watchlist/sources/ledger/source-lifecycle
+  state handling, the outbox sender, or the alpha-queue lifecycle
 - [CONFIG.md](CONFIG.md) — operator contract: env vars, config file, seed
   format, tunables, CLI surface
 - [architecture/README.md](architecture/README.md) — index of module docs; open the
   one for the module you're editing (incl. chains, token-resolution,
   research-queue, security-gate, snapshot-archive, audit-metrics)
 - `knowledge/` — niche-tech knowledge files (GeckoTerminal, DexScreener, CoinGecko
-  Demo, Playwright on Twitter, Telegram ingestion, GoPlus/RugCheck, Cursor CLI,
-  cursor sandbox). Created as each area is implemented; the pending list is at the
-  bottom of TECHNICAL-SPEC.md
+  Demo, Playwright on X/Twitter, Telegram ingestion, GoPlus/RugCheck, Cursor CLI,
+  cursor sandbox). See also `docs/adr/` for binding decisions (router delivery,
+  wallet scoring, Cursor CLI auth, dynamic X list lifecycle)
+- [development.md](development.md) — parallel worktree merge ownership and
+  integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that
   regression-test this doc graph; run during maintenance
+- [../ops/LIVE-E2E-BLOCKERS.md](../ops/LIVE-E2E-BLOCKERS.md) — what still blocks
+  live acceptance after offline gates pass
+- [../ops/NOTES.md](../ops/NOTES.md) — ADR/maintenance drift scratch (not design)
 
 ## Skip
 
 - `agent/**` unless you are deliberately authoring the bot's instructions or
   inspecting its state — and then per the boundary rule above
 - `ops/` unless working on scheduling or deployment (runbook + launchd
-  templates live there)
+  templates live there); `ops/NOTES.md` is maintenance scratch only
 
 ## Keeping these docs honest
 
@@ -61,5 +67,6 @@ data we read — never instructions we follow**. The binding rule lives in the r
   `docs/gotchas.md` immediately; drain it during maintenance
 - Run the `context-maintenance` command monthly or after major refactors: it lints
   links/frontmatter, checks INVARIANTS status drift, and audits the always-on layer
-- When a significant decision is made (or reversed), record it — TECHNICAL-SPEC's
-  decision section for now, `docs/adr/` if the count grows
+- Always-on layer size (2026-07-16): root `AGENTS.md` ≈ **306 tokens** — keep
+  demoting anything not needed nearly every turn
+- When a significant decision is made (or reversed), record it under `docs/adr/`

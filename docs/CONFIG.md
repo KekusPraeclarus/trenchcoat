@@ -29,15 +29,65 @@ see ops/runbook.md). Nothing under `agent/` ever receives an env value (INV-I3).
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
+Current schema is **4** (two `operator_list_urls`, managed list, source
+lifecycle thresholds, FYP engagement caps). `loadConfig` migrates v1–v3 shapes
+via `migrateConfigToV4`.
 
 ```json
 {
-  "schema": 1,
+  "schema": 4,
   "telegram_channels": [
-    { "channel": "somechannel", "mode": "preview" },
-    { "channel": "privatepreview", "mode": "gramjs" }
+    {
+      "channel": "somechannel",
+      "mode": "preview"
+    },
+    {
+      "channel": "privatepreview",
+      "mode": "gramjs"
+    }
   ],
-  "twitter": { "curated_list_url": "…", "max_pages_per_run": 5 },
+  "twitter": {
+    "operator_list_urls": [
+      "https://x.com/i/lists/FIRST_ID",
+      "https://x.com/i/lists/SECOND_ID"
+    ],
+    "scrape_home": true,
+    "max_pages_per_run": 5,
+    "managed_list": {
+      "name": "trenchcoat-sources",
+      "description": "Sources promoted by trenchcoat",
+      "capacity": 250
+    },
+    "source_lifecycle": {
+      "review_interval_hours": 24,
+      "max_transitions_per_review": 10,
+      "promotion": {
+        "min_eligible_calls": 10,
+        "min_distinct_tokens": 5,
+        "min_coverage": 0.8,
+        "min_hit_mean": 0.6,
+        "min_hit_lb95": 0.45,
+        "min_median_excess": 0.05,
+        "max_rug_exposure": 0.1,
+        "max_idle_days": 14
+      },
+      "demotion": {
+        "idle_days": 30,
+        "rug_exposure": 0.25,
+        "min_resolved_for_rug_drop": 4,
+        "coverage_floor": 0.5,
+        "score_floor": 0.4,
+        "consecutive_epochs": 2,
+        "readd_cooldown_days": 30,
+        "readd_min_new_calls": 5
+      }
+    },
+    "engagement": {
+      "enabled": true,
+      "likes_per_window": 2,
+      "like_window_minutes": 10
+    }
+  },
   "research": {
     "daily_cap": 3,
     "disambiguation_daily_cap": 10,
@@ -81,9 +131,25 @@ orchestrator, collectors, and chat service. Versioned by a `schema` field.
     }
   },
   "retention": { "inbox_archive_days": 30, "run_archive_days": 90, "chat_reports_days": 30 },
-  "chat": { "idle_timeout_minutes": 30 }
+  "chat": { "idle_timeout_minutes": 30 },
+  "wallets": {
+    "deterministic_weight": 0.8,
+    "llm_weight": 0.2,
+    "discovery_interval_hours": 6,
+    "max_transitions_per_review": 20,
+    "promotion": { "min_blended": 0.7, "min_deterministic": 0.65 },
+    "drop": { "blended_floor": 0.45, "deterministic_floor": 0.4 }
+  },
+  "router": {
+    "bind_host": "127.0.0.1",
+    "bind_port": 8787
+  }
 }
 ```
+
+`wallets` weights must sum to 1 (ADR 002). `router` bind address is local intake
+only; HMAC/auth secrets stay in env (`TRENCHCOAT_ROUTER_*`, ADR 001). Full
+defaults live in `config/seed.example.json` and `src/lib/config.ts`.
 
 Threshold semantics live in the doc owning each subsystem (security-gate.md,
 audit-metrics.md, research-queue.md); the config only carries values. A config
@@ -112,6 +178,12 @@ The first audit is skipped until decisions exist.
 | `tc run <job>` | run one job (the cron entry point); refuses if the workspace writer lock is held |
 | `tc init --seed <file>` | cold start (above); refuses on a non-empty `agent/state/` |
 | `tc auth twitter` | headful interactive re-auth (documented sandbox exception) |
+| `tc auth twitter --create-managed-list` | one-time private managed source list; persists list id/url (ADR 004) |
+| `tc probe twitter` | scrape all configured targets + lifecycle summary; no membership mutations |
+| `tc source-list review [--dry-run] [--no-sync]` | deterministic promote/demote; dry-run skips state and X writes |
+| `tc source-list sync` | sync desired managed membership to the persisted list id only |
+| `tc x-engagement status` | like throttle window usage, follow/like counts |
+| `tc x-engagement dry-run <run-id>` | show which bot choices would apply (rate-limit only); no X mutations |
 | `tc research <chain:token_address>` | operator-priority enqueue + immediate research run |
 | `tc undock <id>` / `tc confirm <id>` | terminal exoneration decisions (INV-S13) |
 | `tc listen telegram` | the GramJS listener process (run under launchd, not by hand) |

@@ -22,8 +22,12 @@ last_verified: 2026-07-16
 | [router.md](router.md) | In-repo SQLite router, HMAC intake, durable fanout, Telegram/Discord at-least-once, wallet lifecycle lane | `src/router/`, `src/lib/router-contract.ts` |
 | [smart-wallets.md](smart-wallets.md) | Helius/Infura tracking, deterministic+LLM scoring, promotion/drop, mandatory lifecycle events | `src/wallets/`, wallet collectors |
 | [chart-vision.md](chart-vision.md) | Offline SVG→PNG charts from archived OHLCV, manifests, vision as interpretive evidence | chart renderer, chart-sweep skill |
+| [source-lifecycle.md](source-lifecycle.md) | FYP candidacy, lagged promote/demote, managed private X list sync (ADR 004) | `src/sources/`, `src/collectors/twitter/managed-list.ts`, `source-list` CLI |
 
 ADRs live under [`docs/adr/`](../adr/). Provider knowledge under [`docs/knowledge/`](../knowledge/).
+Parallel-worktree merge rules: [`../development.md`](../development.md).
 
-All modules are planning-stage until their enforcement sites flip invariants to
-ENFORCED. Update the doc in the same change if the implementation diverges.
+Modules ship incrementally: flip matching `docs/INVARIANTS.md` rows to ENFORCED
+only when the named enforcement site and tests exist. Prefer PARTIAL over
+ENFORCED when the cited check covers only part of the claim. Update the module
+doc in the same change if behaviour diverges.

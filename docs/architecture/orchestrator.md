@@ -16,12 +16,21 @@ The only trusted, network-capable, always-scheduled component. It decides *when*
 things happen, *what inputs* the runtime agent gets, and *what leaves the machine*.
 It contains no trading logic and no LLM prompting beyond the fixed job prompts.
 
+## Implementation status (2026-07-16)
+
+Offline-green journalled `runJob` path exists. Today `list-scan` is the only job
+that runs live X collectors (`src/orchestrator/collect.ts`); other jobs receive a
+synthetic meta snapshot. The journal records a `committed` phase after inbox
+archive without a git commit yet (INV-S8 remains PARTIAL). Target design below
+still describes the intended full loop.
+
 ## Jobs (v1 registry)
 
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
-| `watchlist-scan` | every 2h | twitter search per watched token | per-token note updates, urgent flags |
-| `list-scan` | every 4h | curated twitter list; coingecko trending; dexscreener boosts; new-pool feed (security-gated, liquidity floor) | trends, candidates → research queue; **digests alpha queue** |
+| `watchlist-scan` | every 2h | twitter search per watched token *(planned)* | per-token note updates, urgent flags |
+| `list-scan` | every 4h | FYP + two operator X lists + managed list *(live)*; coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** |
+| `source-list-review` | daily + after sealed audit | lagged source-score epoch + managed-list membership | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
 | `narrative-scan` | every 6h | reuses freshest list-scan + trending snapshots (no new fetch unless stale) | updates `state/narratives/`, detects prevailing-narrative shifts → outbox (few short sentences on why) |
 | `research` | on queue (research-queue.md), daily cap from config | market data + socials for one candidate | verdict (track / ignore / revisit) + research file, sources cited |
 | `chart-sweep` | every 1h | OHLCV + indicators (RSI, vol z, EMA, breakout) for watched tokens | early-move flags |
@@ -51,25 +60,27 @@ the run complete → surface report. Delivery failures remain queued and do not
 uncommit an otherwise valid run.
 
 Post-run checks distinguish two write phases: agent-phase (host-only files —
-`sources.json`, `ledger.json`, `research-queue.json`, `scorecard.json` — must
-be byte-identical before vs after the session) and orchestrator-phase (the run
-loop's own deterministic writes after the checks pass). INV-S7/S10 are
-assertions about the agent phase; orchestrator-phase writes are the designed
-mechanism, not violations.
+`sources.json`, `source-lifecycle.json`, `ledger.json`, `research-queue.json`,
+`scorecard.json` — must be byte-identical before vs after the session) and
+orchestrator-phase (the run loop's own deterministic writes after the checks
+pass). INV-S7/S10/S21 are assertions about the agent phase; orchestrator-phase
+writes are the designed path for scoring, FYP candidacy registration, and
+source-list review.
 
 ## Workspace locking
 
 One writer at a time, two levels:
 
-- **Workspace writer lock** (`agent/.lock`, host-side flock) — held by any cron
-  job run, chat research sub-agent run, or recovery action for its full
-  duration. `tc run` exits 3 if held; queued on-demand requests wait.
+- **Workspace writer lock** (`agent/.lock` + `.lock.owner`, O_EXCL PID-file via
+  `src/lib/lock.ts`) — acquired first by `runJob`. `tc run` exits 3 if held.
+  Target: also held by chat research sub-agents and recovery for their full
+  duration (INV-S15 PARTIAL until those paths share the lock).
 - **Job-level guard** — the CLI additionally refuses to start a job whose
   previous run is still live, so a slow job can't stack on itself.
 
 Chat *reads* (the conversational session answering from INDEX/reports) take no
 lock — they tolerate a mid-run snapshot of state. Anything that writes state
-goes through the writer lock (INV-S15).
+must go through the writer lock (INV-S15).
 
 ## Run idempotency and crash consistency
 

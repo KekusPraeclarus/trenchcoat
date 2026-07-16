@@ -34,5 +34,4 @@ Optional: `TRENCHCOAT_CURSOR_BIN` if `agent` is not on PATH.
 1. `agent login` (and keep session alive)
 2. Copy `.env.example` → `.env` and fill non-Cursor secrets (never commit)
 3. `pnpm prepare:agent && pnpm dev:cli init`
-4. Record permission refs under `ops/permissions/`
-5. `TRENCHCOAT_LIVE_E2E=1 pnpm test:e2e:live`
+4. `TRENCHCOAT_LIVE_E2E=1 pnpm test:e2e:live`

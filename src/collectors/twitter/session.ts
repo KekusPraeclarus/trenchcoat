@@ -3,7 +3,6 @@ import { resolve } from "node:path"
 import type { Browser, BrowserContext, Page } from "playwright"
 
 export type TwitterSessionConfig = Readonly<{
-  scrapingPermissionRef?: string
   profileDirectory: string
   headless?: boolean
 }>
@@ -17,18 +16,11 @@ export type TwitterPost = Readonly<{
   provenance: string
 }>
 
-export function assertTwitterLivePermission(config: TwitterSessionConfig): string {
-  if (!config.scrapingPermissionRef?.trim()) throw new Error("twitter.scraping_permission_ref is required for live scraping")
-  const profile = resolve(config.profileDirectory)
-  if (!existsSync(profile)) throw new Error("Twitter browser profile does not exist; headful re-auth is required")
-  return profile
-}
-
 export async function openReadOnlyTwitterContext(
   browser: Browser,
   config: TwitterSessionConfig,
 ): Promise<BrowserContext> {
-  const profile = assertTwitterLivePermission(config)
+  const profile = resolve(config.profileDirectory)
   const context = await browser.newContext({ storageState: resolve(profile, "storage-state.json") })
   await context.route("**/*", async (route) => {
     const method = route.request().method().toUpperCase()
