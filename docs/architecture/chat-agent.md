@@ -1,10 +1,10 @@
 ---
-description: Chat agent module - Telegram bridge to a conversational cursor-sdk session over the shared workspace, with on-demand research.
+description: Chat agent module - Telegram bridge to a minimal orchestrator session that spawns research sub-agents, keeping the conversational context window small.
 scope: module
 status: draft
 last_verified: 2026-07-16
 read_when:
-  - Editing src/chat/ or the agent's chat skill.
+  - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
 ---
 
@@ -18,38 +18,58 @@ on any token — answered by combining stored knowledge with fresh on-demand
 research. Distinct from broadcasts (outbound, via the external router); this is
 inbound, interactive, operator-only.
 
+## Minimal-orchestrator pattern
+
+The conversational session must survive long chats without bloating, so it does as
+little as possible itself:
+
+- **Chat session** (`skills/chat/`) — resumable via `Agent.resume` within a
+  conversation. Holds only: the conversation, `INDEX.md`, and sub-agent reports.
+  It answers directly when the index and its existing context suffice (recall
+  questions, follow-ups on a report it already has). For anything heavier it
+  writes a research request and waits.
+- **Research sub-agent** (`skills/deep-research/`) — a fresh one-shot
+  `Agent.prompt` session over the same workspace, spawned by the chat service per
+  request. It does the expensive work: walks the knowledge store, reads research
+  bodies and decision history, incorporates any fresh collector snapshots, and
+  writes a compact report to `reports/chat/<conv-id>-<n>.md`. Then it's gone —
+  its burned context never touches the chat session.
+- The chat session reads the report and answers. Deep follow-ups spawn another
+  sub-agent; the reports accumulate as the conversation's working set.
+
+This is the same economics as the cron jobs: disposable heavy contexts, one small
+durable thread.
+
 ## Design
 
-- `src/chat/` runs a Telegram bot (long-polling — no inbound port) and bridges
-  messages to a cursor-sdk session with `cwd = agent/` — the same sandboxed
-  workspace and knowledge store the cron jobs use, loaded with `skills/chat/`.
-- **Session policy**: fresh `Agent.create` per conversation, resumed via
-  `Agent.resume` within it (multi-turn context), closed after an idle timeout. The
-  knowledge store is the long-term memory; sessions stay disposable. (Leaning
-  confirmed in TECHNICAL-SPEC open questions; revisit if conversations feel
-  amnesiac.)
-- **Operator-only**: messages are accepted from an allowlisted Telegram user id;
-  everything else is dropped unanswered.
-- **On-demand research**: the sandboxed session cannot reach the network, so "look
-  at $TOKEN fresh" works by request file — the session writes a research request,
-  the chat service runs the matching collectors (same rate-limit gate), drops
-  snapshots into a conversation inbox, and resumes the session. One round-trip,
-  invisible to the operator beyond a "digging…" latency.
-- Replies are plain text back through the bot; long answers reference the report
-  the bot wrote rather than dumping the knowledge store into chat.
+- `src/chat/` runs a Telegram bot (long-polling — no inbound port) bridging
+  messages to the chat session (cwd = `agent/`, sandboxed, no network)
+- **Operator-only**: messages accepted from an allowlisted Telegram user id;
+  everything else dropped unanswered (INV-B3)
+- **Fresh research round-trip**: the sub-agent cannot fetch; when the request
+  needs live data ("look at $TOKEN fresh"), the chat service runs the matching
+  collectors first (same rate-limit gate, INV-R4), drops snapshots into a
+  conversation inbox, then spawns the sub-agent over them
+- **Session policy**: fresh chat session per conversation, resumed within it,
+  closed after an idle timeout. The knowledge store is the long-term memory;
+  sessions stay disposable
+- Replies are plain text through the bot; long answers reference the sub-agent
+  report rather than dumping it into chat
 
 ## Token-burn notes
 
-- The chat skill instructs index-first retrieval (INDEX.md → frontmatter → body on
-  match), identical to job sessions
-- Fresh research is fetched only when the question needs it — recall questions are
-  answered from the store without collectors
+- The chat session never greps research bodies itself — that's the sub-agent's job
+- Recall questions are answered from the store without collectors; fresh data is
+  fetched only when the question needs it
+- Sub-agent reports are capped in size by the deep-research skill's output contract
 
 ## Source files to inspect before editing (once implemented)
 
 - `src/chat/bot.ts` — telegram long-polling, allowlist, message loop
-- `src/chat/session.ts` — sdk session lifecycle, research round-trip
-- `agent/skills/chat/SKILL.md` — the conversational behaviour itself
+- `src/chat/session.ts` — chat session lifecycle
+- `src/chat/subagent.ts` — research request handling, collector round-trip,
+  sub-agent spawning
+- `agent/skills/chat/SKILL.md` and `agent/skills/deep-research/SKILL.md`
 
 ## Gotchas and security-sensitive boundaries
 
@@ -58,8 +78,8 @@ inbound, interactive, operator-only.
 - Inbound chat text is operator-authored but still crosses into the sandbox —
   deliver it as the session prompt, never write it into the knowledge store
   verbatim without attribution
-- The research round-trip must go through the orchestrator's collector layer and
-  rate gate; the chat service never fetches upstream APIs directly (INV-R1)
-- Replies can contain knowledge-store content that originated in tweets — fine for
-  the operator, but the chat service must never echo content to any chat id
-  outside the allowlist (INV-B3)
+- Sub-agent research round-trips go through the orchestrator's collector layer and
+  rate gate; the chat service never fetches upstream APIs directly (INV-R4)
+- Replies can contain knowledge-store content that originated in tweets or alpha
+  channels — fine for the operator, but the chat service must never echo content
+  to any chat id outside the allowlist (INV-B3)

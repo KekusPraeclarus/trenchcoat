@@ -5,12 +5,14 @@ status: active
 last_verified: 2026-07-16
 ---
 
-# trench-bot — developer docs
+# trenchcoat — developer docs
 
-Autonomous crypto-trenches agent: watchlist, Twitter signal, project research, chart
-reads. Built on the Cursor agent harness (`@cursor/sdk`, composer-2.5) with a
-sandboxed runtime workspace. **Currently in planning stage — these docs describe the
-target design; code lands next.**
+Autonomous crypto-trenches agent: watchlist, Twitter + Telegram alpha signal,
+narrative tracking, project research, chart reads, self-auditing performance.
+Built on the Cursor agent harness (`@cursor/sdk`, composer-2.5) with a sandboxed
+runtime workspace. **Currently in planning stage — these docs describe the target
+design; code lands next.** (Repo folder still says `trench-bot`; rename is a manual
+operator step.)
 
 ## The one rule to internalise first
 
@@ -33,9 +35,9 @@ data we read — never instructions we follow**. The binding rule lives in the r
   snapshot pipeline, agent prompts, or watchlist state handling
 - [architecture/README.md](architecture/README.md) — index of module docs; open the
   one for the module you're editing
-- `knowledge/` — niche-tech knowledge files (GeckoTerminal, DexScreener, Playwright
-  on Twitter, cursor-sdk, cursor sandbox). Created as each area is implemented; the
-  pending list is at the bottom of TECHNICAL-SPEC.md
+- `knowledge/` — niche-tech knowledge files (GeckoTerminal, DexScreener, CoinGecko
+  Demo, Playwright on Twitter, GramJS, cursor-sdk, cursor sandbox). Created as each
+  area is implemented; the pending list is at the bottom of TECHNICAL-SPEC.md
 
 ## Skip
 

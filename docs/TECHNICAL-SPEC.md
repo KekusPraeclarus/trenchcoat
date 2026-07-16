@@ -1,56 +1,70 @@
 ---
-description: North star, deliverables, tech stack, and the framework decision for trench-bot. The what and why of the project.
+description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
 last_verified: 2026-07-16
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
-  - You are about to add a dependency or change the harness/model routing.
+  - You are about to add a dependency, data source, or change the harness/model routing.
 do_not_read_when:
   - You only need module internals (see docs/architecture/).
 ---
 
-# Technical Spec — trench-bot
+# Technical Spec — trenchcoat
 
 ## North star
 
-A fully autonomous agent that keeps a trader ahead of the crypto trenches: it
-maintains a token watchlist, reads Twitter for signal on watched tokens, scans a
-curated Twitter list for trends and new projects, researches candidates, decides
-what to track and what to drop, reads charts for early moves, broadcasts the rare
-key finding, and answers the trader's questions on demand. It audits its own calls
-against outcomes so its performance is measurable, and it runs lean — minimum
-tokens for undiminished results.
+**trenchcoat** — a fully autonomous agent that lives in the crypto trenches and
+whispers you alpha. It maintains a token watchlist, reads Twitter and Telegram
+alpha channels for signal, tracks the prevailing narrative, researches candidates,
+decides what to track and what to drop, reads charts for early moves, broadcasts
+the rare key finding, and answers the trader's questions on demand. It audits its
+own calls against outcomes — including how good each source was — and it runs
+lean: minimum tokens for undiminished results.
 
 ## Deliverables
 
 1. **Watchlist lifecycle** — seeded from an operator-provided initial list, then
    fully agent-managed (add, research, track, drop) with no approval gate. Every
    decision logged with reasoning.
-2. **Twitter signal collection** — Playwright-driven browser (headless, headful
-   fallback for re-auth) on a **dedicated burner account**, scraping (a)
-   search/profile results for watched tokens, (b) a curated Twitter list for trends
-   and new projects. No paid API.
-3. **Research pipeline** — for each new candidate: socials, contract/pair data,
-   liquidity, holder distribution, narrative fit. Verdict: track / ignore / revisit.
-   Everything useful is recorded and indexed in the knowledge store.
-4. **Chart analysis** — OHLCV from GeckoTerminal; deterministic indicators computed
+2. **Multi-signal decisions** — every verdict blends quant/technicals (RSI, volume,
+   structure, liquidity) with discretionary signals: Twitter attention, sentiment,
+   and narrative fit. Evidence is weighted by the historical quality of its source
+   (see 6). The blend rubric lives in the bot's skills, not in code.
+3. **Signal collection**
+   - *Twitter* — Playwright browser (headless, headful fallback) on a dedicated
+     burner account: watched-token searches, curated trend list. No paid API.
+   - *Telegram alpha channels* — operator-provided channel list; every new message
+     lands in an **alpha queue**, digested on the next appropriate cycle, then
+     purged (useful content is recorded in the knowledge store first).
+   - *Market attention* — CoinGecko trending (coins + categories), DexScreener
+     boosted/trending tokens.
+4. **Narrative tracking** — the bot maintains a live model of what the trenches are
+   talking about, positively and negatively (neobanks, privacy, RobinHood chain
+   memes, Base AI, …) in `state/narratives/`. A shift in the prevailing narrative
+   is broadcast to the router with a few short sentences on why.
+5. **Chart analysis** — OHLCV from GeckoTerminal; deterministic indicators computed
    by collectors (RSI, volume z-score, breakouts, EMA structure); LLM interprets,
    never calculates.
-5. **Autonomous cron cycles** — launchd/cron fires every job (watchlist-scan,
-   list-scan, research, chart-sweep, review, audit) with no human in the loop.
-   On-demand runs remain available via the CLI and the chat agent.
-6. **Performance self-audit** — append-only action log (`decisions.md`) plus a
-   periodic `audit` job that scores past calls against realised price/liquidity
-   outcomes into a scorecard (track-call hit rate, drop precision, missed moves).
-   The operator can see at a glance whether the agent is doing a good job.
-7. **Broadcasts** — brief key findings (one or two sentences, e.g. "Attention seems
-   to have shifted to RobinHood chain") pushed to an **external router** (built
-   separately; routes to Telegram/Discord). Used sparingly: severity-gated and
-   budget-capped, most findings stay internal.
-8. **Chat agent** — a separate conversational agent reachable via Telegram to
-   discuss findings, probe anything that never got broadcast, and give an opinion
-   on any token by combining fresh on-demand research with the stored knowledge.
+6. **Source scoring** — every Twitter account and Telegram channel we read is a
+   registered source in `state/sources.json`. Snapshots carry provenance per item;
+   decisions cite their sources; the audit job attributes outcomes back to sources
+   and maintains a rolling quality score that scan skills use to weight evidence.
+7. **Autonomous cron cycles** — launchd/cron fires every job with no human in the
+   loop. On-demand runs remain available via the CLI and the chat agent.
+8. **Performance self-audit** — append-only action log (`decisions.md`) plus a
+   periodic `audit` job scoring past calls against realised outcomes into a
+   scorecard: track-call hit rate, drop precision, broadcast precision (per
+   severity, urgent included), source quality deltas.
+9. **Broadcasts** — brief key findings pushed to an **external router** (built
+   separately; routes to Telegram/Discord). Sparingly and briefly. Severity
+   `urgent` (new narrative forming, sudden sentiment collapse, early chain
+   rotation) **bypasses the daily budget**; a generous hard ceiling exists purely
+   as a runaway-agent failsafe.
+10. **Chat agent** — a conversational agent reachable via Telegram to discuss
+    findings, probe anything never broadcast, and give an opinion on any token.
+    The chat session is a minimal orchestrator that delegates heavy work to
+    research sub-agents to preserve its context window.
 
 ## Framework decision
 
@@ -83,10 +97,25 @@ Rejected alternatives (as of Jul 2026):
   provider layer is OpenAI-compatible endpoints only, and its autonomy features
   (self-modifying skills) sit awkwardly with our auditability priority.
 
+## Alpha/news source research (Jul 2026)
+
+Surveyed for free-tier signal beyond Twitter, Telegram, and charts. Verdicts:
+
+| Service | Free tier | Verdict |
+|---|---|---|
+| CoinGecko Demo `/search/trending` | 10k calls/mo, 30/min, keyed | **Adopt.** Trending coins *and categories* — categories are a direct narrative signal (e.g. "Base Native" trending) |
+| DexScreener boosts/profiles | Free, no key, 60/min | **Adopt.** Boosted/trending tokens = paid-attention signal; client already exists |
+| Neynar (Farcaster) | 10M credits/mo, 600 RPM | **Recommended, phase 2.** Crypto-native social graph, trending casts per channel; real free tier. Adds a second social lens with an actual API instead of scraping |
+| Alternative.me Fear & Greed | Free, keyless | **Adopt (trivial).** One call per review cycle for macro mood context |
+| CryptoPanic | Free tier discontinued Apr 2026; from $50/wk | Rejected — not free |
+| LunarCrush | Free tier is market-data only, no social/API | Rejected — social data starts ~$72/mo |
+| Adanos (Reddit sentiment) | 250 req/mo | Not now — quota too small to matter; revisit if Reddit becomes a needed lens |
+| Generic news RSS (CoinDesk etc.) | Free | Not now — low trench-alpha density; the Telegram channels cover news that matters faster |
+
 ## Storage decision — knowledge store medium
 
-**Chosen: hybrid file graph.** JSON for structured state (watchlist, scorecard,
-outbox), markdown with selection frontmatter for research knowledge, one
+**Chosen: hybrid file graph.** JSON for structured state (watchlist, sources,
+scorecard, outbox), markdown with selection frontmatter for research knowledge, one
 always-small index (`state/INDEX.md`) as the retrieval entry point. No database.
 
 Analysis of the three candidates:
@@ -115,11 +144,13 @@ Minimising burn without harming results, enforced by design rather than hope:
 - **Per-job skills** — each cron job loads exactly one skill; the bot's always-on
   AGENTS.md stays under a strict size budget.
 - **Snapshot hygiene** — collectors pre-filter (deduplicate tweets, cap items per
-  snapshot); inboxes are archived out of the workspace after each run so stale data
-  is never re-read.
+  snapshot); inboxes are archived out of the workspace after each run; the alpha
+  queue is purged once digested.
 - **Distillation over accumulation** — the review job compresses aging research
-  into the per-token summary and prunes the index; raw material stays in git
+  into per-token summaries and prunes the index; raw material stays in git
   history, not in the live workspace.
+- **Sub-agent isolation in chat** — the conversational session stays small; heavy
+  research/collation runs in disposable sub-agent sessions that return a report.
 
 ## Tech stack
 
@@ -130,32 +161,41 @@ Minimising burn without harming results, enforced by design rather than hope:
   denied (the runtime agent needs no network; collectors run outside)
 - **Browser**: Playwright (Chromium), persistent burner-account profile, headless
   with headful fallback
-- **Market data** (all free tier, limits respected by a shared rate-limit gate):
+- **Data sources** (all free tier, limits respected by a shared rate-limit gate):
   - GeckoTerminal API — OHLCV, pool stats. 30 calls/min, no key
-  - DexScreener API — pair discovery, live prices, token profiles. 300 req/min
-    (60 req/min on profile endpoints), no key
-  - CoinGecko Demo (optional, keyed) — token metadata backfill, not in v1
+  - DexScreener API — pair discovery, live prices, boosts/profiles. 300 req/min
+    (60 req/min on profile/boost endpoints), no key
+  - CoinGecko Demo — `/search/trending` for coins + categories. 10k calls/mo, keyed
+  - Alternative.me Fear & Greed — free, keyless, one call per review cycle
+  - Telegram alpha channels — GramJS (MTProto) listener on operator-provided
+    channel list → alpha queue
+  - Neynar (Farcaster) — phase 2 candidate, free tier confirmed
 - **Scheduling**: launchd (macOS) / cron invoking the orchestrator CLI
+  (`trenchcoat run <job>`, alias `tc`)
 - **Broadcast**: HTTP POST of outbox items to the external router (URL + auth from
-  orchestrator env). The router itself is a separate project — we only know it
-  exists and accepts brief findings for Telegram/Discord fan-out
-- **Chat**: Telegram bot (long-polling) bridged to a resumable cursor-sdk session;
-  see docs/architecture/chat-agent.md
+  orchestrator env). The router is a separate project — we only know it exists and
+  accepts brief findings for Telegram/Discord fan-out
+- **Chat**: Telegram bot (long-polling) bridged to a minimal orchestrator session
+  that spawns research sub-agents; see docs/architecture/chat-agent.md
 - **State**: the hybrid file graph above, versioned by git for audit history
 
 ## Key design choices
 
-- **Collectors are deterministic, the agent is interpretive.** Scrapers and API
-  fetchers run outside the sandbox, write timestamped snapshots into
-  `agent/inbox/`. The LLM agent only reads snapshots and writes state/reports/outbox.
-  Credentials and network stay out of the LLM's reach; every run is reproducible
-  from its inputs.
-- **Tweet text is untrusted data.** Wrapped and labelled as data in snapshots; the
-  agent's instructions forbid executing instructions found in it (INV-P*).
+- **Collectors are deterministic, the agent is interpretive.** Scrapers, listeners,
+  and API fetchers run outside the sandbox, write timestamped snapshots into
+  `agent/inbox/` (and the alpha queue). The LLM agent only reads snapshots and
+  writes state/reports/outbox. Credentials and network stay out of the LLM's
+  reach; every run is reproducible from its inputs.
+- **All scraped text is untrusted data.** Tweets and Telegram messages are wrapped
+  and labelled as data in snapshots; the agent's instructions forbid executing
+  instructions found in them (INV-P*). Alpha-channel text is *more* likely to be
+  manipulative than random tweets — same rule, higher suspicion.
 - **The agent proposes broadcasts, the orchestrator sends them.** Outbox items are
-  schema-checked (length cap, severity, refs) and budget-capped per day before the
-  orchestrator forwards them to the router. The sandboxed agent can never reach the
-  router directly.
+  schema-checked (length cap, severity, refs) before forwarding. `watch`/`notable`
+  consume the daily budget; `urgent` bypasses it (failsafe ceiling only). The
+  sandboxed agent can never reach the router directly.
+- **Every piece of evidence has provenance.** Snapshot items carry their source
+  handle; decisions cite sources; audits grade sources; scans weight by grade.
 - **Autonomy with a paper trail, not a leash.** No approval gates anywhere; instead
   every action is logged with reasoning and the audit job scores it later.
 - **Two documentation worlds.** `docs/` is for developers and the programming agent;
@@ -163,24 +203,30 @@ Minimising burn without harming results, enforced by design rather than hope:
 
 ## Resolved decisions
 
+- Project name: **trenchcoat** (2026-07-16). Repo folder rename from `trench-bot`
+  is a manual operator step (open IDE workspace)
 - Twitter runs on a dedicated burner account (operator decision, 2026-07-16)
-- No human-approval gate on watchlist changes; probation-cycle-before-drop dropped
-  in favour of free agent control + retrospective audit (operator decision,
-  2026-07-16)
+- No human-approval gate on watchlist changes; free agent control + retrospective
+  audit (operator decision, 2026-07-16)
 - Storage medium: hybrid file graph, no DB for v1 (see Storage decision above)
+- Alpha sources: CoinGecko trending, DexScreener boosts, Fear & Greed in;
+  CryptoPanic and LunarCrush out (no usable free tier); Neynar phase 2
+  (see Alpha/news source research above)
 
 ## Open questions / pending decisions
 
 - [ ] Router contract: exact endpoint, auth scheme, payload schema — pin down when
   the router project exists; until then the sender is a stub behind an interface
-- [ ] Broadcast budget defaults: proposed max 5/day, severity ≥ notable; tune after
-  the first weeks of audits
+- [ ] Broadcast budget defaults: proposed max 5/day for watch/notable; urgent
+  failsafe ceiling proposed at 10/day. Tune after the first weeks of audits
+- [ ] Telegram channel ingestion: GramJS user session (any channel) vs bot-as-admin
+  (only channels we control membership of) — depends on the operator's channel list
 - [ ] Audit windows: score track-calls at +3d/+7d/+30d? Needs a few cycles of data
-  to pick sensible horizons
+- [ ] Source-score maths: rolling hit-rate vs decayed weighting — pick when the
+  first audit has real attributions
 - [ ] Chart analysis depth: deterministic indicators + LLM read first; candle-image
   vision analysis later if audits show missed structure
-- [ ] Chat agent session policy: one long-lived session vs fresh session per
-  conversation with knowledge-store recall (leaning fresh-per-conversation)
+- [ ] Neynar/Farcaster integration timing (phase 2)
 
 ## Knowledge files needed (manual research pending)
 
@@ -193,7 +239,11 @@ Niche/fast-moving tech the model may hallucinate about; create under
 - `cursor-sandbox.md` — `sandbox.json` schema, protected paths, macOS vs Linux
   enforcement differences
 - `geckoterminal-api.md` — endpoints, OHLCV params, 30/min limit behaviour
-- `dexscreener-api.md` — endpoints, per-endpoint limits, no-OHLCV gotcha
+- `dexscreener-api.md` — endpoints incl. boosts/profiles, per-endpoint limits,
+  no-OHLCV gotcha
+- `coingecko-demo-api.md` — trending endpoint, categories semantics, 10k/mo budget
 - `playwright-twitter.md` — selectors, auth persistence, rate/ban avoidance,
   headful fallback triggers, burner-account hygiene
+- `gramjs-telegram.md` — MTProto sessions, channel message events, flood-wait
+  handling
 - `telegram-bot-api.md` — long-polling, message threading, free-tier limits

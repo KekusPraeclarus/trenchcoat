@@ -1,5 +1,5 @@
 ---
-description: What must always be true in trench-bot - isolation, prompt-injection resistance, rate limits, state auditability. Falsifiable properties with stable IDs.
+description: What must always be true in trenchcoat - isolation, prompt-injection resistance, broadcast egress, alpha-queue lifecycle, rate limits, state auditability. Falsifiable properties with stable IDs.
 scope: project
 status: active
 last_verified: 2026-07-16
@@ -52,14 +52,24 @@ enforcement site. A row flips to `ENFORCED` only when its check exists at that s
 | INV-S3 | Every report and state change is attributable to a run id whose inbox is archived | GAP (pre-impl) | orchestrator archives inbox before marking run complete; spot-check in review job |
 | INV-S4 | Audit outcome numbers (returns, RSI at decision) are computed by collectors from timestamped data, never by the model | GAP (pre-impl) | audit prompt contains only precomputed figures; unit tests on `src/orchestrator/audit.ts` maths |
 | INV-S5 | The bot never modifies its own instructions or skills (`agent/AGENTS.md`, `agent/skills/**`) | GAP (pre-impl) | post-run check: those paths unchanged after every session, else run flagged |
+| INV-S6 | Every snapshot and alpha-queue item carries a `provenance` id; every decision entry cites the provenance ids that drove it | GAP (pre-impl) | snapshot writer makes `provenance` non-optional (type-level); post-run check on new decision entries |
+| INV-S7 | `state/sources.json` scores are written only by the audit job — never by scan/research/chat sessions | GAP (pre-impl) | post-run check: `sources.json` unchanged after non-audit sessions, else run flagged |
 
 ## B — Broadcast and chat egress
 
 | ID | Invariant | Status | Verification |
 |----|-----------|--------|--------------|
 | INV-B1 | Only the orchestrator sends to the external router; the sandboxed agent has no path to it (follows from INV-I2) | GAP (pre-impl) | router URL/auth exist only in orchestrator env; integration test per INV-I2 |
-| INV-B2 | Every broadcast is schema-valid (`severity`, `text` ≤ 280 chars, `refs`) and within the daily budget; rejects are logged in the run report, never silently dropped | GAP (pre-impl) | unit tests `prop_inv_b2_*` on outbox validation; budget test across simulated runs |
+| INV-B2 | Every broadcast is schema-valid (`severity`, `text` length-capped, `refs`) and, for `watch`/`notable`, within the daily budget; rejects are logged in the run report, never silently dropped | GAP (pre-impl) | unit tests `prop_inv_b2_*` on outbox validation; budget test across simulated runs |
 | INV-B3 | Chat replies go only to allowlisted Telegram user ids | GAP (pre-impl) | allowlist check is the first statement of the message handler + unit test with spoofed ids |
+| INV-B4 | `urgent` broadcasts bypass the daily budget but are schema-checked identically and capped by a failsafe ceiling; hitting the ceiling halts further sends and flags an incident in the run report | GAP (pre-impl) | unit tests `prop_inv_b4_*`: urgent passes at budget exhaustion, ceiling halts, incident flagged; audit tracks urgent precision |
+
+## Q — Alpha queue
+
+| ID | Invariant | Status | Verification |
+|----|-----------|--------|--------------|
+| INV-Q1 | Alpha-queue items are purged only after appearing in a completed run's digest manifest; a crash between digest and purge loses no undigested message | GAP (pre-impl) | purge takes the manifest as its only input; crash-injection test around the digest→purge window |
+| INV-Q2 | Digestion records useful content into the knowledge store (with provenance) before purge — purge never destroys the only copy of recorded knowledge | GAP (pre-impl) | digest manifest is written by the agent in the same run that updates state; post-run check pairs manifest with state diff |
 
 ## R — Rate limits and external conduct
 
