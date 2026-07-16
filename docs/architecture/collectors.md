@@ -59,6 +59,15 @@ orchestrator's job (see orchestrator.md, INV-Q1).
 - Run by the `research` collector set before the agent session; a hard-fail flag
   short-circuits the verdict to `ignore` without an LLM call (cheap and safe)
 
+### New-pool feed (discovery ahead of social)
+
+GeckoTerminal new-pools / DexScreener new pairs, fetched on the list-scan cycle.
+This stream is overwhelmingly garbage, so it is filtered hard before the agent
+ever sees it: security gate first (GoPlus/RugCheck), then a liquidity floor and
+minimum-age/txn sanity checks. Survivors enter the snapshot as candidates with
+`provenance: "feed:new-pools"` — attention-independent discovery, often earlier
+than any tweet.
+
 ### Attention–price divergence
 
 Deterministic metric written into watchlist-scan and research snapshots: mention

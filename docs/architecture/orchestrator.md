@@ -21,7 +21,7 @@ It contains no trading logic and no LLM prompting beyond the fixed job prompts.
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
 | `watchlist-scan` | every 2h | twitter search per watched token | per-token note updates, urgent flags |
-| `list-scan` | every 4h | curated twitter list; coingecko trending; dexscreener boosts | trends, candidates → research queue; **digests alpha queue** |
+| `list-scan` | every 4h | curated twitter list; coingecko trending; dexscreener boosts; new-pool feed (security-gated, liquidity floor) | trends, candidates → research queue; **digests alpha queue** |
 | `narrative-scan` | every 6h | reuses freshest list-scan + trending snapshots (no new fetch unless stale) | updates `state/narratives/`, detects prevailing-narrative shifts → outbox (few short sentences on why) |
 | `research` | on queue, ≤ a few/day | market data + socials for one candidate | verdict (track / ignore / revisit) + research file, sources cited |
 | `chart-sweep` | every 1h | OHLCV + indicators (RSI, vol z, EMA, breakout) for watched tokens | early-move flags |
@@ -56,23 +56,68 @@ The telegram listener appends continuously; digestion is batch:
 ## The audit job (performance + source scoring)
 
 The agent's paper trail (`state/decisions.md`, append-only, every action with
-reasoning and cited sources) is the raw material. Weekly:
+reasoning, confidence, and cited sources) is the raw material. Weekly:
 
-1. Orchestrator computes outcomes deterministically: for each decision past its
-   scoring horizon, price/liquidity change since the decision (GeckoTerminal), plus
-   RSI-at-decision vs subsequent move for chart-call quality.
-2. Agent session compares decisions vs outcomes: were track-calls early or late,
-   were drops vindicated, what was missed, were broadcasts (incl. urgent) justified.
-3. Source attribution: each decision's cited sources inherit its outcome; rolling
+1. Orchestrator computes outcomes deterministically: for **every** verdict past its
+   scoring horizon — `track` *and* `ignore`/`revisit` (counterfactuals) —
+   price/liquidity change since the decision (GeckoTerminal), plus RSI-at-decision
+   vs subsequent move for chart-call quality.
+2. Orchestrator marks the **paper-trading ledger** (`state/ledger.json`):
+   each track-call is a virtual position opened at decision price, closed at drop
+   (or still open, marked to market). Opening and closing are deterministic
+   consequences of decisions — the model never books ledger entries (INV-S10).
+3. Agent session compares decisions vs outcomes: were track-calls early or late,
+   were drops vindicated, what did the ignores do (missed alpha), were broadcasts
+   (incl. urgent) justified, and is confidence calibrated (did 80-confidence calls
+   hit ~80%?).
+4. Source attribution: each decision's cited sources inherit its outcome; rolling
    per-source quality scores are updated in `state/sources.json`. Persistently bad
    sources get flagged in the audit report for the operator to consider removing.
-4. Outputs: `state/scorecard.json` (track-call hit rate, drop precision, broadcast
-   precision per severity, avg return after call), updated `sources.json`, and
+5. Outputs: `state/scorecard.json` (paper P&L, track-call hit rate, drop precision,
+   counterfactual miss rate, calibration curve, broadcast precision per severity,
+   per-run token usage), updated `sources.json` + `ledger.json`, and
    `reports/audit-<date>.md` (narrative, lessons).
 
-The scorecard is the "is it doing a good job" answer; lessons feed back into the
-bot's skills only via a developer edit — the bot does not rewrite its own
+The paper P&L is the headline "is it doing a good job" number; lessons feed back
+into the bot's skills only via a developer edit — the bot does not rewrite its own
 instructions.
+
+## Rug-shill docking (deterministic, immediate)
+
+When the research security gate hard-fails a candidate (honeypot, live mint
+authority, unlocked LP), the orchestrator immediately docks every source whose
+provenance surfaced that candidate — no waiting for the weekly audit, no LLM in
+the loop. Shilling a rug is the worst possible signal and the penalty is severe
+and cumulative; repeat offenders are flagged for operator removal in the next
+report. This is the one non-audit write path into `sources.json`, and it is
+deterministic code, never a model session (INV-S7).
+
+## Failure recovery ladder
+
+Recovery is tiered; each tier only escalates if the one below can't resolve it:
+
+1. **Deterministic self-healing (host-side, no LLM)** — the default for almost
+   everything: listener death → launchd keepalive restarts it; failed or crashed
+   run → `git checkout` of `agent/state/` to the last completed-run commit
+   (INV-S8 makes this exact), inbox preserved for diagnosis, job re-queued with
+   bounded retries; router down → outbox items queue for next cycle. Alpha queue
+   is never touched by rollback (it lives outside the committed set, INV-Q1).
+2. **Recovery agent (sandboxed, diagnostic + repair)** — spawned only when
+   deterministic recovery fails twice on the same job, or a post-run integrity
+   check flags inconsistent workspace state (e.g. watchlist/decisions mismatch
+   that a rollback can't explain). Same sandbox, same workspace, its own skill
+   (`skills/recover/`): read the failed run's inbox + partial outputs, repair
+   state files *within existing invariants* (it cannot rewrite decisions.md —
+   INV-S2 — or touch sources/ledger — INV-S7/S10), append a recovery entry to
+   decisions.md, and write a diagnosis report. The orchestrator commits and
+   re-queues the original job once.
+3. **Operator DM (last resort + always for auth)** — anything the ladder can't
+   fix, plus every needs-headful-reauth condition (never automated, by design)
+   and every recovery-agent invocation (you should know it ran, even when it
+   succeeded).
+
+Recovery restores the *main agent's* flow; it never expands anyone's privileges —
+the recovery agent is exactly as sandboxed as every other session (INV-S11).
 
 ## Outbox → router
 
@@ -121,8 +166,11 @@ instructions.
 - `src/orchestrator/jobs.ts` — the job registry
 - `src/orchestrator/run.ts` — collector orchestration + sdk session
 - `src/orchestrator/outbox.ts` — validation, budget + urgent bypass, router sender
-- `src/orchestrator/audit.ts` — outcome computation + source attribution
+- `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
+  ledger marking, calibration, source attribution
 - `src/orchestrator/alpha-queue.ts` — digest-then-purge lifecycle
+- `src/orchestrator/recover.ts` — recovery ladder: rollback, retry, recovery agent
+- `src/orchestrator/sources.ts` — rug-shill dock path (the only non-audit writer)
 
 ## Gotchas and security-sensitive boundaries
 

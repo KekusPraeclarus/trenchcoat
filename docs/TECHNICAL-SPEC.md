@@ -50,6 +50,9 @@ lean: minimum tokens for undiminished results.
    registered source in `state/sources.json`. Snapshots carry provenance per item;
    decisions cite their sources; the audit job attributes outcomes back to sources
    and maintains a rolling quality score that scan skills use to weight evidence.
+   **Rug shilling is docked immediately and severely**: when a surfaced candidate
+   hard-fails the security gate, every source that shilled it takes a deterministic
+   credibility penalty the same run — no waiting for the weekly audit.
 7. **Autonomous cron cycles** — launchd/cron fires every job with no human in the
    loop. On-demand runs remain available via the CLI and the chat agent.
 8. **Performance self-audit** — append-only action log (`decisions.md`) plus a
@@ -224,7 +227,9 @@ Minimising burn without harming results, enforced by design rather than hope:
 
 ## Signal-quality roadmap
 
-Accepted quality improvements beyond the base flow, in adoption order:
+Accepted quality improvements beyond the base flow, in adoption order. Items 1–7
+are **designed into the module docs** (collectors, orchestrator, agent-workspace)
+and carry invariants where warranted; 8–9 remain roadmap-only:
 
 1. **Token security pre-filter (v1)** — before any research verdict: GoPlus token
    security API (EVM chains, free tier — the same source DexScreener's own risk
@@ -267,9 +272,13 @@ Identified in review as missing from the original design; owned as follows:
 - **State commits** — the orchestrator `git add/commit`s `agent/state/` +
   `reports/` after every completed run (message = run id). The audit trail's
   "git history" claim is real only if commits are automatic (INV-S8).
-- **Operator alerting** — run failures, listener death, and needs-headful-reauth
-  conditions DM the operator via the chat bot (reusing the existing bridge, not
-  the router). The watcher gets watched.
+- **Failure recovery ladder** — (1) deterministic self-healing: launchd restarts
+  the listener, failed runs roll `agent/state/` back to the last completed-run
+  commit and retry with bounds; (2) a sandboxed **recovery agent**
+  (`skills/recover/`) spawns after repeated failures or integrity-check flags to
+  diagnose and repair workspace state within existing invariants; (3) operator DM
+  via the chat bot for what only a human can do (headful re-auth, always) and
+  whenever the recovery agent ran. Detail in orchestrator.md; INV-S11.
 - **Workspace concurrency** — one writer at a time: cron jobs and chat research
   sub-agents share a workspace-level lock; chat *reads* stay lock-free.
 - **Token-usage telemetry** — per-run token counts from the sdk result land in

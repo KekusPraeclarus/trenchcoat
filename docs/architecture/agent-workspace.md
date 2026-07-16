@@ -36,13 +36,15 @@ agent/
 │   ├── research/SKILL.md
 │   ├── chart-sweep/SKILL.md
 │   ├── review/SKILL.md         # includes alpha-queue digestion + distillation
-│   ├── audit/SKILL.md          # decisions vs outcomes, scorecard, source scores
+│   ├── audit/SKILL.md          # decisions vs outcomes, calibration, source scores
 │   ├── chat/SKILL.md           # minimal-orchestrator conversational mode
-│   └── deep-research/SKILL.md  # sub-agent: collate knowledge + fresh data → report
+│   ├── deep-research/SKILL.md  # sub-agent: collate knowledge + fresh data → report
+│   └── recover/SKILL.md        # diagnose failed run, repair state within invariants
 ├── state/                 # THE KNOWLEDGE STORE (hybrid file graph, see below)
 │   ├── INDEX.md           # retrieval entry point — always small
 │   ├── watchlist.json
 │   ├── sources.json       # per-source quality scores (twitter accounts, tg channels)
+│   ├── ledger.json        # paper-trading positions (deterministic, orchestrator-kept)
 │   ├── research/<token>.md
 │   ├── narratives/<slug>.md
 │   ├── decisions.md       # append-only action + reasoning log, sources cited
@@ -75,20 +77,32 @@ structured state, markdown for prose knowledge, one index for retrieval.
   full history survives in git, not in the live file.
 - **`narratives/<slug>.md`** — the bot's live model of what the trenches discuss
   and how they feel about it (neobanks, privacy, RobinHood chain memes, Base AI…).
-  Frontmatter carries `sentiment: rising | positive | mixed | negative | fading`
-  and `prevailing: true|false`. The narrative-scan skill updates these and
-  compares against the previous state — a prevailing-narrative change is a
-  broadcast-worthy shift, explained in a few short sentences.
+  Frontmatter carries `stage: emerging | peaking | fading`,
+  `sentiment: positive | mixed | negative`, and `prevailing: true|false`. The
+  narrative-scan skill updates these and compares against the previous state —
+  a prevailing-narrative change is a broadcast-worthy shift explained in a few
+  short sentences, and capital leaving a fading narrative for an emerging one
+  (rotation) is the canonical `urgent`.
 - **`sources.json`** — every source we read, keyed by provenance id
   (`twitter:@handle`, `telegram:<channel>`): rolling quality score, calls
-  attributed, hits/misses, last update. Written by the audit job; read by every
-  scan skill to weight evidence. New sources auto-register at neutral.
+  attributed, hits/misses, **rug shills** (count + severe cumulative penalty,
+  docked deterministically the moment a candidate they surfaced hard-fails the
+  security gate), last update. Written only by the audit job and the
+  orchestrator's rug-dock path; read by every scan skill to weight evidence.
+  New sources auto-register at neutral.
+- **`ledger.json`** — the paper-trading book: one virtual position per track-call
+  (entry price/time at decision, exit at drop, mark-to-market while open).
+  Kept entirely by deterministic orchestrator code (INV-S10); the bot and the
+  operator read it as the honest P&L of the bot's calls.
 - **`watchlist.json`** — single source of truth for tracked status (schema below).
 - **`decisions.md`** — append-only: every add/drop/verdict/broadcast proposal with
-  date, reasoning, **cited provenance ids**, and the signal blend that drove it
-  (technicals vs attention/sentiment/narrative). Never edited, only extended.
-- **`scorecard.json`** — written by the audit job: track-call hit rate, drop
-  precision, broadcast precision per severity, average return after call.
+  date, reasoning, **confidence (0–100)**, **cited provenance ids**, and the
+  signal blend that drove it (technicals vs attention/sentiment/narrative).
+  `ignore` and `revisit` verdicts are logged with the same rigour — the audit
+  prices them as counterfactuals. Never edited, only extended.
+- **`scorecard.json`** — written by the audit job: paper P&L, track-call hit rate,
+  drop precision, counterfactual miss rate (alpha ignored), confidence
+  calibration curve, broadcast precision per severity, per-run token usage.
 
 Retrieval contract (in the bot's AGENTS.md): start at INDEX.md → follow pointers →
 grep before reading bodies → record anything useful in the right node and update
