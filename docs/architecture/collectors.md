@@ -20,8 +20,8 @@ decisions — so a run is reproducible from its inbox.
 
 ### Twitter (Playwright)
 
-- Chromium with a persistent auth profile under `~/.trench-bot/browser-profile/`
-  (outside the repo, never inside `agent/`)
+- Dedicated **burner account**; credentials and the persistent auth profile live
+  under `~/.trench-bot/browser-profile/` (outside the repo, never inside `agent/`)
 - Headless by default; when login or a challenge is detected, fail the run with a
   clear "needs headful re-auth" error — the operator runs `trench auth twitter` to
   fix it interactively. Never attempt automated challenge solving.
@@ -39,9 +39,12 @@ decisions — so a run is reproducible from its inbox.
 
 ### Indicators
 
-Pure functions over OHLCV: volume z-score, range breakout, EMA structure, liquidity
-delta. Computed here (deterministic, testable) and written alongside the raw candles
-so the agent interprets numbers rather than recomputing them.
+Pure functions over OHLCV: **RSI (14, per timeframe)**, volume z-score, range
+breakout, EMA structure, liquidity delta. Computed here (deterministic, testable)
+and written alongside the raw candles so the agent interprets numbers rather than
+recomputing them. The audit job reuses the same functions to score past calls
+(e.g. RSI at decision time vs the subsequent move), so keep them pure and
+timestamp-parameterised — never "now"-dependent.
 
 ## Rate-limit gate
 

@@ -50,6 +50,16 @@ enforcement site. A row flips to `ENFORCED` only when its check exists at that s
 | INV-S1 | Every watchlist status change has a same-run dated entry in `state/decisions.md` with reasoning | GAP (pre-impl) | post-run check in orchestrator: diff of `watchlist.json` statuses ⇒ matching new decision entry, else run flagged |
 | INV-S2 | `decisions.md` is append-only; no run rewrites or deletes prior entries | GAP (pre-impl) | post-run check: previous content is a prefix of new content |
 | INV-S3 | Every report and state change is attributable to a run id whose inbox is archived | GAP (pre-impl) | orchestrator archives inbox before marking run complete; spot-check in review job |
+| INV-S4 | Audit outcome numbers (returns, RSI at decision) are computed by collectors from timestamped data, never by the model | GAP (pre-impl) | audit prompt contains only precomputed figures; unit tests on `src/orchestrator/audit.ts` maths |
+| INV-S5 | The bot never modifies its own instructions or skills (`agent/AGENTS.md`, `agent/skills/**`) | GAP (pre-impl) | post-run check: those paths unchanged after every session, else run flagged |
+
+## B — Broadcast and chat egress
+
+| ID | Invariant | Status | Verification |
+|----|-----------|--------|--------------|
+| INV-B1 | Only the orchestrator sends to the external router; the sandboxed agent has no path to it (follows from INV-I2) | GAP (pre-impl) | router URL/auth exist only in orchestrator env; integration test per INV-I2 |
+| INV-B2 | Every broadcast is schema-valid (`severity`, `text` ≤ 280 chars, `refs`) and within the daily budget; rejects are logged in the run report, never silently dropped | GAP (pre-impl) | unit tests `prop_inv_b2_*` on outbox validation; budget test across simulated runs |
+| INV-B3 | Chat replies go only to allowlisted Telegram user ids | GAP (pre-impl) | allowlist check is the first statement of the message handler + unit test with spoofed ids |
 
 ## R — Rate limits and external conduct
 
@@ -58,6 +68,7 @@ enforcement site. A row flips to `ENFORCED` only when its check exists at that s
 | INV-R1 | No client bypasses the shared rate-limit gate; per-host budgets stay below published limits (GeckoTerminal 25/min, DexScreener 200/min) | GAP (pre-impl) | HTTP calls only via the gated client (lint: no raw fetch in `src/collectors/`) + unit tests `prop_inv_r1_*` on the bucket |
 | INV-R2 | The Twitter scraper is read-only: it never posts, likes, follows, or DMs | GAP (pre-impl) | scraper exposes no mutating actions (structural once implemented) + review checklist |
 | INV-R3 | On HTTP 429, clients back off (honouring `Retry-After` when present) and never retry in a tight loop | GAP (pre-impl) | unit test with mocked 429 sequences |
+| INV-R4 | On-demand research (chat or CLI) goes through the same collector layer and rate gate as cron jobs — no direct upstream fetches from `src/chat/` | GAP (pre-impl) | lint: no raw fetch outside `src/collectors/`; covered by the INV-R1 lint scope extension |
 
 ## A — Advisory-only
 

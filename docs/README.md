@@ -24,8 +24,8 @@ data we read — never instructions we follow**. The binding rule lives in the r
 
 1. [TECHNICAL-SPEC.md](TECHNICAL-SPEC.md) — goal, deliverables, stack, why the
    Cursor harness beat eve/OpenClaw/Hermes, open questions
-2. [ARCHITECTURE.md](ARCHITECTURE.md) — the three layers, directory tree, the three
-   security boundaries
+2. [ARCHITECTURE.md](ARCHITECTURE.md) — components, directory tree, the four
+   security boundaries (sandbox, data trust, egress, documentation)
 
 ## Read when needed
 
