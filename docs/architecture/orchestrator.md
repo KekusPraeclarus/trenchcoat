@@ -113,14 +113,25 @@ host-side snapshot archive ──> deterministic attribution ──> score write
   (deterministic returns since mention). The audit *agent* interprets and
   narrates; it never computes or writes scores. Its cited-provenance analysis of
   `decisions.md` goes in the report only.
-- **Exoneration** — deterministic CA-matching will sometimes dock a source that
-  was *warning* about a rug. Accepted trade-off: the dock log records the exact
-  matched items; the audit report quotes them and may propose exonerations; the
-  only write path is the operator command `trenchcoat sources undock <id>`.
-  The model proposes, the operator disposes.
+- **Intent classifier (bounded leniency)** — deterministic CA-matching cannot
+  distinguish shilling from warning, so each matched item passes through a fresh,
+  isolated classifier session before the dock is finalised: no tools, no
+  knowledge store, a fixed host-side prompt template (never a workspace skill),
+  the single message supplied as a quoted data file (INV-P2 style). Output must
+  be exactly `shill` or `warn`; **anything else fails closed to `shill`**
+  (INV-S13). The verdict is one constrained enum consumed by deterministic code
+  and can only attenuate:
+  - `shill` → full dock, immediately (unchanged)
+  - `warn` → immediate penalty suspended; an exoneration proposal with the
+    quoted message queues for the operator, whose `trenchcoat sources
+    undock/confirm <id>` remains the only terminal write
+  - either way, the source's **rug-adjacency counter** increments — phrasing
+    cannot hide base rates, and the deterministic repeat-offender dock keys off
+    this counter, not off intent
 
-Net effect: prompt injection can influence what the bot *says*, but the worst it
-can do to credibility scores is get its own channel docked.
+Net effect: prompt injection can influence what the bot *says*, but against the
+scoring system its ceiling is leniency for the channel that posted the message —
+it can never create a dock, raise a score, or hide from the adjacency counter.
 
 ## Failure recovery ladder
 

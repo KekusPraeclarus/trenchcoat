@@ -53,10 +53,13 @@ lean: minimum tokens for undiminished results.
    **Rug shilling is docked immediately and severely**: when a surfaced candidate
    hard-fails the security gate, every source that posted its contract address
    takes a deterministic credibility penalty the same run — no waiting for the
-   weekly audit. The entire scoring pipeline is model-free by construction
-   (host-side attribution over pre-session snapshot copies, typed scanner
-   triggers, operator-only exoneration) so prompt injection can neither vouch for
-   a shiller nor frame a rival (INV-S12).
+   weekly audit. The scoring pipeline is model-free by construction — host-side
+   attribution over pre-session snapshot copies, typed scanner triggers,
+   operator-only terminal exoneration — with one bounded exception: an isolated,
+   fail-closed intent classifier (`shill`/`warn` only) that can suspend a dock
+   for genuine warners but can never create a dock, raise a score, or stop the
+   rug-adjacency counter. Prompt injection can neither vouch for a shiller nor
+   frame a rival (INV-S12/S13).
 7. **Autonomous cron cycles** — launchd/cron fires every job with no human in the
    loop. On-demand runs remain available via the CLI and the chat agent.
 8. **Performance self-audit** — append-only action log (`decisions.md`, with
