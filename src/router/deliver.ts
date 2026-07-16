@@ -1,0 +1,162 @@
+import type Database from "better-sqlite3"
+import type { FetchLike } from "../collectors/market/geckoterminal.js"
+import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
+
+export type DestinationRow = Readonly<{
+  id: string
+  kind: "telegram" | "discord"
+  target: string
+}>
+
+export type DeliveryRow = Readonly<{
+  id: string
+  event_id: string
+  destination_id: string
+  status: string
+  attempt_count: number
+}>
+
+const MAX_ATTEMPTS = 8
+
+export async function deliverTelegram(
+  fetcher: FetchLike,
+  botToken: string,
+  chatId: string,
+  text: string,
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      disable_web_page_preview: true,
+    }),
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) {
+    const retryable = response.status === 429 || response.status >= 500
+    const err = new Error(`telegram HTTP ${response.status}`) as Error & {
+      retryable?: boolean
+      retryAfterSeconds?: number
+    }
+    err.retryable = retryable
+    const ra = response.headers.get("retry-after")
+    if (ra) err.retryAfterSeconds = Number(ra)
+    throw err
+  }
+}
+
+export async function deliverDiscord(
+  fetcher: FetchLike,
+  webhookUrl: string,
+  text: string,
+): Promise<void> {
+  const url = new URL(webhookUrl)
+  url.searchParams.set("wait", "true")
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      content: text,
+      allowed_mentions: { parse: [] },
+    }),
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) {
+    const retryable = response.status === 429 || response.status >= 500
+    const err = new Error(`discord HTTP ${response.status}`) as Error & {
+      retryable?: boolean
+      retryAfterSeconds?: number
+    }
+    err.retryable = retryable
+    throw err
+  }
+}
+
+export function leaseNextDelivery(
+  db: Database.Database,
+  owner: string,
+  nowMs: number,
+  leaseMs = 30_000,
+): DeliveryRow | undefined {
+  const row = db.prepare(
+    `SELECT d.id, d.event_id, d.destination_id, d.status, d.attempt_count
+     FROM deliveries d
+     WHERE d.status IN ('pending', 'retry')
+       AND (d.lease_until IS NULL OR d.lease_until < ?)
+     ORDER BY d.updated_at ASC
+     LIMIT 1`,
+  ).get(nowMs) as DeliveryRow | undefined
+  if (!row) return undefined
+  db.prepare(
+    `UPDATE deliveries SET lease_owner = ?, lease_until = ?, status = 'in-flight', updated_at = ?
+     WHERE id = ?`,
+  ).run(owner, nowMs + leaseMs, nowMs, row.id)
+  return row
+}
+
+export async function processDelivery(
+  db: Database.Database,
+  fetcher: FetchLike,
+  delivery: DeliveryRow,
+  opts: Readonly<{ telegramBotToken?: string }>,
+): Promise<void> {
+  const dest = db.prepare(
+    `SELECT id, kind, target FROM destinations WHERE id = ?`,
+  ).get(delivery.destination_id) as DestinationRow | undefined
+  const eventRow = db.prepare(
+    `SELECT payload_json FROM events WHERE event_id = ?`,
+  ).get(delivery.event_id) as { payload_json: string } | undefined
+  if (!dest || !eventRow) {
+    db.prepare(
+      `UPDATE deliveries SET status = 'dead', last_error = ?, updated_at = ? WHERE id = ?`,
+    ).run("missing dest/event", Date.now(), delivery.id)
+    return
+  }
+
+  const event = RouterEventSchema.parse(JSON.parse(eventRow.payload_json)) as RouterEvent
+  const now = Date.now()
+  try {
+    if (dest.kind === "telegram") {
+      if (!opts.telegramBotToken) throw Object.assign(new Error("no telegram token"), { retryable: false })
+      await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, event.text)
+    } else if (dest.kind === "discord") {
+      await deliverDiscord(fetcher, dest.target, event.text)
+    } else {
+      throw Object.assign(new Error(`unknown dest kind`), { retryable: false })
+    }
+    db.prepare(
+      `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
+    ).run(now, delivery.id)
+    db.prepare(
+      `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'ok')`,
+    ).run(delivery.id, now)
+  } catch (error) {
+    const err = error as Error & { retryable?: boolean; retryAfterSeconds?: number }
+    const attempts = delivery.attempt_count + 1
+    const ambiguous = err.message.includes("abort") || err.message.includes("Timeout")
+    const retryable = err.retryable !== false && attempts < MAX_ATTEMPTS
+    const status = retryable ? "retry" : "dead"
+    db.prepare(
+      `UPDATE deliveries
+       SET status = ?, attempt_count = ?, duplicate_risk = CASE WHEN ? THEN 1 ELSE duplicate_risk END,
+           last_error = ?, lease_owner = NULL, lease_until = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      status,
+      attempts,
+      ambiguous ? 1 : 0,
+      err.message.slice(0, 500),
+      err.retryAfterSeconds ? now + err.retryAfterSeconds * 1000 : null,
+      now,
+      delivery.id,
+    )
+    db.prepare(
+      `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 0, ?)`,
+    ).run(delivery.id, now, err.message.slice(0, 500))
+  }
+}
