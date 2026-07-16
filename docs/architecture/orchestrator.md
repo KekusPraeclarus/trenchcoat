@@ -1,5 +1,5 @@
 ---
-description: Orchestrator module - job registry, cron cycles, cursor-sdk session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
+description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: draft
 last_verified: 2026-07-16
@@ -283,15 +283,15 @@ the recovery agent is exactly as sandboxed as every other session (INV-S11).
 
 ## Design patterns
 
-- **One shot per job**: `Agent.prompt(...)` (self-disposing) with `local: { cwd:
-  <abs path to agent/> }` and `model: { id: "composer-2.5" }`. `Agent.create`/`send`
-  only where follow-up turns are genuinely needed (chat service, not jobs).
-- **Two failure kinds, two exit codes**: thrown `CursorAgentError` = run never
-  started (env problem, exit 1); `result.status === "error"` = run failed mid-flight
+- **One shot per job**: Cursor CLI headless
+  `agent -p --trust --sandbox enabled --workspace <agent/> --model composer-2.5`.
+  Auth is the operator's `agent login` session (see [CLI install](https://cursor.com/docs/cli/installation)).
+  `--resume <chatId>` only where follow-up turns are needed (chat service).
+- **Two failure kinds, two exit codes**: CLI missing/not logged in = run never
+  started (env problem, exit 1); non-zero CLI exit = run failed mid-flight
   (inspect transcript, exit 2). Never conflate them.
-- **Explicit config**: always pass `apiKey` and `local` explicitly; leave
-  `settingSources` at its inline-only default so the service never inherits ambient
-  user settings.
+- **Explicit workspace**: always pass `--workspace` to the agent root; do not
+  inherit ambient IDE settings from the host repo.
 - Jobs are data (a typed registry); the run loop is one function. New flow = job
   entry + skill in the workspace, no new orchestration code.
 
@@ -320,8 +320,9 @@ the recovery agent is exactly as sandboxed as every other session (INV-S11).
 
 ## Gotchas and security-sensitive boundaries
 
-- `CURSOR_API_KEY`, router credentials, and Telegram credentials live in the
-  orchestrator/chat env only — never under `agent/` (INV-I3)
+- Router credentials and Telegram credentials live in the
+  orchestrator/chat env only — never under `agent/` (INV-I3). Cursor auth is the
+  operator's CLI login (`agent login`), not a key filed under `agent/`.
 - Broadcast text is downstream of untrusted tweets/alpha messages: the router
   sender transmits the schema-checked `text` field only, never raw snapshot
   content (INV-B2)

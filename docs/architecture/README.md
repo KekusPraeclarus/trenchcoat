@@ -9,7 +9,7 @@ last_verified: 2026-07-16
 
 | Doc | Covers | Read before editing |
 |---|---|---|
-| [orchestrator.md](orchestrator.md) | Job registry, `@cursor/sdk` sessions, journalled/idempotent run loop, locking, outbox → router, alpha lifecycle, sealed audit epochs, ledger + source scoring, rug-dock, recovery | `src/orchestrator/`, `src/cli.ts`, `ops/` |
+| [orchestrator.md](orchestrator.md) | Job registry, Cursor CLI sessions, journalled/idempotent run loop, locking, outbox → router, alpha lifecycle, sealed audit epochs, ledger + source scoring, rug-dock, recovery | `src/orchestrator/`, `src/cli.ts`, `ops/` |
 | [collectors.md](collectors.md) | Social/market collectors, mention dedupe + clusters, source-call extraction, freshness, new pools, exact RSI contract, rate gate, atomic snapshots/provenance | `src/collectors/`, `src/lib/` |
 | [agent-workspace.md](agent-workspace.md) | The bot's instructions, skills, knowledge store (index, research, narratives, sources), state schemas + decision cards, decision weighting, outbox, sandbox config | anything under `agent/` |
 | [chat-agent.md](chat-agent.md) | Telegram bridge, minimal-orchestrator pattern, research sub-agents | `src/chat/`, `agent/skills/chat/`, `agent/skills/deep-research/` |

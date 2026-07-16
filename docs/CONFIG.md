@@ -13,7 +13,8 @@ read_when:
 
 | Var | Used by | Purpose |
 |---|---|---|
-| `CURSOR_API_KEY` | orchestrator, chat | agent sessions |
+| `TRENCHCOAT_CURSOR_BIN` | orchestrator | optional path to `agent` binary |
+| _(none — Cursor CLI login)_ | orchestrator, chat | `agent login` / `agent status` |
 | `TRENCHCOAT_ROUTER_URL` / `TRENCHCOAT_ROUTER_TOKEN` | orchestrator | broadcast POST (stub until the router contract is pinned) |
 | `TELEGRAM_BOT_TOKEN` | chat service | operator chat + outbound DMs |
 | `TELEGRAM_OPERATOR_ID` | chat service | the allowlist (INV-B3) — single numeric user id |

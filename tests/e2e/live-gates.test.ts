@@ -5,7 +5,6 @@ const live = process.env["TRENCHCOAT_LIVE_E2E"] === "1"
 describe.runIf(live)("live e2e gates", () => {
   it("requires credentials for live suite", () => {
     for (const key of [
-      "CURSOR_API_KEY",
       "TRENCHCOAT_ROUTER_HMAC_KEY",
       "TELEGRAM_BOT_TOKEN",
       "HELIUS_API_KEY",

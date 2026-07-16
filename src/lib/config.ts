@@ -121,12 +121,13 @@ export const ConfigSchema = z.object({
 export type TrenchcoatConfig = z.infer<typeof ConfigSchema>
 
 export type EnvSecrets = Readonly<{
-  cursorApiKey: string
   routerUrl: string
   routerToken: string
   routerHmacKey: string
   telegramBotToken: string
   telegramOperatorId: string
+  /** Optional — Cursor CLI login is preferred (`agent login`) */
+  cursorApiKey?: string
   telegramRouterBotToken?: string
   goplusAppKey?: string
   goplusAppSecret?: string
@@ -148,7 +149,6 @@ function requireEnv(name: string): string {
 
 export function loadEnvSecrets(requireAll = false): EnvSecrets {
   const base: EnvSecrets = {
-    cursorApiKey: requireEnv("CURSOR_API_KEY"),
     routerUrl: requireEnv("TRENCHCOAT_ROUTER_URL"),
     routerToken: requireEnv("TRENCHCOAT_ROUTER_TOKEN"),
     routerHmacKey: requireEnv("TRENCHCOAT_ROUTER_HMAC_KEY"),
@@ -157,6 +157,7 @@ export function loadEnvSecrets(requireAll = false): EnvSecrets {
   }
 
   const optional = {
+    cursorApiKey: process.env["CURSOR_API_KEY"],
     telegramRouterBotToken: process.env["TELEGRAM_ROUTER_BOT_TOKEN"],
     goplusAppKey: process.env["GOPLUS_APP_KEY"],
     goplusAppSecret: process.env["GOPLUS_APP_SECRET"],
@@ -170,6 +171,7 @@ export function loadEnvSecrets(requireAll = false): EnvSecrets {
 
   if (requireAll) {
     for (const [key, value] of Object.entries(optional)) {
+      if (key === "cursorApiKey") continue
       if (!value) throw new Error(`Missing required env for live mode: ${key}`)
     }
   }

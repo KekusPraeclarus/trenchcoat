@@ -83,7 +83,7 @@ lean: minimum tokens for undiminished results.
 ## Framework decision
 
 **Chosen: Cursor agent harness as the framework.** A thin TypeScript orchestrator
-(`@cursor/sdk`, local runtime, model `composer-2.5`) launches the trench agent with
+(Cursor CLI via `agent login`, model `composer-2.5`) launches the trench agent with
 `cwd` set to `agent/`. The agent's behaviour is authored as markdown instructions and
 skills inside that workspace. Deterministic collectors (scrapers, API fetchers,
 indicator maths) are plain scripts whose output lands in the workspace for the agent
@@ -173,8 +173,8 @@ Minimising burn without harming results, enforced by design rather than hope:
 ## Tech stack
 
 - **Runtime**: Node.js ≥ 20, TypeScript, pnpm
-- **Agent harness**: `@cursor/sdk` (local runtime), model `composer-2.5`
-  (normal, not fast), `CURSOR_API_KEY` from env
+- **Agent harness**: Cursor CLI (`agent` / `cursor-agent`), model `composer-2.5`
+  (normal, not fast), auth via `agent login` (see [CLI install](https://cursor.com/docs/cli/installation))
 - **Sandbox**: `agent/.cursor/sandbox.json` — workspace read/write only, network
   denied (the runtime agent needs no network; collectors run outside)
 - **Browser**: Playwright (Chromium), persistent burner-account profile, headless
@@ -407,7 +407,8 @@ $1k notional).
 Niche/fast-moving tech the model may hallucinate about; create under
 `docs/knowledge/` as each area is first implemented:
 
-- `cursor-sdk.md` — `@cursor/sdk` local runtime patterns, disposal, error split,
+- `cursor-cli.md` — Cursor CLI headless patterns, login auth, sandbox flags,
+  resume for chat, disposal/timeouts
   session resume for the chat agent (a Cursor skill exists locally; distil the
   project-relevant subset)
 - `cursor-sandbox.md` — `sandbox.json` schema, protected paths, macOS vs Linux
