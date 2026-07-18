@@ -1,38 +1,49 @@
 export type JobName =
   | "watchlist-scan"
   | "list-scan"
+  | "farcaster-scan"
   | "narrative-scan"
   | "research"
   | "chart-sweep"
   | "review"
   | "audit"
+  | "outcomes-settle"
   | "source-list-review"
+  | "fc-source-review"
   | "wallet-discovery"
   | "wallet-scan-solana"
   | "wallet-scan-evm"
   | "wallet-review"
   | "recover"
+  | "harness-improve"
+
+export type PreconditionTier = "host" | "collector" | "none"
 
 export type JobDefinition = Readonly<{
   name: JobName
   skill: string
   description: string
+  preconditionTier: PreconditionTier
 }>
 
 export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
-  { name: "watchlist-scan", skill: "watchlist-scan", description: "Scan tracked tokens" },
-  { name: "list-scan", skill: "list-scan", description: "Scan curated social lists" },
-  { name: "narrative-scan", skill: "narrative-scan", description: "Narrative lifecycle" },
-  { name: "research", skill: "research", description: "Research queue drain" },
-  { name: "chart-sweep", skill: "chart-sweep", description: "Chart vision sweep" },
-  { name: "review", skill: "review", description: "Knowledge distillation" },
-  { name: "audit", skill: "review", description: "Sealed audit epoch" },
-  { name: "source-list-review", skill: "review", description: "Deterministic X source-list lifecycle" },
-  { name: "wallet-discovery", skill: "review", description: "Early buyer discovery" },
-  { name: "wallet-scan-solana", skill: "review", description: "Helius wallet scan" },
-  { name: "wallet-scan-evm", skill: "review", description: "Infura wallet scan" },
-  { name: "wallet-review", skill: "review", description: "Wallet score/lifecycle review" },
-  { name: "recover", skill: "recover", description: "Recovery assist" },
+  { name: "watchlist-scan", skill: "watchlist-scan", description: "Scan tracked tokens", preconditionTier: "host" },
+  { name: "list-scan", skill: "list-scan", description: "Scan curated social lists", preconditionTier: "none" },
+  { name: "farcaster-scan", skill: "farcaster-scan", description: "Scan Farcaster for-you and channels", preconditionTier: "collector" },
+  { name: "narrative-scan", skill: "narrative-scan", description: "Narrative lifecycle", preconditionTier: "collector" },
+  { name: "research", skill: "research", description: "Research queue drain", preconditionTier: "host" },
+  { name: "chart-sweep", skill: "chart-sweep", description: "Chart vision sweep", preconditionTier: "host" },
+  { name: "review", skill: "review", description: "Knowledge distillation", preconditionTier: "host" },
+  { name: "audit", skill: "review", description: "Sealed audit epoch", preconditionTier: "none" },
+  { name: "outcomes-settle", skill: "review", description: "Settle mature source-call and wallet-buy outcomes", preconditionTier: "none" },
+  { name: "source-list-review", skill: "review", description: "Deterministic X source-list lifecycle", preconditionTier: "none" },
+  { name: "fc-source-review", skill: "review", description: "Deterministic Farcaster follow-graph lifecycle", preconditionTier: "none" },
+  { name: "wallet-discovery", skill: "wallet-evidence", description: "Early buyer discovery evidence", preconditionTier: "host" },
+  { name: "wallet-scan-solana", skill: "wallet-evidence", description: "Solana wallet evidence", preconditionTier: "host" },
+  { name: "wallet-scan-evm", skill: "wallet-evidence", description: "EVM wallet evidence", preconditionTier: "host" },
+  { name: "wallet-review", skill: "review", description: "Wallet score/lifecycle review", preconditionTier: "none" },
+  { name: "recover", skill: "recover", description: "Recovery assist", preconditionTier: "none" },
+  { name: "harness-improve", skill: "review", description: "Propose policy patch PR from sealed audit", preconditionTier: "none" },
 ])
 
 export function getJob(name: string): JobDefinition {

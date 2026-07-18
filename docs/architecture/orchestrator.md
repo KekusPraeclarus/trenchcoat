@@ -1,10 +1,10 @@
 ---
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
-status: draft
-last_verified: 2026-07-16
+status: active
+last_verified: 2026-07-18
 read_when:
-  - Editing src/orchestrator/, src/cli.ts, or ops/ schedules.
+  - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
 ---
 
@@ -16,30 +16,57 @@ The only trusted, network-capable, always-scheduled component. It decides *when*
 things happen, *what inputs* the runtime agent gets, and *what leaves the machine*.
 It contains no trading logic and no LLM prompting beyond the fixed job prompts.
 
-## Implementation status (2026-07-16)
+## Implementation status (2026-07-18)
 
-Offline-green journalled `runJob` path exists. Today `list-scan` is the only job
-that runs live X collectors (`src/orchestrator/collect.ts`); other jobs receive a
-synthetic meta snapshot. The journal records a `committed` phase after inbox
-archive without a git commit yet (INV-S8 remains PARTIAL). Target design below
-still describes the intended full loop.
+Offline-green journalled `runJob` path exists with archive-authoritative
+transactions (ADR 006): pre-session inbox archive, post-run verifier
+(fail-closed before seal/purge/egress), validated alpha digest purge, atomic
+broadcast budget ledger, HMAC delivery, `outcomes-settle` + audit hooks with
+live DexScreener→GeckoTerminal bar providers (empty ⇒ pending), proposal gate
+evidence via archived dossier then allowlisted live refetch (skipped under
+dry-collect), and operator `undock`/`confirm`. `list-scan` is the primary live
+X collector job. `chart-sweep` and `narrative-scan` collectors are live
+(collectors.md). Periodic Git remains backup-only. Deployed runtime carries
+`~/.trenchcoat/runtime/deployment.json` (written by `ops/install-launchd.sh`).
 
 ## Jobs (v1 registry)
 
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
-| `watchlist-scan` | every 2h | twitter search per watched token *(planned)* | per-token note updates, urgent flags |
-| `list-scan` | every 4h | FYP + two operator X lists + managed list *(live)*; coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** |
+| `watchlist-scan` | every 2h | active watchlist market + security snapshots, optional bounded X/Farcaster token search; **host-pre skip** when empty watchlist | watchlist evidence review |
+| `list-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | FYP + two operator X lists + managed list *(live)*; coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** |
+| `farcaster-scan` | ~every 4h (same jitter gate as list-scan) | Neynar for-you + operator channels + following *(live when `farcaster.enabled`)* | trends, discovery candidates, bot `fc-engagement.json` likes only (≤2 likes/10m) |
 | `source-list-review` | daily + after sealed audit | lagged source-score epoch + managed-list membership | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
-| `narrative-scan` | every 6h | reuses freshest list-scan + trending snapshots (no new fetch unless stale) | updates `state/narratives/`, detects prevailing-narrative shifts → outbox (few short sentences on why) |
-| `research` | on queue (research-queue.md), daily cap from config | market data + socials for one candidate | verdict (track / ignore / revisit) + research file, sources cited |
-| `chart-sweep` | every 1h | OHLCV + indicators (RSI, vol z, EMA, breakout) for watched tokens | early-move flags |
-| `review` | daily | light market refresh + fear & greed | drops/keeps, research distillation, index pruning; **digests alpha queue** |
+| `fc-source-review` | daily | lagged `fc_*` source-score + follow-graph sync | **no agent** — promote/demote then Neynar follow/unfollow |
+| `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new narratives → outbox (`narrative-emergence` / `rotation`; rotation host-rejected when market-blind) |
+| `research` | on queue (research-queue.md), daily cap from config; also `tc research` / Telegram confirm | market data + security + bounded X + Farcaster token search (+ optional Tavily web search on operator path) | verdict (track / ignore / revisit) + research file with sentiment/popularity section, sources cited |
+| `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
+| `review` | daily | sealed report manifests (path-only) + pending alpha manifest + bounded watchlist/macro snapshots; **host-pre skip** when no scope | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
+| `outcomes-settle` | frequent / before audit | mature source-call + wallet-buy observations | **no agent** — resumable settlement writers |
+| `wallet-discovery` | every 6h | watchlist token identities → Helius/Infura/Robinhood early buyers | host stages `candidate` wallets + cursors; evidence-only agent reads frozen snapshot |
+| `wallet-scan-solana` | every 5m | Helius finalized wallet actions | host archives buy outcomes; evidence-only agent reads frozen snapshot |
+| `wallet-scan-evm` | every 15m | Infura (eth/base) + throttled Robinhood public RPC | host archives buy outcomes; evidence-only agent reads frozen snapshot |
+| `wallet-review` | daily / after scans | lagged settled buy outcomes + bounded voter | **no agent** — promote/drop + `wallet.lifecycle` router events |
+| `harness-improve` | weekly (off by default) | sealed scorecard epochs only | **no agent write to prod** — confined worktree + tests + optional `gh pr create` (ADR 005); never merges, never starts canary |
 
-Cadences live in `ops/` templates, not code; tune freely. Cron is the only trigger —
-no daemon (the telegram listener excepted, see collectors.md), no human. The CLI
-also accepts on-demand runs (operator or chat service).
+Cadences live in `ops/` templates, not code; tune freely. Host-gated jobs
+(`chart-sweep`, `watchlist-scan`, `research`, wallet evidence jobs, and
+calendar `review`) run through `ops/run-precheck.sh` before the lock: a
+read-only `tc precheck <job>` exits 10 on empty prerequisites so launchd
+avoids a full run; `runJob` re-checks under lock and appends
+`archive/skips/<job>.jsonl` (no run journal / inbox / reports). Preconditions
+still apply under `--dry-collect`; missing `agent/state/` fails closed as
+`not-initialized`. When a collector runs but sets `skipAgent` (degraded /
+unusable evidence), the run is journaled and sealed as `collector-skip` without
+an `agent.md` stub. `list-scan` and
+`farcaster-scan` are special: launchd polls every 15m and
+`ops/run-job-jittered.sh` (deployed as `~/.trenchcoat/bin/run-<job>`) gates real
+runs to a uniform delay in [3h15m, 4h45m] after each success — anti-patterning
+for the social burners. Cron is the only trigger — no daemon (the telegram
+operator listener and `tc listen channels` alpha poller excepted, see
+collectors.md), no human. The CLI also accepts on-demand
+runs (operator or chat service).
 
 Decision weighting is the bot's job, not ours: skills instruct it to blend
 technicals with attention/sentiment/narrative evidence, weighted by each source's
@@ -52,20 +79,31 @@ Run collectors → assemble `agent/inbox/<run-id>/` **and copy it into the
 host-side archive** (`~/.trenchcoat/archive/`, snapshot-archive.md — the
 tamper-proof record scoring and audits read from) → one-shot agent session →
 post-run integrity checks (host-only files unchanged, decision cards
-well-formed, INV-S9 cross-reference) → write **as-of bundles** for any new
-decisions (snapshot-archive.md) → create/finalise pending ledger actions →
-validate and stage outbox deliveries → commit state + reports (INV-S8) → purge
-only durably digested alpha items → deliver staged outbox items → atomically mark
-the run complete → surface report. Delivery failures remain queued and do not
-uncommit an otherwise valid run.
+well-formed, INV-S9 cross-reference) → host phases (proposals, engagement,
+wallet jobs, **narrative bridge then narrative-log prune** on `narrative-scan`) → write **as-of
+bundles** for any new decisions (snapshot-archive.md) → create/finalise pending
+ledger actions → validate and stage outbox deliveries → commit state + reports
+(INV-S8) → purge only durably digested alpha items → deliver staged outbox
+items → atomically mark the run complete → surface report. Delivery failures
+remain queued and do not uncommit an otherwise valid run.
 
 Post-run checks distinguish two write phases: agent-phase (host-only files —
 `sources.json`, `source-lifecycle.json`, `ledger.json`, `research-queue.json`,
-`scorecard.json` — must be byte-identical before vs after the session) and
+`scorecard.json`, `wallets.json` — must be byte-identical before vs after the session) and
 orchestrator-phase (the run loop's own deterministic writes after the checks
 pass). INV-S7/S10/S21 are assertions about the agent phase; orchestrator-phase
 writes are the designed path for scoring, FYP candidacy registration, and
 source-list review.
+
+For `narrative-scan`, `state/narratives/log.jsonl` is integrity-protected, so the
+agent cannot write it: it proposes updates in
+`reports/<run-id>/narrative-proposals.jsonl`, and after the session passes
+integrity the host `mergeNarrativeProposals` schema-validates and merges those
+proposals into the log. The host snapshots the merged log against the
+pre-session baseline; new slugs and transitions into `peaking` are the only bridge
+triggers. The bridge resolves a maximum of 10 ticker candidates, records ambiguous
+shortlists in `research-queue.json`, and never writes watchlist, ledger, or
+decision state.
 
 ## Workspace locking
 
@@ -84,11 +122,33 @@ must go through the writer lock (INV-S15).
 
 ## Run idempotency and crash consistency
 
-Every run has a host-side journal keyed by `run_id`, with monotonic phases and
-hashes for collector archive, checked agent diff, decision bundles, host state
-mutation, git commit, alpha purge, outbox delivery, and completion. Each phase is
-fsynced and atomically renamed. Recovery resumes the first incomplete phase; it
-does not replay earlier side effects.
+Every run has an **archive-authoritative journal**
+(`~/.trenchcoat/archive/transactions/<run_id>.json`, ADR 006) with monotonic
+phases and hashes for collector archive, checked agent diff, decision bundles,
+host state mutation, archive seal, alpha purge, outbox delivery, and completion.
+Journals carry `status: running | complete | failed`. Incomplete (`running`)
+runs are resume candidates; `failed` is terminal (not auto-resumed —
+`findIncompleteRuns` skips it). Mid-flight errors call `markRunFailed` with a
+sanitised code/message before exit 2. Phases are fsynced and atomically renamed.
+Recovery resumes the first incomplete phase; it does not replay earlier side
+effects. Periodic Git (`tc backup`) is backup-only and never gates completion.
+
+**Deployment manifest** — `ops/install-launchd.sh` stages a runtime, writes
+`deployment.json` (cli/config hashes, package version, config schema, source
+commit), validates config against the staged binary, then swaps
+`~/.trenchcoat/runtime`. `tc status` flags a missing manifest.
+
+**INDEX reconcile** — host `reconcileIndex` rewrites `state/INDEX.md` (integrity-
+protected) after accepted decision proposals (watchlist mutations), after
+`narrative-scan` prune, after accepted `state/research/` changes on `review`,
+and after `tc watchlist remove`. Tokens rollup includes
+watchlist entries, decided/removed subjects from `decisions.md`, and
+narrative-linked tickers from `narratives/log.jsonl`. Agents do not own this
+file.
+
+**Workspace retention** — after delivery, each run age-prunes `agent/inbox/` and
+`agent/reports/chat/` per `config.retention` (`retention.ts`). Never prunes
+`archive/`.
 
 Idempotency keys are structural:
 
@@ -97,18 +157,18 @@ Idempotency keys are structural:
 - source call event: raw-item hash + parser version
 - outbox delivery: run id + validated item hash, passed to the router as its
   required idempotency key
-- git commit: run id in commit metadata, with the committed tree hash in journal
+- archive seal: side-effect hash recorded before purge/egress
 
-Host records prepared before a failed git commit remain unsealed and ineligible
-for audits. Commit failure retries while the lock is held; after bounded failure,
-state rolls back to the prior completed commit, the journal stays diagnostic,
-and no alpha purge or external delivery occurs. A crash after commit resumes
-purge/delivery from their keys. The completed marker is written only after the
-commit exists and all non-delivery integrity phases pass. Pending router
-deliveries are allowed and visible.
+Host records prepared before a failed archive seal remain unsealed and
+ineligible for audits. Seal failure retries while the lock is held; after
+bounded failure or hash conflict the run quarantines
+(`archive/quarantine/<run-id>/`), and no alpha purge or external delivery
+occurs. A crash after seal resumes purge/delivery from their keys. The
+completed marker is written only after seal and all non-delivery integrity
+phases pass. Pending router deliveries are allowed and visible.
 
-The router contract must honour the idempotency key. Until that contract exists,
-the stub records delivery intent but does not claim exactly-once external sends.
+Delivery uses a stable idempotency key honoured by the in-repo router
+(`src/router/**`, ADR 001 / INV-B5): duplicates are safe; payload conflicts 409.
 
 ## Alpha-queue lifecycle
 
@@ -116,7 +176,7 @@ The telegram listener appends continuously; digestion is batch:
 
 1. Alpha-digesting jobs (`list-scan`, `review`) include the queue contents in scope
 2. The agent records anything useful in the knowledge store (with provenance) and
-   writes `inbox/<run-id>/alpha-digest.json` listing the message ids it processed
+   writes `reports/<run-id>/alpha-digest.json` listing the message ids it processed
 3. After the state/report commit is durable, the orchestrator purges exactly
    those ids before the completed marker (INV-Q1) — a retry sees the keyed purge
    as already satisfied; knowledge survives in state and raw messages don't linger
@@ -154,8 +214,9 @@ reasoning, confidence, and cited sources) is the raw material. Weekly:
 
 The action-realised + mark-to-market paper P&L and fixed +72h cohort return are
 the paired headline numbers. Peak-close is MFE diagnostics, never booked P&L.
-Lessons feed back into skills only via a developer edit — the bot does not
-rewrite its own instructions.
+Lessons feed back into skills only via a developer edit or the host-owned
+Harness Improvement Loop (ADR 005) — the runtime bot does not rewrite its own
+instructions.
 
 The audit narration runs as a fresh one-shot session with no tools or workspace
 access. Host code supplies one hash-bound epoch summary containing the computed
@@ -191,9 +252,10 @@ host-side snapshot archive ──> deterministic attribution ──> score write
   typed hard-fail — research dequeue and the new-pool filter alike — so
   shillers are docked even for candidates that never reach a research session.
 - **Rug-shill dock (immediate)** — triggered only by the typed GoPlus/RugCheck
-  response hard-failing a candidate (honeypot, live mint authority, unlocked LP).
-  Every attributed source takes a severe cumulative penalty in the same run;
-  repeat offenders are flagged for operator removal in the next report.
+  response hard-failing a candidate (honeypot, live mint authority, etc. —
+  not `low-lp-lock` alone; security-gate.md). Every attributed source takes a
+  severe cumulative penalty in the same run; repeat offenders are flagged for
+  operator removal in the next report.
 - **Audit scoring (weekly)** — direct source-call extraction scans the same
   pre-session archive for raw CA/pair matches plus an explicit bullish pattern.
   A deterministic, versioned, negation-aware parser excludes warnings, neutral
@@ -243,44 +305,41 @@ Net effect: prompt injection can influence what the bot *says*, but against the
 scoring system its ceiling is leniency for the channel that posted the message —
 it can never create a dock, raise a score, or hide from the adjacency counter.
 
-## Failure recovery ladder
+## Failure recovery
 
-Recovery is tiered; each tier only escalates if the one below can't resolve it:
+Recovery is deterministic and privilege-preserving (ADR 006 / INV-S11):
 
-1. **Deterministic self-healing (host-side, no LLM)** — the default for almost
-   everything: listener death → launchd keepalive restarts it; failed or crashed
-   run → `git checkout` of `agent/state/` to the last completed-run commit
-   (INV-S8 makes this exact), inbox preserved for diagnosis, job re-queued with
-   bounded retries; router down → outbox items queue for next cycle. Alpha queue
-   is never touched by rollback (it lives outside the committed set, INV-Q1).
-2. **Recovery agent (sandboxed, diagnostic + repair)** — spawned only when
-   deterministic recovery fails twice on the same job, or a post-run integrity
-   check flags inconsistent workspace state (e.g. watchlist/decisions mismatch
-   that a rollback can't explain). Same sandbox, same workspace, its own skill
-   (`skills/recover/`): read the failed run's inbox + partial outputs, repair
-   state files *within existing invariants* (it cannot rewrite decisions.md —
-   INV-S2 — or touch sources/ledger — INV-S7/S10), append a recovery entry to
-   decisions.md, and write a diagnosis report. The orchestrator commits and
-   re-queues the original job once.
-3. **Operator DM (last resort + always for auth + review)** — anything the
-   ladder can't fix; every needs-headful-reauth condition (never automated, by
-   design); every recovery-agent invocation (you should know it ran, even when
-   it succeeded); and every **exoneration proposal** from a `warn` intent
-   verdict (manual undock/confirm). All go through the chat bot's outbound DM
-   path — not the broadcast router.
+1. **Journal resume (host-side, no LLM)** — default path: listener death →
+   launchd keepalive; incomplete run → resume first unfinished phase from
+   `archive/transactions/<run-id>.json` without replaying sealed side effects;
+   hash conflict → quarantine under `archive/quarantine/` and refuse
+   auto-resume; router down → staged outbox waits for the next cycle. Alpha
+   queue is never purged until digest + seal succeed (INV-Q1).
+2. **Operator DM (auth + review)** — needs-headful-reauth (never automated) and
+   every **exoneration proposal** from a `warn` intent verdict (manual
+   undock/confirm). Via the chat bot's outbound DM path — not the broadcast
+   router.
 
-Recovery restores the *main agent's* flow; it never expands anyone's privileges —
-the recovery agent is exactly as sandboxed as every other session (INV-S11).
+A `recover` job/skill remains registered for optional operator-assisted
+diagnosis but is **not** on the automatic ladder and must not expand
+privileges or rewrite host-only state (INV-S2/S7/S10/S11).
 
 ## Outbox → router
 
-- Agent writes proposals to `agent/outbox/<run-id>.json`; schema in
-  `src/lib/outbox.ts`: `{ severity: "watch" | "notable" | "urgent", text: ≤ 280
-  chars (narrative shifts: ≤ 3 short sentences), refs: [state paths],
-  audit_claim: { type, subject, direction, horizon_hours, verification_rule } }`.
-  The validator resolves the subject against host state and accepts only known
-  host-owned rules compatible with the claim type/direction. Unauditable claims
-  do not leave the machine
+Two different “outbox” surfaces — do not conflate them:
+
+| Path | Contents | Module |
+|---|---|---|
+| `agent/outbox/<run-id>.json` | Agent **BroadcastItem** proposals (schema: `BroadcastItemSchema` in `src/contracts/schemas.ts`) | Validated by `ingestOutbox` → `validateBroadcastItem` + budget maths in `broadcast-ledger.ts`. Wrong envelopes (`broadcasts`, bare `text`) are rejected with an auditable receipt, never silently dropped. Wired in the run loop after seal (`events-staged`) |
+| `agent/reports/<run-id>/chat-summary.json` | Agent chat-recall proposal for broadcast runs (`ChatSummaryFileSchema`) | Validated by `validateAndPromoteChatReport` after `ingestOutbox`; host renders `reports/chat/<run-id>.md` from validated broadcast text + accepted context. Missing/invalid proposals are non-fatal with archived reject receipts; canary/no-broadcast runs promote nothing |
+| `~/.trenchcoat/archive/router-outbox/<runId>/` | Durable **RouterEvent** files staged for HMAC POST | `src/lib/outbox.ts` (`Outbox.stage`). Used today by wallet-review / wallet-seed |
+
+There is no `src/orchestrator/outbox.ts`. Agent proposals are not the same type as
+staged router events.
+
+- Validator resolves the subject against host state and accepts only known
+  host-owned rules compatible with the claim type/direction (`isKnownVerificationRule`).
+  Unauditable claims do not leave the machine
 - Budget rules: `watch`/`notable` consume the daily budget (default 5).
   **`urgent` bypasses the budget** — new narrative forming, sudden sentiment
   collapse, early chain rotation must never queue behind routine items. A failsafe
@@ -288,9 +347,16 @@ the recovery agent is exactly as sandboxed as every other session (INV-S11).
   it is an incident, not a tuning knob (INV-B4)
 - Over-budget non-urgent items are logged in the run report as "not broadcast",
   never silently dropped
-- POSTs to the external router (URL + auth from env). Router contract TBD — sender
-  is a stub behind the `Broadcaster` interface until then
-- Send failures never fail the run; items queue for the next cycle
+- Host stages validated items, then `renderChannelPayloads` attaches per-destination
+  text (`channels.telegram` / `channels.discord`) before HMAC-POST to the long-lived
+  router (`com.trenchcoat.router` / `tc router serve`; `TRENCHCOAT_ROUTER_*` — see
+  [router.md](router.md)). Telegram gets the promoted chat report as-is when one
+  exists; Discord gets a fail-closed host distiller pass (`distill-session.ts`)
+  when `broadcast.discord_distiller.enabled` (else the short broadcast text).
+  Bare intake hosts default to `/v1/events`; loopback HTTP is allowed. Severity
+  `lifecycle` (wallet add/drop) skips the market broadcast budget and is never
+  distilled
+- Send failures never fail the run; durable fanout retries with dead-letter visibility
 
 ## Design patterns
 
@@ -312,22 +378,36 @@ the recovery agent is exactly as sandboxed as every other session (INV-S11).
   `digestsAlphaQueue` flag
 - `RunContext` — run id, timestamps, inbox path, job name; threaded through
   collectors and archived with the report
-- `Broadcaster` — interface over the router POST; stub until the contract exists
+- Outbox → router staging — validated items + idempotency keys into `src/router/`
 - Locking: see "Workspace locking" above — writer lock + per-job guard, chat
   reads lock-free
 
-## Source files to inspect before editing (once implemented)
+## Source files to inspect before editing
 
 - `src/cli.ts` — entry point, job dispatch, locking
 - `src/orchestrator/jobs.ts` — the job registry
-- `src/orchestrator/run.ts` — collector orchestration + sdk session
-- `src/orchestrator/outbox.ts` — validation, budget + urgent bypass, router sender
+- `src/orchestrator/run.ts` — collector orchestration + Cursor CLI session
+- `src/orchestrator/journal.ts` / `journal-store.ts` — run journal phases +
+  `running|complete|failed` status
+- `src/orchestrator/index-reconcile.ts` — host `state/INDEX.md` rewrite
+- `src/orchestrator/chart-collect.ts` / `narrative-collect.ts` — collector jobs
+- `src/lib/deployment.ts` — runtime `deployment.json` manifest
+- `src/orchestrator/broadcast.ts` — daily/urgent budget maths + known verification rules
+- `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals + budget reserve + stage
+- `src/orchestrator/chat-report.ts` — validate `chat-summary.json` proposals and host-render `reports/chat/<run-id>.md` after `ingestOutbox` (`list-scan`, `narrative-scan`)
+- `src/orchestrator/narrative-log.ts` — `pruneNarrativeLog`: drop malformed lines + purge `lastSeen` older than `narratives.retention_days` (default 14)
+- `src/orchestrator/router.ts` — BroadcastItem validation + HMAC `deliverRouterEvent`
+- `src/lib/outbox.ts` — durable RouterEvent staging under archive
+- `src/orchestrator/proposals.ts` — host-validated decision proposals (INV-S23)
+- `src/orchestrator/gate-evidence.ts` — archive-then-live security gate receipts
+- `src/orchestrator/market-bars.ts` — live DexScreener/GeckoTerminal BarProviders
+- `src/orchestrator/outcomes-settle.ts` — mature source-call + wallet-buy settlement
 - `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
   ledger marking, calibration, source attribution
-- `src/orchestrator/alpha-queue.ts` — digest-then-purge lifecycle
-- `src/orchestrator/recover.ts` — recovery ladder: rollback, retry, recovery agent
-- `src/orchestrator/sources.ts` — the sole `sources.json` writer: deterministic
-  attribution, dock, audit scoring maths, operator undock
+- `src/orchestrator/recovery.ts` — resume/discard-inbox stub (full recovery ladder open)
+- `src/orchestrator/sources.ts` — archive source-call outcome loader (host `sources.json` writer still open)
+- `src/orchestrator/wallet-*.ts` — host-only wallet discovery/scan/review/seed
+- `src/harness/**` — harness-improve schedule / confine / evaluate / canary / PR
 
 ## Gotchas and security-sensitive boundaries
 

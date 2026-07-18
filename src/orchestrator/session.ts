@@ -2,7 +2,17 @@ import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import {
+  applyAssistantDelta,
+  createNdjsonParser,
+  extractAssistantText,
+  extractResultText,
+  extractStreamError,
+} from "../lib/cursor-stream.js"
 import { log } from "../lib/log.js"
+
+export type SessionMode = "ask" | "plan"
+export type SessionOutputFormat = "text" | "json" | "stream-json"
 
 export type SessionOptions = Readonly<{
   prompt: string
@@ -15,6 +25,12 @@ export type SessionOptions = Readonly<{
   /** Optional API key — prefer CLI login (`agent login`). Only passed if set. */
   apiKey?: string
   resumeChatId?: string
+  /** Read-only Q&A (`ask`) or planning (`plan`); omit for normal tool-enabled runs */
+  mode?: SessionMode
+  outputFormat?: SessionOutputFormat
+  streamPartial?: boolean
+  /** Invoked with accumulated assistant text as stream-json deltas arrive */
+  onPartial?: (text: string) => void | Promise<void>
 }>
 
 export type SessionResult = Readonly<{
@@ -58,13 +74,17 @@ export function buildCursorCliArgs(opts: Readonly<{
   sandbox?: boolean
   apiKey?: string
   resumeChatId?: string
+  mode?: SessionMode
+  outputFormat?: SessionOutputFormat
+  streamPartial?: boolean
 }>): string[] {
   assertPathOnlyPrompt(opts.prompt)
+  const outputFormat = opts.outputFormat ?? "text"
   const args = [
     "-p",
     opts.prompt,
     "--output-format",
-    "text",
+    outputFormat,
     "--trust",
     "--workspace",
     opts.cwd,
@@ -73,6 +93,15 @@ export function buildCursorCliArgs(opts: Readonly<{
     "--sandbox",
     opts.sandbox === false ? "disabled" : "enabled",
   ]
+  if (opts.streamPartial) {
+    if (outputFormat !== "stream-json") {
+      throw new Error("streamPartial requires outputFormat stream-json")
+    }
+    args.push("--stream-partial-output")
+  }
+  if (opts.mode) {
+    args.push("--mode", opts.mode)
+  }
   if (opts.resumeChatId) {
     args.push("--resume", opts.resumeChatId)
   }
@@ -80,6 +109,19 @@ export function buildCursorCliArgs(opts: Readonly<{
     args.push("--api-key", opts.apiKey)
   }
   return args
+}
+
+/** Allocate a durable Cursor chat id for resumable operator conversations */
+export async function createCursorChat(bin = resolveCursorCliBin()): Promise<string> {
+  const result = await runCapture(bin, ["create-chat"], 30_000)
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || `create-chat exited ${result.exitCode}`)
+  }
+  const id = result.stdout.trim().split(/\s+/u)[0] ?? ""
+  if (!/^[0-9a-f-]{16,}$/iu.test(id)) {
+    throw new Error(`create-chat returned unexpected id: ${result.stdout.trim().slice(0, 80)}`)
+  }
+  return id
 }
 
 export async function probeCursorCli(bin = resolveCursorCliBin()): Promise<{
@@ -117,10 +159,16 @@ export async function runOneShotSession(opts: SessionOptions): Promise<SessionRe
     ...(opts.sandbox === undefined ? {} : { sandbox: opts.sandbox }),
     ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
     ...(opts.resumeChatId ? { resumeChatId: opts.resumeChatId } : {}),
+    ...(opts.mode ? { mode: opts.mode } : {}),
+    ...(opts.outputFormat ? { outputFormat: opts.outputFormat } : {}),
+    ...(opts.streamPartial ? { streamPartial: true } : {}),
   })
 
   log.info("cursor cli session start", { bin, model: opts.model ?? DEFAULT_MODEL, cwd: opts.cwd })
   try {
+    if (opts.outputFormat === "stream-json") {
+      return await runStreamCapture(bin, args, opts.timeoutMs ?? 15 * 60_000, opts.cwd, opts.onPartial)
+    }
     const result = await runCapture(bin, args, opts.timeoutMs ?? 15 * 60_000, opts.cwd)
     if (result.exitCode !== 0) {
       return {
@@ -141,6 +189,105 @@ export async function runOneShotSession(opts: SessionOptions): Promise<SessionRe
     log.error("session failed", { detail: message })
     return { status: "error", error: message }
   }
+}
+
+/** Chat path: stream-json + partial deltas, optional onPartial sink */
+export async function runStreamingSession(opts: SessionOptions): Promise<SessionResult> {
+  return runOneShotSession({
+    ...opts,
+    outputFormat: "stream-json",
+    streamPartial: true,
+  })
+}
+
+function runStreamCapture(
+  bin: string,
+  args: readonly string[],
+  timeoutMs: number,
+  cwd: string | undefined,
+  onPartial?: (text: string) => void | Promise<void>,
+): Promise<SessionResult> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, [...args], {
+      cwd,
+      env: scrubChildEnv(process.env),
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    let stderr = ""
+    let accumulated = ""
+    let finalText: string | undefined
+    let streamError: string | undefined
+    let timedOut = false
+    let partialChain: Promise<void> = Promise.resolve()
+
+    const parser = createNdjsonParser((event) => {
+      const err = extractStreamError(event)
+      if (err) streamError = err
+      const resultText = extractResultText(event)
+      if (resultText !== undefined) finalText = resultText
+      const delta = extractAssistantText(event)
+      if (delta === undefined) return
+      accumulated = applyAssistantDelta(accumulated, delta)
+      if (onPartial) {
+        const snapshot = accumulated
+        partialChain = partialChain.then(() => Promise.resolve(onPartial(snapshot)))
+      }
+    })
+
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill("SIGTERM")
+    }, timeoutMs)
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      parser.push(chunk.toString("utf8"))
+    })
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8")
+    })
+    child.on("error", (error) => {
+      clearTimeout(timer)
+      const text = accumulated.trim()
+      resolve({
+        status: "error",
+        error: error.message,
+        ...(text ? { text } : {}),
+      })
+    })
+    child.on("close", (code) => {
+      clearTimeout(timer)
+      parser.flush()
+      void partialChain.then(() => {
+        const text = (finalText ?? accumulated).trim()
+        if (code !== 0) {
+          resolve({
+            status: "error",
+            ...(text ? { text } : {}),
+            error: timedOut
+              ? `cursor cli timed out after ${timeoutMs}ms`
+              : streamError || stderr || `cursor cli exited ${code ?? 1}`,
+            exitCode: code ?? 1,
+          })
+          return
+        }
+        if (streamError) {
+          resolve({
+            status: "error",
+            ...(text ? { text } : {}),
+            error: streamError,
+            exitCode: 0,
+          })
+          return
+        }
+        resolve({
+          status: "finished",
+          agentId: "cursor-cli",
+          text,
+          exitCode: 0,
+        })
+      })
+    })
+  })
 }
 
 export function assertPathOnlyPrompt(prompt: string): void {
@@ -183,10 +330,37 @@ function runCapture(
   })
 }
 
-function scrubChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+/** Host-side secrets that must never reach the Cursor child process */
+export const SCRUBBED_CHILD_ENV_KEYS = Object.freeze([
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "CURSOR_API_KEY",
+  "TRENCHCOAT_ROUTER_URL",
+  "TRENCHCOAT_ROUTER_TOKEN",
+  "TRENCHCOAT_ROUTER_HMAC_KEY",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_OPERATOR_ID",
+  "TELEGRAM_ROUTER_BOT_TOKEN",
+  "TELEGRAM_ROUTER_CHAT_ID",
+  "TELEGRAM_API_ID",
+  "TELEGRAM_API_HASH",
+  "GOPLUS_APP_KEY",
+  "GOPLUS_APP_SECRET",
+  "COINGECKO_DEMO_KEY",
+  "NEYNAR_API_KEY",
+  "NEYNAR_WALLET_ID",
+  "FARCASTER_APP_FID",
+  "FARCASTER_APP_MNEMONIC",
+  "HELIUS_API_KEY",
+  "INFURA_API_KEY",
+  "DISCORD_WEBHOOK_URL",
+  "TAVILY_API_KEY",
+] as const)
+
+export function scrubChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env }
-  // Prefer CLI login; do not force SDK/cloud key paths unless explicitly opted in via --api-key
-  delete next["ANTHROPIC_API_KEY"]
-  delete next["OPENAI_API_KEY"]
+  for (const key of SCRUBBED_CHILD_ENV_KEYS) {
+    delete next[key]
+  }
   return next
 }

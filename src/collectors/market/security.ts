@@ -107,7 +107,15 @@ export function mapGoPlus(payload: unknown, thresholds = DEFAULT_SECURITY_THRESH
   if (enabled(fields["anti_whale_modifiable"])) flags.push("anti-whale")
   if (enabled(fields["is_blacklisted"])) flags.push("blacklist")
   if (enabled(fields["is_open_source"]) === false) flags.push("unverified-source")
-  const hardFail = flags.some((flag) => ["honeypot", "cannot-sell-all", "mintable", "owner-can-change-balance", "selfdestruct", "sell-tax", "low-lp-lock"].includes(flag))
+  // low-lp-lock is caution-only: still surfaced, never hardFail by itself
+  const hardFail = flags.some((flag) => [
+    "honeypot",
+    "cannot-sell-all",
+    "mintable",
+    "owner-can-change-balance",
+    "selfdestruct",
+    "sell-tax",
+  ].includes(flag))
   return { status: hardFail ? "hard-fail" : "pass", hardFail, flags, provider: "goplus" }
 }
 
@@ -120,7 +128,12 @@ export function mapRugCheck(payload: unknown, thresholds = DEFAULT_SECURITY_THRE
   const concentration = ratio(result["top10HolderPercent"]) ?? ratio(result["top10HoldersPercent"])
   if (lp !== undefined && lp < thresholds.lpLockedMin) flags.push("low-lp-lock")
   if (concentration !== undefined && concentration > thresholds.holderTop10Max) flags.push("top-holder-concentration")
-  const hardFail = flags.some((flag) => ["mint-authority", "freeze-authority", "low-lp-lock", "top-holder-concentration"].includes(flag))
+  // low-lp-lock is caution-only on Solana too
+  const hardFail = flags.some((flag) => [
+    "mint-authority",
+    "freeze-authority",
+    "top-holder-concentration",
+  ].includes(flag))
   return { status: hardFail ? "hard-fail" : "pass", hardFail, flags, provider: "rugcheck" }
 }
 

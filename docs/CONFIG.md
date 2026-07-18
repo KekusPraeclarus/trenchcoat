@@ -1,8 +1,8 @@
 ---
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
-status: draft
-last_verified: 2026-07-16
+status: active
+last_verified: 2026-07-18
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -15,27 +15,43 @@ read_when:
 |---|---|---|
 | `TRENCHCOAT_CURSOR_BIN` | orchestrator | optional path to `agent` binary |
 | _(none — Cursor CLI login)_ | orchestrator, chat | `agent login` / `agent status` |
-| `TRENCHCOAT_ROUTER_URL` / `TRENCHCOAT_ROUTER_TOKEN` | orchestrator | broadcast POST (stub until the router contract is pinned) |
+| `TRENCHCOAT_ROUTER_URL` / `TRENCHCOAT_ROUTER_TOKEN` | orchestrator | router intake URL (bare host ok — defaults to `/v1/events`) + legacy bearer env (HMAC is authoritative). Loopback HTTP allowed; off-loopback requires HTTPS |
+| `TRENCHCOAT_ROUTER_HMAC_KEY` | orchestrator / router | HMAC signing key for intake (INV-B5) |
 | `TELEGRAM_BOT_TOKEN` | chat service | operator chat + outbound DMs |
 | `TELEGRAM_OPERATOR_ID` | chat service | the allowlist (INV-B3) — single numeric user id |
+| `TELEGRAM_ROUTER_BOT_TOKEN` / `TELEGRAM_ROUTER_CHAT_ID` | router fanout | dedicated broadcast bot + destination chat/channel id |
+| `DISCORD_WEBHOOK_URL` | router fanout | Discord webhook for broadcast/lifecycle fanout |
 | `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` | collectors | security gate, EVM chains |
 | `COINGECKO_DEMO_KEY` | collectors | trending endpoint |
+| `HELIUS_API_KEY` | wallet jobs | Solana finalized wallet feeds |
+| `INFURA_API_KEY` | wallet jobs | Ethereum/Base finalized wallet feeds |
+| `NEYNAR_API_KEY` | collectors | Farcaster feeds / engagement / research |
+| `NEYNAR_WALLET_ID` | auth farcaster --create | App wallet for FID registration (optional) |
+| `FARCASTER_APP_FID` / `FARCASTER_APP_MNEMONIC` | auth farcaster --create | Sponsors SignedKeyRequest on create (optional) |
+| `TAVILY_API_KEY` | research collectors | optional host-mediated web search (never under `agent/`) |
 | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | GramJS listener | MTProto fallback (session file under `~/.trenchcoat/telegram-session/`) |
 
 Loaded from the process env (launchd plists set them from a mode-600 env file,
-see ops/runbook.md). Nothing under `agent/` ever receives an env value (INV-I3).
+see ops/runbook.md). Files under `agent/` never receive secrets (INV-I3); the
+Cursor child env is scrubbed of router/Telegram/provider keys via
+`scrubChildEnv` (`prop_inv_i3_scrub_*`).
 
 ## Config file — `~/.trenchcoat/config.json`
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **4** (two `operator_list_urls`, managed list, source
-lifecycle thresholds, FYP engagement caps). `loadConfig` migrates v1–v3 shapes
-via `migrateConfigToV4`.
+Current schema is **7** (`narratives.retention_days`, plus prior v6
+`farcaster` / `research.farcaster_search` and v5 `harness_improvement`).
+`loadConfig` migrates v1–v6 shapes via `migrateConfigToV7`.
+`securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
+structs used by both scheduled runs and operator research (security-gate.md).
+Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
+`ops/install-launchd.sh` validates the staged runtime before swapping
+`~/.trenchcoat/runtime`.
 
 ```json
 {
-  "schema": 4,
+  "schema": 7,
   "telegram_channels": [
     {
       "channel": "somechannel",
@@ -92,10 +108,34 @@ via `migrateConfigToV4`.
     "daily_cap": 3,
     "disambiguation_daily_cap": 10,
     "queue_expiry_days": 14,
-    "revisit_default_days": 7
+    "revisit_default_days": 7,
+    "web_search": { "enabled": true, "max_queries_per_run": 3 },
+    "twitter_search": {
+      "enabled": true,
+      "max_pages_per_query": 2,
+      "max_posts": 40,
+      "recent_window_hours": 48
+    },
+    "farcaster_search": {
+      "enabled": true,
+      "max_casts": 40,
+      "recent_window_hours": 48
+    }
   },
-  "broadcast": { "daily_budget": 5, "urgent_ceiling": 10 },
+  "broadcast": { "daily_budget": 5, "urgent_ceiling": 10, "discord_distiller": { "enabled": false, "daily_cap": 10 } },
+  "narratives": { "retention_days": 14 },
   "source_safety": { "intent_classifier_daily_cap": 20 },
+  "farcaster": {
+    "enabled": false,
+    "scrape_for_you": true,
+    "max_items_per_feed": 25,
+    "follow_graph": { "capacity": 250 },
+    "engagement": {
+      "enabled": true,
+      "likes_per_window": 2,
+      "like_window_minutes": 10
+    }
+  },
   "indicators": {
     "feature_spec_version": 1,
     "rsi_period": 14,
@@ -131,7 +171,7 @@ via `migrateConfigToV4`.
     }
   },
   "retention": { "inbox_archive_days": 30, "run_archive_days": 90, "chat_reports_days": 30 },
-  "chat": { "idle_timeout_minutes": 30 },
+  "chat": { "idle_timeout_minutes": 30, "research_confirm_ttl_minutes": 15 },
   "wallets": {
     "deterministic_weight": 0.8,
     "llm_weight": 0.2,
@@ -151,42 +191,121 @@ via `migrateConfigToV4`.
 only; HMAC/auth secrets stay in env (`TRENCHCOAT_ROUTER_*`, ADR 001). Full
 defaults live in `config/seed.example.json` and `src/lib/config.ts`.
 
+### `harness_improvement` (schema 5)
+
+Bounded self-improvement loop (ADR 005). Defaults keep the feature off.
+
+| Field | Default | Role |
+|---|---|---|
+| `enabled` | `false` | Master switch for propose / prepare / canary CLI |
+| `schedule_enabled` | `false` | Allow the `harness-improve` job / launchd |
+| `auto_open_pr` | `true` | After green tests, push branch and `gh pr create` (never merges) |
+| `base_branch` | `main` | PR base |
+| `test_command` | `test:unit` | `pnpm run <script>` inside the worktree |
+| `require_two_epochs` | `true` | Distinct sealed development + holdout epochs |
+| `allocation_bps` | `1000` | Canary traffic share (10%) when operator starts canary |
+| `min_events` / `min_holdout_events` | `40` / `20` | Sample floors recorded on the hypothesis |
+| `one_active_experiment` | `true` | Skip schedule while a canary is active |
+
+### `narratives` (schema 7)
+
+Rolling narrative log retention for `state/narratives/log.jsonl`.
+
+| Field | Default | Role |
+|---|---|---|
+| `retention_days` | `14` | Host prunes log lines whose `lastSeen` is older than this after each `narrative-scan` |
+
+### `review` (schema 7)
+
+Knowledge-distillation job scope.
+
+| Field | Default | Role |
+|---|---|---|
+| `lookback_days` | `7` | Sealed complete runs considered for path-only report manifests |
+| `max_reports` | `30` | Cap on report manifests per review run (newest first) |
+
+### `retention`
+
+Agent-workspace pruning on every completed run (`retainWorkspaceArtifacts`).
+Never deletes under the host `archive/` tree.
+
+| Field | Default | Role |
+|---|---|---|
+| `inbox_archive_days` | `30` | Age-prune `agent/inbox/<run-id>/` dirs |
+| `chat_reports_days` | `30` | Age-prune `agent/reports/chat/*` |
+| `run_archive_days` | `90` | Reserved for archive run GC (not applied by workspace retention; see snapshot-archive.md) |
+
 Threshold semantics live in the doc owning each subsystem (security-gate.md,
 audit-metrics.md, research-queue.md); the config only carries values. A config
 change that alters semantics is a doc change first.
 
-## Seed file — `trenchcoat init --seed <file>`
+## Seed file — operator cold start
+
+Config (`config/seed.example.json` → `~/.trenchcoat/config.json`) holds tunables
+and social collector settings. The **operator seed** is a separate file:
+
+`config/operator-seed.example.json`
 
 ```json
 {
+  "schema": 1,
   "watchlist": [
     { "chain": "solana", "token_address": "…", "thesis": "one line" }
   ],
-  "sources": ["twitter:@handle", "telegram:channelname"]
+  "sources": ["twitter:@handle", "telegram:channelname"],
+  "wallets": [
+    { "chain": "solana", "address": "…", "note": "optional" }
+  ]
 }
 ```
 
-Init resolves each watchlist entry through token-resolution (rejecting
-unresolvable ones loudly), registers sources at neutral score, creates empty
-`INDEX.md` / `narratives/` / `decisions.md`, and makes the initial state commit.
-The first audit is skipped until decisions exist.
+**Wallets (implemented):** `tc wallets seed <file>` (or
+`tc init --operator-seed <file>`) writes `agent/state/wallets.json` with each
+address as `tracking-probation` and `reasonCode: operator-seed`. Chains must
+support wallet tracking (`solana`, `ethereum`, `base`, `robinhood`). Refuses a non-empty
+`wallets.json`. Archives a receipt under `archive/wallet-seeds/` (router
+`wallet.lifecycle` fanout for seeds still deferred; review job stages live adds/drops).
+Seed at least one eligible wallet before wallet scan jobs can produce evidence.
+Discovery also requires a tracking or watching watchlist entry. Discovery and
+scan agents are evidence-only and cannot change wallet state, scores, cursors,
+or lifecycle.
+
+**Watchlist / sources:** schema accepted in the operator seed file; cold-start
+application is not wired yet — only wallets are applied today.
 
 ## CLI surface (`trenchcoat`, alias `tc`)
 
 | Command | Behaviour |
 |---|---|
-| `tc run <job>` | run one job (the cron entry point); refuses if the workspace writer lock is held |
-| `tc init --seed <file>` | cold start (above); refuses on a non-empty `agent/state/` |
+| `tc run <job>` | run one job (cron entry point); refuses if the workspace writer lock is held. Jobs include `list-scan`, `farcaster-scan`, `source-list-review`, `fc-source-review`, `wallet-discovery`, `wallet-scan-solana`, `wallet-scan-evm`, `wallet-review`, `harness-improve`, plus the scan/research/audit set in orchestrator.md |
+| `tc config validate` | migrate+parse config in memory; no write |
+| `tc config migrate --write` | persist schema-7 migration to `~/.trenchcoat/config.json` |
+| `tc watchlist remove <chain:token> --subject <symbol> --reason <text>` | host removal of ignored/revisit/dropped entries; reconciles `state/INDEX.md` |
+| `tc probe farcaster` | Neynar feed probe + dynamic signer status + FC lifecycle/engagement summary |
+| `tc auth farcaster --create --fname <name>` | programmatic bot account + signer (no app tap) |
+| `tc auth farcaster --fid <n> --username <name> --mnemonic-stdin` | attach signer to existing FID (mobile approve, or OP ETH on custody for host `KeyGateway.add`) |
+| `tc fc-source review [--dry-run] [--no-sync]` | FC follow-graph lifecycle review |
+| `tc fc-source seed <path> [--dry-run]` | operator seed for FC managed follows (`config/fc-source-seed.example.json`) |
+| `tc fc-source sync [--dry-run]` | apply desired follow graph with verification receipt |
+| `tc fc-engagement status` / `dry-run <run-id>` | FC like engagement probe |
+| `tc init [--seed <config>] [--operator-seed <file>]` | writes `~/.trenchcoat/config.json` from config seed; optional operator wallet seed |
+| `tc wallets seed <file>` | operator-seed wallets into empty `state/wallets.json` |
 | `tc auth twitter` | headful interactive re-auth (documented sandbox exception) |
 | `tc auth twitter --create-managed-list` | one-time private managed source list; persists list id/url (ADR 004) |
 | `tc probe twitter` | scrape all configured targets + lifecycle summary; no membership mutations |
 | `tc source-list review [--dry-run] [--no-sync]` | deterministic promote/demote; dry-run skips state and X writes |
 | `tc source-list sync` | sync desired managed membership to the persisted list id only |
-| `tc x-engagement status` | like throttle window usage, follow/like counts |
-| `tc x-engagement dry-run <run-id>` | show which bot choices would apply (rate-limit only); no X mutations |
-| `tc research <chain:token_address>` | operator-priority enqueue + immediate research run |
+| `tc harness propose --epoch <id>` | one hypothesis from a sealed scorecard (ADR 005) |
+| `tc harness run` / `tc run harness-improve` | scheduled pipeline: branch + tests + open PR (no merge) |
+| `tc harness prepare\|evaluate\|canary\|promote\|rollback\|status` | confined worktree + holdout + bounded canary |
+| `tc x-engagement status` | like throttle window usage, follow/like counts, `x-bot-health.json` |
+| `tc x-engagement dry-run <run-id>` | show which bot choices would apply using live inbox or sealed archive `x-fyp-eligible.json`; no X mutations |
+| `tc research <subject>` | operator-priority enqueue + locked research run (`chain:address` preferred); `--skip-agent` / `--dry-collect` supported |
 | `tc undock <id>` / `tc confirm <id>` | terminal exoneration decisions (INV-S13) |
-| `tc listen telegram` | the GramJS listener process (run under launchd, not by hand) |
+| `tc listen telegram` | Telegram listener + async research pump after operator confirm |
+| `tc listen channels` | Telegram alpha-channel poller (preview + gramjs scaffold); cursors under `~/.trenchcoat/telegram-channels/` |
+| `tc auth telegram-channels` | Scaffold GramJS session path under `~/.trenchcoat/telegram-session/` |
+| `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
 | `tc status` | last run per job, queue depth, open ledger positions, lock state |
 
 Exit codes: `0` success, `1` run never started (env/config problem,

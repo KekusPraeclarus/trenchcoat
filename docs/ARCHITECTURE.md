@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -25,13 +25,13 @@ bridges (broadcast and chat):
 ┌───────▼──────────────────────────▼────────┐  ┌────────────────▼────────────┐
 │ ORCHESTRATOR (src/orchestrator/)          │  │ CHAT SERVICE (src/chat/)    │
 │ jobs · run loop · outbox sender           │  │ telegram ⇄ minimal          │
-│ → external router (broadcasts)            │  │ orchestrator session;       │
+│ → in-repo router (broadcasts + lifecycle) │  │ orchestrator session;       │
 ├───────────────────────────────────────────┤  │ spawns research sub-agents  │
 │ COLLECTORS (src/collectors/)              │  └───────────────┬─────────────┘
-│ twitter (burner) · telegram listener      │                  │
+│ twitter · farcaster (Neynar) · telegram   │                  │
 │ → alpha queue · market data (gecko,       │                  │
 │ dexscreener, coingecko trending, F&G)     │                  │
-│ · indicators (RSI, vol, EMA)              │                  │
+│ · wallets · web · indicators (RSI, …)     │                  │
 │ snapshots → agent/inbox/ + alpha-queue/   │                  │
 ├───────────────────────────────────────────┴──────────────────▼────────────┐
 │ RUNTIME AGENT (agent/) — sandboxed, no network                             │
@@ -52,12 +52,13 @@ entries; writes a briefing to `agent/reports/` and, rarely, a broadcast proposal
 to `agent/outbox/`
 → orchestrator runs post-run integrity checks, writes as-of bundles for new
 decisions, creates entry-pending paper positions, validates outbox items (schema,
-length, budget — `urgent` bypasses budget), and stages deliveries → commits state
-and reports → purges durably digested alpha items → sends staged broadcasts with
-idempotency keys → marks the run complete. A host-side journal resumes any
-incomplete phase after a crash. Weekly audits freeze a cohort cutoff in a sealed epoch, materialise
-immutable post-event execution/outcome observations, then atomically publish the
-scorecard, ledger marks, and lagged source-score updates.
+length, budget — `urgent` bypasses budget), and stages deliveries → seals the
+archive journal (ADR 006; Git is backup-only via `tc backup`) → purges durably
+digested alpha items → sends staged broadcasts with idempotency keys → marks the
+run complete. The archive journal resumes any incomplete phase after a crash.
+Weekly audits freeze a cohort cutoff in a sealed epoch, materialise immutable
+post-event execution/outcome observations, then atomically publish the scorecard,
+ledger marks, and lagged source-score updates.
 
 **Telegram alpha ingestion** polls each channel's zero-credential `t.me/s/` HTML
 preview, falling back to a long-lived GramJS user-session listener for channels
@@ -65,14 +66,18 @@ without previews. Every new message is appended to `agent/alpha-queue/` with
 provenance; the next appropriate cycle digests the queue and the orchestrator
 purges digested items (their useful content now lives in the knowledge store).
 
-When a run fails, a **recovery ladder** restores flow: deterministic self-healing
-(state rollback to the last completed-run commit, bounded retries, launchd
-keepalive) → a sandboxed recovery agent for state repair → operator DM for what
-only a human can do. Detail in orchestrator.md.
+When a run fails, recovery is **deterministic journal resume** (ADR 006 /
+INV-S11): resume the first incomplete phase from
+`archive/transactions/<run-id>.json`, quarantine on hash conflict, bounded
+retries, launchd keepalive for the listener and broadcast router. No recovery-model session expands
+privileges. Operator DM covers headful re-auth and exoneration proposals. Detail
+in orchestrator.md.
 
-The **external router** (separate project) fans broadcasts out to Telegram channels
-and Discord bots. We only know it exists; the sender is a stub behind an interface
-until its contract is pinned.
+The **in-repo router** (`src/router/**`, ADR 001) is a KeepAlive process
+(`com.trenchcoat.router` / `tc router serve`) that takes HMAC-signed events and
+fans them out durably to Telegram/Discord. Market broadcasts and wallet
+`lifecycle` events share intake; lifecycle does not consume the daily broadcast
+budget. Jobs only stage + POST — without the router process, nothing fans out.
 
 The **chat service** bridges an operator-only Telegram bot to a *minimal
 orchestrator session*: it answers from the index directly when it can, and spawns
@@ -81,7 +86,7 @@ optional fresh collector data) that write a report file the chat session then
 relays. The conversational context window stays small no matter how deep the
 research goes.
 
-## Directory tree (planned)
+## Directory tree
 
 ```
 trenchcoat/                   # folder currently named trench-bot; rename pending
@@ -92,36 +97,44 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   └── knowledge/            # niche-tech knowledge files (as created)
+│   ├── adr/                  # binding decisions 001–007
+│   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
-│   │                         #   outbox sender, audit/ledger maths, source-list,
-│   │                         #   x-engagement, rug-dock, recovery, purge
+│   │                         #   outbox ingest/delivery, audit/ledger, source-list,
+│   │                         #   fc-source-list, engagement, rug-dock, journal, purge
 │   ├── collectors/
 │   │   ├── twitter/          # playwright scrape, managed-list sync, engagement
+│   │   ├── farcaster/        # Neynar scrape, follow-sync, likes, signer (ADR 007)
 │   │   ├── telegram/         # t.me/s/ preview poller + gramjs fallback → alpha queue
-│   │   └── market/           # geckoterminal, dexscreener, coingecko trending,
-│   │                         #   fear & greed, security gate, indicators
-│   ├── sources/              # FYP candidacy + lagged promote/demote (ADR 004)
-│   ├── social/               # FYP engagement proposal validation / throttle
+│   │   ├── market/           # geckoterminal, dexscreener, coingecko trending,
+│   │   │                     #   fear & greed, security gate, indicators
+│   │   ├── wallets/          # Helius / Infura providers
+│   │   └── web/              # Tavily search (research)
+│   ├── sources/              # X FYP candidacy + lagged promote/demote (ADR 004);
+│   │                         #   FC follow-graph lifecycle (ADR 007)
+│   ├── social/               # X / FC engagement proposal validation / throttle
 │   ├── wallets/              # smart-wallet scoring + lifecycle events (ADR 002)
+│   ├── harness/              # sealed-scorecard improvement loop (ADR 005)
+│   ├── contracts/            # zod schemas + fixtures
+│   ├── migrations/           # config schema migrations
 │   ├── router/               # in-repo HMAC intake + durable fanout (ADR 001)
 │   ├── chat/                 # telegram bridge, sub-agent spawning
 │   ├── lib/                  # rate-limit gate, snapshot writer, outbox schema,
 │   │                         #   run ids, chain registry, token resolution
-│   └── cli.ts                # `trenchcoat run <job>` / `trenchcoat auth twitter` / ...
+│   └── cli.ts                # `trenchcoat run <job>` / auth / probe / …
 ├── agent/                    # RUNTIME AGENT WORKSPACE — sandbox root
 │   ├── .cursor/sandbox.json  # workspace-only fs, network denied
 │   ├── AGENTS.md             # the bot's operating instructions
-│   ├── skills/               # one skill per job + chat, deep-research, recover
+│   ├── skills/               # one skill per interpretive job + chat, deep-research
 │   ├── state/                # knowledge store: INDEX.md, watchlist.json,
 │   │                         #   sources.json, ledger.json, research-queue.json,
-│   │                         #   research/, narratives/, decisions.md, scorecard.json
+│   │                         #   research/, narratives/log.jsonl, decisions.md, scorecard.json
 │   ├── inbox/                # per-run input snapshots (written by collectors)
 │   ├── alpha-queue/          # telegram channel messages awaiting digestion
 │   ├── outbox/               # broadcast proposals (validated+sent by orchestrator)
 │   └── reports/              # per-run briefings, audit reports, sub-agent reports
-└── ops/                      # launchd/cron templates, runbooks
+└── ops/                      # launchd/cron templates, runbooks, backup
 ```
 
 ## System boundaries
@@ -135,8 +148,8 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
    pressure is the norm, not the exception). Collectors label them as data with
    provenance; the agent treats them as evidence, never instructions, and weights
    them by source score (INV-P*).
-3. **Broadcast boundary** — only the orchestrator talks to the external router. The
-   agent proposes; host-side validation (schema, length cap, budget with urgent
+3. **Broadcast boundary** — only the orchestrator stages events into the router.
+   The agent proposes; host-side validation (schema, length cap, budget with urgent
    bypass + failsafe ceiling) decides what leaves the machine. Chat replies go only
    to the allowlisted operator (INV-B*).
 4. **Documentation boundary** — `docs/` (developer world) vs `agent/` (bot world).
@@ -147,16 +160,17 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 
 Detailed per-module docs live in [architecture/](architecture/README.md):
 
-- [orchestrator.md](architecture/orchestrator.md) — jobs, cron cycles, sdk usage,
-  outbox validation, urgent bypass, audit + ledger, rug-dock, recovery ladder,
-  alpha-queue lifecycle
-- [collectors.md](architecture/collectors.md) — twitter scraping, telegram
-  ingestion, market data, security gate, indicators, rate limiting,
-  snapshot/provenance format
+- [orchestrator.md](architecture/orchestrator.md) — jobs, Cursor CLI sessions,
+  outbox → router, audit + ledger, rug-dock, journal resume, alpha-queue lifecycle
+- [collectors.md](architecture/collectors.md) — twitter / farcaster / telegram,
+  market data, security gate, indicators, rate limiting, snapshot/provenance
 - [agent-workspace.md](architecture/agent-workspace.md) — the bot's instructions,
   skills, knowledge store (incl. narratives + sources), outbox, sandbox config
 - [chat-agent.md](architecture/chat-agent.md) — telegram bridge, minimal
   orchestrator pattern, research sub-agents
+- [smart-wallets.md](architecture/smart-wallets.md), [source-lifecycle.md](architecture/source-lifecycle.md),
+  [harness-improvement.md](architecture/harness-improvement.md), [router.md](architecture/router.md)
+  — wallet scoring/lifecycle, managed X list + FC follow-graph, harness loop, delivery
 - [chains.md](architecture/chains.md), [token-resolution.md](architecture/token-resolution.md),
   [research-queue.md](architecture/research-queue.md), [security-gate.md](architecture/security-gate.md),
   [snapshot-archive.md](architecture/snapshot-archive.md), [audit-metrics.md](architecture/audit-metrics.md)

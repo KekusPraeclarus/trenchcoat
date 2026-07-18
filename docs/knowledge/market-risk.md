@@ -16,6 +16,18 @@ status: active
 
 ## CoinGecko
 - Trending coins/categories; monthly quota accounting; Demo key in host env
+- Join paths as `new URL("search/trending", root + "/")` — a leading `/` drops
+  `/api/v3`, CoinGecko 301s, and `gatedFetch` (`redirect: "error"`) surfaces as
+  TypeError `fetch failed`
+- Category `id` is numeric; prefer `slug` as the stable string id. Change fields
+  may be `market_cap_1h_change` rather than `market_cap_change_24h`
+- Narrative-scan market attention is `fetchMarketAttentionForNarrative` in
+  `providers.ts` + `narrative-collect.ts` — **not** `aggregate.ts` or
+  `market-bars.ts` (those are OHLCV/settlement only)
+- Uses `gatedFetchWithRetry` (≤3 attempts, 429/5xx/timeout) then falls back to
+  DexScreener boosts + GeckoTerminal new pools. Fallback attention is **not**
+  category rotation — runs stay `marketBlind` until CG categories land
+- Unified rate gate: 25/min, 10k/month (do not open a second CoinGecko gate)
 
 ## Alternative.me
 - Daily Fear & Greed; validate timestamp freshness

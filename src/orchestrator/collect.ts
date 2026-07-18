@@ -1,20 +1,54 @@
 import type { SnapshotWriter } from "../lib/snapshot.js"
-import { loadConfig } from "../lib/config.js"
+import { loadConfig, loadEnvSecrets } from "../lib/config.js"
 import {
   scrapeConfiguredTwitter,
   type TwitterScrapeBundle,
 } from "../collectors/twitter/scrape.js"
-import type { SourceDiscoveryOrigin } from "../contracts/schemas.js"
+import {
+  scrapeConfiguredFarcaster,
+  type FarcasterFeedAssessment,
+  castAgeSec,
+  freshnessTierForAge,
+  summarizeFarcasterAssessments,
+} from "../collectors/farcaster/scrape.js"
+import {
+  buildSignerGateReceipt,
+  probeFarcasterSigner,
+} from "../collectors/farcaster/signer.js"
+import type { FcDiscoveryOrigin, SourceDiscoveryOrigin } from "../contracts/schemas.js"
+import { getJob, type JobName } from "./jobs.js"
+import { collectChartSweep } from "./chart-collect.js"
+import { collectNarrativeScan } from "./narrative-collect.js"
+import { collectWatchlistScan } from "./watchlist-collect.js"
+import { StateStore } from "../lib/state.js"
+import { desiredFollowFids } from "../sources/fc-lifecycle.js"
+import { getChain } from "../lib/chains.js"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import type { CanonicalIdentity } from "../contracts/schemas.js"
+import {
+  collectResearchDossier,
+  resolveResearchSubject,
+} from "./research-collect.js"
+import { collectReview } from "./review-collect.js"
+import { writeXFypEligibleSnapshot } from "./x-fyp-eligible.js"
 
 export type DiscoverySighting = Readonly<{
   handle: string
   origin: SourceDiscoveryOrigin
 }>
 
+export type FcDiscoverySighting = Readonly<{
+  handle: string
+  fid: number
+  origin: FcDiscoveryOrigin
+}>
+
 export type CollectionSummary = Readonly<{
   snapshotNames: readonly string[]
   fypAuthors: readonly string[]
   discoverySightings: readonly DiscoverySighting[]
+  fcDiscoverySightings: readonly FcDiscoverySighting[]
   fypPosts: readonly Readonly<{
     id: string
     author: string
@@ -22,37 +56,458 @@ export type CollectionSummary = Readonly<{
     url: string
     timestamp: string
   }>[]
+  fypCasts: readonly Readonly<{
+    hash: string
+    author: string
+    authorFid: number
+    text: string
+    url?: string
+    timestamp: string
+  }>[]
   postCount: number
+  skipAgent?: boolean
+  collectionStatus?: string
+  collectionKind?: "external" | "host-only" | "unavailable"
+  marketBlind?: boolean
+  marketBlindReason?: string
+  researchIdentity?: CanonicalIdentity
+  researchResolution?: string
+  researchSecurityHardFail?: boolean
 }>
+
+const EMPTY_SUMMARY: CollectionSummary = {
+  snapshotNames: [],
+  fypAuthors: [],
+  discoverySightings: [],
+  fcDiscoverySightings: [],
+  fypPosts: [],
+  fypCasts: [],
+  postCount: 0,
+}
 
 export async function collectForJob(args: Readonly<{
   job: string
   runId: string
   writer: SnapshotWriter
   fetchedAt: string
+  agentRoot: string
+  archiveRoot: string
+  researchSubject?: Readonly<{
+    subject: string
+    queueId?: string
+    chain?: string
+    tokenAddress?: string
+  }>
+  fetcher?: typeof fetch
 }>): Promise<CollectionSummary> {
-  if (args.job !== "list-scan") {
-    await args.writer.writeInbox(args.runId, "meta", {
-      source: "host.collector",
+  const job = getJob(args.job).name
+
+  switch (job) {
+    case "list-scan":
+      return collectListScan(args)
+    case "farcaster-scan":
+      return collectFarcaster(args)
+    case "chart-sweep":
+      return mapChart(await collectChartSweep({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+        ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+      }))
+    case "narrative-scan":
+      return mapNarrative(await collectNarrativeScan({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        archiveRoot: args.archiveRoot,
+      }))
+    case "research":
+      return collectResearch(args)
+    case "watchlist-scan":
+      return mapWatchlist(await collectWatchlistScan({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+        ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+      }))
+    case "source-list-review":
+    case "fc-source-review":
+    case "audit":
+    case "outcomes-settle":
+    case "wallet-review":
+    case "harness-improve":
+    case "recover":
+      return collectHostOnly(args, job)
+    case "review":
+      return mapReview(await collectReview({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+        ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+      }))
+    case "wallet-discovery":
+    case "wallet-scan-solana":
+    case "wallet-scan-evm":
+      return collectWalletEvidence(args, job)
+    default: {
+      const _exhaustive: never = job
+      throw new Error(`Unhandled job collection policy: ${String(_exhaustive)}`)
+    }
+  }
+}
+
+async function collectWalletEvidence(
+  args: Readonly<{
+    runId: string
+    writer: SnapshotWriter
+    fetchedAt: string
+    agentRoot: string
+    archiveRoot: string
+  }>,
+  job: Extract<JobName, "wallet-discovery" | "wallet-scan-solana" | "wallet-scan-evm">,
+): Promise<CollectionSummary> {
+  const state = new StateStore(join(args.agentRoot, "state"))
+  const wallets = state.loadWallets()
+  const watchlist = state.loadWatchlist()
+  const trackingSubjects = watchlist.entries.filter((entry) => (
+    entry.status === "tracking" || entry.status === "watching"
+  ))
+  const eligibleWallets = wallets.wallets.filter((wallet) => {
+    if (!["candidate", "tracking-probation", "tracking"].includes(wallet.status)) return false
+    const tracking = getChain(wallet.chain)?.walletTracking
+    return job === "wallet-scan-solana"
+      ? tracking === "helius"
+      : job === "wallet-scan-evm"
+        ? tracking === "infura" || tracking === "robinhood-public"
+        : true
+  })
+  const skipReason = job === "wallet-discovery"
+    ? trackingSubjects.length === 0 ? "no-active-watchlist-subjects" : undefined
+    : eligibleWallets.length === 0
+      ? job === "wallet-scan-solana"
+        ? "no-eligible-solana-wallets"
+        : "no-eligible-evm-wallets"
+      : undefined
+
+  if (skipReason) {
+    await args.writer.writeInbox(args.runId, "collection-status", {
+      source: "host.wallet-evidence",
       fetchedAt: args.fetchedAt,
       trust: "untrusted-external",
       items: [{
-        provenance: `${args.runId}:meta`,
-        text: `job=${args.job}`,
+        provenance: `${args.runId}:wallet-evidence-status`,
+        text: `job=${job} status=skipped reason=${skipReason}`,
         ts: args.fetchedAt,
         ageSec: 0,
         freshnessTier: "live",
       }],
     })
     return {
-      snapshotNames: ["meta"],
-      fypAuthors: [],
-      discoverySightings: [],
-      fypPosts: [],
+      ...EMPTY_SUMMARY,
+      snapshotNames: ["collection-status"],
       postCount: 1,
+      skipAgent: true,
+      collectionStatus: "skipped",
+      collectionKind: "host-only",
     }
   }
 
+  const evidence = {
+    schema: 1,
+    job,
+    capturedAt: args.fetchedAt,
+    watchlist: trackingSubjects.map((entry) => ({
+      chain: entry.identity.chain,
+      tokenAddress: entry.identity.tokenAddress,
+      status: entry.status,
+    })),
+    wallets: wallets.wallets,
+    cursors: wallets.cursors,
+    eligibleWalletIds: eligibleWallets.map((wallet) => wallet.walletId),
+    recentOutcomes: readRecentWalletOutcomes(args.archiveRoot),
+  }
+  const text = JSON.stringify(evidence)
+  await args.writer.writeInbox(args.runId, `wallet-evidence-${job}`, {
+    source: "host.wallet-evidence",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:wallet-evidence-state`,
+      text: text.length <= 20_000
+        ? text
+        : JSON.stringify({
+          ...evidence,
+          wallets: wallets.wallets.slice(0, 3),
+          cursors: wallets.cursors.slice(0, 3),
+          recentOutcomes: evidence.recentOutcomes.slice(0, 3),
+          truncated: true,
+        }),
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: [`wallet-evidence-${job}`],
+    postCount: 1,
+    collectionStatus: "completed",
+    collectionKind: "host-only",
+  }
+}
+
+function readRecentWalletOutcomes(archiveRoot: string): unknown[] {
+  const outcomesDir = join(archiveRoot, "outcomes")
+  if (!existsSync(outcomesDir)) return []
+  const outcomes: unknown[] = []
+  for (const name of readdirSync(outcomesDir)
+    .filter((entry) => entry.startsWith("wallet-buy-") && entry.endsWith(".json"))
+    .sort()
+    .reverse()
+    .slice(0, 5)) {
+    try {
+      const value = JSON.parse(readFileSync(join(outcomesDir, name), "utf8")) as {
+        outcomes?: unknown[]
+      }
+      if (Array.isArray(value.outcomes)) outcomes.push(...value.outcomes.slice(0, 50 - outcomes.length))
+      if (outcomes.length >= 50) break
+    } catch {
+      continue
+    }
+  }
+  return outcomes
+}
+
+function mapChart(result: Awaited<ReturnType<typeof collectChartSweep>>): CollectionSummary {
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: result.snapshotNames,
+    postCount: result.postCount,
+    skipAgent: result.skipAgent,
+    collectionStatus: result.collectionStatus,
+    collectionKind: "external",
+  }
+}
+
+function mapNarrative(result: Awaited<ReturnType<typeof collectNarrativeScan>>): CollectionSummary {
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: result.snapshotNames,
+    postCount: result.postCount,
+    skipAgent: result.skipAgent,
+    collectionStatus: result.collectionStatus,
+    collectionKind: "external",
+    marketBlind: result.marketBlind,
+    ...(result.marketBlindReason ? { marketBlindReason: result.marketBlindReason } : {}),
+  }
+}
+
+function mapWatchlist(result: Awaited<ReturnType<typeof collectWatchlistScan>>): CollectionSummary {
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: result.snapshotNames,
+    postCount: result.postCount,
+    skipAgent: result.skipAgent,
+    collectionStatus: result.collectionStatus,
+    collectionKind: "external",
+  }
+}
+
+function mapReview(result: Awaited<ReturnType<typeof collectReview>>): CollectionSummary {
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: result.snapshotNames,
+    postCount: result.postCount,
+    skipAgent: result.skipAgent,
+    collectionStatus: result.collectionStatus,
+    collectionKind: "external",
+  }
+}
+
+async function collectHostOnly(
+  args: Readonly<{ runId: string; writer: SnapshotWriter; fetchedAt: string }>,
+  job: JobName,
+): Promise<CollectionSummary> {
+  await args.writer.writeInbox(args.runId, "collection-status", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:collection-status`,
+      text: `job=${job} kind=host-only`,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: ["collection-status"],
+    postCount: 1,
+    skipAgent: true,
+    collectionStatus: "host-only",
+    collectionKind: "host-only",
+  }
+}
+
+async function collectUnavailable(
+  args: Readonly<{ runId: string; writer: SnapshotWriter; fetchedAt: string }>,
+  job: JobName,
+  capability: string,
+): Promise<CollectionSummary> {
+  await args.writer.writeInbox(args.runId, "collection-status", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:collection-status`,
+      text: `job=${job} kind=unavailable capability=${capability}`,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: ["collection-status"],
+    postCount: 1,
+    skipAgent: true,
+    collectionStatus: "unavailable",
+    collectionKind: "unavailable",
+  }
+}
+
+async function collectResearch(args: Readonly<{
+  runId: string
+  writer: SnapshotWriter
+  fetchedAt: string
+  researchSubject?: Readonly<{
+    subject: string
+    queueId?: string
+    chain?: string
+    tokenAddress?: string
+  }>
+  fetcher?: typeof fetch
+}>): Promise<CollectionSummary> {
+  if (!args.researchSubject) {
+    await writeResearchStatus(args, "skipped", "no-subject")
+    return {
+      ...EMPTY_SUMMARY,
+      snapshotNames: ["collection-status"],
+      postCount: 1,
+      skipAgent: true,
+      collectionStatus: "skipped",
+      collectionKind: "external",
+      researchResolution: "skipped",
+    }
+  }
+
+  const lines = [
+    `job=research`,
+    `subject=${args.researchSubject.subject}`,
+    args.researchSubject?.queueId ? `queueId=${args.researchSubject.queueId}` : "",
+    args.researchSubject?.chain ? `chain=${args.researchSubject.chain}` : "",
+    args.researchSubject?.tokenAddress
+      ? `tokenAddress=${args.researchSubject.tokenAddress}`
+      : "",
+  ].filter(Boolean)
+  const resolved = await resolveResearchSubject({
+    subject: args.researchSubject.subject,
+    ...(args.researchSubject.chain
+      ? { chainHint: args.researchSubject.chain as CanonicalIdentity["chain"] }
+      : {}),
+    ...(args.researchSubject.tokenAddress ? { tokenHint: args.researchSubject.tokenAddress } : {}),
+  }, args.fetcher ?? fetch)
+  if (resolved.status !== "resolved") {
+    const status = resolved.status
+    await writeResearchMeta(args, [...lines, `resolution=${status}`])
+    await writeResearchStatus(
+      args,
+      status,
+      resolved.status === "unsupported-chain"
+        ? `chain=${resolved.chain}`
+        : `reason=${status}`,
+    )
+    return {
+      ...EMPTY_SUMMARY,
+      snapshotNames: ["meta", "collection-status"],
+      postCount: 2,
+      skipAgent: true,
+      collectionStatus: status,
+      collectionKind: "external",
+      researchResolution: status,
+    }
+  }
+
+  const dossier = await collectResearchDossier({
+    writer: args.writer,
+    runId: args.runId,
+    subject: args.researchSubject.subject,
+    identity: resolved.identity,
+    fetchedAt: args.fetchedAt,
+    ...(args.researchSubject.queueId ? { queueId: args.researchSubject.queueId } : {}),
+    ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+  })
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: dossier.snapshotNames,
+    postCount: dossier.snapshotNames.length,
+    collectionStatus: "resolved",
+    collectionKind: "external",
+    researchIdentity: resolved.identity,
+    researchResolution: "resolved",
+    researchSecurityHardFail: dossier.security.hardFail || dossier.security.status === "hard-fail",
+  }
+}
+
+async function writeResearchMeta(
+  args: Readonly<{ runId: string; writer: SnapshotWriter; fetchedAt: string }>,
+  lines: readonly string[],
+): Promise<void> {
+  await args.writer.writeInbox(args.runId, "meta", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:meta`,
+      text: lines.join(" "),
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+}
+
+async function writeResearchStatus(
+  args: Readonly<{ runId: string; writer: SnapshotWriter; fetchedAt: string }>,
+  status: string,
+  detail: string,
+): Promise<void> {
+  await args.writer.writeInbox(args.runId, "collection-status", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:collection-status`,
+      text: `job=research status=${status} ${detail}`,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+}
+
+async function collectListScan(args: Readonly<{
+  runId: string
+  writer: SnapshotWriter
+  fetchedAt: string
+}>): Promise<CollectionSummary> {
   const config = loadConfig()
   const bundles = await scrapeConfiguredTwitter(config)
   const names: string[] = []
@@ -71,7 +526,7 @@ export async function collectForJob(args: Readonly<{
     const name = sanitizeSnapshotName(bundle.target.label)
     names.push(name)
     postCount += bundle.posts.length
-    const origin = originForTarget(bundle)
+    const origin = originForTwitterTarget(bundle)
     if (origin) {
       for (const post of bundle.posts) {
         const key = `${origin}:${post.author.toLowerCase()}`
@@ -94,6 +549,15 @@ export async function collectForJob(args: Readonly<{
     await writeTwitterBundle(args, name, bundle)
   }
 
+  if (fypPosts.length > 0) {
+    await writeXFypEligibleSnapshot({
+      writer: args.writer,
+      runId: args.runId,
+      fetchedAt: args.fetchedAt,
+      posts: fypPosts,
+    })
+  }
+
   return {
     snapshotNames: names,
     fypAuthors: [...fypAuthors].sort(),
@@ -102,15 +566,192 @@ export async function collectForJob(args: Readonly<{
         ? a.handle.localeCompare(b.handle)
         : a.origin.localeCompare(b.origin)
     )),
+    fcDiscoverySightings: [],
     fypPosts,
+    fypCasts: [],
     postCount,
+    collectionKind: "external",
   }
 }
 
-function originForTarget(bundle: TwitterScrapeBundle): SourceDiscoveryOrigin | undefined {
+async function collectFarcaster(args: Readonly<{
+  runId: string
+  writer: SnapshotWriter
+  fetchedAt: string
+  agentRoot: string
+}>): Promise<CollectionSummary> {
+  const config = loadConfig()
+  if (!config.farcaster.enabled) {
+    await args.writer.writeInbox(args.runId, "farcaster-collection-status", {
+      source: "host.collector",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${args.runId}:fc-status`,
+        text: "status=disabled reason=farcaster.enabled=false",
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    })
+    return {
+      ...EMPTY_SUMMARY,
+      snapshotNames: ["farcaster-collection-status"],
+      postCount: 1,
+      skipAgent: true,
+      collectionStatus: "disabled",
+      collectionKind: "unavailable",
+    }
+  }
+
+  const secrets = loadEnvSecrets()
+  if (!secrets.neynarApiKey) throw new Error("NEYNAR_API_KEY is required for farcaster-scan")
+  if (config.farcaster.bot_fid === undefined) {
+    await args.writer.writeInbox(args.runId, "farcaster-collection-status", {
+      source: "host.collector",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${args.runId}:fc-status`,
+        text: "status=missing-bot-fid",
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    })
+    return {
+      ...EMPTY_SUMMARY,
+      snapshotNames: ["farcaster-collection-status"],
+      postCount: 1,
+      skipAgent: true,
+      collectionStatus: "missing-bot-fid",
+      collectionKind: "unavailable",
+    }
+  }
+
+  const bundles = await scrapeConfiguredFarcaster(config, { apiKey: secrets.neynarApiKey })
+  const signerProbe = await probeFarcasterSigner({
+    apiKey: secrets.neynarApiKey,
+    nowIso: args.fetchedAt,
+  })
+  const signerGate = buildSignerGateReceipt(signerProbe)
+  const names: string[] = []
+  const fypAuthors = new Set<string>()
+  const sightings: FcDiscoverySighting[] = []
+  const seenKeys = new Set<string>()
+  const fypCasts: CollectionSummary["fypCasts"][number][] = []
+  let postCount = 0
+
+  for (const bundle of bundles) {
+    const assessment = bundle.assessment
+    const name = sanitizeSnapshotName(assessment.target.label)
+    names.push(name)
+    postCount += assessment.casts.length
+    const origin = originForFarcasterTarget(assessment)
+    if (origin) {
+      for (const cast of assessment.eligibleCasts) {
+        const key = `${origin}:${cast.author.toLowerCase()}`
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key)
+          sightings.push({
+            handle: cast.author,
+            fid: cast.authorFid,
+            origin,
+          })
+        }
+        if (origin === "fc-fyp") {
+          fypAuthors.add(cast.author)
+          fypCasts.push({
+            hash: cast.hash,
+            author: cast.author,
+            authorFid: cast.authorFid,
+            text: cast.text,
+            timestamp: cast.timestamp,
+            ...(cast.url ? { url: cast.url } : {}),
+          })
+        }
+      }
+    }
+    await writeFarcasterBundle(args, name, assessment)
+  }
+
+  const store = new StateStore(join(args.agentRoot, "state"))
+  let desiredManaged = 0
+  try {
+    desiredManaged = desiredFollowFids(store.loadFcSourceLifecycle()).length
+  } catch {
+    desiredManaged = 0
+  }
+  const followingAssessment = bundles.find((b) => b.assessment.target.kind === "following")?.assessment
+  const followingCount = followingAssessment?.eligibleCasts.length ?? 0
+  const followingStatus = followingAssessment
+    ? (followingCount === 0 && desiredManaged === 0
+      ? "healthy-empty-following"
+      : followingCount === 0
+        ? "empty-following-with-desired"
+        : "following-populated")
+    : "following-not-targeted"
+  const fypAssessment = bundles.find((b) => b.assessment.target.kind === "for_you")?.assessment
+  const skipAgent = Boolean(fypAssessment?.skipAgent)
+
+  await args.writer.writeInbox(args.runId, "farcaster-collection-status", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:fc-status`,
+      text: [
+        `botFid=${config.farcaster.bot_fid}`,
+        `targets=${bundles.map((b) => `${b.assessment.target.label}:${b.assessment.counts.total}`).join(",")}`,
+        `eligible=${summarizeFarcasterAssessments(bundles.map((b) => b.assessment))}`,
+        `desiredManagedFollows=${desiredManaged}`,
+        `followingCount=${followingCount}`,
+        `followingStatus=${followingStatus}`,
+        `signerStatus=${signerProbe.status}`,
+        `signerMutations=${signerGate.mutationsAllowed ? "allowed" : "blocked"}`,
+        ...(fypAssessment?.rejected ? [`fypRejected=${fypAssessment.rejectReason}`] : []),
+        ...(skipAgent ? ["skipAgent=true"] : []),
+      ].join(" "),
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+  names.push("farcaster-collection-status")
+
+  return {
+    snapshotNames: names,
+    fypAuthors: [...fypAuthors].sort(),
+    discoverySightings: [],
+    fcDiscoverySightings: sightings.sort((a, b) => (
+      a.origin === b.origin
+        ? a.handle.localeCompare(b.handle)
+        : a.origin.localeCompare(b.origin)
+    )),
+    fypPosts: [],
+    fypCasts,
+    postCount,
+    ...(skipAgent
+      ? {
+        skipAgent: true,
+        collectionStatus: fypAssessment?.rejectReason ?? "fyp-rejected",
+      }
+      : { collectionStatus: followingStatus }),
+    collectionKind: "external",
+  }
+}
+
+function originForTwitterTarget(bundle: TwitterScrapeBundle): SourceDiscoveryOrigin | undefined {
   if (bundle.target.kind === "home") return "fyp"
   if (bundle.target.label === "operator-list-1") return "operator-list-1"
   if (bundle.target.label === "operator-list-2") return "operator-list-2"
+  return undefined
+}
+
+function originForFarcasterTarget(assessment: FarcasterFeedAssessment): FcDiscoveryOrigin | undefined {
+  if (assessment.target.kind === "for_you") return "fc-fyp"
+  if (assessment.target.label === "operator-channel-1") return "fc-channel-1"
+  if (assessment.target.label === "operator-channel-2") return "fc-channel-2"
   return undefined
 }
 
@@ -145,6 +786,34 @@ async function writeTwitterBundle(
             ? "stale" as const
             : "expired" as const,
         dedupeKey: post.id,
+      }
+    }),
+  })
+}
+
+async function writeFarcasterBundle(
+  args: Readonly<{
+    runId: string
+    writer: SnapshotWriter
+    fetchedAt: string
+  }>,
+  name: string,
+  assessment: FarcasterFeedAssessment,
+): Promise<void> {
+  await args.writer.writeInbox(args.runId, `farcaster-${name}`, {
+    source: `farcaster.${assessment.target.label}`,
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: assessment.eligibleCasts.map((cast) => {
+      const ageSec = castAgeSec(args.fetchedAt, cast.timestamp)
+      return {
+        provenance: cast.provenance,
+        text: cast.text,
+        ...(cast.url ? { url: cast.url } : {}),
+        ts: cast.timestamp,
+        ageSec,
+        freshnessTier: freshnessTierForAge(ageSec),
+        dedupeKey: cast.hash,
       }
     }),
   })

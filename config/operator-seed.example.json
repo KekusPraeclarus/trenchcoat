@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "watchlist": [
+    {
+      "chain": "solana",
+      "token_address": "REPLACE_WITH_TOKEN_MINT",
+      "thesis": "one line on why it is tracked"
+    }
+  ],
+  "sources": [
+    "twitter:@handle",
+    "telegram:channelname"
+  ],
+  "wallets": [
+    {
+      "chain": "solana",
+      "address": "REPLACE_WITH_BASE58_WALLET",
+      "note": "operator seed — ethereum/base/robinhood also accepted"
+    }
+  ]
+}

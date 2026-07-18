@@ -13,7 +13,8 @@ export type ChainEntry = Readonly<{
   securityScanner?: SecurityScanner
   nativeBenchmark: string
   addressFormat: AddressFormat
-  walletTracking: "helius" | "infura" | "unsupported"
+  walletTracking: "helius" | "infura" | "robinhood-public" | "unsupported"
+  evmChainId?: number
 }>
 
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/u
@@ -41,6 +42,7 @@ export const CHAIN_REGISTRY: ReadonlyArray<ChainEntry> = Object.freeze([
     nativeBenchmark: "ethereum:eth",
     addressFormat: "evm",
     walletTracking: "infura",
+    evmChainId: 1,
   },
   {
     slug: "base",
@@ -52,6 +54,7 @@ export const CHAIN_REGISTRY: ReadonlyArray<ChainEntry> = Object.freeze([
     nativeBenchmark: "ethereum:eth",
     addressFormat: "evm",
     walletTracking: "infura",
+    evmChainId: 8453,
   },
   {
     slug: "bsc",
@@ -63,6 +66,7 @@ export const CHAIN_REGISTRY: ReadonlyArray<ChainEntry> = Object.freeze([
     nativeBenchmark: "bsc:bnb",
     addressFormat: "evm",
     walletTracking: "unsupported",
+    evmChainId: 56,
   },
   {
     slug: "robinhood",
@@ -70,10 +74,12 @@ export const CHAIN_REGISTRY: ReadonlyArray<ChainEntry> = Object.freeze([
     family: "evm",
     geckoterminalNetwork: "robinhood",
     dexscreenerChainId: "robinhood",
-    // scanner coverage verified at kickoff; absent => untrackable
+    // GoPlus 4663 verified at preflight; absent => token/wallet gate fail-closed
+    securityScanner: { kind: "goplus", chainId: "4663" },
     nativeBenchmark: "ethereum:eth",
     addressFormat: "evm",
-    walletTracking: "unsupported",
+    walletTracking: "robinhood-public",
+    evmChainId: 4663,
   },
 ])
 

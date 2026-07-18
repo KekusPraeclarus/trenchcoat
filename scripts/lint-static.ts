@@ -17,6 +17,10 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const files = walk(root)
 const signingBanned = /\b(ethers|viem|@solana\/web3\.js|web3\.js|bitcoinjs|wagmi)\b/
+// Host-only Farcaster custody registration (ADR 007) — never mounted into the agent sandbox
+const signingAllowlist = new Set([
+  "src/collectors/farcaster/signer.ts",
+])
 const secretish = /(CURSOR_API_KEY|TELEGRAM_BOT_TOKEN|TRENCHCOAT_ROUTER_TOKEN|PRIVATE_KEY|SECRET_KEY)\s*=\s*['"][^'"]+['"]/
 
 for (const file of files) {
@@ -27,7 +31,12 @@ for (const file of files) {
     failures.push(`${rel}: secret-like assignment under agent/`)
   }
 
-  if (rel.startsWith("src/") && signingBanned.test(text) && !rel.includes("lint-static")) {
+  if (
+    rel.startsWith("src/")
+    && signingBanned.test(text)
+    && !rel.includes("lint-static")
+    && !signingAllowlist.has(rel)
+  ) {
     failures.push(`${rel}: banned signing/wallet dependency reference`)
   }
 

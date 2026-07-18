@@ -1,8 +1,8 @@
 ---
-description: Chat agent module - Telegram bridge to a minimal orchestrator session that spawns research sub-agents, keeping the conversational context window small.
+description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
-status: draft
-last_verified: 2026-07-16
+status: active
+last_verified: 2026-07-18
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -15,7 +15,7 @@ read_when:
 The operator's conversational window into everything the bot knows: discuss
 findings, probe research that never met the broadcast bar, and ask for an opinion
 on any token — answered by combining stored knowledge with fresh on-demand
-research. Distinct from broadcasts (outbound, via the external router); this is
+research. Distinct from broadcasts (outbound, via the in-repo router); this is
 inbound, interactive, operator-only.
 
 ## Minimal-orchestrator pattern
@@ -23,70 +23,116 @@ inbound, interactive, operator-only.
 The conversational session must survive long chats without bloating, so it does as
 little as possible itself:
 
-- **Chat session** (`skills/chat/`) — resumable via `Agent.resume` within a
-  conversation. Holds only: the conversation, `INDEX.md`, and sub-agent reports.
-  It answers directly when the index and its existing context suffice (recall
-  questions, follow-ups on a report it already has). For anything heavier it
-  writes a research request and waits.
-- **Research sub-agent** (`skills/deep-research/`) — a fresh one-shot
-  `Agent.prompt` session over the same workspace, spawned by the chat service per
-  request. It does the expensive work: walks the knowledge store, reads research
-  bodies and decision history, incorporates any fresh collector snapshots, and
-  writes a compact report to `reports/chat/<conv-id>-<n>.md`. Then it's gone —
-  its burned context never touches the chat session.
-- The chat session reads the report and answers. Deep follow-ups spawn another
-  sub-agent; the reports accumulate as the conversation's working set.
-
-This is the same economics as the cron jobs: disposable heavy contexts, one small
-durable thread.
+- **Chat session** (`skills/chat/`) — resumable Cursor CLI chat (`agent create-chat`
+  + `--resume`) within a conversation, run in `--mode ask` (read-only). Holds
+  only: the conversation, `state/INDEX.md`, and any chat reports already on disk.
+  It answers directly when the index and existing context suffice. Host prompt
+  and chat skill both say "read INDEX first" — if
+  `~/.trenchcoat/agent/state/INDEX.md` is missing, the session has no rollup
+  (scaffold / agent-workspace.md).
+- **Research proposal (host)** — fail-closed host extractor
+  (`src/chat/research-intent.ts`) detects research-shaped operator text and asks
+  for an explicit `confirm` / `cancel`. Pending proposals live in
+  `~/.trenchcoat/pending-research.json` (mode 600), bound to
+  `TELEGRAM_OPERATOR_ID`, with TTL from `config.chat.research_confirm_ttl_minutes`.
+  Chain may be constrained with `on base` / `on solana` / etc. (or `chain:address`);
+  without a hint the host ranks DexScreener hits across supported chains by
+  liquidity+volume credibility (token-resolution.md) — ethereum is not a default.
+  When several CAs remain credible, the host DMs a numbered shortlist that always
+  includes the chain (`1. base:0x…`) and waits for a pick (`1`–`5` or
+  `chain:address`) before continuing.
+- **Research sub-agent** (`skills/deep-research/`) — after confirm, the listener
+  asynchronously calls `processNextConfirmedResearch` →
+  `runOperatorResearchNow` (workspace writer lock held). Collectors + optional
+  Tavily Search + bounded X token search run on the host only; the agent stays
+  network-denied. Reports include a Sentiment & popularity section from
+  `twitter-*` inbox snapshots when present. Report lands at
+  `reports/chat/<run-id>.md`; the chat session may then summarize it.
+- **Broadcast run recall** — `list-scan` and `narrative-scan` runs that stage
+  broadcasts propose `reports/<run-id>/chat-summary.json`; the host validates
+  after `ingestOutbox` and renders `reports/chat/<run-id>.md` from validated
+  broadcast text plus accepted context (`chat-report.ts`). Agents never write
+  `reports/chat/` directly on those jobs; summaries remain untrusted evidence.
+- Ordinary recall questions never take the writer lock.
 
 ## Design
 
-- `src/chat/` runs a Telegram bot (long-polling — no inbound port) bridging
-  messages to the chat session (cwd = `agent/`, sandboxed, no network)
-- **Operator-only**: messages accepted from an allowlisted Telegram user id;
-  everything else dropped unanswered (INV-B3)
-- **Outbound operator DMs** — the same bot is the host-side path for
-  orchestrator alerts (failures, headful re-auth, recovery-agent runs) and for
-  **exoneration proposals**: when the intent classifier returns `warn`, the
-  orchestrator DMs you a short review card (source id, quoted message, scanner
-  flags, matched CA) and waits for `undock <id>` / `confirm <id>` (or CLI).
-  These DMs are host-authored templates — never agent free-text to the operator
-  (INV-B3 still applies; only the allowlisted id receives them)
-- **Fresh research round-trip**: the sub-agent cannot fetch; when the request
-  needs live data ("look at $TOKEN fresh"), the chat service runs the matching
-  collectors first (same rate-limit gate, INV-R4), drops snapshots into a
-  conversation inbox, then spawns the sub-agent over them
-- **Session policy**: fresh chat session per conversation, resumed within it,
-  closed after an idle timeout. The knowledge store is the long-term memory;
-  sessions stay disposable
-- Replies are plain text through the bot; long answers reference the sub-agent
-  report rather than dumping it into chat
+- `tc listen telegram` long-polls Bot API (no inbound port) and bridges private
+  DMs to the chat session (`cwd` = `~/.trenchcoat/agent`, sandboxed)
+- **Operator-only**: messages accepted only from `TELEGRAM_OPERATOR_ID`; group
+  chats are dropped; replies always target that operator id, never the inbound
+  `chat.id` if it differs (INV-B3)
+- Host commands: `/start`, `/status`, confirm/cancel, and research proposals
+  reply without an ask-mode agent turn
+- **Session policy**: Cursor chat id persisted in `~/.trenchcoat/chat-session.json`;
+  rotated after `config.chat.idle_timeout_minutes` (default 30). Knowledge store
+  is long-term memory; sessions stay disposable
+- **Streaming**: chat turns use Cursor `--output-format stream-json
+  --stream-partial-output`. Partials go to Telegram `sendMessageDraft` (Bot API
+  9.5+; same `draft_id` animates updates). Drafts are ephemeral — the host then
+  `sendMessage`s the final text so it persists. Bot API calls live in
+  `src/lib/telegram-bot.ts` / `src/cli.ts`, not under `src/chat/` (INV-R4)
+- Replies are plain text. Final `sendMessage` never truncates: `splitTelegramText`
+  chunks at ~3800 chars (`1/n` …). Overlong replies also land under
+  `reports/chat/` with a summary that cites the path. Draft previews may still
+  bound to 4096. Voice from `skills/chat/SKILL.md`
+- **Outbound operator DMs** (alerts, research progress/completion) remain
+  host-authored templates on the same bot — never agent free-text outside the
+  chat turn path
 
 ## Token-burn notes
 
-- The chat session never greps research bodies itself — that's the sub-agent's job
-- Recall questions are answered from the store without collectors; fresh data is
-  fetched only when the question needs it
-- Sub-agent reports are capped in size by the deep-research skill's output contract
+- Chat turns use ask mode so they do not take the workspace writer lock (INV-S15)
+- Recall questions are answered from the store without collectors
+- Confirmed research acquires the writer lock in `runOperatorResearchNow`; if the
+  lock is held, the durable confirmed request stays `queued` and the pump retries
 
-## Source files to inspect before editing (once implemented)
+## Source files
 
-- `src/chat/bot.ts` — telegram long-polling, allowlist, message loop
-- `src/chat/session.ts` — chat session lifecycle
-- `src/chat/subagent.ts` — research request handling, collector round-trip,
-  sub-agent spawning
-- `agent/skills/chat/SKILL.md` and `agent/skills/deep-research/SKILL.md`
+- `src/cli.ts` (`listen telegram`) — Bot API long-poll, draft stream, research pump
+- `src/lib/telegram-bot.ts` — `sendMessage` / chunked send / `sendMessageDraft` / `sendChatAction`
+- `src/chat/telegram-reply.ts` — prepare final reply (chunk + optional chat report)
+- `src/chat/handler.ts` — allowlist, host commands, research confirm gate
+- `src/chat/research-intent.ts` — fail-closed research intent extraction
+- `src/chat/pending-research.ts` — durable pending/confirmed request store
+- `src/chat/session.ts` — Cursor chat lifecycle + streaming turn runner
+- `src/chat/draft.ts` — throttled draft updates
+- `src/lib/cursor-stream.ts` — stream-json assistant delta merge
+- `src/chat/prompt.ts` — operator-text scrub / chat prompt / Telegram truncate
+- `src/chat/telegram.ts` — reusable poll helper (idle-bounded)
+- `src/orchestrator/research.ts` — operator enqueue + locked research run
+- `src/orchestrator/chat-report.ts` — host validation + render for list/narrative-scan chat summaries
+- `agent/skills/chat/SKILL.md` — conversational contract + voice
+- `agent/skills/deep-research/SKILL.md` — sub-agent contract
 
 ## Gotchas and security-sensitive boundaries
 
 - The Telegram bot token lives in the chat service env, never under `agent/`
-  (INV-I3)
+  (INV-I3). `TAVILY_API_KEY` is host-only and scrubbed from Cursor child env
 - Inbound chat text is operator-authored but still crosses into the sandbox —
   deliver it as the session prompt, never write it into the knowledge store
   verbatim without attribution
-- Sub-agent research round-trips go through the orchestrator's collector layer and
-  rate gate; the chat service never fetches upstream APIs directly (INV-R4)
-- Replies can contain knowledge-store content that originated in tweets or alpha
-  channels — fine for the operator, but the chat service must never echo content
-  to any chat id outside the allowlist (INV-B3)
+- `src/chat/` must not call upstream market APIs (INV-R4); Bot API traffic stays
+  in `src/cli.ts`. Research collectors live under `src/orchestrator/` /
+  `src/collectors/`
+- A model can propose research subjects or web-search *queries*; only an
+  allowlisted operator `confirm` authorizes execution, and the host never fetches
+  model-selected URLs
+- Replies must never go to a chat id outside the allowlisted operator (INV-B3)
+- Idle expiry must use the injected turn clock (`Date.parse(nowIso())`), not
+  wall-clock `Date.now()`. Fixture-date or clock-injected tests otherwise look
+  “expired” and silently rotate the Cursor chat id
+- Launchd runs `~/.trenchcoat/bin/trenchcoat` against a **deployed**
+  `~/.trenchcoat/runtime`, not the repo `dist/`. After host-gate changes
+  (`research-intent`, `handler`, listener), redeploy via `ops/install-launchd.sh`
+  (it wipes `dist/` before `tsc` so deleted modules do not linger) or Telegram
+  will still hit the old binary. Skills and `AGENTS.md` under
+  `~/.trenchcoat/agent/` are a **separate copy** from the repo `agent/` tree —
+  after editing any skill (`list-scan`, `narrative-scan`, `review`, `chat`,
+  `deep-research`, `farcaster-scan`, …) or runtime `AGENTS.md`, sync those
+  artifacts into `~/.trenchcoat/agent/` before expecting live jobs to see them
+  (`tc init` only copies on first create; later repo edits do not auto-propagate)
+- Confirm/cancel with no pending proposal must not write an unbound
+  `pending-research.json` (empty `telegramUserId` failed Zod and crash-looped
+  launchd when offset could not advance). Listener wraps each update in
+  try/catch so one bad message cannot wedge the poll loop

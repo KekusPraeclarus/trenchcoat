@@ -2,7 +2,7 @@
 description: Audit metric definitions - hit events, horizons, benchmark excess returns, calibration binning, paper-ledger conventions, broadcast precision, discovery-funnel counterfactuals. The formulas that make the scorecard mean something.
 scope: module
 status: draft
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 read_when:
   - Editing src/orchestrator/audit.ts or interpreting scorecard numbers.
 ---
@@ -174,6 +174,10 @@ A rejected candidate version never reuses that holdout. A promoted rule remains
 shadow-monitored for drift and automatically falls back to the model path when
 its inputs are invalid.
 
+Harness improvement experiments (ADR 005) reuse this same pre-registration /
+forward-holdout discipline for **decision-policy** changes — they do not promote
+Relative Strength Index rules, and they never rewrite this audit definition.
+
 ## Broadcast precision
 
 Every proposal carries a typed `audit_claim` with subject identity, direction,
@@ -215,12 +219,14 @@ while uncertainty is high. It is applied with the one-cycle lag
 never averaged away by good calls. Model-authored citations and classifier
 outputs never participate in source score writes (INV-S12).
 
-## Disambiguation grading (resolution log)
+## Disambiguation grading (resolution log — designed)
 
-For every resolution-log record past the headline horizon, the audit prices
-**all shortlist candidates** from `mention_ts`. A later raw CA from the same
-source context is the only promotion-grade target label. Price/volume separation
-is retained as an explicitly proxy-labelled diagnostic:
+Requires `archive/resolution-log.jsonl` (not written yet; see
+token-resolution.md). When that log exists, for every record past the headline
+horizon the audit prices **all shortlist candidates** from `mention_ts`. A
+later raw CA from the same source context is the only promotion-grade target
+label. Price/volume separation is retained as an explicitly proxy-labelled
+diagnostic:
 
 - **Ground-truth target** = a later raw CA from the same source context
 - **Proxy target** = absent ground truth, the candidate whose post-mention excess

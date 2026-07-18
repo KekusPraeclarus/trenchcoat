@@ -2,9 +2,9 @@
 description: Token security gate - exact GoPlus/RugCheck field-to-flag mapping per chain family, hard-fail vs caution semantics, the market-quality preflight, and fail-closed behaviour for scanner outages and unsupported chains.
 scope: module
 status: draft
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 read_when:
-  - Editing src/collectors/market/security.ts or market-quality checks, or changing what blocks a track verdict.
+  - Editing src/collectors/market/security.ts, src/orchestrator/gate-evidence.ts, or market-quality checks, or changing what blocks a track verdict.
 ---
 
 # Security gate
@@ -23,6 +23,12 @@ response, never off text.
 The chain registry (chains.md) selects the scanner. No registry entry or no
 scanner → fail-closed, candidate rejected as `unsupported-chain`.
 
+## Thresholds from config
+
+`securityThresholdsFromConfig` (`src/lib/config.ts`) maps
+`config.gate_thresholds` into the scanner/preflight structs. Both scheduled
+runs and operator research call this — no hardcoded threshold forks.
+
 ## Hard-fail mapping (blocks track, triggers dock attribution)
 
 The scanner response is mapped to a boolean `hard_fail` plus typed `flags` by
@@ -37,8 +43,7 @@ pure functions in `src/collectors/market/security.ts`:
 | `is_mintable` | `"1"` |
 | `owner_change_balance` | `"1"` |
 | `selfdestruct` | `"1"` |
-| `sell_tax` | ≥ 0.20 |
-| LP lock | locked-or-burned LP fraction < 0.80 (from `lp_holders` lock flags + burn addresses) |
+| `sell_tax` | ≥ `sell_tax_max` (default 0.20) |
 
 **RugCheck (Solana)** — `hard_fail` iff any of:
 
@@ -46,18 +51,21 @@ pure functions in `src/collectors/market/security.ts`:
 |---|---|
 | mint authority | present/active |
 | freeze authority | present/active |
-| LP lock | locked-or-burned LP fraction < 0.80 |
-| top-10 holder concentration | > 0.50 of supply (excluding pools/burn) |
+| top-10 holder concentration | > `holder_top10_max` (default 0.50 of supply, excluding pools/burn) |
 
 Threshold values are config-tunable (CONFIG.md); the field mapping is code and
 changes here first.
 
 ## Caution flags (surfaced to the agent, don't block)
 
-Proxy contract, buy/sell tax 0.05–0.20, trading cooldown, anti-whale limits,
-blacklist capability, unverified source, holder concentration 0.30–0.50.
-Written into the research snapshot as `security.flags` — the agent weighs them
-in its verdict and must cite them when tracking anyway.
+**`low-lp-lock`** — locked-or-burned LP fraction below `lp_locked_min`
+(default 0.80; GoPlus `lp_holders` lock/burn flags, RugCheck `lpLockedPct`).
+Still flagged and written into evidence; **never** sets `hardFail` alone.
+
+Also caution: proxy contract, buy/sell tax 0.05–0.20 (buy-tax path), trading
+cooldown, anti-whale limits, blacklist capability, unverified source. Written
+into the research snapshot as `security.flags` — the agent weighs them in its
+verdict and must cite them when tracking anyway.
 
 ## Scanner failure semantics (fail-closed)
 
@@ -88,11 +96,23 @@ early pools can mature.
 ## Where it runs
 
 - **Research dequeue** — always, both layers, freshest data
+- **Confirmed operator research** — same path as scheduled: thresholds via
+  `securityThresholdsFromConfig`, proposal gating via
+  `resolveGateArchiveThenLive` + `archivedProvenanceAllowlist` (INV-S6/S9). A
+  hard fail remains binding for track/broadcast eligibility and leaves the
+  queue entry rejected, but does not abort evidence collection or the requested
+  report; the report must surface the typed flags. Researching a risky token is
+  not permission to track it
 - **New-pool feed (list-scan)** — scanner + liquidity floor as the stream
   filter (collectors.md); survivors carry their gate result into the snapshot
 - **Watchlist-scan** — liquidity-delta re-check on tracked tokens; a tracked
-  token that newly hard-fails (e.g. LP unlock) raises an urgent-eligible flag
-  in the snapshot
+  token that newly hard-fails raises an urgent-eligible flag in the snapshot
+  *(collection currently unavailable — see collectors.md routing)*
+- **Host proposal gating** — `resolveGateArchiveThenLive` prefers the same-run
+  archived security dossier; if absent and not dry-collect, allowlisted live
+  GoPlus/RugCheck refetch writes a gate receipt under
+  `archive/runs/<run-id>/gate-receipts/` (failures stay pending — never invent
+  a pass)
 
 ## Audit metrics
 

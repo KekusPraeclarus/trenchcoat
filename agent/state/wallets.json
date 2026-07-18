@@ -1,4 +1,7 @@
 {
   "schema": 1,
-  "wallets": []
+  "wallets": [],
+  "transitions": [],
+  "pendingTransitionIds": [],
+  "cursors": []
 }

@@ -6,7 +6,7 @@ import {
   type SourceLifecycleThresholds,
 } from "../../src/sources/lifecycle.js"
 import { computeMembershipDiff } from "../../src/collectors/twitter/managed-list.js"
-import { migrateConfigToV4 } from "../../src/migrations/config.js"
+import { migrateConfigToV7 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { sha256Json } from "../../src/lib/canonical-json.js"
 import type { SourceLifecycleFile, SourcePerformance } from "../../src/contracts/schemas.js"
@@ -129,9 +129,9 @@ describe("prop membership diff commutative", () => {
   })
 })
 
-describe("config migration v4", () => {
-  it("lifts single curated list into two operator slots with engagement defaults", () => {
-    const v4 = migrateConfigToV4({
+describe("config migration v5", () => {
+  it("lifts single curated list into two operator slots with harness defaults", () => {
+    const v5 = migrateConfigToV7({
       schema: 2,
       twitter: {
         curated_list_url: "https://x.com/i/lists/111",
@@ -155,9 +155,12 @@ describe("config migration v4", () => {
       chat: {},
       router: {},
     })
-    const parsed = ConfigSchema.parse(v4)
-    expect(parsed.schema).toBe(4)
+    const parsed = ConfigSchema.parse(v5)
+    expect(parsed.schema).toBe(7)
     expect(parsed.twitter.operator_list_urls[0]).toBe("https://x.com/i/lists/111")
     expect(parsed.twitter.engagement.enabled).toBe(true)
+    expect(parsed.harness_improvement.enabled).toBe(false)
+    expect(parsed.farcaster.enabled).toBe(false)
+    expect(parsed.narratives.retention_days).toBe(14)
   })
 })

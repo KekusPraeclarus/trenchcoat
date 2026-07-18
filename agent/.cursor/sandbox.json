@@ -3,7 +3,7 @@
   "networkPolicy": {
     "default": "deny"
   },
+  "disableTmpWrite": true,
   "additionalReadonlyPaths": [],
   "additionalReadWritePaths": []
 }
-

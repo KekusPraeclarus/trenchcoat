@@ -15,30 +15,52 @@ export const RUN_PHASES = [
 
 export type RunPhase = typeof RUN_PHASES[number]
 
+export type RunStatus = "running" | "complete" | "failed"
+
+export type RunFailure = Readonly<{
+  lastPhase: RunPhase
+  code: string
+  message: string
+  failedAt: string
+}>
+
 export type RunJournal = Readonly<{
   schema: 1
   runId: string
   phase: RunPhase
+  status: RunStatus
   phaseHashes: Readonly<Partial<Record<RunPhase, `sha256:${string}`>>>
   sideEffects: Readonly<Record<string, `sha256:${string}`>>
+  failure?: RunFailure
 }>
 
 export type SideEffectKind =
   | "alpha-purge"
+  | "archive-sealed"
   | "decision-bundle"
   | "ledger-position"
   | "outbox-delivery"
   | "router-event"
   | "wallet-lifecycle"
   | "source-call"
+  | "state-sealed"
   | "git-commit"
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/
+const SAFE_CODE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u
+const SECRETISH = /(api[_-]?key|token|secret|password|mnemonic|hmac|bearer|authorization)/iu
 
 function assertHash(hash: string): asserts hash is `sha256:${string}` {
   if (!SHA256.test(hash)) {
     throw new TypeError("Phase hash is invalid")
   }
+}
+
+export function sanitizeFailureMessage(message: string): string {
+  const clipped = message.replace(/\s+/gu, " ").trim().slice(0, 280)
+  if (!clipped) return "run failed"
+  if (SECRETISH.test(clipped)) return "run failed (details redacted)"
+  return clipped
 }
 
 export function createRunJournal(runId: string): RunJournal {
@@ -47,6 +69,7 @@ export function createRunJournal(runId: string): RunJournal {
     schema: 1,
     runId,
     phase: "created",
+    status: "running",
     phaseHashes: Object.freeze({}),
     sideEffects: Object.freeze({}),
   })
@@ -59,6 +82,9 @@ export function advanceRunJournal(
 ): RunJournal {
   assertRunId(journal.runId)
   assertHash(phaseHash)
+  if (journal.status === "failed") {
+    throw new Error(`Cannot advance failed run ${journal.runId}`)
+  }
 
   const currentIndex = RUN_PHASES.indexOf(journal.phase)
   const nextIndex = RUN_PHASES.indexOf(phase)
@@ -79,12 +105,46 @@ export function advanceRunJournal(
     throw new Error(`Run phase must advance exactly once from ${journal.phase}`)
   }
 
+  const status: RunStatus = phase === "complete" ? "complete" : "running"
+  const { failure: _drop, ...rest } = journal
   return Object.freeze({
-    ...journal,
+    ...rest,
     phase,
+    status,
     phaseHashes: Object.freeze({
       ...journal.phaseHashes,
       [phase]: phaseHash,
+    }),
+    ...(status === "complete" || !journal.failure ? {} : { failure: journal.failure }),
+  })
+}
+
+export function markRunFailed(
+  journal: RunJournal,
+  args: Readonly<{
+    code: string
+    message: string
+    failedAt: string
+  }>,
+): RunJournal {
+  assertRunId(journal.runId)
+  if (!SAFE_CODE.test(args.code)) {
+    throw new TypeError("Failure code is invalid")
+  }
+  if (journal.status === "complete") {
+    throw new Error(`Cannot fail completed run ${journal.runId}`)
+  }
+  if (journal.status === "failed" && journal.failure) {
+    return journal
+  }
+  return Object.freeze({
+    ...journal,
+    status: "failed",
+    failure: Object.freeze({
+      lastPhase: journal.phase,
+      code: args.code,
+      message: sanitizeFailureMessage(args.message),
+      failedAt: args.failedAt,
     }),
   })
 }

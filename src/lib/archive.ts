@@ -11,7 +11,7 @@ import { mkdir, readFile, readdir, rename } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { createGzip, createGunzip } from "node:zlib"
 import { pipeline } from "node:stream/promises"
-import { writeAtomicFile, sha256Bytes } from "./fs-atomic.js"
+import { writeAtomicFile, writeAtomicFileFsync, sha256Bytes } from "./fs-atomic.js"
 import { sha256Json, type JsonValue } from "./canonical-json.js"
 
 export type ArchiveLayout = Readonly<{
@@ -25,6 +25,10 @@ export type ArchiveLayout = Readonly<{
   marketBlobs: string
   wallets: string
   routerOutbox: string
+  broadcastBudget: string
+  quarantine: string
+  exonerations: string
+  harness: string
 }>
 
 export function archiveLayout(root: string): ArchiveLayout {
@@ -39,7 +43,27 @@ export function archiveLayout(root: string): ArchiveLayout {
     marketBlobs: join(root, "market", "blobs"),
     wallets: join(root, "wallets"),
     routerOutbox: join(root, "router-outbox"),
+    broadcastBudget: join(root, "broadcast-budget"),
+    quarantine: join(root, "quarantine"),
+    exonerations: join(root, "exonerations"),
+    harness: join(root, "harness"),
   }
+}
+
+export function runArchiveDir(layout: ArchiveLayout, runId: string): string {
+  return join(layout.runs, runId)
+}
+
+export function transactionJournalPath(layout: ArchiveLayout, runId: string): string {
+  return join(layout.transactions, `${runId}.json`)
+}
+
+export function broadcastBudgetPath(layout: ArchiveLayout, dayKey: string): string {
+  return join(layout.broadcastBudget, `${dayKey}.json`)
+}
+
+export function quarantineDir(layout: ArchiveLayout, runId: string): string {
+  return join(layout.quarantine, runId)
 }
 
 export async function ensureArchive(root: string): Promise<ArchiveLayout> {
@@ -53,10 +77,22 @@ export async function ensureArchive(root: string): Promise<ArchiveLayout> {
 export async function writeJsonRecord(
   path: string,
   value: JsonValue,
+  opts?: { fsync?: boolean },
 ): Promise<`sha256:${string}`> {
   const body = `${JSON.stringify(value, null, 2)}\n`
-  await writeAtomicFile(path, body)
+  if (opts?.fsync) {
+    await writeAtomicFileFsync(path, body)
+  } else {
+    await writeAtomicFile(path, body)
+  }
   return sha256Bytes(body)
+}
+
+export async function writeJsonRecordFsync(
+  path: string,
+  value: JsonValue,
+): Promise<`sha256:${string}`> {
+  return writeJsonRecord(path, value, { fsync: true })
 }
 
 export async function putMarketBlob(

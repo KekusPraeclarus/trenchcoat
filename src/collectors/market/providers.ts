@@ -1,5 +1,17 @@
-import { gatedFetch, readJsonBody } from "../../lib/http.js"
-import type { FetchLike } from "./geckoterminal.js"
+import { gatedFetch, gatedFetchWithRetry, readJsonBody } from "../../lib/http.js"
+import type { FetchLike, GeckoPool } from "./geckoterminal.js"
+import { fetchGeckoNewPools } from "./geckoterminal.js"
+
+const COINGECKO_HOST_GATE = {
+  host: "api.coingecko.com",
+  capacity: 25,
+  refillPerSecond: 25 / 60,
+  monthlyBudget: 10_000,
+  timeoutMs: 15_000,
+} as const
+
+const FALLBACK_NETWORKS = ["eth", "base", "solana"] as const
+const MAX_FALLBACK_ITEMS = 40
 
 const DEXSCREENER_ROOT = "https://api.dexscreener.com"
 const COINGECKO_ROOT = "https://api.coingecko.com/api/v3"
@@ -15,6 +27,7 @@ export type MarketPair = Readonly<{
   quoteToken: Readonly<{ address: string; symbol: string; name: string }>
   priceUsd?: number
   liquidityUsd?: number
+  volume24hUsd?: number
   fdv?: number
   buys24h: number
   sells24h: number
@@ -43,6 +56,16 @@ function stringValue(value: unknown, field: string): string {
   return value
 }
 
+/** CoinGecko category ids are numeric; prefer slug when present */
+function coingeckoCategoryId(entry: object): string {
+  const slug = Reflect.get(entry, "slug")
+  if (typeof slug === "string" && slug.length > 0 && slug.length <= 512) return slug
+  const id = Reflect.get(entry, "id")
+  if (typeof id === "string" && id.length > 0 && id.length <= 512) return id
+  if (typeof id === "number" && Number.isFinite(id)) return String(id)
+  throw new TypeError("CoinGecko category missing id")
+}
+
 export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
   if (payload === null || typeof payload !== "object") throw new TypeError("DexScreener response must be an object")
   const pairs = Reflect.get(payload, "pairs")
@@ -52,10 +75,14 @@ export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
     const base = Reflect.get(raw, "baseToken")
     const quote = Reflect.get(raw, "quoteToken")
     const liquidity = Reflect.get(raw, "liquidity")
+    const volume = Reflect.get(raw, "volume")
     const txns = Reflect.get(raw, "txns")
     const txns24h = txns !== null && typeof txns === "object" ? Reflect.get(txns, "h24") : undefined
     const buys = txns24h !== null && typeof txns24h === "object" ? numberOrUndefined(Reflect.get(txns24h, "buys")) : undefined
     const sells = txns24h !== null && typeof txns24h === "object" ? numberOrUndefined(Reflect.get(txns24h, "sells")) : undefined
+    const volume24h = volume !== null && typeof volume === "object"
+      ? numberOrUndefined(Reflect.get(volume, "h24"))
+      : undefined
     if (base === null || typeof base !== "object" || quote === null || typeof quote !== "object") throw new TypeError("DexScreener pair is missing tokens")
     return {
       chainId: stringValue(Reflect.get(raw, "chainId"), "chainId"),
@@ -72,6 +99,7 @@ export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
       },
       ...(numberOrUndefined(Reflect.get(raw, "priceUsd")) === undefined ? {} : { priceUsd: numberOrUndefined(Reflect.get(raw, "priceUsd"))! }),
       ...(liquidity !== null && typeof liquidity === "object" && numberOrUndefined(Reflect.get(liquidity, "usd")) !== undefined ? { liquidityUsd: numberOrUndefined(Reflect.get(liquidity, "usd"))! } : {}),
+      ...(volume24h !== undefined ? { volume24hUsd: volume24h } : {}),
       ...(numberOrUndefined(Reflect.get(raw, "fdv")) === undefined ? {} : { fdv: numberOrUndefined(Reflect.get(raw, "fdv"))! }),
       buys24h: buys ?? 0,
       sells24h: sells ?? 0,
@@ -136,33 +164,206 @@ export type CoinGeckoTrending = Readonly<{
   categories: readonly Readonly<{ id: string; name: string; marketCapChange24h?: number }>[]
 }>
 
-export async function fetchCoinGeckoTrending(fetcher: FetchLike, apiKey: string): Promise<CoinGeckoTrending> {
-  if (!apiKey.trim()) throw new Error("CoinGecko Demo API key is required")
-  const response = await gatedFetch(fetcher, new URL("/search/trending", COINGECKO_ROOT), {
-    host: "api.coingecko.com",
-    capacity: 25,
-    refillPerSecond: 25 / 60,
-    monthlyBudget: 10_000,
-    headers: { "x-cg-demo-api-key": apiKey },
+type TrendingCoin = CoinGeckoTrending["coins"][number]
+
+function parseTrendingCoins(coins: unknown[]): TrendingCoin[] {
+  return coins.map((entry) => {
+    const item = entry !== null && typeof entry === "object" ? Reflect.get(entry, "item") : undefined
+    if (item === null || typeof item !== "object") throw new TypeError("CoinGecko coin missing item")
+    return {
+      id: stringValue(Reflect.get(item, "id"), "coin id"),
+      name: stringValue(Reflect.get(item, "name"), "coin name"),
+      symbol: stringValue(Reflect.get(item, "symbol"), "coin symbol"),
+      ...(numberOrUndefined(Reflect.get(item, "market_cap_rank")) === undefined
+        ? {}
+        : { rank: numberOrUndefined(Reflect.get(item, "market_cap_rank"))! }),
+    }
+  })
+}
+
+// Path must be relative — a leading "/" drops /api/v3 and CoinGecko 301s; gatedFetch
+// uses redirect:"error", which surfaces as TypeError "fetch failed"
+function coinGeckoTrendingUrl(): URL {
+  return new URL("search/trending", `${COINGECKO_ROOT}/`)
+}
+
+async function fetchTrendingPayload(fetcher: FetchLike, demoKey?: string): Promise<object> {
+  const key = demoKey?.trim()
+  const response = await gatedFetchWithRetry(fetcher, coinGeckoTrendingUrl(), {
+    ...COINGECKO_HOST_GATE,
+    headers: { accept: "application/json", ...(key ? { "x-cg-demo-api-key": key } : {}) },
   })
   if (!response.ok) throw new Error(`CoinGecko trending request failed with HTTP ${response.status}`)
   const payload = await readJsonBody(response)
   if (payload === null || typeof payload !== "object") throw new TypeError("CoinGecko response must be an object")
+  return payload
+}
+
+export async function fetchCoinGeckoTrending(fetcher: FetchLike, apiKey: string): Promise<CoinGeckoTrending> {
+  if (!apiKey.trim()) throw new Error("CoinGecko Demo API key is required")
+  const payload = await fetchTrendingPayload(fetcher, apiKey)
   const coins = Reflect.get(payload, "coins")
   const categories = Reflect.get(payload, "categories")
   if (!Array.isArray(coins) || !Array.isArray(categories) || coins.length > 100 || categories.length > 100) {
     throw new TypeError("CoinGecko response has invalid lists")
   }
   return {
-    coins: coins.map((entry) => {
-      const item = entry !== null && typeof entry === "object" ? Reflect.get(entry, "item") : undefined
-      if (item === null || typeof item !== "object") throw new TypeError("CoinGecko coin missing item")
-      return { id: stringValue(Reflect.get(item, "id"), "coin id"), name: stringValue(Reflect.get(item, "name"), "coin name"), symbol: stringValue(Reflect.get(item, "symbol"), "coin symbol"), ...(numberOrUndefined(Reflect.get(item, "market_cap_rank")) === undefined ? {} : { rank: numberOrUndefined(Reflect.get(item, "market_cap_rank"))! }) }
-    }),
+    coins: parseTrendingCoins(coins),
     categories: categories.map((entry) => {
       if (entry === null || typeof entry !== "object") throw new TypeError("CoinGecko category missing object")
-      return { id: stringValue(Reflect.get(entry, "id"), "category id"), name: stringValue(Reflect.get(entry, "name"), "category name"), ...(numberOrUndefined(Reflect.get(entry, "market_cap_change_24h")) === undefined ? {} : { marketCapChange24h: numberOrUndefined(Reflect.get(entry, "market_cap_change_24h"))! }) }
+      const change = numberOrUndefined(Reflect.get(entry, "market_cap_change_24h"))
+        ?? numberOrUndefined(Reflect.get(entry, "market_cap_1h_change"))
+      return {
+        id: coingeckoCategoryId(entry),
+        name: stringValue(Reflect.get(entry, "name"), "category name"),
+        ...(change === undefined ? {} : { marketCapChange24h: change }),
+      }
     }),
+  }
+}
+
+/** Trending coins only (categories need a Demo key). Shares the CoinGecko gate + retry. */
+export async function fetchCoinGeckoTrendingCoins(
+  fetcher: FetchLike,
+  demoKey?: string,
+): Promise<TrendingCoin[]> {
+  const payload = await fetchTrendingPayload(fetcher, demoKey)
+  const coins = Reflect.get(payload, "coins")
+  if (!Array.isArray(coins) || coins.length > 100) throw new TypeError("CoinGecko response has invalid coins")
+  return parseTrendingCoins(coins)
+}
+
+export type MarketAttentionFallbackItem = Readonly<{
+  kind: "boost" | "new-pool"
+  id: string
+  name: string
+  symbol?: string
+  chainId?: string
+}>
+
+export type MarketAttention = Readonly<{
+  coins: readonly TrendingCoin[]
+  categories: CoinGeckoTrending["categories"]
+  source:
+    | "host.coingecko.trending"
+    | "host.coingecko.trending-partial"
+    | "host.market-attention.fallback"
+  marketBlind: boolean
+  marketBlindReason?: "coingecko-failed" | "categories-unavailable" | "fallback-only"
+  statusLines: string[]
+  fallbackItems?: MarketAttentionFallbackItem[]
+}>
+
+function errDetail(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 120)
+}
+
+function poolToFallbackItem(pool: GeckoPool): MarketAttentionFallbackItem {
+  return { kind: "new-pool", id: pool.id, name: pool.name, chainId: pool.network }
+}
+
+/**
+ * DexScreener boosts + GeckoTerminal new pools stand in for CoinGecko when it is
+ * unreachable. They are paid-attention / launch signals, never category rotation,
+ * so any caller must stay market-blind on this path.
+ */
+async function fallbackAttention(
+  fetcher: FetchLike,
+  statusLines: string[],
+): Promise<MarketAttention> {
+  const fallbackItems: MarketAttentionFallbackItem[] = []
+  try {
+    const boosts = await fetchDexScreenerBoosts(fetcher)
+    for (const boost of boosts) {
+      if (fallbackItems.length >= MAX_FALLBACK_ITEMS) break
+      fallbackItems.push({
+        kind: "boost",
+        id: boost.tokenAddress,
+        name: boost.description?.slice(0, 128) ?? boost.tokenAddress,
+        chainId: boost.chainId,
+      })
+    }
+    statusLines.push(`dexBoosts=ok items=${boosts.length}`)
+  } catch (error) {
+    statusLines.push(`dexBoosts=error detail=${errDetail(error)}`)
+  }
+
+  for (const network of FALLBACK_NETWORKS) {
+    if (fallbackItems.length >= MAX_FALLBACK_ITEMS) break
+    try {
+      const pools = await fetchGeckoNewPools(fetcher, { network })
+      for (const pool of pools) {
+        if (fallbackItems.length >= MAX_FALLBACK_ITEMS) break
+        fallbackItems.push(poolToFallbackItem(pool))
+      }
+      statusLines.push(`newPools:${network}=ok items=${pools.length}`)
+    } catch (error) {
+      statusLines.push(`newPools:${network}=error detail=${errDetail(error)}`)
+    }
+  }
+
+  const reason = fallbackItems.length > 0 ? "coingecko-failed" : "fallback-only"
+  statusLines.push(`marketBlind=true reason=${reason} rotationConfirmation=missing`)
+  return {
+    coins: [],
+    categories: [],
+    source: "host.market-attention.fallback",
+    marketBlind: true,
+    marketBlindReason: reason,
+    statusLines,
+    ...(fallbackItems.length > 0 ? { fallbackItems } : {}),
+  }
+}
+
+/**
+ * Resolve narrative market-attention with graceful degradation. Never throws for a
+ * total upstream failure — returns an explicit market-blind result so the caller
+ * can seal a degraded run instead of crashing.
+ */
+export async function fetchMarketAttentionForNarrative(
+  fetcher: FetchLike,
+  opts: Readonly<{ demoKey?: string }> = {},
+): Promise<MarketAttention> {
+  const demoKey = opts.demoKey?.trim()
+  const statusLines: string[] = []
+
+  if (demoKey) {
+    try {
+      const trending = await fetchCoinGeckoTrending(fetcher, demoKey)
+      statusLines.push(
+        `coingecko=ok coins=${trending.coins.length} categories=${trending.categories.length}`,
+      )
+      const blind = trending.categories.length === 0
+      return {
+        coins: trending.coins,
+        categories: trending.categories,
+        source: "host.coingecko.trending",
+        marketBlind: blind,
+        ...(blind ? { marketBlindReason: "categories-unavailable" as const } : {}),
+        statusLines,
+      }
+    } catch (error) {
+      statusLines.push(`coingecko=error detail=${errDetail(error)}`)
+      return fallbackAttention(fetcher, statusLines)
+    }
+  }
+
+  // Keyless: trending coins only, no categories — cannot confirm capital rotation
+  try {
+    const coins = await fetchCoinGeckoTrendingCoins(fetcher)
+    statusLines.push(`coingecko=keyless coins=${coins.length} categories=unavailable`)
+    statusLines.push("marketBlind=true reason=categories-unavailable rotationConfirmation=missing")
+    return {
+      coins,
+      categories: [],
+      source: "host.coingecko.trending-partial",
+      marketBlind: true,
+      marketBlindReason: "categories-unavailable",
+      statusLines,
+    }
+  } catch (error) {
+    statusLines.push(`coingecko=error detail=${errDetail(error)}`)
+    return fallbackAttention(fetcher, statusLines)
   }
 }
 

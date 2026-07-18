@@ -1,7 +1,19 @@
-# Live E2E blockers (2026-07-16)
+# Live E2E blockers (updated 2026-07-18)
 
-Live acceptance is **blocked** until the operator supplies credentials and
-destinations. Offline gates (`pnpm test:all`) pass.
+Offline gates (`pnpm test:all`) pass. Credential preflight and live market/gate
+smokes run under `TRENCHCOAT_LIVE_E2E=1` when `.env` is loaded.
+`live-gates.test.ts` last ran 4 passed / 1 skipped under `TRENCHCOAT_LIVE_E2E=1`
+(operator-verified 2026-07-18).
+
+## Deploy state (operator-verified 2026-07-18)
+
+- Env synced: `ops/install-launchd.sh --sync-env` copied `TAVILY_API_KEY` (and
+  the rest of `.env`) into `~/.trenchcoat/env` at mode 600, atomically.
+- Managed X list created: `list_id 1111111111111111111` (name `trenchcoat-sources`).
+- launchd units running after redeploy: broadcast router, Telegram listener, and
+  the alpha-channel poller (`com.trenchcoat.router` / `.listener` / `.channels`).
+- Telegram preview cursor acceptance confirmed (advanced cursor, no duplicate on
+  repoll) and a reversible X unfollow+follow both verified live.
 
 ## Cursor agent (required for live jobs)
 
@@ -15,23 +27,46 @@ agent status   # must show Logged in as …
 
 Optional: `TRENCHCOAT_CURSOR_BIN` if `agent` is not on PATH.
 
-## Missing at preflight (non-Cursor)
+Production launch path: host Cursor CLI with `--sandbox enabled` (see
+`src/orchestrator/session.ts`). Docker `containers/agent-runner` is
+reference/defense-in-depth only — not the production isolation boundary.
 
-- `TRENCHCOAT_ROUTER_URL` / `TRENCHCOAT_ROUTER_TOKEN` / `TRENCHCOAT_ROUTER_HMAC_KEY`
-- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OPERATOR_ID`
-- `HELIUS_API_KEY` / `INFURA_API_KEY` / `NEYNAR_API_KEY` / `GOPLUS_APP_KEY` / `COINGECKO_DEMO_KEY`
-- `~/.trenchcoat/config.json` (run `pnpm dev:cli init`)
+## Present locally (do not commit secrets)
 
-## Present
+- Node ≥22.13, pnpm
+- Cursor CLI logged in
+- `.env` with router / Telegram / Helius / Infura / GoPlus / CoinGecko / Neynar keys
+- `~/.trenchcoat/config.json` and Twitter `storage-state.json` (from `tc auth twitter`)
+- Optional: Docker image for reference compose checks only
 
-- Node ≥22.13
-- pnpm
-- Docker (agent-runner image builds)
-- Cursor CLI when `agent` is installed and logged in
+## Still operator-driven
 
-## To unblock
+- GramJS channel session auth (`tc auth telegram-channels`): the `com.trenchcoat.channels`
+  poller runs on preview channels now, but preview-disabled channels need a live
+  MTProto session. Missing session warns and idles (no crash) until authed.
+- Managed-list sync and engagement dry-runs (list itself now created, above):
+  - `pnpm dev:cli source-list review --dry-run`
+  - `pnpm dev:cli x-engagement dry-run <run-id>`
+- Scheduling real live jobs (list-scan, research, chat confirmations)
+- Residual X follow edge cases — Phase 3C live-verified follow
+  (`example_handle` on `list-scan-2026-07-18T18-36-02-564Z`); some profiles may
+  still hit `account_not_followable` or `pending_duplicate` (INV-S22)
+- Live isolation (`TRENCHCOAT_LIVE_ISOLATION=1`) operator-green 2026-07-18:
+  escape write-block, network-deny, and prompt-injection probes all passed.
+  INV-I1 remains PARTIAL because Cursor CLI still allows outside **reads**;
+  write confinement + `disableTmpWrite` + scrubbed child env are the enforced bar.
+  INV-I5 container smoke remains reference-only / PARTIAL.
 
-1. `agent login` (and keep session alive)
-2. Copy `.env.example` → `.env` and fill non-Cursor secrets (never commit)
-3. `pnpm prepare:agent && pnpm dev:cli init`
-4. `TRENCHCOAT_LIVE_E2E=1 pnpm test:e2e:live`
+## Commands
+
+```bash
+# Offline (includes structural isolation asserts)
+pnpm test:all
+
+# Isolation: structural always + live probes when CLI authenticated
+TRENCHCOAT_LIVE_ISOLATION=1 pnpm test:live:isolation
+
+# Credential + live OHLCV/gate smokes (load .env first)
+set -a && source .env && set +a
+TRENCHCOAT_LIVE_E2E=1 pnpm test:e2e:live
+```

@@ -15,6 +15,8 @@ import type {
   XEngagementFile,
   XEngagementReceipt,
 } from "../contracts/schemas.js"
+import { loadXFypEligibleManifest } from "./x-fyp-eligible.js"
+import { recordEngagementExecutionHealth, xBotHealthEscalation } from "./x-bot-health.js"
 
 export function engagementCapsFromConfig(config: TrenchcoatConfig): EngagementCaps {
   return config.twitter.engagement
@@ -28,9 +30,36 @@ export type EngagementRunReport = Readonly<{
   verified: number
   ambiguous: number
   dryRun: boolean
+  blockedExternalEffects: boolean
+  fypEligiblePosts: number
   decisions: readonly XEngagementDecision[]
   receipts: readonly XEngagementReceipt[]
+  malformed?: "json" | "schema" | "run-id-mismatch"
 }>
+
+function resolveFypBinding(args: Readonly<{
+  agentRoot: string
+  archiveRoot: string
+  runId: string
+  fypPosts?: readonly Readonly<{ id: string, author: string, text?: string }>[]
+}>): Readonly<{ postIds: readonly string[], authors: readonly string[], count: number }> {
+  if (args.fypPosts && args.fypPosts.length > 0) {
+    return {
+      postIds: args.fypPosts.map((post) => post.id),
+      authors: args.fypPosts.map((post) => post.author),
+      count: args.fypPosts.length,
+    }
+  }
+  const manifest = loadXFypEligibleManifest(args.agentRoot, args.archiveRoot, args.runId)
+  if (!manifest) {
+    return { postIds: [], authors: [], count: 0 }
+  }
+  return {
+    postIds: manifest.posts.map((post) => post.postId),
+    authors: manifest.posts.map((post) => post.author),
+    count: manifest.posts.length,
+  }
+}
 
 export async function processListScanEngagement(args: Readonly<{
   agentRoot: string
@@ -38,14 +67,18 @@ export async function processListScanEngagement(args: Readonly<{
   runId: string
   dryRun?: boolean
   execute?: boolean
+  // canary shadow mode: accept and persist decisions but never call X mutators (INV-S25)
+  blockExternalEffects?: boolean
   nowIso?: string
   headless?: boolean
+  fypPosts?: readonly Readonly<{ id: string, author: string, text?: string }>[]
 }>): Promise<EngagementRunReport> {
   const config = loadConfig()
   const caps = engagementCapsFromConfig(config)
   const nowIso = args.nowIso ?? systemClock.nowIso()
   const state = new StateStore(join(args.agentRoot, "state"))
   const proposalPath = join(args.agentRoot, "reports", args.runId, "x-engagement.json")
+  const fypBinding = resolveFypBinding(args)
 
   if (!existsSync(proposalPath) || !caps.enabled) {
     return {
@@ -56,6 +89,8 @@ export async function processListScanEngagement(args: Readonly<{
       verified: 0,
       ambiguous: 0,
       dryRun: Boolean(args.dryRun),
+      blockedExternalEffects: Boolean(args.blockExternalEffects),
+      fypEligiblePosts: fypBinding.count,
       decisions: [],
       receipts: [],
     }
@@ -65,18 +100,27 @@ export async function processListScanEngagement(args: Readonly<{
   try {
     proposalRaw = JSON.parse(readFileSync(proposalPath, "utf8"))
   } catch {
-    return emptyReport(Boolean(args.dryRun))
+    return {
+      ...emptyReport(Boolean(args.dryRun), Boolean(args.blockExternalEffects), fypBinding.count),
+      malformed: "json",
+    }
   }
 
   let proposal
   try {
     proposal = parseEngagementProposal(proposalRaw)
   } catch {
-    return emptyReport(Boolean(args.dryRun))
+    return {
+      ...emptyReport(Boolean(args.dryRun), Boolean(args.blockExternalEffects), fypBinding.count),
+      malformed: "schema",
+    }
   }
 
   if (proposal.runId !== args.runId) {
-    return emptyReport(Boolean(args.dryRun))
+    return {
+      ...emptyReport(Boolean(args.dryRun), Boolean(args.blockExternalEffects), fypBinding.count),
+      malformed: "run-id-mismatch",
+    }
   }
 
   const current = state.loadXEngagement()
@@ -85,6 +129,8 @@ export async function processListScanEngagement(args: Readonly<{
     state: current,
     caps,
     nowIso,
+    fypPostIds: fypBinding.postIds,
+    fypAuthors: fypBinding.authors,
   })
 
   if (args.dryRun) {
@@ -96,6 +142,8 @@ export async function processListScanEngagement(args: Readonly<{
       verified: 0,
       ambiguous: 0,
       dryRun: true,
+      blockedExternalEffects: Boolean(args.blockExternalEffects),
+      fypEligiblePosts: fypBinding.count,
       decisions: applied.decisions,
       receipts: [],
     }
@@ -107,7 +155,8 @@ export async function processListScanEngagement(args: Readonly<{
   let verifiedActionIds: readonly `sha256:${string}`[] = []
   let ambiguousActionIds: readonly `sha256:${string}`[] = []
 
-  if (args.execute !== false && applied.accepted.length > 0) {
+  const externalEffectsBlocked = args.blockExternalEffects === true
+  if (!externalEffectsBlocked && args.execute !== false && applied.accepted.length > 0) {
     const executed = await executeEngagementActions({
       accepted: applied.accepted,
       nowIso,
@@ -116,6 +165,13 @@ export async function processListScanEngagement(args: Readonly<{
     receipts = executed.receipts
     verifiedActionIds = executed.verifiedActionIds
     ambiguousActionIds = executed.ambiguousActionIds
+
+    await recordEngagementExecutionHealth({
+      state,
+      nowIso,
+      runId: args.runId,
+      receipts,
+    })
 
     const after = state.loadXEngagement()
     const followed = new Set(after.followedHandles.map((h) => h.toLowerCase()))
@@ -170,12 +226,18 @@ export async function processListScanEngagement(args: Readonly<{
     verified: verifiedActionIds.length,
     ambiguous: ambiguousActionIds.length,
     dryRun: false,
+    blockedExternalEffects: externalEffectsBlocked,
+    fypEligiblePosts: fypBinding.count,
     decisions: applied.decisions,
     receipts,
   }
 }
 
-function emptyReport(dryRun: boolean): EngagementRunReport {
+function emptyReport(
+  dryRun: boolean,
+  blockedExternalEffects: boolean,
+  fypEligiblePosts: number,
+): EngagementRunReport {
   return {
     proposed: 0,
     accepted: 0,
@@ -184,6 +246,8 @@ function emptyReport(dryRun: boolean): EngagementRunReport {
     verified: 0,
     ambiguous: 0,
     dryRun,
+    blockedExternalEffects,
+    fypEligiblePosts,
     decisions: [],
     receipts: [],
   }
@@ -193,6 +257,7 @@ export function probeEngagementSummary(agentRoot: string, config: TrenchcoatConf
   const state = new StateStore(join(agentRoot, "state"))
   const file = state.loadXEngagement()
   const nowIso = systemClock.nowIso()
+  const botHealth = state.loadXBotHealth(nowIso)
   return {
     enabled: config.twitter.engagement.enabled,
     likeThrottle: {
@@ -210,5 +275,7 @@ export function probeEngagementSummary(agentRoot: string, config: TrenchcoatConf
     daily: file.daily,
     decisions: file.decisions.length,
     receipts: file.receipts.length,
+    botHealth,
+    botHealthEscalation: xBotHealthEscalation(botHealth),
   }
 }

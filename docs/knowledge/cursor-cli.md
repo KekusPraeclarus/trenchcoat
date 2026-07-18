@@ -2,7 +2,7 @@
 description: Provider knowledge — Cursor CLI local agent (login auth, not API key).
 scope: project
 status: active
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 ---
 
 # Cursor CLI
@@ -23,10 +23,12 @@ Binding decision: [ADR 003](../adr/003-cursor-cli-auth.md).
 - Binary: `agent` (symlink also appears as `cursor-agent`) under `~/.local/bin`
 - Override: `TRENCHCOAT_CURSOR_BIN`
 - Headless jobs: `agent -p --trust --sandbox enabled --workspace <abs agent/> --model composer-2.5 --output-format text`
-- Auth: operator CLI login — **not** `CURSOR_API_KEY` (optional `--api-key` escape hatch only)
+- Operator Telegram chat: same, plus `--mode ask --output-format stream-json --stream-partial-output` (assistant text deltas → Telegram `sendMessageDraft`)
+- Auth: operator CLI login — **not** `CURSOR_API_KEY` (production paths never pass `--api-key`)
 - Chat follow-ups: `--resume <chatId>` / `--continue`
 - Never interpolate scraped text into the prompt — path references only
-- Outer Linux container still mounts only `agent/`; CLI `--sandbox` alone does not satisfy INV-I1 / INV-I5
+- Production isolation boundary is host CLI `--sandbox enabled` + scrubbed child env;
+  Docker `containers/agent-runner` is reference/defense-in-depth only (INV-I1/I2/I5)
 
 ## Auth pitfalls (verified against other local CLI harnesses)
 

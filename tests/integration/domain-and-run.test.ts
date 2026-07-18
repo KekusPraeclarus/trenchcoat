@@ -32,7 +32,7 @@ describe("integration run loop", () => {
       dryCollect: true,
     })
     expect(result.exitCode).toBe(0)
-    expect(result.journal.phase).toBe("complete")
+    expect(result.journal?.phase).toBe("complete")
   })
 })
 
@@ -178,6 +178,9 @@ describe("chat allowlist", () => {
       userId: "evil",
       text: "/status",
       allowlist: ["ops"],
+      runTurn: async () => {
+        throw new Error("should not run")
+      },
       send: async () => {
         throw new Error("should not send")
       },

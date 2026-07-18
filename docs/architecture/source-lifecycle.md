@@ -1,11 +1,11 @@
 ---
-description: Host-owned FYP source candidacy, lagged promote/demote gates, and managed private X list synchronization.
+description: Host-owned FYP/X source candidacy and managed private list (ADR 004), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 read_when:
-  - Editing src/sources/, src/collectors/twitter/managed-list.ts, or source-list orchestration.
-  - Changing promotion/demotion thresholds or X list membership behaviour.
+  - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
+  - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
 ---
 
 # Source-list lifecycle
@@ -18,11 +18,10 @@ model choose members or mutate X.
 
 Binding decision: [ADR 004](../adr/004-dynamic-x-list-lifecycle.md).
 
-**Current limit:** the review engine is wired, but production
-`source-list-review` still defaults to an empty outcome set
-(`src/orchestrator/source-list.ts`). Do not run live promote/demote until sealed
-audit outcomes feed `aggregateSourcePerformance`. Prefer
-`tc source-list review --dry-run`.
+**Current limit:** `runSourceListReview` loads archive `source-call` outcomes when
+present (`src/orchestrator/sources.ts` via `source-list.ts`), but live outcome
+writers are still sparse — empty archives yield no promotions. Prefer
+`tc source-list review --dry-run` until sealed outcomes accumulate (INV-S21).
 
 ## State
 
@@ -33,6 +32,40 @@ audit outcomes feed `aggregateSourcePerformance`. Prefer
 
 Integrity snapshots include `source-lifecycle.json` (INV-S7 family). The agent
 must not write either file.
+
+## Farcaster follow-graph (parallel)
+
+Binding decision: [ADR 007](../adr/007-farcaster-follow-graph.md).
+
+| File | Owner | Role |
+|---|---|---|
+| `agent/state/fc-source-lifecycle.json` | host | FC candidates (`fc_*`), transitions, pending sync ids |
+| `agent/state/fc-engagement.json` | host | Like receipts / throttle state (agent proposes only) |
+
+`farcaster-scan` discovers from for-you + operator channels. Promotion/demotion
+gates mirror X. Sync mutates the bot follow graph only for fids present in
+lifecycle state (fid confinement). Agent may propose likes, never follows.
+
+When the following feed is empty and `desiredFollowFids` length is 0, collection
+status is `healthy-empty-following` (not an error). Non-zero desired membership
+with an empty following feed is `empty-following-with-desired`. Signer mutations
+are gated by `probeFarcasterSigner` — collection status reports
+`signerStatus=<approved|pending|rejected|unavailable>` and
+`signerMutations=allowed|blocked`; likes and follow sync perform no mutation
+until `approved`. For-you freshness: live ≤6h / stale ≤24h / expired >24h;
+future-dated casts (e.g. 2061 timestamps) count as expired. No live casts or the
+repeated-two-hash stale pattern → `skipAgent=true`.
+
+Operator bootstrap for a curated follow graph:
+
+1. `tc auth farcaster` — create or attach signer; approve in mobile app or fund
+   custody for host `KeyGateway.add`
+2. `tc fc-source seed <file> --dry-run` then `tc fc-source seed <file>`
+3. `tc fc-source sync --dry-run` then `tc fc-source sync`
+4. `tc probe farcaster` — verify signer status, feed freshness, lifecycle summary
+
+Seed schema: `config/fc-source-seed.example.json` (positive FIDs, normalized
+handles; never accepts signer material or model/inbox content).
 
 ## Collection targets
 
@@ -54,7 +87,24 @@ These loops are independent (INV-S22):
 | Loop | Decides | Evidence | Mutates |
 |---|---|---|---|
 | Managed list | Host lifecycle | Lagged settled CA call outcomes | Managed list membership |
-| FYP engagement | Runtime agent | Narrative/sentiment utility | Like / follow / unfollow (default ≤2 likes / 10 min; INV-S22 PARTIAL) |
+| FYP engagement | Runtime agent | Narrative/sentiment utility | Like / follow / unfollow (likes must target same-run FYP post ids; default ≤2 likes / 10 min; INV-S22 PARTIAL) |
+
+The host writes `inbox/<run-id>/x-fyp-eligible.json` during `list-scan`
+collection — a manifest of FYP post ids and authors eligible for engagement.
+The bot must propose only targets from that manifest; the host rejects anything
+else (`post_id_not_in_fyp`, `handle_not_in_fyp`). After FYP binding the host also
+rejects choices already reflected in subscription state or still pending, so a
+replayed proposal never re-attempts a settled action:
+
+| Reject reason | Applies to | Condition |
+|---|---|---|
+| `already_liked` | like | post in `likedPostIds` or a verified like receipt exists |
+| `already_following` | follow | handle already in `followedHandles` (case-insensitive) |
+| `not_following` | unfollow | handle not in `followedHandles` |
+| `pending_duplicate` | any | same action+target has an accepted decision whose `actionId` is still pending |
+
+These are runId-independent and never bump `daily.*`. Execution health is tracked
+in `state/x-bot-health.json` (last verified action, consecutive failures).
 
 Engagement never writes `source-lifecycle.json` or `sources.json`.
 
@@ -63,8 +113,9 @@ Engagement never writes `source-lifecycle.json` or `sources.json`.
 Host-only; no Cursor session. Cadence: daily and after a sealed audit.
 
 1. Freeze `scoreCutoff = now`
-2. Aggregate lagged performances (`src/sources/outcomes.ts`) when a caller
-   supplies outcomes — production review currently passes none
+2. Aggregate lagged performances (`src/sources/outcomes.ts`) from archive
+   `source-call` outcomes when present (`loadSourceCallOutcomes`); empty
+   archives yield no promotions
 3. Compute promote/demote proposals (`src/sources/lifecycle.ts`)
 4. Cap to `max_transitions_per_review` (default 10); queue excess transition
    ids (queued ids are not themselves durable transition records until applied)
@@ -104,4 +155,5 @@ Demotions sort before promotions. Capacity is `managed_list.capacity`.
 - Collectors scrape surface: [collectors.md](collectors.md)
 - Job registry: [orchestrator.md](orchestrator.md)
 - Playwright profile/auth: [../knowledge/x-playwright.md](../knowledge/x-playwright.md)
+- Neynar / FC auth: [../knowledge/neynar.md](../knowledge/neynar.md)
 - Invariants: INV-S21, INV-R2

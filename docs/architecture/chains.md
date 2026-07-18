@@ -17,9 +17,12 @@ chain-specific formats. The registry is the one typed table (`src/lib/chains.ts`
 that maps our canonical chain slug to every provider's identifier, so no client
 ever hardcodes a chain string.
 
-All chain interaction in this system is **API-driven** — we never run a node or
-read the blockchain over RPC. Adding a chain is therefore a registry entry plus
-provider verification, not infrastructure.
+All chain interaction for **token** market data is **API-driven** (GeckoTerminal /
+DexScreener / scanners). Wallet tracking is the exception: it uses finalized
+read-only RPC (Helius / Infura / Robinhood public) per `walletTracking` in
+`src/lib/chains.ts` and [smart-wallets.md](smart-wallets.md). Adding a chain for
+token tracking is still a registry entry plus provider verification; enabling
+wallet tracking additionally requires a provider kickoff and cursored scan path.
 
 ## Registry entry shape
 
@@ -54,16 +57,12 @@ provider verification, not infrastructure.
 | `ethereum` | evm | GoPlus (1) | ETH |
 | `base` | evm | GoPlus (8453) | ETH |
 | `bsc` | evm | GoPlus (56) | BNB |
-| `robinhood` | evm | GoPlus (4663) — verify coverage at implementation | ETH |
+| `robinhood` | evm | GoPlus (4663) | ETH |
 
 RobinHood Chain (Arbitrum Orbit L2, mainnet chain id 4663, ETH gas) is
-confirmed supported by DexScreener and GeckoTerminal; GoPlus coverage of id
-4663 must be verified during implementation per step 2 of the flow below —
-if GoPlus doesn't cover it yet, the entry ships scanner-less and the chain
-stays **untrackable** (fail-closed) until coverage lands or an alternative
-scanner is added. Extend the set freely via the flow below — a rotation into
-a chain we don't cover is exactly the narrative-scan signal that should
-trigger it.
+confirmed supported by DexScreener and GeckoTerminal. Wallet tracking uses the
+throttled official public RPC; GoPlus id 4663 is registered — verify live
+coverage at preflight and fail closed if absent.
 
 ## Fail-closed rule
 

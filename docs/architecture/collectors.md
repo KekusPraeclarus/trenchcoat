@@ -1,8 +1,8 @@
 ---
-description: Collectors module - Playwright Twitter scraping, Telegram alpha-channel listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), indicators incl. RSI, rate-limit gate, snapshot and provenance format.
+description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
-status: draft
-last_verified: 2026-07-16
+status: active
+last_verified: 2026-07-18
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -18,17 +18,36 @@ Other host components (router delivery, Telegram chat bridge) also use the
 network, but not for collector-shaped ingestion. Collectors never interpret —
 no LLM calls, no decisions — so a run is reproducible from its inputs.
 
+### Adding a social/API source
+
+1. New client under `src/collectors/` — all HTTP via the shared rate gate
+2. Register the collector on the relevant job(s) in `src/orchestrator/jobs.ts`
+3. Snapshot items carry provenance; neutral `sources.json` auto-registration
+   stays host-owned
+4. Update the data-sources table in `docs/TECHNICAL-SPEC.md` and add/refresh a
+   `docs/knowledge/` file for the provider
+
 ## Sources
 
 ### Twitter (Playwright)
 
 - Dedicated **burner account**; credentials and the persistent auth profile live
-  under `~/.trenchcoat/twitter-profile/` (outside the repo, never inside `agent/`)
+  under `~/.trenchcoat/twitter-profile/` only (outside the repo, never inside
+  `agent/` — the directory name is **not** `browser-profile`)
 - Headless by default; when login or a challenge is detected, fail the run with a
   clear "needs headful re-auth" error — the operator runs `trenchcoat auth twitter`
   to fix it interactively. Never attempt automated challenge solving.
-- Scrape targets: token search results, FYP, exactly two immutable operator lists,
-  and one bot-managed private source list
+- Scrape targets: token search results (research job), FYP, exactly two immutable
+  operator lists, and one bot-managed private source list
+- **Research token search** — confirmed operator / queue research runs a bounded
+  read-only X search (`scrapeResearchTokenTwitter`) using host-built queries from
+  the resolved `(chain, tokenAddress, symbolDisplay)` only. Writes
+  `twitter-token-search` (raw posts + engagement) and `twitter-popularity`
+  (deterministic host summary: post count, unique authors, recent posts, known
+  engagement totals/medians). Caps live under `config.research.twitter_search`.
+  Missing auth/challenges produce `unavailable`/`degraded` summaries — never
+  silent zero popularity. Sentiment classification stays model-side from untrusted
+  tweet text with sample-size caveats.
 - Human-ish pacing (randomised delays, capped pages per run) to respect the platform
   and keep the account alive. Scrape read-only; never post, like, or follow.
 
@@ -48,6 +67,30 @@ sentiment feed training. Choices are applied after the session with a default
 like throttle of 2 per 10 minutes (config-bounded; INV-S22 PARTIAL); posts,
 replies, DMs, and retweets stay blocked (INV-R2).
 
+### Farcaster (Neynar)
+
+- API-first via `api.neynar.com` (`NEYNAR_API_KEY`). No Playwright; no browser
+  profile. Signer credentials live under `~/.trenchcoat/farcaster/signer.json`
+  (mode 600, INV-I3) after `pnpm dev:cli auth farcaster`.
+- Job `farcaster-scan` fetches for-you (bot FID), two optional operator channels,
+  and the following feed. Host assessment tiers casts live ≤6h, stale ≤24h,
+  expired >24h; rejects for-you when no live cast or a repeated-two-hash stale
+  pattern; expired casts never enter inbox evidence or the FYP like allowlist.
+  Snapshots are `inbox/<runId>/farcaster-*.json` with
+  `provenance: farcaster:@username` and `trust: untrusted-external`.
+- Collection status reports dynamic signer probe output
+  (`signerStatus=…`, `signerMutations=allowed|blocked`) — not a hard-coded gate string.
+- Agent proposes likes only into `reports/<runId>/fc-engagement.json` (same-run
+  for-you cast-hash confinement; max 2 likes / 10 minutes). Likes execute only
+  when Neynar reports `approved` signer status. Cast publish and recast are
+  structurally forbidden in the write client.
+- Follow/unfollow is host-only via `fc-source-review` / `tc fc-source sync`
+  (follow graph = managed list analog). Sync uses cursor pagination,
+  idempotent already-following/not-following handling, post-sync refetch, and
+  exact desired-vs-actual verification.
+- Research: bounded cast search writes `farcaster-token-search` +
+  `farcaster-popularity` when `research.farcaster_search.enabled`.
+
 ### Telegram alpha channels (preview poller + GramJS listener)
 
 Bot API bots cannot read channels without being added by an admin, so no bot path
@@ -62,7 +105,9 @@ exists. Two ingestion modes, chosen per channel at config time:
   channels without previews, running under launchd with keepalive. Session
   credentials live under `~/.trenchcoat/telegram-session/`, same rules as the
   browser profile. Respect `FLOOD_WAIT` absolutely; passive only (no sends, no
-  joins beyond the configured list).
+  joins beyond the configured list). Currently a scaffold: with no authed session
+  it logs a warning and idles (preview channels keep flowing) rather than
+  crashing — `tc auth telegram-channels` remains an operator step.
 
 Both modes append every new message to `agent/alpha-queue/<channel>/<msg-id>.json`
 with full provenance and deduplicate on message id; digestion and purge are the
@@ -70,7 +115,10 @@ orchestrator's job (see orchestrator.md, INV-Q1).
 Each append writes a same-directory temporary file, fsyncs it, then atomically
 renames to the sanitised final path using create-if-absent semantics. A concurrent
 listener/job can observe the old file or the complete new file, never a partial
-message.
+message. Host service: `tc listen channels` (launchd `com.trenchcoat.channels`
+KeepAlive) polls allowlisted `config.telegram_channels`, checkpoints cursors to
+`~/.trenchcoat/telegram-channels/cursors.json` after every accepted message, and
+keeps GramJS sessions under `~/.trenchcoat/telegram-session/` (never `agent/`).
 
 ### Token security gate
 
@@ -79,13 +127,90 @@ message.
   blacklist/whitelist, buy/sell tax, LP lock flags
 - **RugCheck** — `GET api.rugcheck.xyz/v1/tokens/{mint}/report` (Solana, keyless
   basic lookups): mint/freeze authority, LP lock
+- **`low-lp-lock` is caution-only** — still flagged when locked-or-burned LP
+  fraction is below `gate_thresholds.lp_locked_min`, but never `hardFail` alone
+  (security-gate.md). Remaining hard-fail fields are unchanged.
 - Scanner selection per chain via the chain registry (chains.md); no scanner
   coverage → fail-closed, candidate untrackable
-- Runs at research dequeue **and** as the new-pool stream filter; a typed
-  hard-fail short-circuits to `ignore` without an LLM call and triggers the
-  rug-shill dock. Exact field→flag mapping, thresholds, and the
+- Runs at research dequeue **and** as the new-pool stream filter; scheduled
+  discovery hard-fails short-circuit to `ignore`. Confirmed operator research
+  still produces an evidence report but cannot track/broadcast the token.
+  Typed scanner failures can trigger the rug-shill dock. Exact field→flag mapping, thresholds, and the
   market-quality preflight (liquidity, txn, wash-filter floors) live in
   security-gate.md
+
+### Chart-sweep (`collectChartSweep`)
+
+Host collector for `chart-sweep`. Active watchlist subjects only
+(`tracking` / `watching`):
+
+1. Fetch closed **15m** OHLCV from GeckoTerminal (gated)
+2. Aggregate to **1h** and **4h** via `aggregateClosedCandles`
+3. Compute Wilder RSI (1h/4h), volume z-score, EMA structure, range breakout
+4. Archive the raw 15m blob; write indicator snapshots; render 1h PNG charts +
+   chart manifests (`candleHash` / `imageHash` / `sourceBlob`)
+
+Empty active watchlist → host precondition skip in `runJob` before `createRunId`
+(`archive/skips/chart-sweep.jsonl`, `runId: none`). Collector still defense-in-depth
+skips with `collectionStatus: skipped` / `skipAgent: true` if reached. Zero charts
+written after subjects → `degraded` + skip agent.
+
+### Watchlist-scan (`collectWatchlistScan`)
+
+Host collector for `watchlist-scan`. It reads active (`tracking` / `watching`)
+watchlist entries without mutating them. Every valid bound identity receives a
+DexScreener market snapshot and security-gate receipt. Config-enabled bounded X
+and Farcaster token searches enrich the same subject but fail softly, preserving
+market evidence. Empty active state is skipped by the host precondition gate
+before `createRunId` (`archive/skips/watchlist-scan.jsonl`). Collector defense-in-depth
+writes only `watchlist-collection-status` with `no-active-watchlist-subjects` and skips the
+agent with zero network calls. After a non-empty scan, the agent runs only when
+at least one subject has a successful market snapshot.
+
+### Narrative-scan (`collectNarrativeScan`)
+
+Reuses sealed **complete** archive inboxes — newest complete `list-scan` and
+`farcaster-scan` journals only (failed/running excluded). Items older than
+**24h are excluded**; **live ≤ 6h**, **stale ≤ 24h**. Market attention via
+`fetchMarketAttentionForNarrative`: CoinGecko trending with bounded retry
+(Demo key → coins + categories; keyless → coins only). On CG failure, DexScreener
+boosts + GeckoTerminal new pools populate a fallback snapshot — always
+`marketBlind=true` when categories are absent (`collectionStatus: degraded`).
+`narrative-trending` is always written. Host rejects rotation/urgent-rotation
+broadcasts when market-blind. `skipAgent` when `usableEvidence` is false (no sealed
+social and no market items).
+social reuse and no trending payload).
+
+### Review collector (`review-collect.ts`)
+
+Daily knowledge distillation. Before creating a run id, `evaluateReviewPrerequisites`
+requires at least one of: sealed complete reports in the configured lookback
+(default 7d, max 30, newest first with `agent.md` present), pending
+`alpha-queue/` messages, or active watchlist subjects (`tracking`/`watching`).
+Otherwise one skip log line and no run directory (same pattern as wallet
+evidence empty prerequisites).
+
+When scope exists, writes path-only inbox manifests — never report or alpha
+bodies in the host prompt:
+
+- `review-reports-manifest` — run ids + `reports/<run-id>/agent.md` paths
+- `review-alpha-manifest` — pending `alpha-queue/<channel>/<msg-id>.json` paths
+- `review-watchlist-snapshot` — bounded active subjects (≤30)
+- `review-macro-snapshot` — fear/greed via `fetchFearGreed` (degraded if unavailable)
+
+After integrity passes, accepted `state/research/` changes trigger host
+`reconcileIndex` and an archived `index-reconcile-receipt.json`. Alpha purge
+still follows validated `reports/<run-id>/alpha-digest.json` after archive seal.
+
+### Job collection routing (`collectForJob`)
+
+Exhaustive switch in `src/orchestrator/collect.ts`:
+
+| Kind | Jobs |
+|---|---|
+| **external** | `list-scan`, `farcaster-scan`, `watchlist-scan`, `chart-sweep`, `narrative-scan`, `research` (full dossier via `research-collect`), `review` (path-only manifests via `review-collect`) |
+| **unavailable** | None |
+| **host-only** | `source-list-review`, `fc-source-review`, `audit`, `outcomes-settle`, wallet jobs, `harness-improve`, `recover` — status snapshot, `skipAgent` |
 
 ### New-pool feed (discovery ahead of social)
 
@@ -233,13 +358,26 @@ otherwise; never tighten the loop.
 Alpha-queue entries use the same envelope, one file per message, so digestion can
 be tracked and purged per message id.
 
-## Source files to inspect before editing (once implemented)
+## Source files to inspect before editing
 
+- `src/orchestrator/collect.ts` — exhaustive job → collection-kind routing
+- `src/orchestrator/chart-collect.ts` — chart-sweep OHLCV / indicators / PNG
+- `src/orchestrator/narrative-collect.ts` — sealed social reuse + CoinGecko
+- `src/orchestrator/review-collect.ts` — sealed report + alpha manifests for review
 - `src/lib/rate-gate.ts` — the shared token bucket
 - `src/lib/snapshot.ts` — the only writer into `agent/inbox/` and
   `agent/alpha-queue/`; enforces envelope + provenance
-- `src/collectors/twitter/session.ts` — auth profile handling
+- `src/collectors/twitter/session.ts` — auth profile handling + engagement parse
+- `src/collectors/twitter/scrape.ts` — list-scan + research token search
+- `src/collectors/twitter/popularity.ts` — host query builder + popularity summary
+- `src/collectors/farcaster/neynar.ts` — Neynar REST client
+- `src/collectors/farcaster/scrape.ts` — for-you / channels / following feeds
+- `src/collectors/farcaster/follow-sync.ts` — follow-graph membership sync
+- `src/collectors/farcaster/engagement.ts` — likes applicator
+- `src/collectors/farcaster/signer.ts` — host custody / KeyGateway setup (INV-A1)
 - `src/collectors/telegram/listener.ts` — gramjs subscription, flood-wait handling
+- `src/collectors/market/security.ts` — GoPlus/RugCheck mapping (LP caution-only)
+- `src/collectors/market/aggregate.ts` — 15m → higher-TF closed candle aggregation
 
 ## Gotchas and security-sensitive boundaries
 

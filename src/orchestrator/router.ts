@@ -1,45 +1,19 @@
-import { sha256Json } from "../lib/canonical-json.js"
+import { randomBytes } from "node:crypto"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
+import {
+  BroadcastItemSchema,
+  type BroadcastItem,
+  type RouterEvent,
+} from "../contracts/schemas.js"
+import { sha256Json } from "../lib/canonical-json.js"
+import { signRouterRequest } from "../lib/router-contract.js"
+import { isKnownVerificationRule } from "./broadcast.js"
 
 const MAX_RESPONSE_BYTES = 64 * 1024
-const SAFE_SUBJECT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/
-const SAFE_RULE = /^[a-z0-9][a-z0-9._-]{0,63}$/
-const SAFE_REF = /^state\/[A-Za-z0-9._/-]+$/
+const SAFE_DELIVERY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/
 
-export type BroadcastSeverity = "notable" | "urgent" | "watch"
-export type BroadcastClaimType =
-  | "narrative-emergence"
-  | "narrative-fade"
-  | "rotation"
-  | "sentiment-collapse"
-  | "token-downside"
-  | "token-upside"
-export type BroadcastDirection = "down" | "rotation" | "up"
-
-export type AuditClaim = Readonly<{
-  type: BroadcastClaimType
-  subject: string
-  direction: BroadcastDirection
-  horizonHours: number
-  verificationRule: string
-}>
-
-export type BroadcastItem = Readonly<{
-  severity: BroadcastSeverity
-  text: string
-  refs: readonly string[]
-  auditClaim: AuditClaim
-}>
-
-export type RouterPayload = Readonly<{
-  schema: 1
-  eventId: `sha256:${string}`
-  occurredAt: string
-  severity: BroadcastSeverity
-  text: string
-  refs: readonly string[]
-  auditClaim: AuditClaim
-}>
+export type BroadcastClaimType = BroadcastItem["auditClaim"]["type"]
+export type BroadcastDirection = BroadcastItem["auditClaim"]["direction"]
 
 export type RouterDeliveryResult = Readonly<{
   status: "accepted" | "duplicate"
@@ -74,66 +48,127 @@ function expectedDirection(type: BroadcastClaimType): BroadcastDirection {
       return "down"
     case "rotation":
       return "rotation"
+    case "wallet-lifecycle":
+      return "lifecycle"
   }
 }
 
-function validateBroadcast(item: BroadcastItem): void {
-  const textLength = [...item.text].length
-  if (textLength < 1 || textLength > 280 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(item.text)) {
+export function validateBroadcastItem(item: unknown): BroadcastItem {
+  const parsed = BroadcastItemSchema.parse(item)
+  const textLength = [...parsed.text].length
+  if (textLength < 1 || textLength > 280 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(parsed.text)) {
     throw new TypeError("Broadcast text is empty, too long, or contains control characters")
   }
-
-  if (item.refs.length > 10 || new Set(item.refs).size !== item.refs.length) {
+  if (new Set(parsed.refs).size !== parsed.refs.length) {
     throw new TypeError("Broadcast refs are duplicated or exceed the limit")
   }
-
-  for (const ref of item.refs) {
-    if (
-      !SAFE_REF.test(ref)
-      || ref.includes("..")
-      || ref.startsWith("/")
-      || ref.includes("//")
-    ) {
+  for (const ref of parsed.refs) {
+    if (ref.includes("..") || ref.startsWith("/") || ref.includes("//")) {
       throw new TypeError("Broadcast ref is not a safe state-relative path")
     }
   }
-
-  if (!SAFE_SUBJECT.test(item.auditClaim.subject)) {
-    throw new TypeError("Broadcast audit subject is invalid")
+  if (!isKnownVerificationRule(parsed.auditClaim.verificationRule)) {
+    throw new TypeError("Broadcast verification rule is unknown")
   }
-
-  if (!SAFE_RULE.test(item.auditClaim.verificationRule)) {
-    throw new TypeError("Broadcast verification rule is invalid")
-  }
-
-  if (
-    !Number.isSafeInteger(item.auditClaim.horizonHours)
-    || item.auditClaim.horizonHours < 1
-    || item.auditClaim.horizonHours > 168
-  ) {
-    throw new TypeError("Broadcast audit horizon must be from 1 to 168 hours")
-  }
-
-  if (item.auditClaim.direction !== expectedDirection(item.auditClaim.type)) {
+  if (parsed.auditClaim.direction !== expectedDirection(parsed.auditClaim.type)) {
     throw new TypeError("Broadcast claim direction is incompatible with its type")
+  }
+  return parsed
+}
+
+export function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1"
+    || hostname === "::1"
+    || hostname === "localhost"
+}
+
+/**
+ * Resolve intake URL. Bare host roots (`http://127.0.0.1:8787/`) map to `/v1/events`
+ * so signing path and POST target stay aligned.
+ */
+export function resolveRouterIntakeUrl(url: string, allowInsecureLoopback = false): URL {
+  const parsed = validateRouterUrl(url, allowInsecureLoopback)
+  const path = parsed.pathname.replace(/\/$/u, "") || "/v1/events"
+  parsed.pathname = path
+  return parsed
+}
+
+export function validateRouterUrl(url: string, _allowInsecureLoopback = false): URL {
+  const parsed = new URL(url)
+  const loopback = isLoopbackHostname(parsed.hostname)
+
+  // Local deploy uses plain HTTP on loopback (.env.example). Off-loopback still requires HTTPS.
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
+    throw new TypeError("Router URL must use HTTPS (HTTP only on loopback)")
+  }
+
+  if (parsed.username || parsed.password || parsed.hash) {
+    throw new TypeError("Router URL cannot contain credentials or a fragment")
+  }
+
+  return parsed
+}
+
+/** Build a durable finding.broadcast RouterEvent from a validated BroadcastItem */
+export function buildBroadcastRouterEvent(
+  runId: string,
+  occurredAt: string,
+  item: BroadcastItem,
+): RouterEvent {
+  const validated = validateBroadcastItem(item)
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(runId)) {
+    throw new TypeError("Run id is invalid")
+  }
+
+  const occurredTimestamp = Date.parse(occurredAt)
+  if (!Number.isFinite(occurredTimestamp) || new Date(occurredTimestamp).toISOString() !== occurredAt) {
+    throw new TypeError("occurredAt must be a canonical ISO timestamp")
+  }
+
+  const eventId = sha256Json({
+    runId,
+    type: "finding.broadcast",
+    severity: validated.severity,
+    text: validated.text,
+    refs: [...validated.refs],
+    auditClaim: {
+      type: validated.auditClaim.type,
+      subject: validated.auditClaim.subject,
+      direction: validated.auditClaim.direction,
+      horizonHours: validated.auditClaim.horizonHours,
+      verificationRule: validated.auditClaim.verificationRule,
+    },
+  })
+
+  return {
+    schema: 1,
+    eventId,
+    occurredAt,
+    runId,
+    type: "finding.broadcast",
+    severity: validated.severity,
+    text: validated.text,
+    refs: [...validated.refs],
+    auditClaim: { ...validated.auditClaim },
   }
 }
 
+/** @deprecated Prefer buildBroadcastRouterEvent — kept for call-site migration */
+export function buildRouterPayload(
+  runId: string,
+  occurredAt: string,
+  item: BroadcastItem,
+): RouterEvent {
+  return buildBroadcastRouterEvent(runId, occurredAt, item)
+}
+
 function parseRetryAfter(value: string | null): number | undefined {
-  if (!value) {
-    return undefined
-  }
-
+  if (!value) return undefined
   const seconds = Number(value)
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.ceil(seconds)
-  }
-
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds)
   const timestamp = Date.parse(value)
-  if (!Number.isFinite(timestamp)) {
-    return undefined
-  }
-
+  if (!Number.isFinite(timestamp)) return undefined
   return Math.max(0, Math.ceil((timestamp - Date.now()) / 1_000))
 }
 
@@ -142,21 +177,15 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
     throw new RouterDeliveryError("Router response exceeds the size limit", false)
   }
-
   const body = await response.text()
   if (Buffer.byteLength(body) > MAX_RESPONSE_BYTES) {
     throw new RouterDeliveryError("Router response exceeds the size limit", false)
   }
-
-  if (body.length === 0) {
-    return null
-  }
-
+  if (body.length === 0) return null
   const contentType = response.headers.get("content-type")
   if (!contentType?.toLowerCase().includes("application/json")) {
     throw new RouterDeliveryError("Router returned a non-JSON response", false)
   }
-
   try {
     return JSON.parse(body)
   } catch {
@@ -171,132 +200,73 @@ function readReceipt(
   if (body === null || typeof body !== "object") {
     throw new RouterDeliveryError("Router response omitted its receipt", false)
   }
-
   const status = Reflect.get(body, "status")
   const deliveryId = Reflect.get(body, "delivery_id")
   if (
     status !== expectedStatus
     || typeof deliveryId !== "string"
-    || !SAFE_SUBJECT.test(deliveryId)
+    || !SAFE_DELIVERY_ID.test(deliveryId)
   ) {
     throw new RouterDeliveryError("Router returned an invalid receipt", false)
   }
-
   return { status, deliveryId }
 }
 
-export function validateRouterUrl(url: string, allowInsecureLoopback = false): URL {
-  const parsed = new URL(url)
-  const loopback = parsed.hostname === "127.0.0.1"
-    || parsed.hostname === "::1"
-    || parsed.hostname === "localhost"
-
-  if (parsed.protocol !== "https:" && !(allowInsecureLoopback && loopback)) {
-    throw new TypeError("Router URL must use HTTPS")
-  }
-
-  if (parsed.username || parsed.password || parsed.hash) {
-    throw new TypeError("Router URL cannot contain credentials or a fragment")
-  }
-
-  return parsed
-}
-
-export function buildRouterPayload(
-  runId: string,
-  occurredAt: string,
-  item: BroadcastItem,
-): RouterPayload {
-  validateBroadcast(item)
-
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(runId)) {
-    throw new TypeError("Run id is invalid")
-  }
-
-  const occurredTimestamp = Date.parse(occurredAt)
-  if (!Number.isFinite(occurredTimestamp) || new Date(occurredTimestamp).toISOString() !== occurredAt) {
-    throw new TypeError("occurredAt must be a canonical ISO timestamp")
-  }
-
-  const eventId = sha256Json({
-    runId,
-    severity: item.severity,
-    text: item.text,
-    refs: [...item.refs],
-    auditClaim: {
-      type: item.auditClaim.type,
-      subject: item.auditClaim.subject,
-      direction: item.auditClaim.direction,
-      horizonHours: item.auditClaim.horizonHours,
-      verificationRule: item.auditClaim.verificationRule,
-    },
-  })
-
-  return Object.freeze({
-    schema: 1,
-    eventId,
-    occurredAt,
-    severity: item.severity,
-    text: item.text,
-    refs: Object.freeze([...item.refs]),
-    auditClaim: Object.freeze({ ...item.auditClaim }),
-  })
-}
-
-export async function deliverBroadcast(
+/**
+ * POST a RouterEvent to the in-repo HMAC intake. Uses loopback HTTP only in tests.
+ * Bearer tokens are never used (ADR 001 / INV-B5).
+ */
+export async function deliverRouterEvent(
   fetcher: FetchLike,
   routerUrl: string,
-  token: string,
-  payload: RouterPayload,
+  hmacKey: string,
+  event: RouterEvent,
   timeoutMs = 10_000,
+  allowInsecureLoopback = false,
 ): Promise<RouterDeliveryResult> {
-  const url = validateRouterUrl(routerUrl)
-
-  if (token.length < 1 || token.length > 4_096 || /[\r\n]/u.test(token)) {
-    throw new TypeError("Router token is invalid")
+  const url = resolveRouterIntakeUrl(routerUrl, allowInsecureLoopback)
+  if (hmacKey.length < 8 || hmacKey.length > 4_096 || /[\r\n]/u.test(hmacKey)) {
+    throw new TypeError("Router HMAC key is invalid")
   }
-
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) {
     throw new TypeError("timeoutMs must be an integer from 1 to 60000")
   }
+
+  const path = url.pathname
+  const body = JSON.stringify(event)
+  const timestamp = new Date().toISOString()
+  const nonce = `n-${Date.now()}-${randomBytes(8).toString("hex")}`
+  const signature = signRouterRequest(hmacKey, "POST", path, timestamp, nonce, body)
 
   const response = await fetcher(url, {
     method: "POST",
     headers: {
       accept: "application/json",
-      authorization: `Bearer ${token}`,
       "content-type": "application/json",
-      "idempotency-key": payload.eventId,
+      "x-tc-timestamp": timestamp,
+      "x-tc-nonce": nonce,
+      "x-tc-signature": signature,
     },
-    body: JSON.stringify({
-      schema: payload.schema,
-      event_id: payload.eventId,
-      occurred_at: payload.occurredAt,
-      severity: payload.severity,
-      text: payload.text,
-      refs: payload.refs,
-      audit_claim: {
-        type: payload.auditClaim.type,
-        subject: payload.auditClaim.subject,
-        direction: payload.auditClaim.direction,
-        horizon_hours: payload.auditClaim.horizonHours,
-        verification_rule: payload.auditClaim.verificationRule,
-      },
-    }),
+    body,
     redirect: "error",
     signal: AbortSignal.timeout(timeoutMs),
   })
 
-  const body = await parseResponseBody(response)
+  const responseBody = await parseResponseBody(response)
 
-  if (response.ok) {
-    const receipt = readReceipt(body, "accepted")
-    return { ...receipt, eventId: payload.eventId }
+  if (response.status === 202) {
+    const receipt = readReceipt(responseBody, "accepted")
+    return { ...receipt, eventId: event.eventId as `sha256:${string}` }
   }
-
+  if (response.status === 200) {
+    const receipt = readReceipt(responseBody, "duplicate")
+    return { ...receipt, eventId: event.eventId as `sha256:${string}` }
+  }
   if (response.status === 409) {
-    const receipt = readReceipt(body, "duplicate")
-    return { ...receipt, eventId: payload.eventId }
+    throw new RouterDeliveryError("Router eventId/payload conflict", false)
+  }
+  if (response.status === 401) {
+    throw new RouterDeliveryError("Router HMAC rejected", false)
   }
 
   const retryable = response.status === 408
@@ -308,5 +278,27 @@ export async function deliverBroadcast(
     `Router delivery failed with HTTP ${response.status}`,
     retryable,
     parseRetryAfter(response.headers.get("retry-after")),
+  )
+}
+
+/** Deliver a BroadcastItem as a finding.broadcast event via HMAC intake */
+export async function deliverBroadcast(
+  fetcher: FetchLike,
+  routerUrl: string,
+  hmacKey: string,
+  runId: string,
+  occurredAt: string,
+  item: BroadcastItem,
+  timeoutMs = 10_000,
+  allowInsecureLoopback = false,
+): Promise<RouterDeliveryResult> {
+  const event = buildBroadcastRouterEvent(runId, occurredAt, item)
+  return deliverRouterEvent(
+    fetcher,
+    routerUrl,
+    hmacKey,
+    event,
+    timeoutMs,
+    allowInsecureLoopback,
   )
 }

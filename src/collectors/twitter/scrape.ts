@@ -2,12 +2,19 @@ import { existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { chromium, type Page } from "playwright"
 import type { TrenchcoatConfig } from "../../lib/config.js"
+import type { CanonicalIdentity } from "../../contracts/schemas.js"
 import { twitterProfileDir } from "../social/twitter-auth.js"
 import { parseTwitterSearchPage, type TwitterPost } from "../twitter/session.js"
+import {
+  buildResearchTwitterQueries,
+  summarizeTwitterPopularity,
+  twitterSearchUrl,
+  type TwitterPopularitySummary,
+} from "./popularity.js"
 import { log } from "../../lib/log.js"
 
 export type TwitterScrapeTarget = Readonly<{
-  kind: "home" | "operator-list" | "managed-list"
+  kind: "home" | "operator-list" | "managed-list" | "token-search"
   url: string
   label: string
 }>
@@ -15,6 +22,13 @@ export type TwitterScrapeTarget = Readonly<{
 export type TwitterScrapeBundle = Readonly<{
   target: TwitterScrapeTarget
   posts: readonly TwitterPost[]
+  challenged: boolean
+}>
+
+export type ResearchTwitterScrapeResult = Readonly<{
+  bundles: readonly TwitterScrapeBundle[]
+  posts: readonly TwitterPost[]
+  popularity: TwitterPopularitySummary
   challenged: boolean
 }>
 
@@ -153,6 +167,114 @@ export async function scrapeConfiguredTwitter(
   }
 }
 
+/**
+ * Bounded read-only X search for a resolved research token.
+ * Queries are host-built from canonical identity only.
+ */
+export async function scrapeResearchTokenTwitter(args: Readonly<{
+  identity: CanonicalIdentity
+  maxPages: number
+  maxPosts: number
+  fetchedAt: string
+  recentWindowHours?: number
+  headless?: boolean
+}>): Promise<ResearchTwitterScrapeResult> {
+  const queries = buildResearchTwitterQueries(args.identity)
+  let state: string
+  try {
+    state = assertTwitterSessionReady()
+  } catch (error) {
+    return {
+      bundles: [],
+      posts: [],
+      challenged: false,
+      popularity: summarizeTwitterPopularity({
+        posts: [],
+        fetchedAt: args.fetchedAt,
+        queriesAttempted: queries.length,
+        queriesSucceeded: 0,
+        challenged: false,
+        unavailableReason: error instanceof Error ? error.message : "X session missing",
+        ...(args.recentWindowHours !== undefined
+          ? { recentWindowHours: args.recentWindowHours }
+          : {}),
+      }),
+    }
+  }
+
+  const browser = await chromium.launch({ headless: args.headless !== false })
+  const bundles: TwitterScrapeBundle[] = []
+  const globalSeen = new Map<string, TwitterPost>()
+  let challenged = false
+  let queriesSucceeded = 0
+
+  try {
+    const context = await browser.newContext({
+      storageState: resolve(state),
+      viewport: { width: 1280, height: 900 },
+    })
+    await context.route("**/*", async (route) => {
+      const method = route.request().method().toUpperCase()
+      if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+        await route.abort("blockedbyclient")
+        return
+      }
+      await route.continue()
+    })
+
+    const page = await context.newPage()
+    for (const query of queries) {
+      const target: TwitterScrapeTarget = {
+        kind: "token-search",
+        url: twitterSearchUrl(query.query),
+        label: `research-${query.label}`,
+      }
+      log.info("twitter research search", { label: target.label, query: query.query })
+      try {
+        const bundle = await scrapeTarget(page, target, Math.max(1, args.maxPages))
+        if (bundle.challenged) challenged = true
+        else queriesSucceeded += 1
+        const unique = bundle.posts.filter((post) => {
+          if (globalSeen.has(post.id)) return false
+          globalSeen.set(post.id, post)
+          return true
+        })
+        bundles.push({ ...bundle, posts: unique })
+      } catch (error) {
+        log.warn("twitter research search failed", {
+          label: target.label,
+          detail: error instanceof Error ? error.message : "unknown",
+        })
+        bundles.push({ target, posts: [], challenged: false })
+      }
+      await page.waitForTimeout(1_000 + Math.floor(Math.random() * 1_000))
+    }
+    await context.close()
+  } finally {
+    await browser.close()
+  }
+
+  const posts = [...globalSeen.values()]
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
+    .slice(0, Math.max(1, args.maxPosts))
+
+  return {
+    bundles,
+    posts,
+    challenged,
+    popularity: summarizeTwitterPopularity({
+      posts,
+      fetchedAt: args.fetchedAt,
+      queriesAttempted: queries.length,
+      queriesSucceeded,
+      challenged,
+      ...(args.recentWindowHours !== undefined
+        ? { recentWindowHours: args.recentWindowHours }
+        : {}),
+    }),
+  }
+}
+
 export function summarizeScrape(bundles: readonly TwitterScrapeBundle[]): unknown {
   return bundles.map((bundle) => ({
     target: bundle.target.label,
@@ -166,6 +288,8 @@ export function summarizeScrape(bundles: readonly TwitterScrapeBundle[]): unknow
       ts: p.timestamp,
       text: p.text.length > 120 ? `${p.text.slice(0, 117)}…` : p.text,
       url: p.url,
+      likes: p.engagement.likes,
+      views: p.engagement.views,
     })),
   }))
 }

@@ -2,7 +2,7 @@
 description: Host-side snapshot archive and decision-time as-of bundles - the immutable record that source attribution and audits read from, and the leakage firewall that makes calibration valid.
 scope: module
 status: draft
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 read_when:
   - Editing the run loop's archiving, source attribution inputs, audit outcome computation, or retention.
 ---
@@ -42,9 +42,9 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 ├── transactions/<run-id>.json # fsynced run phase journal + idempotency hashes
 ├── telemetry/runs/<run-id>.json # tokens by session kind + API/cache counters
 ├── market/blobs/<sha256>.json.gz  # canonical, content-addressed OHLCV payloads
-├── resolution-log.jsonl   # every ticker-only disambiguation verdict incl.
-│                          #   abstains, with the full candidate dossier
-│                          #   (token-resolution.md) — graded weekly
+├── resolution-log.jsonl   # designed, not wired — ticker-only disambiguation
+│                          #   verdicts incl. abstains (token-resolution.md);
+│                          #   schema exists, no writer yet
 ├── source-call-log.jsonl  # deterministic bullish call events from raw items
 └── discovery-log.jsonl    # candidates rejected/expired before research
                            #   (research-queue.md) — counterfactual pricing

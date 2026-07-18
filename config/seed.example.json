@@ -1,17 +1,152 @@
 {
-  "schema": 4,
-  "telegram_channels": [],
+  "schema": 7,
+  "telegram_channels": [
+    {
+      "channel": "KashKyshAlpha",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "PowsGemCalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "LittleMustachoCalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "LevisAlpha",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "wuziemakesmoney",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "bagcalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "SlavicCalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "HopiumSelect",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "JamboCalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "cryptolyxecalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "voltixcalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "ralphscall",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "lumosx1000",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "shmooscasino",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "hellokook",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "ProfitsPlays",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "marcellcooks",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "solsticesmoonshots",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "SHITTYCALLZBYPOE",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "lexaprosfeed",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "primegems",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "mduzcalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "houseofdegeneracy",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "DreamCalls100x",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "Discover_0x",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "pattystraphouse",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "EZMoneyCalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "KobesCalls",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "ShitcoinAlphaChannel",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "JulzLabs",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "CryptoDeusGems",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "poptyedev",
+      "mode": "gramjs"
+    },
+    {
+      "channel": "nosanitytrades",
+      "mode": "gramjs"
+    }
+  ],
   "twitter": {
     "operator_list_urls": [
-      "https://x.com/i/lists/REPLACE_WITH_FIRST_LIST_ID",
-      "https://x.com/i/lists/REPLACE_WITH_SECOND_LIST_ID"
+      "https://x.com/i/lists/1111111111111111111",
+      "https://x.com/i/lists/2222222222222222222"
     ],
     "scrape_home": true,
     "max_pages_per_run": 5,
     "managed_list": {
       "name": "trenchcoat-sources",
       "description": "Sources promoted by trenchcoat",
-      "capacity": 250
+      "capacity": 250,
+      "list_id": "1111111111111111111",
+      "list_url": "https://x.com/i/lists/1111111111111111111"
     },
     "source_lifecycle": {
       "review_interval_hours": 24,
@@ -47,16 +182,45 @@
     "daily_cap": 3,
     "disambiguation_daily_cap": 10,
     "queue_expiry_days": 14,
-    "revisit_default_days": 7
+    "revisit_default_days": 7,
+    "web_search": {
+      "enabled": true,
+      "max_queries_per_run": 3
+    },
+    "twitter_search": {
+      "enabled": true,
+      "max_pages_per_query": 2,
+      "max_posts": 40,
+      "recent_window_hours": 48
+    },
+    "farcaster_search": {
+      "enabled": true,
+      "max_casts": 40,
+      "recent_window_hours": 48
+    }
   },
   "broadcast": {
     "daily_budget": 5,
-    "urgent_ceiling": 10
+    "urgent_ceiling": 10,
+    "discord_distiller": {
+      "enabled": true,
+      "daily_cap": 10
+    }
+  },
+  "narratives": {
+    "retention_days": 14
+  },
+  "review": {
+    "lookback_days": 7,
+    "max_reports": 30
   },
   "indicators": {
     "feature_spec_version": 1,
     "rsi_period": 14,
-    "rsi_timeframes_minutes": [60, 240],
+    "rsi_timeframes_minutes": [
+      60,
+      240
+    ],
     "rsi_overbought": 70,
     "rsi_min_active_bars": 10
   },
@@ -70,7 +234,11 @@
     "liquidity_delta_min": -0.3
   },
   "audit": {
-    "horizons_hours": [24, 72, 168],
+    "horizons_hours": [
+      24,
+      72,
+      168
+    ],
     "headline_horizon_hours": 72,
     "outcome_settlement_hours": 6,
     "execution_bar_minutes": 5,
@@ -119,16 +287,70 @@
   "source_safety": {
     "intent_classifier_daily_cap": 20
   },
+  "harness_improvement": {
+    "enabled": false,
+    "schedule_enabled": false,
+    "auto_open_pr": true,
+    "base_branch": "main",
+    "test_command": "test:unit",
+    "require_two_epochs": true,
+    "allocation_bps": 1000,
+    "min_events": 40,
+    "min_holdout_events": 20,
+    "confidence_level": 0.95,
+    "error_budget": 3,
+    "missingness_max": 0.3,
+    "rug_exposure_max": 0.25,
+    "one_active_experiment": true
+  },
   "retention": {
     "inbox_archive_days": 30,
     "run_archive_days": 90,
     "chat_reports_days": 30
   },
   "chat": {
-    "idle_timeout_minutes": 30
+    "idle_timeout_minutes": 30,
+    "research_confirm_ttl_minutes": 15
   },
   "router": {
     "bind_host": "127.0.0.1",
     "bind_port": 8787
+  },
+  "farcaster": {
+    "enabled": false,
+    "scrape_for_you": true,
+    "max_items_per_feed": 25,
+    "follow_graph": {
+      "capacity": 250
+    },
+    "source_lifecycle": {
+      "review_interval_hours": 24,
+      "max_transitions_per_review": 10,
+      "promotion": {
+        "min_eligible_calls": 10,
+        "min_distinct_tokens": 5,
+        "min_coverage": 0.8,
+        "min_hit_mean": 0.6,
+        "min_hit_lb95": 0.45,
+        "min_median_excess": 0.05,
+        "max_rug_exposure": 0.1,
+        "max_idle_days": 14
+      },
+      "demotion": {
+        "idle_days": 30,
+        "rug_exposure": 0.25,
+        "min_resolved_for_rug_drop": 4,
+        "coverage_floor": 0.5,
+        "score_floor": 0.4,
+        "consecutive_epochs": 2,
+        "readd_cooldown_days": 30,
+        "readd_min_new_calls": 5
+      }
+    },
+    "engagement": {
+      "enabled": true,
+      "likes_per_window": 2,
+      "like_window_minutes": 10
+    }
   }
 }

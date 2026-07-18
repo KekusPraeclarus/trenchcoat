@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Weekly harness improvement: propose → worktree → tests → open PR.
+     Never merges. Requires harness_improvement.enabled + schedule_enabled,
+     gh auth, and push access. Install via: ops/install-launchd.sh --with-harness -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trenchcoat.job.harness-improve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>export PATH="$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"; set -a; [ -f "$HOME/.trenchcoat/env" ] &amp;&amp; . "$HOME/.trenchcoat/env"; set +a; cd "$HOME/Documents/trench-bot" &amp;&amp; exec trenchcoat run harness-improve</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>604800</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/trenchcoat.harness-improve.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/trenchcoat.harness-improve.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

@@ -1,5 +1,5 @@
 import { mkdirSync, realpathSync, existsSync } from "node:fs"
-import { dirname, join, resolve, sep } from "node:path"
+import { basename, dirname, join, resolve, sep } from "node:path"
 import { writeAtomicFile, sha256Bytes } from "./fs-atomic.js"
 import {
   SnapshotEnvelopeSchema,
@@ -7,21 +7,39 @@ import {
 } from "../contracts/schemas.js"
 
 function assertInsideRoot(root: string, candidate: string): string {
-  const resolvedRoot = resolve(root)
+  const rootResolved = resolve(root)
+  if (!existsSync(rootResolved)) {
+    throw new Error(`Sandbox root missing: ${root}`)
+  }
+  const realRoot = realpathSync(rootResolved)
   const resolvedCandidate = resolve(candidate)
-  if (
-    resolvedCandidate !== resolvedRoot
-    && !resolvedCandidate.startsWith(resolvedRoot + sep)
-  ) {
-    throw new Error(`Path escapes sandbox root: ${candidate}`)
-  }
+
+  let realCandidate: string
   if (existsSync(resolvedCandidate)) {
-    const real = realpathSync(resolvedCandidate)
-    if (real !== resolvedRoot && !real.startsWith(resolvedRoot + sep)) {
-      throw new Error(`Symlink escapes sandbox root: ${candidate}`)
+    realCandidate = realpathSync(resolvedCandidate)
+  } else {
+    const parts: string[] = []
+    let parent = resolvedCandidate
+    while (!existsSync(parent)) {
+      const next = dirname(parent)
+      if (next === parent) break
+      parts.unshift(basename(parent))
+      parent = next
     }
+    if (!existsSync(parent)) {
+      throw new Error(`Path escapes sandbox root: ${candidate}`)
+    }
+    realCandidate = join(realpathSync(parent), ...parts)
   }
-  return resolvedCandidate
+
+  if (realCandidate !== realRoot && !realCandidate.startsWith(realRoot + sep)) {
+    throw new Error(
+      existsSync(resolvedCandidate)
+        ? `Symlink escapes sandbox root: ${candidate}`
+        : `Path escapes sandbox root: ${candidate}`,
+    )
+  }
+  return existsSync(resolvedCandidate) ? realCandidate : resolvedCandidate
 }
 
 function sanitizeSegment(value: string): string {
@@ -48,6 +66,32 @@ export class SnapshotWriter {
     const body = `${JSON.stringify(parsed, null, 2)}\n`
     await writeAtomicFile(path, body)
     return { path, hash: sha256Bytes(body) }
+  }
+
+  /** Host-generated chart PNGs only — never write untrusted/scraped binaries */
+  async writeChartPng(
+    runId: string,
+    name: string,
+    png: Buffer,
+    maxBytes = 2_000_000,
+  ): Promise<{ path: string; hash: `sha256:${string}` }> {
+    if (!Buffer.isBuffer(png) || png.length === 0 || png.length > maxBytes) {
+      throw new TypeError("Chart PNG size is invalid")
+    }
+    if (png[0] !== 0x89 || png[1] !== 0x50 || png[2] !== 0x4e || png[3] !== 0x47) {
+      throw new TypeError("Chart artifact must be a PNG")
+    }
+    const safeRun = sanitizeSegment(runId)
+    const safeName = sanitizeSegment(name)
+    if (!safeName.endsWith(".png") && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/u.test(safeName)) {
+      throw new TypeError("Unsafe chart name")
+    }
+    const fileName = safeName.endsWith(".png") ? safeName : `${safeName}.png`
+    const dir = assertInsideRoot(this.agentRoot, join(this.agentRoot, "inbox", safeRun, "charts"))
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const path = assertInsideRoot(dir, join(dir, fileName))
+    await writeAtomicFile(path, png)
+    return { path, hash: sha256Bytes(png) }
   }
 
   async writeAlphaQueue(

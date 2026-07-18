@@ -9,6 +9,10 @@ import {
   WatchlistFileSchema,
   WalletsFileSchema,
   XEngagementFileSchema,
+  XBotHealthSchema,
+  FcEngagementFileSchema,
+  FcSourceLifecycleFileSchema,
+  ScorecardSchema,
   type LedgerFile,
   type ResearchQueueFile,
   type SourcesFile,
@@ -16,6 +20,10 @@ import {
   type WatchlistFile,
   type WalletsFile,
   type XEngagementFile,
+  type XBotHealth,
+  type FcEngagementFile,
+  type FcSourceLifecycleFile,
+  type Scorecard,
 } from "../contracts/schemas.js"
 
 function readOrDefault<T>(path: string, parse: (value: unknown) => T, fallback: T): T {
@@ -31,11 +39,15 @@ export class StateStore {
   watchlistPath(): string { return join(this.stateDir, "watchlist.json") }
   sourcesPath(): string { return join(this.stateDir, "sources.json") }
   sourceLifecyclePath(): string { return join(this.stateDir, "source-lifecycle.json") }
+  fcSourceLifecyclePath(): string { return join(this.stateDir, "fc-source-lifecycle.json") }
   xEngagementPath(): string { return join(this.stateDir, "x-engagement.json") }
+  xBotHealthPath(): string { return join(this.stateDir, "x-bot-health.json") }
+  fcEngagementPath(): string { return join(this.stateDir, "fc-engagement.json") }
   ledgerPath(): string { return join(this.stateDir, "ledger.json") }
   researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
   walletsPath(): string { return join(this.stateDir, "wallets.json") }
   decisionsPath(): string { return join(this.stateDir, "decisions.md") }
+  scorecardPath(): string { return join(this.stateDir, "scorecard.json") }
 
   loadWatchlist(): WatchlistFile {
     return readOrDefault(
@@ -81,6 +93,26 @@ export class StateStore {
     )
   }
 
+  loadFcSourceLifecycle(): FcSourceLifecycleFile {
+    return readOrDefault(
+      this.fcSourceLifecyclePath(),
+      (v) => FcSourceLifecycleFileSchema.parse(v),
+      {
+        schema: 1,
+        candidates: [],
+        transitions: [],
+        pendingTransitionIds: [],
+      },
+    )
+  }
+
+  async saveFcSourceLifecycle(file: FcSourceLifecycleFile): Promise<void> {
+    await writeAtomicFile(
+      this.fcSourceLifecyclePath(),
+      `${JSON.stringify(FcSourceLifecycleFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
   loadXEngagement(): XEngagementFile {
     const today = new Date().toISOString().slice(0, 10)
     return readOrDefault(
@@ -104,6 +136,50 @@ export class StateStore {
     await writeAtomicFile(
       this.xEngagementPath(),
       `${JSON.stringify(XEngagementFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadXBotHealth(nowIso?: string): XBotHealth {
+    const updatedAt = nowIso ?? new Date().toISOString()
+    return readOrDefault(
+      this.xBotHealthPath(),
+      (v) => XBotHealthSchema.parse(v),
+      {
+        schema: 1,
+        updatedAt,
+        consecutiveFailures: 0,
+      },
+    )
+  }
+
+  async saveXBotHealth(file: XBotHealth): Promise<void> {
+    await writeAtomicFile(
+      this.xBotHealthPath(),
+      `${JSON.stringify(XBotHealthSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadFcEngagement(): FcEngagementFile {
+    const today = new Date().toISOString().slice(0, 10)
+    return readOrDefault(
+      this.fcEngagementPath(),
+      (v) => FcEngagementFileSchema.parse(v),
+      {
+        schema: 1,
+        likedCastHashes: [],
+        lastLikedAt: {},
+        pendingActionIds: [],
+        decisions: [],
+        receipts: [],
+        daily: { day: today, likes: 0 },
+      },
+    )
+  }
+
+  async saveFcEngagement(file: FcEngagementFile): Promise<void> {
+    await writeAtomicFile(
+      this.fcEngagementPath(),
+      `${JSON.stringify(FcEngagementFileSchema.parse(file), null, 2)}\n`,
     )
   }
 
@@ -138,12 +214,24 @@ export class StateStore {
     return readOrDefault(
       this.walletsPath(),
       (v) => WalletsFileSchema.parse(v),
-      { schema: 1, wallets: [] },
+      { schema: 1, wallets: [], transitions: [], pendingTransitionIds: [], cursors: [] },
     )
   }
 
   async saveWallets(file: WalletsFile): Promise<void> {
     await writeAtomicFile(this.walletsPath(), `${JSON.stringify(WalletsFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  loadScorecard(): Scorecard | undefined {
+    if (!existsSync(this.scorecardPath())) return undefined
+    return ScorecardSchema.parse(JSON.parse(readFileSync(this.scorecardPath(), "utf8")))
+  }
+
+  async saveScorecard(scorecard: Scorecard): Promise<void> {
+    await writeAtomicFile(
+      this.scorecardPath(),
+      `${JSON.stringify(ScorecardSchema.parse(scorecard), null, 2)}\n`,
+    )
   }
 
   readDecisions(): string {

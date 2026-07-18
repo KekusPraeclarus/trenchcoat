@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
+import { splitTelegramText } from "../lib/telegram-bot.js"
 
 export type DestinationRow = Readonly<{
   id: string
@@ -18,6 +19,38 @@ export type DeliveryRow = Readonly<{
 
 const MAX_ATTEMPTS = 8
 
+/** Soft cap under Discord's 2000 hard limit; leaves room for part prefixes */
+export const DISCORD_SAFE_CHUNK = 1_900
+
+/**
+ * Split text into Discord-safe chunks at paragraph boundaries.
+ * Numbered `1/n` … when more than one part. Mirrors Telegram splitting.
+ */
+export function splitDiscordText(
+  text: string,
+  limit = DISCORD_SAFE_CHUNK,
+): string[] {
+  return splitTelegramText(text, limit)
+}
+
+/** Stable per-part key so Discord Idempotency-Key survives retries */
+export function discordPartIdempotencyKey(
+  deliveryId: string,
+  partIndex: number,
+  partTotal: number,
+): string {
+  if (!/^[A-Za-z0-9:_-]{1,128}$/u.test(deliveryId)) {
+    throw new TypeError("unsafe delivery id for discord idempotency key")
+  }
+  if (!Number.isSafeInteger(partIndex) || partIndex < 0 || partIndex >= partTotal) {
+    throw new TypeError("discord part index out of range")
+  }
+  if (!Number.isSafeInteger(partTotal) || partTotal < 1 || partTotal > 64) {
+    throw new TypeError("discord part total out of range")
+  }
+  return `${deliveryId}:part:${partIndex + 1}/${partTotal}`
+}
+
 export async function deliverTelegram(
   fetcher: FetchLike,
   botToken: string,
@@ -25,27 +58,30 @@ export async function deliverTelegram(
   text: string,
 ): Promise<void> {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`
-  const response = await fetcher(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: true,
-    }),
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const retryable = response.status === 429 || response.status >= 500
-    const err = new Error(`telegram HTTP ${response.status}`) as Error & {
-      retryable?: boolean
-      retryAfterSeconds?: number
+  const parts = splitTelegramText(text)
+  for (const part of parts) {
+    const response = await fetcher(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: part,
+        disable_web_page_preview: true,
+      }),
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) {
+      const retryable = response.status === 429 || response.status >= 500
+      const err = new Error(`telegram HTTP ${response.status}`) as Error & {
+        retryable?: boolean
+        retryAfterSeconds?: number
+      }
+      err.retryable = retryable
+      const ra = response.headers.get("retry-after")
+      if (ra) err.retryAfterSeconds = Number(ra)
+      throw err
     }
-    err.retryable = retryable
-    const ra = response.headers.get("retry-after")
-    if (ra) err.retryAfterSeconds = Number(ra)
-    throw err
   }
 }
 
@@ -53,27 +89,42 @@ export async function deliverDiscord(
   fetcher: FetchLike,
   webhookUrl: string,
   text: string,
+  opts?: Readonly<{ idempotencyKeyBase?: string }>,
 ): Promise<void> {
   const url = new URL(webhookUrl)
   url.searchParams.set("wait", "true")
-  const response = await fetcher(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      content: text,
-      allowed_mentions: { parse: [] },
-    }),
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const retryable = response.status === 429 || response.status >= 500
-    const err = new Error(`discord HTTP ${response.status}`) as Error & {
-      retryable?: boolean
-      retryAfterSeconds?: number
+  const parts = splitDiscordText(text)
+  const keyBase = opts?.idempotencyKeyBase
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i]!
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "application/json",
     }
-    err.retryable = retryable
-    throw err
+    if (keyBase) {
+      headers["Idempotency-Key"] = discordPartIdempotencyKey(keyBase, i, parts.length)
+    }
+    const response = await fetcher(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        content: part,
+        allowed_mentions: { parse: [] },
+      }),
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) {
+      const retryable = response.status === 429 || response.status >= 500
+      const err = new Error(`discord HTTP ${response.status}`) as Error & {
+        retryable?: boolean
+        retryAfterSeconds?: number
+      }
+      err.retryable = retryable
+      const ra = response.headers.get("retry-after")
+      if (ra) err.retryAfterSeconds = Number(ra)
+      throw err
+    }
   }
 }
 
@@ -120,12 +171,20 @@ export async function processDelivery(
 
   const event = RouterEventSchema.parse(JSON.parse(eventRow.payload_json)) as RouterEvent
   const now = Date.now()
+  const channelText = dest.kind === "telegram"
+    ? event.channels?.telegram?.text
+    : dest.kind === "discord"
+      ? event.channels?.discord?.text
+      : undefined
+  const text = channelText ?? event.text
   try {
     if (dest.kind === "telegram") {
       if (!opts.telegramBotToken) throw Object.assign(new Error("no telegram token"), { retryable: false })
-      await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, event.text)
+      await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, text)
     } else if (dest.kind === "discord") {
-      await deliverDiscord(fetcher, dest.target, event.text)
+      await deliverDiscord(fetcher, dest.target, text, {
+        idempotencyKeyBase: delivery.id,
+      })
     } else {
       throw Object.assign(new Error(`unknown dest kind`), { retryable: false })
     }

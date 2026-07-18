@@ -50,6 +50,7 @@ describe("deterministic domain engines", () => {
       status: "tracking-probation" as const,
       addedAt: "2026-07-16T00:00:00.000Z",
       updatedAt: "2026-07-16T00:00:00.000Z",
+      hardExcluded: false,
     }
     const transition = buildWalletTransition({
       wallet,

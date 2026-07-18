@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- GramJS telegram listener - long-lived, keepalive (recovery tier 1) -->
+<!-- Telegram listener - long-lived, keepalive (recovery tier 1).
+     Prefer: ops/install-launchd.sh (resolves trenchcoat on PATH). -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -9,7 +10,7 @@
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>set -a; . "$HOME/.trenchcoat/env"; set +a; exec /usr/local/bin/trenchcoat listen telegram</string>
+    <string>export PATH="$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"; set -a; [ -f "$HOME/.trenchcoat/env" ] &amp;&amp; . "$HOME/.trenchcoat/env"; set +a; exec trenchcoat listen telegram</string>
   </array>
   <key>KeepAlive</key>
   <true/>

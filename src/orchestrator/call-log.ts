@@ -1,0 +1,147 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { sha256Json } from "../lib/canonical-json.js"
+import { type ArchiveLayout } from "../lib/archive.js"
+import { extractCallEvents } from "../lib/call-events.js"
+import { appendJsonl } from "./scorecard.js"
+import {
+  SnapshotEnvelopeSchema,
+  SourceCallEventSchema,
+  type SourceCallEvent,
+} from "../contracts/schemas.js"
+
+export function sourceCallLogPath(layout: ArchiveLayout): string {
+  return join(layout.root, "source-call-log.jsonl")
+}
+
+/**
+ * Provenance strings carry '@' and ':' which SafeId forbids, and ':' would break the
+ * sourceId:token subjectId split. Map to a stable, colon-free SafeId, bounded so the
+ * later subjectId stays within SafeId length.
+ */
+function toSafeSourceId(provenance: string): string {
+  const cleaned = provenance
+    .replace(/@/gu, "")
+    .replace(/:/gu, ".")
+    .replace(/[^A-Za-z0-9._-]/gu, "-")
+    .replace(/^[^A-Za-z0-9]+/u, "")
+  const bounded = (cleaned || "source").slice(0, 80)
+  return /^[A-Za-z0-9]/u.test(bounded) ? bounded : `s${bounded}`.slice(0, 80)
+}
+
+function eventId(fields: Readonly<{
+  sourceId: string
+  rawAddress: string
+  mentionedAt: string
+  provenance: string
+}>): string {
+  const digest = sha256Json({ ...fields, parserVersion: 1 }).slice("sha256:".length, "sha256:".length + 40)
+  return `sc_${digest}`
+}
+
+function readExistingEventIds(path: string): Set<string> {
+  const ids = new Set<string>()
+  if (!existsSync(path)) return ids
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line.trim()) continue
+    const parsed = SourceCallEventSchema.safeParse(JSON.parse(line))
+    if (parsed.success) ids.add(parsed.data.eventId)
+  }
+  return ids
+}
+
+export type CallLogAppendReport = Readonly<{
+  runId: string
+  filesScanned: number
+  eventsExtracted: number
+  appended: number
+  skipped: number
+}>
+
+/**
+ * Deterministically derive bullish source-call events from a run's archived inbox
+ * (INV-S12: only the pre-session archive copy, never the mutable workspace) and append
+ * new ones to the append-only source-call log. Idempotent by eventId, so a resumed or
+ * replayed run never double-counts a call.
+ */
+export async function appendSourceCallEventsFromArchiveInbox(
+  layout: ArchiveLayout,
+  runId: string,
+  _agentRoot?: string,
+): Promise<CallLogAppendReport> {
+  const inboxDir = join(layout.runs, runId, "inbox")
+  const logPath = sourceCallLogPath(layout)
+  const existing = readExistingEventIds(logPath)
+
+  let filesScanned = 0
+  let eventsExtracted = 0
+  let appended = 0
+  let skipped = 0
+
+  if (!existsSync(inboxDir)) {
+    return { runId, filesScanned, eventsExtracted, appended, skipped }
+  }
+
+  const appendedThisRun = new Set<string>()
+  for (const name of readdirSync(inboxDir).sort()) {
+    if (!name.endsWith(".json")) continue
+    const parsed = SnapshotEnvelopeSchema.safeParse(
+      JSON.parse(readFileSync(join(inboxDir, name), "utf8")),
+    )
+    if (!parsed.success) continue
+    filesScanned += 1
+
+    for (const item of parsed.data.items) {
+      const rawItemHash = sha256Json(item as never)
+      const calls = extractCallEvents({
+        sourceId: toSafeSourceId(item.provenance),
+        provenance: item.provenance,
+        text: item.text,
+        mentionedAt: item.ts,
+      })
+      for (const call of calls) {
+        eventsExtracted += 1
+        const sourceId = toSafeSourceId(call.provenance)
+        const id = eventId({
+          sourceId,
+          rawAddress: call.rawAddress,
+          mentionedAt: call.mentionedAt,
+          provenance: call.provenance,
+        })
+        if (existing.has(id) || appendedThisRun.has(id)) {
+          skipped += 1
+          continue
+        }
+        const event: SourceCallEvent = SourceCallEventSchema.parse({
+          schema: 1,
+          eventId: id,
+          sourceId,
+          provenance: call.provenance,
+          rawAddress: call.rawAddress,
+          chainHint: call.chainHint,
+          mentionedAt: call.mentionedAt,
+          parserVersion: 1,
+          rawItemHash,
+          ...(item.clusterId !== undefined ? { clusterId: item.clusterId } : {}),
+        })
+        await appendJsonl(logPath, event)
+        appendedThisRun.add(id)
+        appended += 1
+      }
+    }
+  }
+
+  return { runId, filesScanned, eventsExtracted, appended, skipped }
+}
+
+export function readSourceCallLog(layout: ArchiveLayout): SourceCallEvent[] {
+  const path = sourceCallLogPath(layout)
+  if (!existsSync(path)) return []
+  const out: SourceCallEvent[] = []
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line.trim()) continue
+    const parsed = SourceCallEventSchema.safeParse(JSON.parse(line))
+    if (parsed.success) out.push(parsed.data)
+  }
+  return out
+}

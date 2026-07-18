@@ -2,7 +2,7 @@
 description: Canonical candidate identity - resolving tickers/CAs from untrusted text to one (chain, token_address, pair_address) triple before anything is counted, researched, or tracked. Deterministic-first with bounded model-judged disambiguation for ambiguous tickers.
 scope: module
 status: draft
-last_verified: 2026-07-16
+last_verified: 2026-07-18
 read_when:
   - Editing src/lib/resolve.ts, mention counting, the research queue, or watchlist entry creation.
 ---
@@ -15,10 +15,12 @@ Social text names tokens ambiguously: a ticker can collide across dozens of
 unrelated contracts, and a contract address can trade in several pools. If we
 research, count mentions for, or price outcomes against the wrong asset, every
 downstream number (divergence, source scores, paper P&L) is silently wrong.
-Resolution runs **before** a candidate exists anywhere in the system:
-deterministic host code (`src/lib/resolve.ts`) first, with one bounded
-model-judged step for ambiguous tickers whose output the host validates
-before binding (INV-S16).
+Resolution runs **before** a candidate can be tracked anywhere in the system:
+deterministic host code (`src/lib/resolve.ts`) first. Ambiguous tickers stay
+`ambiguous` until an operator Telegram shortlist pick (shipped) or a later
+raw-CA context binds them. A bounded model-judged disambiguation session is
+designed below (INV-S16) but **not yet wired** — `DISAMBIGUATION_PROMPT` and
+`validateModelPick` exist; no cron resolver session launches them.
 
 ## Canonical identity
 
@@ -45,20 +47,41 @@ cosmetic only — no logic ever keys on ticker.
    validate format per chain family, then confirm existence via DexScreener
    token lookup. CA-first is why attribution string-matching works
    (orchestrator.md, INV-S12). `resolution: "resolved"`.
-2. **Ticker/name, deterministic** — DexScreener search, filtered to
-   registry-supported chains, ranked by liquidity. Resolves deterministically
-   iff the top match dominates: liquidity ≥ 5x the runner-up carrying the same
-   symbol *or* the runner-up fails the liquidity floor. `resolution:
-   "resolved"`.
-3. **Ticker/name, model-judged** — when no candidate dominates, the resolver
-   builds a **disambiguation dossier** and hands the judgment to the agent
-   (below). `resolution: "model-confirmed"` on success, `ambiguous` otherwise.
+2. **Ticker/name, deterministic** — DexScreener search across registry-supported
+   chains, collapsed to one candidate per `(chain, token_address)` (deepest pool),
+   filtered to exact symbol matches when the query is a ticker, then ranked by
+   credibility (active markets: `liquidityUsd + 0.35 * volume24hUsd`; idle
+   dust-volume pools are heavily demoted so high-liq clones lose to live
+   markets). Synthetic DexScreener pair ids (`:bpool`, non-20-byte hex) are
+   dropped before ranking. For exact-ticker queries, every candidate retaining
+   at least 5% of the top credibility score stays in the operator shortlist;
+   market prominence ranks choices but never proves identity. A sole credible
+   candidate resolves automatically. `resolution: "resolved"`.
+   No chain is preferred a priori — ethereum is not a default. Operator text may
+   constrain the search with an explicit chain hint (`research $REPPO on base` /
+   `chainHint: "base"`).
+   Narrative bridge inputs use the same path: explicit `tickers` in a narrative
+   log entry plus bounded `$TICKER`, ALLCAPS, and CamelCase extraction. A
+   narrative ticker only produces a research-queue record, never a watchlist
+   entry.
+3. **Ticker/name, operator pick (shipped) / model-judged (designed)** — when no
+   candidate dominates, operator Telegram research DMs a numbered shortlist that
+   always includes the chain (`1. base:0x…`) and waits for a pick before
+   continuing (`src/chat/pending-research.ts`). Cron model-judged dossier
+   sessions (below) are not launched yet — ambiguous cron subjects stay
+   `ambiguous`. `resolution: "model-confirmed"` on a validated pick,
+   `ambiguous` otherwise.
 4. **Pool selection** — for the resolved token, the canonical pair is the
    highest-liquidity pool on the token's primary chain. Pool migrations
    (liquidity moving to a new pair) are detected on the watchlist-scan cycle
    and update `pair_address` with a dated note in the token's research file.
 
-## Model-judged disambiguation (best effort, high bar)
+## Model-judged disambiguation (designed — not wired)
+
+**Status (2026-07-18):** interface/schema/`validateModelPick` exist; no
+`writeResolution` archive writer and no cron session consume
+`DISAMBIGUATION_PROMPT`. Treat this section as the target design until a
+session + `archive/resolution-log.jsonl` land.
 
 Ambiguity is not a hard stop — a shill usually contains enough context to
 identify the exact token, and the model is better at that judgment than any
@@ -105,12 +128,13 @@ threshold. The mechanics keep the judgment bounded:
 **different source cluster** supplies the CA, or the operator supplies it via
 chat/CLI.
 
-## Disambiguation audit trail (every verdict, including abstains)
+## Disambiguation audit trail (designed — not wired)
 
-Rejecting a ticker-only call is itself a call, and it must be gradeable. Every
-disambiguation — confirm *or* abstain — is logged by the orchestrator to the
-host-side resolution log (`~/.trenchcoat/archive/resolution-log.jsonl`,
-snapshot-archive.md), one record per verdict:
+Rejecting a ticker-only call is itself a call, and it must be gradeable. When
+the model-judged path lands, every disambiguation — confirm *or* abstain —
+will be logged by the orchestrator to the host-side resolution log
+(`~/.trenchcoat/archive/resolution-log.jsonl`, snapshot-archive.md), one
+record per verdict. `ResolutionReceiptSchema` exists; no writer yet:
 
 ```json
 {
@@ -170,6 +194,8 @@ nothing with security consequences:
   disambiguation
 - It cannot bypass the security gate, the market-quality preflight, or the
   chain registry's fail-closed rule
+- Resolution alone never writes `watchlist.json`; only a research dossier,
+  security gate, and host-validated decision proposal may create tracking state
 
 ## Mention counting
 

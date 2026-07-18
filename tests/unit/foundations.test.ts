@@ -7,6 +7,7 @@ import { createRunJournal, advanceRunJournal, RUN_PHASES } from "../../src/orche
 import { normalizeEvmAddress, isValidSolanaAddress } from "../../src/lib/address.js"
 import { verifyRouterHmac, signRouterRequest, hashBody } from "../../src/lib/router-contract.js"
 import { ConfigSchema } from "../../src/lib/config.js"
+import { SnapshotEnvelopeSchema } from "../../src/contracts/schemas.js"
 
 const seed = JSON.parse(
   readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
@@ -37,6 +38,48 @@ describe("prop_inv_i4_snapshot_path_guard", () => {
     mkdirSync(runDir)
     symlinkSync(outside, join(runDir, "evil.json"))
     await expect(writer.writeInbox("run1", "evil", envelope)).rejects.toThrow()
+  })
+})
+
+describe("prop_inv_p1_trust_envelope", () => {
+  it("rejects missing or non-literal trust on snapshot envelopes", () => {
+    const base = {
+      source: "test",
+      fetchedAt: new Date().toISOString(),
+      items: [{
+        provenance: "p1",
+        text: "hello",
+        ts: new Date().toISOString(),
+        ageSec: 1,
+        freshnessTier: "live" as const,
+      }],
+    }
+    expect(() => SnapshotEnvelopeSchema.parse(base)).toThrow()
+    expect(() => SnapshotEnvelopeSchema.parse({
+      ...base,
+      trust: "trusted",
+    })).toThrow()
+    expect(SnapshotEnvelopeSchema.parse({
+      ...base,
+      trust: "untrusted-external",
+    }).trust).toBe("untrusted-external")
+  })
+
+  it("SnapshotWriter refuses envelopes without untrusted-external trust", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-trust-"))
+    const writer = new SnapshotWriter(root)
+    await expect(writer.writeInbox("run1", "bad", {
+      source: "test",
+      fetchedAt: new Date().toISOString(),
+      trust: "trusted" as never,
+      items: [{
+        provenance: "p1",
+        text: "hello",
+        ts: new Date().toISOString(),
+        ageSec: 1,
+        freshnessTier: "live",
+      }],
+    })).rejects.toThrow()
   })
 })
 
@@ -91,10 +134,12 @@ describe("router hmac", () => {
 })
 
 describe("config seed", () => {
-  it("parses the example seed as schema v4", () => {
+  it("parses the example seed as schema v7", () => {
     const parsed = ConfigSchema.parse(seed)
-    expect(parsed.schema).toBe(4)
+    expect(parsed.schema).toBe(7)
     expect(parsed.twitter.operator_list_urls).toHaveLength(2)
     expect(parsed.twitter.engagement.likes_per_window).toBe(2)
+    expect(parsed.harness_improvement.enabled).toBe(false)
+    expect(parsed.farcaster.engagement.likes_per_window).toBe(2)
   })
 })

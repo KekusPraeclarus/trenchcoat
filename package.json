@@ -23,6 +23,7 @@
     "test:redteam": "vitest run tests/redteam",
     "test:sandbox": "vitest run tests/sandbox",
     "test:e2e:live": "TRENCHCOAT_LIVE_E2E=1 vitest run tests/e2e",
+    "test:live:isolation": "TRENCHCOAT_LIVE_ISOLATION=1 vitest run tests/sandbox tests/e2e/prompt-injection-live.test.ts",
     "test:all": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:property && pnpm test:contract && pnpm test:integration && pnpm test:crash && pnpm test:redteam && pnpm test:sandbox",
     "typecheck": "tsc --noEmit",
     "lint": "tsx scripts/lint-static.ts",
@@ -38,6 +39,7 @@
     "grammy": "^1.36.0",
     "playwright": "^1.54.1",
     "telegram": "^2.26.22",
+    "viem": "^2.31.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "sources": [
+    {
+      "handle": "example",
+      "fid": 12345,
+      "status": "managed"
+    }
+  ]
+}

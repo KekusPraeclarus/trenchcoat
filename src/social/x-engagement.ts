@@ -82,16 +82,28 @@ export function likesInWindow(
   return Math.max(fromReceipts, fromTimestamps)
 }
 
+/** Normalize a handle for FYP membership comparison, undefined when invalid. */
+function normalizedFypHandle(raw: string): string | undefined {
+  return normalizeHandle(raw)?.toLowerCase()
+}
+
 /**
  * Apply bot engagement choices. Bot owns the decisions; the only throttle is
  * likes_per_window within like_window_minutes (default 2 / 10m).
- * Schema + idempotency keys remain for crash safety.
+ * Likes must target post ids collected from the same-run FYP snapshot, and
+ * follow/unfollow must target authors seen in that same snapshot (INV-S22).
+ * Subscription-state dedupe rejects choices already reflected in persisted
+ * state (liked posts, followed handles) or still pending execution, so a
+ * replayed proposal never re-attempts a settled action. Schema + idempotency
+ * keys remain for crash safety.
  */
 export function applyEngagementChoices(args: Readonly<{
   proposal: XEngagementProposalFile
   state: XEngagementFile
   caps: EngagementCaps
   nowIso: string
+  fypPostIds?: ReadonlySet<string> | readonly string[]
+  fypAuthors?: ReadonlySet<string> | readonly string[]
 }>): EngagementApplyResult {
   let state = ensureDaily(args.state, args.nowIso)
   if (!args.caps.enabled) {
@@ -103,10 +115,39 @@ export function applyEngagementChoices(args: Readonly<{
     }
   }
 
+  const fypIds = args.fypPostIds instanceof Set
+    ? args.fypPostIds
+    : new Set(args.fypPostIds ?? [])
+
+  const fypAuthorSet = new Set(
+    [...(args.fypAuthors ?? [])]
+      .map(normalizedFypHandle)
+      .filter((h): h is string => h !== undefined),
+  )
+
   const knownActionIds = new Set([
     ...state.decisions.map((d) => d.actionId),
     ...state.receipts.map((r) => r.actionId),
   ])
+
+  // Subscription state: what the account already reflects, independent of runId
+  const likedPostIds = new Set([
+    ...state.likedPostIds,
+    ...state.receipts
+      .filter((r) => r.action === "like" && r.verified)
+      .map((r) => r.target),
+  ])
+  const followedHandles = new Set(
+    state.followedHandles.map((h) => h.toLowerCase()),
+  )
+
+  // Accepted-but-unexecuted actions, keyed by action+target for cross-run dedupe
+  const pendingSet = new Set(state.pendingActionIds)
+  const pendingTargets = new Set(
+    state.decisions
+      .filter((d) => d.accepted && pendingSet.has(d.actionId))
+      .map((d) => `${d.action}\u0000${d.target}`),
+  )
 
   let likesInWin = likesInWindow(
     state,
@@ -156,6 +197,18 @@ export function applyEngagementChoices(args: Readonly<{
         reject("invalid_post_id")
         continue
       }
+      if (!fypIds.has(item.postId)) {
+        reject("post_id_not_in_fyp")
+        continue
+      }
+      if (likedPostIds.has(item.postId)) {
+        reject("already_liked")
+        continue
+      }
+      if (pendingTargets.has(`like\u0000${item.postId}`)) {
+        reject("pending_duplicate")
+        continue
+      }
       if (likesInWin >= args.caps.likes_per_window) {
         reject("like_rate_limit")
         continue
@@ -168,11 +221,35 @@ export function applyEngagementChoices(args: Readonly<{
         reject("invalid_handle")
         continue
       }
+      if (!fypAuthorSet.has(handle.toLowerCase())) {
+        reject("handle_not_in_fyp")
+        continue
+      }
+      if (followedHandles.has(handle.toLowerCase())) {
+        reject("already_following")
+        continue
+      }
+      if (pendingTargets.has(`follow\u0000${handle.toLowerCase()}`)) {
+        reject("pending_duplicate")
+        continue
+      }
       followsDay += 1
     } else {
       const handle = normalizeHandle(item.handle)
       if (!handle) {
         reject("invalid_handle")
+        continue
+      }
+      if (!fypAuthorSet.has(handle.toLowerCase())) {
+        reject("handle_not_in_fyp")
+        continue
+      }
+      if (!followedHandles.has(handle.toLowerCase())) {
+        reject("not_following")
+        continue
+      }
+      if (pendingTargets.has(`unfollow\u0000${handle.toLowerCase()}`)) {
+        reject("pending_duplicate")
         continue
       }
       unfollowsDay += 1
@@ -215,5 +292,7 @@ export function validateEngagementProposals(args: Readonly<{
     state: args.state,
     caps: args.caps,
     nowIso: args.nowIso,
+    fypPostIds: (args.fypPosts ?? []).map((p) => p.id),
+    fypAuthors: (args.fypPosts ?? []).map((p) => p.author),
   })
 }

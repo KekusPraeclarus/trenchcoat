@@ -16,8 +16,9 @@ membership to untrusted social text and model judgment (INV-S7/S12 risk).
 
 1. Config carries **exactly two immutable** `twitter.operator_list_urls` plus
    `scrape_home: true`. Operator lists are never mutated by the bot.
-2. Accounts first seen on FYP enter host-owned **probation** in
-   `agent/state/source-lifecycle.json` (separate from `sources.json` scores).
+2. Accounts first seen on FYP **or either operator list** enter host-owned
+   **probation** in `agent/state/source-lifecycle.json` (separate from
+   `sources.json` scores).
 3. Promotion/demotion is **deterministic host code** over lagged, settled,
    direct bullish raw-CA outcomes only (INV-S21). Models, engagement, follower
    counts, and same-window settlements cannot promote.
@@ -38,9 +39,10 @@ membership to untrusted social text and model judgment (INV-S7/S12 risk).
   managed-list membership
 - Live acceptance still needs the burner session and both operator list URLs
   configured; dry-run via `tc source-list review --dry-run`
-- **Implementation note (2026-07-16):** transition engine and synchronizer exist;
-  production review does not yet ingest sealed audit outcomes (INV-S21 PARTIAL).
-  Do not treat empty-outcome reviews as authoritative promotions.
+- **Implementation note (2026-07-18):** transition engine, synchronizer, and
+  source-call settlers are wired; `outcomes-settle` / audit use live
+  DexScreener→GeckoTerminal bars. INV-S21 remains PARTIAL until live pricing
+  E2E is green — empty-archive reviews are still not authoritative promotions.
 
 ## Enforcement
 

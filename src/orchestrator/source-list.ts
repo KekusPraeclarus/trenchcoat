@@ -19,6 +19,8 @@ import {
 import type { SourceLifecycleFile, XListSyncReceipt } from "../contracts/schemas.js"
 import { mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
+import { archiveLayout } from "../lib/archive.js"
+import { loadSourceCallOutcomes } from "./sources.js"
 
 export function thresholdsFromConfig(config: TrenchcoatConfig): SourceLifecycleThresholds {
   return {
@@ -96,7 +98,7 @@ export async function runSourceListReview(
     }
   }
 
-  const outcomes = opts.outcomes ?? []
+  const outcomes = opts.outcomes ?? loadSourceCallOutcomes(archiveLayout(opts.archiveRoot))
   const performances = new Map(
     file.candidates.map((candidate) => [
       candidate.sourceId,
