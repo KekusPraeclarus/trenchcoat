@@ -384,7 +384,7 @@
       "enabled": true,
       "guild_id": "1000000000000000001",
       "channel_ids": ["1000000000000000002"],
-      "per_user_daily_cap": 5,
+      "per_user_daily_cap": 10,
       "server_daily_cap": 20,
       "max_active_per_user": 5,
       "model": "composer-2.5-fast",
