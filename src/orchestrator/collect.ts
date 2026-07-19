@@ -986,9 +986,11 @@ async function writeTwitterBundle(
     (truncatedBy) => ({
       provenance: `${args.runId}:twitter-${name}:truncated`,
       text: `truncated=${truncatedBy}`,
+      url: "",
       ts: args.fetchedAt,
       ageSec: 0,
       freshnessTier: "live" as const,
+      dedupeKey: `truncated-${truncatedBy}`,
     }),
   )
   await args.writer.writeInbox(args.runId, `twitter-${name}`, {
@@ -1029,6 +1031,7 @@ async function writeFarcasterBundle(
       ts: args.fetchedAt,
       ageSec: 0,
       freshnessTier: "live" as const,
+      dedupeKey: `truncated-${truncatedBy}`,
     }),
   )
   await args.writer.writeInbox(args.runId, `farcaster-${name}`, {

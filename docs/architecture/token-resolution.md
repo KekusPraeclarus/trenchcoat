@@ -2,7 +2,7 @@
 description: Canonical candidate identity - resolving tickers/CAs from untrusted text to one (chain, token_address, pair_address) triple before anything is counted, researched, or tracked. Deterministic-first with bounded model-judged disambiguation for ambiguous tickers.
 scope: module
 status: draft
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/lib/resolve.ts, mention counting, the research queue, or watchlist entry creation.
 ---

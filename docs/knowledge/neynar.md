@@ -21,7 +21,20 @@ last_verified: 2026-07-19
   reports `approved`; pending/rejected/unavailable write gate receipts only.
   Feed assessment (`assessFarcasterBundle`): live ≤6h, stale ≤24h, expired >24h;
   **future-dated timestamps count as expired** (audit A4 2061/2076 noise). For-you
-  with no live casts or the repeated-two-hash stale pattern sets `skipAgent`.
+  with no live casts or the **repeated-two-hash stale pattern** (same two
+  non-live hashes — “hash collection” stuck / for-you not refreshing) rejects
+  that feed and disables engagement. Host still makes **one** trending fallback
+  request; if any feed has usable evidence the agent runs as
+  `analysis-only` (`engagementDisabled=true`, `skipAgent=false`). Only when
+  every configured source is unusable does `skipAgent=true`. Following feed
+  with managed follows desired but zero non-expired casts →
+  `empty-following-with-desired` (not `healthy-empty-following`).
+  Live ops (2026-07-19): for-you for the bot FID returned only two
+  **future-dated** junk casts (`@greg` 2061, `@akimaru` 2076) with no cursor —
+  assessed as `repeated_two_hash_stale`. Follow sync was healthy; openrank
+  failed for the FID. **`farcaster.enabled=false`** until operator tunes the
+  bot feed in the mobile app, then re-enable per
+  `ops/LIVE-E2E-BLOCKERS.md` § Farcaster.
   Account creation also needs `NEYNAR_WALLET_ID`, `FARCASTER_APP_FID`,
   `FARCASTER_APP_MNEMONIC`.
   Attach (`--fid` + custody mnemonic on stdin): Neynar `signed_key` then either

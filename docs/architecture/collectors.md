@@ -85,7 +85,11 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
   `alphaPending` / `alphaTruncated` when the queue is deep. Twitter list/FYP
   snapshots and `x-fyp-eligible` use the same `SNAPSHOT_MAX_ITEMS` cap with a
   trailing `truncated=N` marker so oversized scrapes cannot fail collect on Zod
-  `too_big`; `collectionStatus` may include `posts-truncated=N`.
+  `too_big`; `collectionStatus` may include `posts-truncated=N` (twitter/fyp) or
+  `casts-truncated=N` (farcaster). FYP posts in the collection summary are
+  pre-sliced to match the capped snapshot so engagement binding (INV-S22) cannot
+  authorize likes on posts absent from `x-fyp-eligible`. Shared helper:
+  `capEnvelopeItems` in `review-collect.ts` (alongside `capManifestLines`).
 
 The normal collector blocks every mutating HTTP method. A separate host-only
 managed-list synchronizer is the sole exception: it may create one private list

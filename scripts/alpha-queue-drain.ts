@@ -23,8 +23,8 @@ function parseArgs(): { agentRoot: string; archiveRoot: string; dryRun: boolean 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
     if (a === "--dry-run") dryRun = true
-    else if (a === "--agent" && args[i + 1]) agentRoot = args[++i]
-    else if (a === "--archive" && args[i + 1]) archiveRoot = args[++i]
+    else if (a === "--agent" && args[i + 1]) agentRoot = args[++i]!
+    else if (a === "--archive" && args[i + 1]) archiveRoot = args[++i]!
   }
   return { agentRoot, archiveRoot, dryRun }
 }
@@ -32,7 +32,7 @@ function parseArgs(): { agentRoot: string; archiveRoot: string; dryRun: boolean 
 function parseQueuePath(rel: string): { channel: string; messageId: string } | null {
   const m = /^alpha-queue\/([^/]+)\/(\d+)\.json$/u.exec(rel)
   if (!m) return null
-  return { channel: m[1], messageId: m[2] }
+  return { channel: m[1]!, messageId: m[2]! }
 }
 
 async function drainBatch(

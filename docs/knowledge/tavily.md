@@ -2,7 +2,7 @@
 description: Provider knowledge — Tavily Search for host-mediated research web search.
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 ---
 
 # Tavily

@@ -133,6 +133,13 @@ sanitised code/message before exit 2. Phases are fsynced and atomically renamed.
 Recovery resumes the first incomplete phase; it does not replay earlier side
 effects. Periodic Git (`tc backup`) is backup-only and never gates completion.
 
+**Operator trap:** `archive/runs/<run-id>/journal.json` is written once at archive
+seal (`phase: host-prepared`) and is **not** updated when the run completes.
+For terminal status, phase, and side-effect hashes, read
+`archive/transactions/<run-id>.json` (or the agent mirror
+`agent/reports/<run-id>/journal.json` after `mirrorToAgent`). Treating the
+per-run copy as authoritative will show false `running` / stale chat-report status.
+
 **Deployment manifest** — `ops/install-launchd.sh` stages a runtime, writes
 schema-2 `deployment.json` (commit, `sourceDirty`, deterministic `sourceHash`,
 config schema, cli/config module hashes, package version), validates config

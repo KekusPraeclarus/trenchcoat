@@ -2,7 +2,7 @@
 description: Host-side snapshot archive and decision-time as-of bundles - the immutable record that source attribution and audits read from, and the leakage firewall that makes calibration valid.
 scope: module
 status: draft
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing the run loop's archiving, source attribution inputs, audit outcome computation, or retention.
 ---

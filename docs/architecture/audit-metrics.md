@@ -2,7 +2,7 @@
 description: Audit metric definitions - hit events, horizons, benchmark excess returns, calibration binning, paper-ledger conventions, broadcast precision, discovery-funnel counterfactuals. The formulas that make the scorecard mean something.
 scope: module
 status: draft
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/orchestrator/audit.ts or interpreting scorecard numbers.
 ---

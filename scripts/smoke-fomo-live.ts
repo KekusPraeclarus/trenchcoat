@@ -54,13 +54,13 @@ async function main(): Promise<void> {
     out.sampleFeed = feed.slice(0, 2).map((e) => ({
       handle: e.handle,
       action: e.action,
-      mint: e.tokenMint?.slice(0, 8),
+      mint: e.tokenAddress?.slice(0, 8),
     }))
     const trending = await client.readTrending({ limit: 10 })
     out.trending = trending.length
     out.sampleTrending = trending.slice(0, 3).map((t) => ({
       symbol: t.symbol,
-      mint: t.tokenMint?.slice(0, 8),
+      mint: t.tokenAddress?.slice(0, 8),
     }))
     console.log(JSON.stringify(out, null, 2))
     if (out.leaderboard + out.feed + out.trending === 0) {

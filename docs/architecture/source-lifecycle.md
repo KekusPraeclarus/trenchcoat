@@ -69,7 +69,10 @@ are gated by `probeFarcasterSigner` — collection status reports
 `signerMutations=allowed|blocked`; likes and follow sync perform no mutation
 until `approved`. For-you freshness: live ≤6h / stale ≤24h / expired >24h;
 future-dated casts (e.g. 2061 timestamps) count as expired. No live casts or the
-repeated-two-hash stale pattern → `skipAgent=true`.
+repeated-two-hash stale pattern rejects for-you and sets
+`engagementDisabled=true` (likes stay off). `skipAgent=true` only when every
+bounded FC source including trending fallback is unusable — otherwise the
+agent may still run as `analysis-only` on fallback/following evidence.
 
 Operator bootstrap for a curated follow graph:
 

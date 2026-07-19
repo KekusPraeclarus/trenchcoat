@@ -289,8 +289,9 @@ predeploy backup only when migration itself corrupted host state.
   Collection and engagement jobs gate mutations on approved signer; pending states write
   explicit receipts only. For-you feeds with no live casts, the repeated-two-hash
   stale pattern, or **future-dated timestamps** (e.g. 2061/2076 clock noise) are
-  rejected with `skipAgent=true` — they never reach the agent or the FYP like
-  allowlist.
+  rejected for engagement (no FYP like allowlist). Trending fallback may still
+  feed the agent as `analysis-only` — that is not for-you recovery. Live outage
+  notes: `ops/LIVE-E2E-BLOCKERS.md` § Farcaster.
 - **Seeding wallets** — optional. Copy `config/operator-seed.example.json`, fill
   `wallets[]` (`solana` / `ethereum` / `base` / `robinhood`), then
   `pnpm dev:cli wallets seed path/to/operator-seed.json`. Refuses if

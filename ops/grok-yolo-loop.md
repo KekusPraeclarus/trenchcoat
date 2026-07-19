@@ -67,3 +67,5 @@ pnpm exec vitest run tests/unit/list-scan-alpha-manifest.test.ts tests/unit/snap
 ### Commit
 
 `c2df162` — Cap collector snapshot envelopes at 500 items to prevent list-scan failures.
+
+(`4985dca` — log hash correction only.)

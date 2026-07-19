@@ -2,7 +2,7 @@
 description: Provider knowledge — Cursor CLI local agent (login auth, not API key).
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 ---
 
 # Cursor CLI

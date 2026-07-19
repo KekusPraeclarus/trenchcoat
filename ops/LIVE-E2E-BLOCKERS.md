@@ -67,27 +67,43 @@ reference/defense-in-depth only — not the production isolation boundary.
   **sync `agent/skills/list-scan` and `review` into `~/.trenchcoat/agent/skills/`**
   (installer does not), redeploy CLI for prompt/receipt changes, then wait for
   the next list-scan/review. Do **not** mass-delete the queue.
-## Farcaster feed health (operator-verified 2026-07-19 evening)
+## Farcaster — disabled pending feed tuning (2026-07-19)
 
-`farcaster-scan` is **running** (jittered launchd) but personalized feeds are
-broken/stale — treat output as **analysis-only noise** until for-you hash
-collection recovers. **X + Telegram carry live social signal.**
+**Live config:** `farcaster.enabled=false` in `~/.trenchcoat/config.json`
+(backup beside it as `config.json.bak-fc-disable-*`). Jobs still fire on
+launchd but collect writes `status=disabled` and `skipAgent=true` — no Neynar
+reads, no engagement, no FC agent analysis. **X + Telegram carry social.**
 
-Receipt pattern (e.g. `farcaster-scan-2026-07-19T14-45-41-411Z`, probe same day):
+### Why
 
-- **for-you** — `rejected=repeated_two_hash_stale` (same two expired hashes; no
-  live refresh). Engagement stay off: only live for-you hashes authorize likes.
-- **following** — often `followingStatus=empty-following-with-desired`
-  (`desiredManagedFollows>0` but zero non-expired following casts). Do not
-  confuse with a healthy empty graph (`healthy-empty-following`).
-- **Agent still runs** when trending fallback (or any feed) has usable evidence —
-  `collectionStatus=analysis-only:…`, `engagementDisabled=true`, `skipAgent=false`.
-  That is **not** recovery; do not overweight FC narratives vs X/TG.
-- Signer can be `approved` the whole time — this is feed freshness, not auth.
+Neynar for-you for bot the bot FID is stuck on **two future-dated junk
+casts** (no cursor): `@greg` `2061-09-12` (“time traveling”) and `@akimaru`
+`2076-05-04` (“Hello world!!”). Host correctly expires future timestamps →
+`repeated_two_hash_stale` → `engagementDisabled`. Signer stayed `approved`;
+follow graph sync was fine (`desiredFids == actualFids`, 5 managed). Following
+feed can still be live; for-you personalization is the blocker. `openrank`
+provider fails for this FID (“Failed to fetch personalized casts”). Trending
+fallback kept the agent on as analysis-only noise — not recovery.
 
-Recovery check: `tc probe farcaster` shows for-you `live>0`,
-`engagementDisabled=false`, and `following-populated` (or healthy-empty with
-zero desired). Until then leave FC enabled for receipts/health but trust X/TG.
+### Operator next steps (re-enable after a few days of feed tuning)
+
+1. In the **Farcaster mobile app** as the bot account: follow more active
+   crypto accounts, like/scroll real casts — train personalization outside our
+   chicken-egg (host likes need live for-you hashes).
+2. Optionally widen managed follows via `tc fc-source seed` → `tc fc-source sync`
+   (following-only signal; does not by itself unstick for-you).
+3. Sanity-check Neynar before flipping config:
+   ```bash
+   # for-you should show live (≤6h) casts — not 2061/2076 junk, not n=2 forever
+   curl -sS "https://api.neynar.com/v2/farcaster/feed/for_you?fid=$FARCASTER_BOT_FID&limit=10" \
+     -H "api_key: $NEYNAR_API_KEY" | jq '[.casts[] | {user:.author.username, ts:.timestamp, hash:.hash}]'
+   tc probe farcaster   # still works while disabled; scrape.skipAgent may stay true
+   ```
+4. Re-enable: set `farcaster.enabled=true` in `~/.trenchcoat/config.json`,
+   `tc config validate`, then `tc probe farcaster` — expect for-you `live>0`,
+   `engagementDisabled=false`. Optional: kick `com.trenchcoat.job.farcaster-scan`
+   or wait for jitter. If still junk hashes after app tuning, escalate to Neynar
+   or run following + `operator_channel_ids` only (`scrape_for_you: false`).
 
 ## Still operator-driven
 

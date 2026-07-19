@@ -2,6 +2,7 @@
 title: Farcaster follow-graph as managed-list analog
 status: accepted
 date: 2026-07-17
+last_verified: 2026-07-19
 ---
 
 # ADR 007 — Farcaster follow-graph as managed-list analog
@@ -37,8 +38,9 @@ feed is driven by the account's follow graph and engagement.
   receipts and perform no mutation.
 - **Feed assessment** — `assessFarcasterBundle` in `scrape.ts` tiers casts
   live ≤6h / stale ≤24h / expired; rejects for-you when no live cast or a
-  repeated-two-hash stale pattern; expired casts never enter inbox evidence or
-  the FYP like allowlist.
+  repeated-two-hash stale pattern (disables engagement); one trending fallback
+  may keep analysis running (`skipAgent` only if all sources unusable); expired
+  casts never enter inbox evidence or the FYP like allowlist.
 - **Follow sync** — cursor-paginated following fetch, idempotent
   already-following/not-following handling, post-sync refetch, exact
   desired-vs-actual verification (`syncFollowGraph`).
