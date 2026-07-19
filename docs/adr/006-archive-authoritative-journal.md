@@ -54,5 +54,8 @@ Operator decisions for the remaining gaps:
   hash conflict; `markRunFailed` on mid-flight errors; `findIncompleteRuns` for
   resume (resume depth still PARTIAL). Legacy status derivation lives in
   `tryParseJournal` / `loadJournalForScan`.
+- `archive/runs/<run-id>/journal.json` is a seal-time copy only (frozen at
+  `host-prepared`); terminal status lives in `transactions/` — see
+  orchestrator.md / snapshot-archive.md.
 - Rollback/recovery reads the last completed archive transaction, not arbitrary
   Git HEAD.

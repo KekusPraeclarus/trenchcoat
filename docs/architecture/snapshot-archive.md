@@ -32,6 +32,8 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 │   ├── sources-start.json # byte-identical source scores used by this run
 │   ├── config.json       # redacted non-secret config + schema/hash
 │   ├── alpha-digest.json  # copied after the run (what the agent claimed digested)
+│   ├── journal.json       # seal-time snapshot at host-prepared only — NOT terminal
+│   │                    #   status; see transactions/<run-id>.json (ADR 006)
 │   ├── report.md          # the run's briefing
 │   └── manifest.json      # run id, job, timestamps, file sha256 list
 ├── decisions/<decision-id>.json   # as-of bundles (below)
@@ -52,6 +54,12 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 
 - The pre-session copy is the **only** input to attribution string-matching —
   never the workspace copy (INV-S12)
+- **Run journal authority:** `transactions/<run-id>.json` is the fsynced
+  authoritative journal (`status: running | complete | failed`, ADR 006). A copy
+  under `runs/<run-id>/journal.json` is written once at archive seal
+  (`phase: host-prepared`) and is **not** updated on completion — do not use it
+  for resume, health, or deploy-idle checks. The agent mirror
+  `agent/reports/<run-id>/journal.json` tracks phase advances for diagnostics.
 - `manifest.json` hashes make tampering detectable; the integrity check
   re-verifies hashes before any attribution or audit read
 - Market payloads are canonicalised, compressed, and keyed by SHA-256. Run,
