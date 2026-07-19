@@ -10,6 +10,7 @@ import {
   saveUsageDay,
 } from "./usage.js"
 import {
+  expandFeedItems,
   extractArrayPayload,
   mapAlertEvent,
   mapLeaderboardEntry,
@@ -18,6 +19,9 @@ import {
   mapTrendingObservation,
 } from "./mappers.js"
 import { FomoClientError, type FomoAlertEvent, type FomoLeaderboardEntry, type FomoThesis, type FomoTradeEvent, type FomoTrendingObservation } from "./types.js"
+
+/** Stable boot route so SPA loads leaderboard/feed/trending APIs */
+const FOMO_BOOT_PATH = "/tokens/solana/2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
 
 export type FomoWebClientOptions = Readonly<{
   archiveRoot: string
@@ -31,6 +35,7 @@ export type FomoWebClientOptions = Readonly<{
   nowIso?: () => string
   sleep?: (ms: number) => Promise<void>
   debitAttempts?: boolean
+  bootPath?: string
 }>
 
 type CapturedJson = Readonly<{ url: string, status: number, body: unknown }>
@@ -41,6 +46,11 @@ function requestId(): string {
 
 async function defaultSleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function timeframePath(timeframe: "24h" | "7d" | "30d" | "all"): string {
+  if (timeframe === "all") return "/v2/leaderboard"
+  return `/v2/leaderboard/${timeframe}`
 }
 
 export class FomoWebClient {
@@ -70,9 +80,17 @@ export class FomoWebClient {
   private async openContext(): Promise<BrowserContext> {
     if (this.context) return this.context
     assertFomoProfileReady(fomoProfileDir())
-    this.browser = await chromium.launch({ headless: this.opts.headless !== false })
+    this.browser = await chromium.launch({
+      headless: this.opts.headless !== false,
+      args: ["--disable-blink-features=AutomationControlled"],
+    })
     this.context = await this.browser.newContext({
       storageState: assertFomoProfileReady(),
+      viewport: { width: 1440, height: 900 },
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    })
+    await this.context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined })
     })
     await this.context.route("**/*", async (route) => {
       const request = route.request()
@@ -160,68 +178,61 @@ export class FomoWebClient {
     }
   }
 
-  private async captureJson(
-    page: Page,
-    match: (url: string) => boolean,
-  ): Promise<CapturedJson[]> {
-    const hits: CapturedJson[] = []
-    const maxBytes = this.opts.maxPayloadBytes ?? 1_000_000
-    const onResponse = async (response: Response) => {
-      try {
-        if (!match(response.url())) return
-        const headers = response.headers()
-        const type = headers["content-type"] ?? ""
-        if (!/json/iu.test(type) && !response.url().includes("prod-api.fomo.family")) return
-        const buffer = await response.body()
-        if (buffer.byteLength > maxBytes) {
-          throw new FomoClientError("size_limit", `payload exceeds ${maxBytes} bytes`)
-        }
-        const text = buffer.toString("utf8")
-        hits.push({
-          url: response.url(),
-          status: response.status(),
-          body: JSON.parse(text) as unknown,
-        })
-      } catch (error) {
-        if (error instanceof FomoClientError) throw error
-        // ignore non-JSON
-      }
-    }
-    page.on("response", onResponse)
-    return hits
-  }
-
   private async navigateAndCapture(
     family: string,
     path: string,
     match: (url: string) => boolean,
+    waitMs = 8_000,
   ): Promise<CapturedJson[]> {
     return this.withDebit(family, async () => {
       await this.pace()
       const context = await this.openContext()
       const page = await context.newPage()
-      const hitsPromise = this.captureJson(page, match)
+      const hits: CapturedJson[] = []
+      const maxBytes = this.opts.maxPayloadBytes ?? 1_000_000
+      const onResponse = async (response: Response) => {
+        try {
+          if (!match(response.url())) return
+          const headers = response.headers()
+          const type = headers["content-type"] ?? ""
+          if (!/json/iu.test(type) && !response.url().includes("prod-api.fomo.family")) return
+          const buffer = await response.body()
+          if (buffer.byteLength > maxBytes) {
+            throw new FomoClientError("size_limit", `payload exceeds ${maxBytes} bytes`)
+          }
+          const text = buffer.toString("utf8")
+          hits.push({
+            url: response.url(),
+            status: response.status(),
+            body: JSON.parse(text) as unknown,
+          })
+        } catch (error) {
+          if (error instanceof FomoClientError) throw error
+          // ignore non-JSON
+        }
+      }
+      page.on("response", onResponse)
       try {
         const response = await page.goto(`https://fomo.family${path}`, {
           waitUntil: "domcontentloaded",
-          timeout: this.opts.navigationTimeoutMs ?? 30_000,
+          timeout: this.opts.navigationTimeoutMs ?? 45_000,
         })
         this.detectChallenge(page)
         if (response && (response.status() === 401 || response.status() === 403)) {
           throw new FomoClientError("session_expired", "Fomo session expired", response.status())
         }
-        await page.waitForTimeout(2_500)
+        await page.waitForTimeout(waitMs)
         this.detectChallenge(page)
         const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 400) ?? "")
-        if (/sign in|log in|login/iu.test(bodyText) && !/leaderboard|feed|trending|prices/iu.test(bodyText)) {
+        if (/sign in|log in|login/iu.test(bodyText) && !/leaderboard|feed|trending|prices|alerts|watchlist/iu.test(bodyText)) {
           throw new FomoClientError("session_expired", "Fomo login wall detected")
         }
-        const hits = await hitsPromise
         if (hits.some((hit) => hit.status === 401 || hit.status === 403)) {
           throw new FomoClientError("session_expired", "Fomo API unauthorized")
         }
         return hits
       } finally {
+        page.off("response", onResponse)
         await page.close().catch(() => undefined)
       }
     })
@@ -233,7 +244,6 @@ export class FomoWebClient {
       if (items.length > 0) return items
       if (Array.isArray(hit.body)) return hit.body
     }
-    // empty success is allowed
     for (const hit of hits) {
       if (hit.status >= 200 && hit.status < 300) {
         return extractArrayPayload(hit.body, keys)
@@ -247,17 +257,24 @@ export class FomoWebClient {
     limit?: number
   }> = {}): Promise<FomoLeaderboardEntry[]> {
     const observedAt = this.nowIso()
+    const timeframe = args.timeframe ?? "7d"
+    const apiPath = timeframePath(timeframe)
     const hits = await this.navigateAndCapture(
       "leaderboard",
-      "/leaderboard",
-      (url) => /leaderboard|traders|ranking/iu.test(url),
+      this.opts.bootPath ?? FOMO_BOOT_PATH,
+      (url) => {
+        try {
+          const parsed = new URL(url)
+          if (parsed.hostname !== "prod-api.fomo.family") return false
+          return timeframe === "all"
+            ? parsed.pathname === "/v2/leaderboard"
+            : parsed.pathname === apiPath
+        } catch {
+          return false
+        }
+      },
     )
-    if (hits.length === 0) {
-      // SPA may render without distinct path; tolerate empty fixture-backed parse
-      return []
-    }
-    const items = this.firstArray(hits, ["traders", "leaderboard", "data", "items", "users"])
-    const timeframe = args.timeframe ?? "7d"
+    const items = this.firstArray(hits, ["leaderboard", "traders", "data", "items", "users"])
     return items
       .map((item) => mapLeaderboardEntry(item, observedAt, timeframe))
       .filter((item): item is FomoLeaderboardEntry => Boolean(item))
@@ -268,25 +285,31 @@ export class FomoWebClient {
     const observedAt = this.nowIso()
     const hits = await this.navigateAndCapture(
       "feed",
-      "/feed",
-      (url) => /feed|activity|trades/iu.test(url),
+      this.opts.bootPath ?? FOMO_BOOT_PATH,
+      (url) => /prod-api\.fomo\.family\/feed\/tradingActivity/iu.test(url),
     )
-    const items = this.firstArray(hits, ["feed", "activity", "trades", "data", "items"])
-    return items
-      .map((item) => mapTradeEvent(item, observedAt))
-      .filter((item): item is FomoTradeEvent => Boolean(item))
-      .slice(0, args.limit ?? 100)
+    const items = this.firstArray(hits, ["items", "feed", "activity", "trades", "data"])
+    const events = items.flatMap((item) => expandFeedItems(item, observedAt))
+    if (events.length === 0) {
+      return items
+        .map((item) => mapTradeEvent(item, observedAt))
+        .filter((item): item is FomoTradeEvent => Boolean(item))
+        .slice(0, args.limit ?? 100)
+    }
+    return events.slice(0, args.limit ?? 100)
   }
 
   async readTrending(args: Readonly<{ limit?: number }> = {}): Promise<FomoTrendingObservation[]> {
     const observedAt = this.nowIso()
     const hits = await this.navigateAndCapture(
       "trending",
-      "/prices",
-      (url) => /trending|hot|token|prices/iu.test(url),
+      this.opts.bootPath ?? FOMO_BOOT_PATH,
+      (url) => /prod-api\.fomo\.family\/proxy\/(trendingTokens|mostHeld)/iu.test(url),
     )
-    const items = this.firstArray(hits, ["tokens", "trending", "data", "items"])
-    return items
+    const items = this.firstArray(hits, ["tokens", "trending", "data", "items", "responseObject"])
+    // mostHeld returns responseObject as array directly
+    const list = items.length > 0 ? items : hits.flatMap((hit) => extractArrayPayload(hit.body, ["responseObject"]))
+    return list
       .map((item, index) => mapTrendingObservation(item, observedAt, index + 1))
       .filter((item): item is FomoTrendingObservation => Boolean(item))
       .slice(0, args.limit ?? 10)
@@ -296,8 +319,8 @@ export class FomoWebClient {
     const observedAt = this.nowIso()
     const hits = await this.navigateAndCapture(
       "alerts",
-      "/alerts",
-      (url) => /alert/iu.test(url),
+      this.opts.bootPath ?? FOMO_BOOT_PATH,
+      (url) => /prod-api\.fomo\.family\/.*(alert|notification)/iu.test(url),
     )
     const items = this.firstArray(hits, ["alerts", "data", "items"])
     return items
@@ -311,14 +334,21 @@ export class FomoWebClient {
     const safe = encodeURIComponent(handle.trim().replace(/^@/u, ""))
     const hits = await this.navigateAndCapture(
       "profile",
-      `/u/${safe}`,
-      (url) => /profile|user|handle|trader/iu.test(url),
+      `/profile/${safe}`,
+      (url) => /prod-api\.fomo\.family\/v2\/users/iu.test(url),
     )
-    const items = this.firstArray(hits, ["user", "profile", "trader", "data", "items"])
-    const first = items[0] ?? hits[0]?.body
+    const items = this.firstArray(hits, ["user", "profile", "trader", "data", "items", "responseObject"])
+    const first = items[0] ?? (() => {
+      for (const hit of hits) {
+        if (hit.body && typeof hit.body === "object" && "responseObject" in (hit.body as object)) {
+          return Reflect.get(hit.body as object, "responseObject")
+        }
+      }
+      return hits[0]?.body
+    })()
     return first ? mapLeaderboardEntry({
       ...(typeof first === "object" && first ? first as object : {}),
-      handle,
+      userHandle: handle,
     }, observedAt) : undefined
   }
 

@@ -30,6 +30,7 @@
     "probe:gecko": "tsx scripts/probe-geckoterminal.ts",
     "probe:fomo": "tsx scripts/probe-fomo.ts",
     "fomo:install-gates": "tsx scripts/install-fomo-gates.ts",
+    "fomo:smoke": "tsx scripts/smoke-fomo-live.ts",
     "fomo:shadow-metrics": "tsx scripts/fomo-shadow-metrics.ts",
     "check": "pnpm typecheck && pnpm test",
     "prepare:agent": "tsx scripts/scaffold-agent.ts"

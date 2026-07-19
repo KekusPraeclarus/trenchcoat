@@ -36,6 +36,20 @@ const DEFAULT_AUTH_REFRESH_POSTS: readonly FomoAllowedPost[] = [
   { host: "auth.privy.io", path: "/api/v1/sessions" },
 ]
 
+/** Read-only SPA bootstraps / list queries discovered 2026-07-19 — never trades or transfers */
+const DEFAULT_FOMO_READ_POSTS: readonly FomoAllowedPost[] = [
+  { host: "prod-api.fomo.family", path: "/v2/users" },
+  { host: "prod-api.fomo.family", path: "/proxy/trendingTokens" },
+  { host: "prod-api.fomo.family", path: "/proxy/mostHeld" },
+  { host: "prod-api.fomo.family", path: "/proxy/filterTokens" },
+  { host: "prod-api.fomo.family", path: "/proxy/tokenDetails" },
+  { host: "prod-api.fomo.family", path: "/proxy/tokenWarnings" },
+  { host: "prod-api.fomo.family", path: "/proxy/cryptoTokens" },
+  { host: "prod-api.fomo.family", path: "/proxy/graduatedTokens" },
+  { host: "prod-api.fomo.family", path: "/proxy/getBars" },
+  { host: "prod-api.fomo.family", path: "/hodlers/friends" },
+]
+
 export function classifyFomoRequest(
   method: string,
   url: string,
@@ -70,10 +84,14 @@ export function classifyFomoRequest(
   }
 
   if (verb === "POST") {
-    const allowlist = [...DEFAULT_AUTH_REFRESH_POSTS, ...(opts.allowedPosts ?? [])]
+    const allowlist = [
+      ...DEFAULT_AUTH_REFRESH_POSTS,
+      ...DEFAULT_FOMO_READ_POSTS,
+      ...(opts.allowedPosts ?? []),
+    ]
+    const barePath = path.split("?")[0] ?? path
     const match = allowlist.find((entry) => (
-      entry.host === host
-      && (path === entry.path || path.startsWith(`${entry.path}/`))
+      entry.host === host && barePath === entry.path
     ))
     if (match) return { allow: true, reason: `allowed-post:${match.host}${match.path}` }
     return { allow: false, reason: `post-not-allowlisted:${host}${path}` }

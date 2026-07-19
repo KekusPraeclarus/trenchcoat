@@ -67,6 +67,28 @@ reference/defense-in-depth only — not the production isolation boundary.
   **sync `agent/skills/list-scan` and `review` into `~/.trenchcoat/agent/skills/`**
   (installer does not), redeploy CLI for prompt/receipt changes, then wait for
   the next list-scan/review. Do **not** mass-delete the queue.
+## Farcaster feed health (operator-verified 2026-07-19 evening)
+
+`farcaster-scan` is **running** (jittered launchd) but personalized feeds are
+broken/stale — treat output as **analysis-only noise** until for-you hash
+collection recovers. **X + Telegram carry live social signal.**
+
+Receipt pattern (e.g. `farcaster-scan-2026-07-19T14-45-41-411Z`, probe same day):
+
+- **for-you** — `rejected=repeated_two_hash_stale` (same two expired hashes; no
+  live refresh). Engagement stay off: only live for-you hashes authorize likes.
+- **following** — often `followingStatus=empty-following-with-desired`
+  (`desiredManagedFollows>0` but zero non-expired following casts). Do not
+  confuse with a healthy empty graph (`healthy-empty-following`).
+- **Agent still runs** when trending fallback (or any feed) has usable evidence —
+  `collectionStatus=analysis-only:…`, `engagementDisabled=true`, `skipAgent=false`.
+  That is **not** recovery; do not overweight FC narratives vs X/TG.
+- Signer can be `approved` the whole time — this is feed freshness, not auth.
+
+Recovery check: `tc probe farcaster` shows for-you `live>0`,
+`engagementDisabled=false`, and `following-populated` (or healthy-empty with
+zero desired). Until then leave FC enabled for receipts/health but trust X/TG.
+
 ## Still operator-driven
 
 - GramJS channel session auth (`tc auth telegram-channels`): still unfinished.
@@ -85,15 +107,14 @@ reference/defense-in-depth only — not the production isolation boundary.
   INV-I1 remains PARTIAL because Cursor CLI still allows outside **reads**;
   write confinement + `disableTmpWrite` + scrubbed child env are the enforced bar.
   INV-I5 container smoke remains reference-only / PARTIAL.
-- **Fomo** — adapters + host jobs landed (`fomo-trader-sync`,
-  `fomo-signal-scan`, `fomo-x-source-review`, `fomo-narrative-source-scan`,
-  `narrative-source-review`) with fail-closed defaults. **Not live yet:**
-  code may still be local/uncommitted; FAFO probe is a scaffold
-  (`pnpm probe:fomo`) until burner `auth fomo` + discover/sanitize/evaluate
-  install gates with provider `pass`. Then 14-day shadow
-  (`ops/fafo-fomo/SHADOW-CANARY.md`) before `shadow_mode: false`. Optional
-  read-only: `TRENCHCOAT_LIVE_FOMO=1 pnpm vitest run tests/e2e/fomo-live.test.ts`.
-  See `ops/fafo-fomo/REPORT.md` + [knowledge/fomo-family.md](../docs/knowledge/fomo-family.md).
+- **Fomo** — live smoke + operator override gates installed 2026-07-19
+  (`ops/fafo-fomo/gates.operator-override-2026-07-19.json`). Host config
+  `enabled=true`, `shadow_mode=false` for trader_sync + signal_scan.
+  Verified: `fomo-trader-sync` wrote 100 wallet nominations; `fomo-signal-scan`
+  wrote hot signals; wallets gained `origin=fomo` candidates. Full multi-day
+  FAFO sample/evaluate still pending — replace override when available.
+  Smoke: `pnpm fomo:smoke`. Playbook: `ops/fafo-fomo/SHADOW-CANARY.md`.
+  Optional: `TRENCHCOAT_LIVE_FOMO=1 pnpm vitest run tests/e2e/fomo-live.test.ts`.
 
 ## Deploy provenance / canary (docs only — not executed here)
 

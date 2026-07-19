@@ -41,7 +41,8 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P34 | recall | Does active mint authority hard-fail the security gate? When is a mintable token blocked from tracking / Discord subscribe? | No — `mintable`/`mint-authority` are caution-only (like `low-lp-lock`). Host blocks `track`/subscribe when mint is active and model `projectClassification` is `memecoin`, or classification is missing; justified utility/infrastructure may track. Contextual reject does not rug-dock. Discord subscribe also requires a validated `track` verdict (`evaluateResearchSubscribe`) → ADR 011, security-gate.md, INV-S9 | pass | 2026-07-19 |
 | P35 | recall | Chat says list-scan wrote an alpha digest / “processed” Telegram — were queue messages purged? Why can backlog stay ~500? | Only host `alpha-digest-receipt` with `purgedIds` counts. Agent `reports/.../alpha-digest.json` with narrative `items` fails Zod (`invalidReason=schema-invalid`) and purges nothing (INV-Q1/Q2). Check chat `alphaPurged` / `alphaDigestInvalid`. Do not mass-delete the queue. `analysis-only` + `repeated_two_hash_stale` is **Farcaster**, not X list-scan → telegram.md, orchestrator.md § Alpha-queue, INV-Q1 | pass | 2026-07-19 |
 | P36 | recall | Do list-scan and farcaster-scan share one jitter range? After shortening cadence, why might the old schedule still block runs? | No — per-job `MIN_SEC`/`MAX_SEC` in `ops/run-job-jittered.sh` (list-scan [30m, 1h45m]; farcaster [3h15m, 4h45m] as of 2026-07-19). Success backoff persists in `~/.trenchcoat/var/<job>.next` across redeploy; delete to apply immediately. TG preview cycle is `channels.ts` default + **channels** restart; verify startup `pollMs` → runbook.md § Tuning social scan cadence, telegram.md | pass | 2026-07-19 |
-| P37 | continuation | What must happen before Fomo jobs can mutate wallets / research queue / X nominations in production? | `auth fomo` → `probe:fomo` discover/sanitize/evaluate → `fomo:install-gates` with provider `pass` → 14-day shadow (`ops/fafo-fomo/SHADOW-CANARY.md`) → then `fomo.enabled` + `shadow_mode: false` per lane. Until then fail-closed / scaffold gates. Profile is `~/.trenchcoat/fomo-profile/` only → development.md, LIVE-E2E-BLOCKERS, knowledge/fomo-family.md, ADR 009 | pass | 2026-07-19 |
+| P37 | continuation | What must happen before Fomo jobs can mutate wallets / research queue / X nominations in production? | Burner `auth fomo` + live smoke (`pnpm fomo:smoke`) + `fomo:install-gates` with provider/capability `pass` (operator override or FAFO). Prefer 14-day shadow (`SHADOW-CANARY.md`) before `shadow_mode: false`. Profile `~/.trenchcoat/fomo-profile/` only. `probe:fomo` is discover/status/sanitize scaffold — no evaluate yet → development.md, LIVE-E2E-BLOCKERS, knowledge/fomo-family.md, ADR 009 | pass | 2026-07-19 |
+| P38 | recall | FC scans run but for-you is `repeated_two_hash_stale` / `analysis-only` — is engagement on, and which platforms carry live social? | Engagement off (only live for-you hashes authorize likes). Agent may still run on trending fallback = analysis noise, not recovery. X + Telegram carry live signal until for-you `live>0`. `empty-following-with-desired` ≠ healthy empty graph → LIVE-E2E § Farcaster feed health, knowledge/neynar.md, collectors.md | pass | 2026-07-19 |
 
 ## Failure log
 
@@ -185,3 +186,10 @@ patterns become visible.
   sanitize/evaluate. Expanded LIVE-E2E Fomo residual; added P37; regraded
   P29 + Fomo profile path. Probe suite 37/37 pass. Gotchas empty. Always-on
   ~306 tokens.
+- 2026-07-19 session-learning + context-maintenance (FC feeds stale): Live
+  for-you stuck on `repeated_two_hash_stale` (hash collection not refreshing);
+  following often `empty-following-with-desired`; engagementDisabled while
+  agent still runs on trending fallback = analysis-only noise. Operator:
+  X/TG carry signal. Fixed doc drift (for-you reject ≠ skipAgent). LIVE-E2E
+  § Farcaster feed health; neynar/collectors/source-lifecycle/ADR 007/runbook;
+  P38. Lint 0/0; gotchas empty; always-on ~306 tokens.

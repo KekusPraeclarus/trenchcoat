@@ -10,8 +10,8 @@ source: https://fomo.family
 
 [fomo.family](https://fomo.family) is scraped via Playwright with a host-only
 burner session (`~/.trenchcoat/fomo-profile/`). There is no API key. Read-only
-HTTP methods only; POST allowlist is Privy session refresh plus probe-approved
-read queries.
+HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
+`/proxy/*` lists); trades/transfers/profile edits stay blocked.
 
 ## Binding rules
 
@@ -44,6 +44,11 @@ read queries.
 pnpm probe:fomo discover --run-id probe-YYYY-MM-DD
 pnpm probe:fomo status --run-id probe-YYYY-MM-DD
 pnpm probe:fomo sanitize --run-id probe-YYYY-MM-DD
+pnpm tsx scripts/smoke-fomo-live.ts
+pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-07-19.json
 ```
+
+`probe:fomo` has no `evaluate` command yet. Live smoke confirms parsers against
+the authenticated SPA; install an operator override or FAFO gates JSON after.
 
 Details: [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md).

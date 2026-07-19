@@ -189,14 +189,23 @@ export type FomoGatesFile = z.infer<typeof FomoGatesFileSchema>
 
 /** Loose raw shapes for fixture-backed SPA payloads (filled after probe) */
 export const FomoRawTraderSchema = z.object({
-  handle: z.string().min(1).max(64),
+  handle: z.string().min(1).max(64).optional(),
+  userHandle: z.string().min(1).max(64).optional(),
+  displayName: z.string().min(1).max(64).optional(),
   pnl: z.number().optional(),
+  pnl7d: z.number().optional(),
+  pnl24h: z.number().optional(),
+  pnl30d: z.number().optional(),
   win_rate: z.number().optional(),
   winRate: z.number().optional(),
   trades: z.number().int().optional(),
+  numTrades: z.number().int().optional(),
+  swapCount: z.number().int().optional(),
   rank: z.number().int().optional(),
   timeframe: z.string().optional(),
   chain: z.string().optional(),
+  address: z.string().optional(),
+  evmAddress: z.string().optional(),
   wallets: z.array(z.object({
     chain: z.string(),
     address: z.string().min(20).max(128),
@@ -215,9 +224,12 @@ export const FomoRawTraderSchema = z.object({
 export const FomoRawActivitySchema = z.object({
   id: z.union([z.string(), z.number()]).optional(),
   handle: z.string().optional(),
+  userHandle: z.string().optional(),
   action: z.enum(["buy", "sell"]).optional(),
   side: z.enum(["buy", "sell"]).optional(),
+  type: z.string().optional(),
   chain: z.string().optional(),
+  networkId: z.number().optional(),
   token_mint: z.string().optional(),
   tokenAddress: z.string().optional(),
   mint: z.string().optional(),
@@ -229,7 +241,9 @@ export const FomoRawActivitySchema = z.object({
   timestamp: z.union([z.number(), z.string()]).optional(),
   observed_at: z.union([z.number(), z.string()]).optional(),
   created_at: z.union([z.number(), z.string()]).optional(),
+  createdAt: z.union([z.number(), z.string()]).optional(),
   wallet: z.string().optional(),
+  body: z.record(z.unknown()).optional(),
 }).passthrough()
 
 export const FomoRawConvergenceSchema = z.object({
@@ -254,9 +268,15 @@ export const FomoRawHotTokenSchema = z.object({
   tokenAddress: z.string().optional(),
   symbol: z.string().optional(),
   chain: z.string().optional(),
+  networkId: z.number().optional(),
   unique_buyers: z.number().int().optional(),
   uniqueBuyers: z.number().int().optional(),
   rank: z.number().int().optional(),
+  token: z.object({
+    address: z.string().optional(),
+    networkId: z.number().optional(),
+    symbol: z.string().optional(),
+  }).passthrough().optional(),
 }).passthrough()
 
 export const FomoRawThesisSchema = z.object({

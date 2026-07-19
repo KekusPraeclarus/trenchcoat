@@ -108,8 +108,24 @@ describe("fomo freshness", () => {
 describe("fomo request policy", () => {
   it("allows GET on fomo hosts and blocks mutations", () => {
     expect(classifyFomoRequest("GET", "https://prod-api.fomo.family/v1/leaderboard").allow).toBe(true)
+    expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/proxy/mostHeld").allow).toBe(true)
     expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/v1/trade").allow).toBe(false)
+    expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/v2/users/edit").allow).toBe(false)
     expect(classifyFomoRequest("DELETE", "https://fomo.family/account").allow).toBe(false)
+  })
+
+  it("maps live leaderboard userHandle + wallets", () => {
+    const entry = mapLeaderboardEntry({
+      userHandle: "Juicycooks",
+      address: "FJhXFik8Kfno3EgYPoWgGniTth9xkJGPWTZGr4ExoG2P",
+      evmAddress: "0xbd26897dbfaeae67742e5e9766b504e00f463fbd",
+      pnl7d: 1000,
+      numTrades: 12,
+    }, "2026-07-19T00:00:00.000Z", "7d")
+    expect(entry?.handle).toBe("juicycooks")
+    expect(entry?.pnl).toBe(1000)
+    expect(entry?.wallets.some((w) => w.chain === "solana")).toBe(true)
+    expect(entry?.wallets.some((w) => w.chain === "ethereum")).toBe(true)
   })
 })
 
