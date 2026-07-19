@@ -200,7 +200,7 @@ pnpm exec vitest run tests/unit/harness-repo-root.test.ts tests/unit/harness-sch
 
 ### Commit
 
-COMMIT_PLACEHOLDER
+`9b27308` — Resolve harness repo root when launchd cwd is /.
 
 ### Session learning
 
