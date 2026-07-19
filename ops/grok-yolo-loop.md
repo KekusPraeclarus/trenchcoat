@@ -132,7 +132,9 @@ ALL_OK
 
 ### Commit
 
- — Fix run-precheck lock-retry path after install strips .sh.
+`659cdbf` — Fix run-precheck lock-retry path after install strips .sh.
+
+(`8c60c5d` — log hash correction only.)
 
 ### Session learning
 
