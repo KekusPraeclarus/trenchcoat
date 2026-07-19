@@ -132,7 +132,7 @@ ALL_OK
 
 ### Commit
 
-_(filled after commit)_
+ — Fix run-precheck lock-retry path after install strips .sh.
 
 ### Session learning
 
