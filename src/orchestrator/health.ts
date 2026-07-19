@@ -7,7 +7,7 @@ import {
 } from "../lib/archive.js"
 import { agentLockPath } from "../lib/lock.js"
 import { loadConfig } from "../lib/config.js"
-import { loadDeploymentManifest } from "../lib/deployment.js"
+import { loadDeploymentManifest, DEPLOYMENT_CONFIG_SCHEMA } from "../lib/deployment.js"
 import { StateStore } from "../lib/state.js"
 import { RunManifestSchema } from "../contracts/schemas.js"
 import { loadJournalForScan } from "./journal-store.js"
@@ -487,7 +487,7 @@ function xState(agentRoot: string, nowIso: string): HealthXState {
 }
 
 function deploymentState(): HealthDeploymentState {
-  const expectedSchema = 9
+  const expectedSchema = DEPLOYMENT_CONFIG_SCHEMA
   let configSchema: number | undefined
   try {
     configSchema = loadConfig().schema
