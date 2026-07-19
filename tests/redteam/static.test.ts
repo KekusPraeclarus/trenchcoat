@@ -75,11 +75,11 @@ describe("prop_inv_i4_inbox_writer_ownership", () => {
       if (/\.writeInbox\s*\(/u.test(text) || /async writeInbox\s*\(/u.test(text)) {
         writeInboxCallers.push(rel)
       }
-      // Creating files under agent/inbox via atomic write (not archive copies)
+      // Creating files under agent/inbox via atomic write (not archive copies or inbox readers)
       if (
         /writeAtomicFile\s*\(/u.test(text)
-        && /["']inbox["']/u.test(text)
-        && /join\([^)]*agentRoot[^)]*["']inbox["']/u.test(text)
+        && /join\([^)]*(?:this\.)?agentRoot[^)]*["']inbox["']/u.test(text)
+        && (/async writeInbox\s*\(/u.test(text) || /mkdirSync\s*\(\s*dir/u.test(text))
       ) {
         inboxWriteImplementations.push(rel)
       }
@@ -95,6 +95,10 @@ describe("prop_inv_i4_inbox_writer_ownership", () => {
       "src/orchestrator/watchlist-collect.ts",
       "src/orchestrator/review-collect.ts",
       "src/orchestrator/x-fyp-eligible.ts",
+      "src/orchestrator/fomo-trader-collect.ts",
+      "src/orchestrator/fomo-signal-collect.ts",
+      "src/orchestrator/fomo-x-source-review.ts",
+      "src/orchestrator/fomo-narrative-source-scan.ts",
     ]))
   })
 })

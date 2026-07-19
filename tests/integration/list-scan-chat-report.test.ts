@@ -4,7 +4,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ensureArchive } from "../../src/lib/archive.js"
 import { ingestOutbox } from "../../src/orchestrator/outbox-ingest.js"
-import { validateAndPromoteChatReport } from "../../src/orchestrator/chat-report.js"
+import {
+  buildHostChatFacts,
+  validateAndPromoteChatReport,
+} from "../../src/orchestrator/chat-report.js"
 
 const RUN_ID = "20260717T140000Z-listscan"
 const NOW = "2026-07-17T14:00:00.000Z"
@@ -55,8 +58,6 @@ describe("list-scan chat report promotion", () => {
       agentRoot,
       layout,
       runId: RUN_ID,
-      dailyBudget: 5,
-      urgentCeiling: 10,
       nowIso: NOW,
     })
     expect(ingest.staged).toBe(1)
@@ -67,10 +68,39 @@ describe("list-scan chat report promotion", () => {
       runId: RUN_ID,
       nowIso: NOW,
       ingest,
+      facts: buildHostChatFacts({
+        job: "list-scan",
+        runStatus: "complete",
+        collection: { collectionStatus: "completed", postCount: 20 },
+      }),
     })
     expect(receipt.promoted).toBe(true)
     const reportPath = join(agentRoot, "reports", "chat", `${RUN_ID}.md`)
     expect(existsSync(reportPath)).toBe(true)
     expect(readFileSync(reportPath, "utf8")).toContain(LIST_SCAN_ITEM.text)
+  })
+
+  it("promotes host recall with zero staged broadcasts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-list-chat-zero-"))
+    const agentRoot = join(root, "agent")
+    const layout = await ensureArchive(join(root, "archive"))
+    mkdirSync(join(agentRoot, "reports", RUN_ID), { recursive: true })
+    const receipt = await validateAndPromoteChatReport({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      ingest: { staged: 0, rejected: 0, rejects: [], items: [] },
+      facts: buildHostChatFacts({
+        job: "list-scan",
+        runStatus: "complete",
+        collection: { collectionStatus: "completed", postCount: 8 },
+      }),
+    })
+    expect(receipt.promoted).toBe(true)
+    expect(receipt.hostOnly).toBe(true)
+    const report = readFileSync(join(agentRoot, "reports", "chat", `${RUN_ID}.md`), "utf8")
+    expect(report).toContain("job: list-scan")
+    expect(report).toContain("staged: 0")
   })
 })

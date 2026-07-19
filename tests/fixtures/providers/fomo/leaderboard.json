@@ -1,0 +1,27 @@
+{
+  "traders": [
+    {
+      "handle": "AlphaTrader",
+      "rank": 1,
+      "timeframe": "7d",
+      "trades": 42,
+      "win_rate": 0.71,
+      "pnl": 12500,
+      "wallets": [
+        {
+          "chain": "solana",
+          "address": "So11111111111111111111111111111111111111112"
+        }
+      ],
+      "x_handle": "alphatrader",
+      "twitter_url": "https://x.com/alphatrader"
+    },
+    {
+      "handle": "NoWallet",
+      "rank": 2,
+      "timeframe": "7d",
+      "trades": 10,
+      "winRate": 0.5
+    }
+  ]
+}

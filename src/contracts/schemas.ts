@@ -31,11 +31,14 @@ export const SnapshotItemSchema = z.object({
   clusterId: z.string().optional(),
 })
 
+/** Hard ceiling for every inbox SnapshotEnvelope — collectors must cap before write */
+export const SNAPSHOT_MAX_ITEMS = 500
+
 export const SnapshotEnvelopeSchema = z.object({
   source: z.string().min(1).max(128),
   fetchedAt: IsoTimestampSchema,
   trust: TrustSchema,
-  items: z.array(SnapshotItemSchema).max(500),
+  items: z.array(SnapshotItemSchema).max(SNAPSHOT_MAX_ITEMS),
 })
 export type SnapshotEnvelope = z.infer<typeof SnapshotEnvelopeSchema>
 
@@ -159,10 +162,21 @@ export const AuditClaimSchema = z.object({
 })
 export type AuditClaim = z.infer<typeof AuditClaimSchema>
 
+/** Agent proposal refs: host-owned state or same-run frozen inbox evidence */
+export const BroadcastProposalRefSchema = z.string().regex(
+  /^(?:state\/[A-Za-z0-9._/-]+|inbox\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\/[A-Za-z0-9._/-]+)$/u,
+)
+
+/** Durable event refs after host canonicalization (state stays; inbox → sealed archive) */
+export const BroadcastDurableRefSchema = z.string().regex(
+  /^(?:state\/[A-Za-z0-9._/-]+|archive\/runs\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\/inbox\/[A-Za-z0-9._/-]+)$/u,
+)
+
 export const BroadcastItemSchema = z.object({
   severity: BroadcastSeveritySchema,
   text: z.string().min(1).max(280),
-  refs: z.array(z.string().regex(/^state\/[A-Za-z0-9._/-]+$/u)).max(10),
+  // Accept proposal or durable shapes so ingest can canonicalize then stage
+  refs: z.array(z.union([BroadcastProposalRefSchema, BroadcastDurableRefSchema])).max(10),
   auditClaim: AuditClaimSchema,
 })
 export type BroadcastItem = z.infer<typeof BroadcastItemSchema>
@@ -265,6 +279,7 @@ export const SourceDiscoveryOriginSchema = z.enum([
   "fyp",
   "operator-list-1",
   "operator-list-2",
+  "fomo-leaderboard",
 ])
 export type SourceDiscoveryOrigin = z.infer<typeof SourceDiscoveryOriginSchema>
 
@@ -339,6 +354,16 @@ export const XEngagementDecisionSchema = z.object({
 })
 export type XEngagementDecision = z.infer<typeof XEngagementDecisionSchema>
 
+/** Settlement stage for X engagement; optional for receipts written before stages existed */
+export const XEngagementOutcomeSchema = z.enum([
+  "already-satisfied",
+  "verified",
+  "verified-after-attempt-error",
+  "ambiguous",
+  "failed-before-mutation",
+])
+export type XEngagementOutcome = z.infer<typeof XEngagementOutcomeSchema>
+
 export const XEngagementReceiptSchema = z.object({
   schema: z.literal(1),
   receiptId: Sha256Schema,
@@ -348,6 +373,10 @@ export const XEngagementReceiptSchema = z.object({
   attemptedAt: IsoTimestampSchema,
   verified: z.boolean(),
   ambiguous: z.boolean(),
+  /** Preferred settlement label; when absent, derive from verified/ambiguous */
+  outcome: XEngagementOutcomeSchema.optional(),
+  attemptError: z.string().max(500).optional(),
+  verificationError: z.string().max(500).optional(),
   error: z.string().max(500).optional(),
 })
 export type XEngagementReceipt = z.infer<typeof XEngagementReceiptSchema>
@@ -681,6 +710,48 @@ export const ResearchQueueFileSchema = z.object({
 })
 export type ResearchQueueFile = z.infer<typeof ResearchQueueFileSchema>
 
+/** Agent nomination for host research enqueue — never writes watchlist/ledger/wallets */
+export const ResearchCandidateSchema = z.object({
+  schema: z.literal(1),
+  candidateId: SafeIdSchema,
+  chain: ChainSlugSchema,
+  tokenAddress: AddressSchema,
+  symbolDisplay: z.string().min(1).max(32).optional(),
+  evidenceRefs: z.array(z.string().min(1).max(256)).min(1).max(16),
+  authors: z.array(z.string().min(1).max(128)).max(32).default([]),
+  reason: z.string().min(1).max(280),
+})
+export type ResearchCandidate = z.infer<typeof ResearchCandidateSchema>
+
+export const ResearchCandidateFileSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  proposedAt: IsoTimestampSchema,
+  candidates: z.array(ResearchCandidateSchema).max(8),
+})
+export type ResearchCandidateFile = z.infer<typeof ResearchCandidateFileSchema>
+
+export const ResearchCandidateRejectSchema = z.object({
+  candidateId: SafeIdSchema.optional(),
+  reason: z.string().min(1).max(120),
+})
+export type ResearchCandidateReject = z.infer<typeof ResearchCandidateRejectSchema>
+
+export const ResearchCandidateReceiptSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  validatedAt: IsoTimestampSchema,
+  accepted: z.array(z.object({
+    candidateId: SafeIdSchema,
+    queueId: SafeIdSchema,
+    chain: ChainSlugSchema,
+    tokenAddress: AddressSchema,
+    clusterCount: z.number().int().nonnegative(),
+  })).max(3),
+  rejected: z.array(ResearchCandidateRejectSchema).max(32),
+})
+export type ResearchCandidateReceipt = z.infer<typeof ResearchCandidateReceiptSchema>
+
 /** Bounded web-search requests from a network-denied research pass (host executes) */
 export const WebSearchRequestSchema = z.object({
   query: z.string().min(1).max(200).regex(/^[\x20-\x7E]+$/u),
@@ -708,6 +779,7 @@ export const WalletDiscoveryOriginSchema = z.enum([
   "watchlist",
   "new-pools",
   "research",
+  "fomo",
 ])
 export type WalletDiscoveryOrigin = z.infer<typeof WalletDiscoveryOriginSchema>
 
@@ -1087,7 +1159,8 @@ export const ChatSummaryFileSchema = z.object({
   schema: z.literal(1),
   runId: SafeIdSchema,
   proposedAt: IsoTimestampSchema,
-  itemIds: z.array(ChatSummaryItemIdSchema).min(1).max(8),
+  /** Empty when no broadcasts; when non-empty must match staged event ids */
+  itemIds: z.array(ChatSummaryItemIdSchema).max(8).default([]),
   context: z.array(z.string().min(1).max(280)).min(3).max(8),
   sources: z.array(ChatSummarySourcePathSchema).min(1).max(16),
 })
@@ -1097,8 +1170,12 @@ export const ChatSummaryReceiptSchema = z.object({
   schema: z.literal(1),
   runId: SafeIdSchema,
   validatedAt: IsoTimestampSchema,
+  /** True when host wrote reports/chat/<run-id>.md (even without agent context) */
   promoted: z.boolean(),
   reason: z.string().max(280).optional(),
+  proposalAccepted: z.boolean().optional(),
+  proposalReason: z.string().max(280).optional(),
+  hostOnly: z.boolean().optional(),
   itemIds: z.array(Sha256Schema).max(8).default([]),
   reportPath: z.string().max(280).optional(),
   untrustedEvidence: z.literal(true),

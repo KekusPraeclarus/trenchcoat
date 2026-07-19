@@ -3,15 +3,21 @@ import { join } from "node:path"
 import {
   ensureArchive,
   runArchiveDir,
-  transactionJournalPath,
   type ArchiveLayout,
 } from "../lib/archive.js"
 import { loadConfig, type TrenchcoatConfig } from "../lib/config.js"
 import type { SnapshotWriter } from "../lib/snapshot.js"
 import { StateStore } from "../lib/state.js"
-import { RunManifestSchema } from "../contracts/schemas.js"
-import { createJournalStore } from "./journal-store.js"
+import { RunManifestSchema, SNAPSHOT_MAX_ITEMS } from "../contracts/schemas.js"
+import { loadJournalForScan } from "./journal-store.js"
 import { fetchFearGreed } from "../collectors/market/feargreed.js"
+import {
+  buildHealthSnapshot,
+  healthCreatesReviewScope,
+  healthSnapshotLines,
+  skipLedgerLines,
+  type HealthSnapshot,
+} from "./health.js"
 
 export type ReviewCollectResult = Readonly<{
   snapshotNames: readonly string[]
@@ -21,6 +27,7 @@ export type ReviewCollectResult = Readonly<{
   sealedReportCount: number
   pendingAlphaCount: number
   watchlistSubjects: number
+  healthWarningCount?: number
 }>
 
 export type SealedRunRef = Readonly<{
@@ -35,16 +42,8 @@ export type ReviewPrerequisites = Readonly<{
   sealedReports: readonly SealedRunRef[]
   pendingAlphaPaths: readonly string[]
   watchlistSubjects: number
+  health?: HealthSnapshot
 }>
-
-function parseJournalStatus(raw: unknown): string | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined
-  const status = Reflect.get(raw, "status")
-  const phase = Reflect.get(raw, "phase")
-  if (status === "complete" || status === "failed" || status === "running") return status
-  if (phase === "complete") return "complete"
-  return undefined
-}
 
 function reviewConfigFromArgs(args: Readonly<{
   lookbackDays?: number
@@ -78,20 +77,13 @@ export async function listSealedCompletedReports(args: Readonly<{
   nowIso: string
 }>): Promise<SealedRunRef[]> {
   if (!existsSync(args.layout.transactions)) return []
-  const store = createJournalStore(args.layout)
   const matches: SealedRunRef[] = []
 
   for (const name of readdirSync(args.layout.transactions)) {
     if (!name.endsWith(".json")) continue
     const runId = name.slice(0, -".json".length)
-    let journal: unknown
-    try {
-      journal = JSON.parse(readFileSync(transactionJournalPath(args.layout, runId), "utf8"))
-    } catch {
-      continue
-    }
-    if (parseJournalStatus(journal) !== "complete") continue
-    const loaded = await store.load(runId)
+    // Soft-load so one corrupt/legacy journal cannot abort the whole review scan
+    const loaded = await loadJournalForScan(args.layout, runId)
     if (!loaded || loaded.status !== "complete") continue
 
     const manifestPath = join(runArchiveDir(args.layout, runId), "manifest.json")
@@ -139,6 +131,16 @@ export function listPendingAlphaPaths(agentRoot: string): string[] {
   return paths
 }
 
+/** Cap path/manifest lines to SnapshotEnvelope max, keeping a truncated=N marker */
+export function capManifestLines(
+  lines: readonly string[],
+  maxItems: number = SNAPSHOT_MAX_ITEMS,
+): string[] {
+  if (lines.length <= maxItems) return [...lines]
+  const keep = Math.max(0, maxItems - 1)
+  return [...lines.slice(0, keep), `truncated=${lines.length - keep}`]
+}
+
 export function countWatchlistScope(agentRoot: string): number {
   const state = new StateStore(join(agentRoot, "state"))
   return state.loadWatchlist().entries.filter((entry) => (
@@ -165,10 +167,19 @@ export async function evaluateReviewPrerequisites(args: Readonly<{
   })
   const pendingAlphaPaths = listPendingAlphaPaths(args.agentRoot)
   const watchlistSubjects = countWatchlistScope(args.agentRoot)
+  const health = await buildHealthSnapshot({
+    agentRoot: args.agentRoot,
+    archiveRoot: args.archiveRoot,
+    nowIso: args.nowIso,
+    layout,
+  })
 
-  const skipReason = sealedReports.length === 0
-    && pendingAlphaPaths.length === 0
-    && watchlistSubjects === 0
+  const traditionalScope = sealedReports.length > 0
+    || pendingAlphaPaths.length > 0
+    || watchlistSubjects > 0
+  // Empty queues, silent wallets, stale FC, and recurring skips stay in scope
+  // even when no agent report directory exists
+  const skipReason = !traditionalScope && !healthCreatesReviewScope(health)
     ? "no-review-scope"
     : undefined
 
@@ -177,6 +188,7 @@ export async function evaluateReviewPrerequisites(args: Readonly<{
     sealedReports,
     pendingAlphaPaths,
     watchlistSubjects,
+    health,
   }
 }
 
@@ -258,8 +270,15 @@ export async function collectReview(args: Readonly<{
       sealedReportCount: 0,
       pendingAlphaCount: 0,
       watchlistSubjects: 0,
+      healthWarningCount: prereqs.health?.warnings.length ?? 0,
     }
   }
+
+  const health = prereqs.health ?? await buildHealthSnapshot({
+    agentRoot: args.agentRoot,
+    archiveRoot: args.archiveRoot,
+    nowIso: args.fetchedAt,
+  })
 
   const snapshotNames: string[] = []
   const statusLines: string[] = [
@@ -269,7 +288,26 @@ export async function collectReview(args: Readonly<{
     `sealedReports=${prereqs.sealedReports.length}`,
     `pendingAlpha=${prereqs.pendingAlphaPaths.length}`,
     `watchlistSubjects=${prereqs.watchlistSubjects}`,
+    `healthWarnings=${health.warnings.length}`,
   ]
+
+  await writeManifestSnapshot({
+    runId: args.runId,
+    writer: args.writer,
+    fetchedAt: args.fetchedAt,
+    name: "review-health-snapshot",
+    lines: healthSnapshotLines(health),
+  })
+  snapshotNames.push("review-health-snapshot")
+
+  await writeManifestSnapshot({
+    runId: args.runId,
+    writer: args.writer,
+    fetchedAt: args.fetchedAt,
+    name: "review-skip-ledger",
+    lines: skipLedgerLines(health.skipReasons),
+  })
+  snapshotNames.push("review-skip-ledger")
 
   const reportLines = prereqs.sealedReports.map((ref) => (
     `runId=${ref.runId} job=${ref.job} createdAt=${ref.createdAt} path=${ref.reportPath}`
@@ -283,7 +321,9 @@ export async function collectReview(args: Readonly<{
   })
   snapshotNames.push("review-reports-manifest")
 
-  const alphaLines = prereqs.pendingAlphaPaths.map((path) => `path=${path}`)
+  const alphaLines = capManifestLines(
+    prereqs.pendingAlphaPaths.map((path) => `path=${path}`),
+  )
   await writeManifestSnapshot({
     runId: args.runId,
     writer: args.writer,
@@ -364,5 +404,6 @@ export async function collectReview(args: Readonly<{
     sealedReportCount: prereqs.sealedReports.length,
     pendingAlphaCount: prereqs.pendingAlphaPaths.length,
     watchlistSubjects: prereqs.watchlistSubjects,
+    healthWarningCount: health.warnings.length,
   }
 }

@@ -294,4 +294,75 @@ describe("collectNarrativeScan status matrix", () => {
     expect(result.marketBlind).toBe(true)
     expect(result.snapshotNames).toContain("narrative-trending")
   })
+
+  it("prefers an older usable sealed run over a newer empty complete run", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "tc-narr-usable-")))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    const { ensureArchive, writeJsonRecordFsync, runArchiveDir } = await import(
+      "../../src/lib/archive.js"
+    )
+    const layout = await ensureArchive(archiveRoot)
+
+    const usableId = "list-scan-2026-07-18T10-00-00-000Z"
+    await writeJsonRecordFsync(join(layout.transactions, `${usableId}.json`), {
+      schema: 1,
+      runId: usableId,
+      phase: "complete",
+      phaseHashes: {},
+      sideEffects: {},
+    } as never)
+    const usableDir = runArchiveDir(layout, usableId)
+    mkdirSync(join(usableDir, "inbox"), { recursive: true })
+    await writeJsonRecordFsync(join(usableDir, "manifest.json"), {
+      schema: 1,
+      runId: usableId,
+      job: "list-scan",
+      createdAt: "2026-07-18T10:00:00.000Z",
+      inboxSnapshotNames: ["twitter-fyp"],
+    } as never)
+    await writeJsonRecordFsync(join(usableDir, "inbox", "twitter-fyp.json"), {
+      source: "host.twitter.fyp",
+      fetchedAt: "2026-07-18T10:00:00.000Z",
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${usableId}:tweet:1`,
+        text: "base ai agents heating",
+        ts: "2026-07-18T10:00:00.000Z",
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    } as never)
+
+    const emptyId = "list-scan-2026-07-18T11-00-00-000Z"
+    await writeJsonRecordFsync(join(layout.transactions, `${emptyId}.json`), {
+      schema: 1,
+      runId: emptyId,
+      phase: "complete",
+      status: "complete",
+      phaseHashes: {},
+      sideEffects: {},
+    } as never)
+    const emptyDir = runArchiveDir(layout, emptyId)
+    mkdirSync(join(emptyDir, "inbox"), { recursive: true })
+    await writeJsonRecordFsync(join(emptyDir, "manifest.json"), {
+      schema: 1,
+      runId: emptyId,
+      job: "list-scan",
+      createdAt: "2026-07-18T11:00:00.000Z",
+      inboxSnapshotNames: [],
+    } as never)
+
+    const writer = new SnapshotWriter(agentRoot)
+    const result = await collectNarrativeScan({
+      runId: "narrative-scan-2026-07-18T12-00-00-000Z",
+      writer,
+      fetchedAt: NOW,
+      archiveRoot,
+      fetcher: async () => okTrending.clone(),
+    })
+    expect(result.selectedRuns.listScan).toBe(usableId)
+    expect(result.usableEvidence).toBe(true)
+  })
 })

@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 ---
 
 # X / Twitter (Playwright)
@@ -20,6 +20,9 @@ last_verified: 2026-07-18
 - Route guard aborts every non-GET/HEAD/OPTIONS method
 - Targets from config v4: FYP + two operator lists + managed list URL when set
 - Cross-target dedupe by post id; keep first-seen provenance
+- Research token search waits for `article[data-testid=tweet]` after navigation,
+  soft-retries once on empty, and falls back from Latest (`f=live`) to Top when
+  Latest returns zero posts. Host queries: CA, `$SYMBOL`, `SYMBOL chain`.
 
 ## FYP engagement manifest
 
@@ -64,29 +67,32 @@ last_verified: 2026-07-18
   never re-attempts a settled action, and none of them bump `daily.*`.
 - Desired-state execution: wait for tweet/profile shell, fail fast on
   login/challenge pages, scoped `[data-testid]` / role selectors, bounded
-  post-action verification retries. Already-liked, already-following, and
-  already-not-following count as verified idempotent success. Follow button
-  matches `/^Follow(?!ing|ers)\b/` (plain "Follow" or "Follow @handle").
-- Selector strategy for follow/unfollow: verify desired state first (return early
-  if already following / already not following), then bounded-retry
-  (`retryEngagementVerify`, 3×500ms) for the Follow or Following/Unfollow control
-  to hydrate. All selectors are scoped to `[data-testid="primaryColumn"]` so
-  unrelated chrome is never clicked: role-based Follow/Following first, then
-  `[data-testid*="follow"]:not([data-testid*="unfollow"])` as a last resort for
-  Follow only.
-- Non-followable detection: if the profile shows Subscribe (premium) without a
-  Follow/Following control, or obvious suspended/unavailable text, the driver
-  throws typed `account_not_followable:<handle>` instead of a generic missing
-  control error.
+  post-action verification retries. Like controls are scoped to the article
+  that owns the exact status id (`tweetArticleCssForPostId`) so quotes/recs are
+  never clicked. Click timeouts do not end settlement: the executor observes the
+  allowlisted `FavoriteTweet` response, then verifies UI state and may settle as
+  `verified-after-attempt-error`. Receipts carry an optional `outcome` stage
+  (`already-satisfied` | `verified` | `verified-after-attempt-error` |
+  `ambiguous` | `failed-before-mutation`) plus bounded `attemptError` /
+  `verificationError`. Success is never invented when a verifier is absent.
+  Follow/unfollow stay primaryColumn-scoped with bounded hydration retry; non-
+  followable profiles return `failed-before-mutation` (`account_not_followable`).
+- Pending reconciliation: at the start of each live engagement pass, old
+  `pendingActionIds` are probed read-only. Desired state present → settle;
+  definitively absent only after successful negative verification + cooldown
+  (`PENDING_ABSENT_COOLDOWN_MS`); otherwise leave pending. Ambiguous mutations
+  are never auto-replayed (duplicate click can unlike/unfollow).
+- Health: `state/x-bot-health.json` — last verified action, last failure,
+  consecutive failures (updated only on live execution; not dry-run/canary/policy).
+  Any verified receipt in a batch resets `consecutiveFailures`; only
+  all-ambiguous batches increment it. `xBotHealthEscalation` flags the executor
+  unhealthy once `consecutiveFailures` reaches `X_BOT_HEALTH_ESCALATION_THRESHOLD`
+  (3); further mutations archive `bot-health-blocked.json` and stop until a
+  verified read-only reconciliation or explicit `recoverXBotHealth` clears the
+  condition. The engagement status probe surfaces this as `botHealthEscalation`.
 - Tweet parse (`parseTwitterSearchPage`) builds the browser callback via
   `new Function(...)` so tsx/esbuild cannot inject `__name` helpers into
   Playwright's `evaluateAll` realm (that previously crashed live scrapes).
-- Health: `state/x-bot-health.json` — last verified action, last failure,
-  consecutive failures (updated only on live execution; not dry-run/canary/policy).
-  Any verified receipt in a batch resets `consecutiveFailures`; failures alone
-  increment it. `xBotHealthEscalation` flags the executor unhealthy once
-  `consecutiveFailures` reaches `X_BOT_HEALTH_ESCALATION_THRESHOLD` (3); the
-  engagement status probe surfaces this as `botHealthEscalation` for operator attention.
 - FYP confinement: host writes `inbox/<run-id>/x-fyp-eligible.json`; dry-run
   loads that manifest from live inbox or sealed archive.
 - CLI: `pnpm dev:cli x-engagement status`, `pnpm dev:cli x-engagement dry-run <run-id>`

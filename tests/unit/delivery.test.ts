@@ -29,7 +29,13 @@ const ITEM = {
 async function stageOne(): Promise<ArchiveLayout> {
   const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-delivery-")))
   const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
-  await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
+  const event = {
+    ...buildBroadcastRouterEvent(RUN_ID, NOW, ITEM),
+    channels: {
+      telegram: { text: ITEM.text },
+    },
+  }
+  await outbox.stage(event)
   return layout
 }
 

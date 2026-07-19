@@ -49,7 +49,7 @@ describe("appendSourceCallEventsFromArchiveInbox", () => {
 
     const events = readSourceCallLog(layout)
     expect(events).toHaveLength(1)
-    expect(events[0]?.sourceId).toBe("twitter.caller") // colon-free, '@' stripped
+    expect(events[0]?.sourceId).toBe("x_caller")
     expect(events[0]?.provenance).toBe("twitter:@caller")
     expect(events[0]?.rawAddress).toBe(TOKEN)
   })

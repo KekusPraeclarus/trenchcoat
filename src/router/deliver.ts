@@ -171,6 +171,23 @@ export async function processDelivery(
 
   const event = RouterEventSchema.parse(JSON.parse(eventRow.payload_json)) as RouterEvent
   const now = Date.now()
+
+  // When channels were host-rendered, omit destinations without a payload
+  // (Discord daily budget skip). Lifecycle events have no channels → both fire.
+  if (
+    event.channels
+    && dest.kind === "discord"
+    && event.channels.discord === undefined
+  ) {
+    db.prepare(
+      `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
+    ).run(now, delivery.id)
+    db.prepare(
+      `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-discord-budget')`,
+    ).run(delivery.id, now)
+    return
+  }
+
   const channelText = dest.kind === "telegram"
     ? event.channels?.telegram?.text
     : dest.kind === "discord"

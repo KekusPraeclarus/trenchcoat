@@ -40,18 +40,25 @@ describe("twitter count labels", () => {
 })
 
 describe("research twitter queries", () => {
-  it("builds host-only address and symbol queries", () => {
+  it("builds host-only address, cashtag, and symbol-chain queries", () => {
     const queries = buildResearchTwitterQueries(IDENTITY)
-    expect(queries.map((q) => q.kind)).toEqual(["token-address", "symbol-chain"])
+    expect(queries.map((q) => q.kind)).toEqual([
+      "token-address",
+      "symbol-cashtag",
+      "symbol-chain",
+    ])
     expect(queries[0]?.query).toBe(IDENTITY.tokenAddress)
-    expect(queries[1]?.query).toBe("SOL solana")
-    const url = twitterSearchUrl(IDENTITY.tokenAddress)
-    expect(url.startsWith("https://x.com/search?q=")).toBe(true)
-    expect(url).toContain(encodeURIComponent(IDENTITY.tokenAddress))
-    expect(url).toContain("f=live")
+    expect(queries[1]?.query).toBe("$SOL")
+    expect(queries[2]?.query).toBe("SOL solana")
+    const live = twitterSearchUrl(IDENTITY.tokenAddress)
+    expect(live.startsWith("https://x.com/search?q=")).toBe(true)
+    expect(live).toContain(encodeURIComponent(IDENTITY.tokenAddress))
+    expect(live).toContain("f=live")
+    const top = twitterSearchUrl(IDENTITY.tokenAddress, "top")
+    expect(top).not.toContain("f=live")
   })
 
-  it("skips unsafe symbols for the second query", () => {
+  it("skips unsafe symbols for cashtag/chain queries", () => {
     const queries = buildResearchTwitterQueries({
       ...IDENTITY,
       symbolDisplay: "bad symbol!",

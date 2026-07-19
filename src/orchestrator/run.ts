@@ -39,7 +39,7 @@ import { ingestFcDiscoverySightings, runFcSourceReview } from "./fc-source-list.
 import { processListScanEngagement } from "./x-engagement.js"
 import { processFarcasterScanEngagement } from "./fc-engagement.js"
 import { applyDecisionProposals } from "./proposals.js"
-import { reconcileIndex } from "./index-reconcile.js"
+import { reconcileIndexWithReceipt } from "./index-reconcile.js"
 import { loadActiveCanaryAssignment } from "../harness/canary.js"
 import { runWalletDiscovery } from "./wallet-discovery.js"
 import { runWalletScan } from "./wallet-scan.js"
@@ -58,10 +58,15 @@ import { createJournalStore } from "./journal-store.js"
 import type { JournalStore } from "../contracts/interfaces.js"
 import { preArchiveRun } from "./pre-archive.js"
 import { appendSourceCallEventsFromArchiveInbox } from "./call-log.js"
+import { mergeFomoXClassification } from "./fomo-x-classification-merge.js"
 import { runPostRunVerifier } from "./verify.js"
 import { appendRunIncident } from "./incidents.js"
 import { validateAndPurgeAlphaDigest } from "./alpha.js"
-import { CHAT_SUMMARY_JOBS, validateAndPromoteChatReport } from "./chat-report.js"
+import {
+  CHAT_SUMMARY_JOBS,
+  buildHostChatFacts,
+  validateAndPromoteChatReport,
+} from "./chat-report.js"
 import { ingestOutbox } from "./outbox-ingest.js"
 import { deliverStagedOutbox } from "./delivery.js"
 import { renderChannelPayloads } from "./channel-render.js"
@@ -74,6 +79,9 @@ import {
   type NarrativeLogEntry,
 } from "./narrative-log.js"
 import { bridgeNarrativeTickers } from "./narrative-bridge.js"
+import { statusQuoNarratives } from "./narrative-stage-dedupe.js"
+import { validateAndEnqueueResearchCandidates } from "./research-candidates.js"
+import { migrateGenericNarrativeResearchQueue } from "../migrations/research-queue.js"
 import { retainWorkspaceArtifacts } from "./retention.js"
 import { runOutcomesSettle } from "./outcomes-settle.js"
 import { findIncompleteRuns, nextPhase } from "./resume.js"
@@ -90,7 +98,12 @@ import {
   createLiveSourceBarProvider,
   createLiveWalletBarProvider,
 } from "./market-bars.js"
-import type { DeliveryReceipt, GateReceipt, RunIncident } from "../contracts/schemas.js"
+import {
+  ChatSummaryReceiptSchema,
+  type DeliveryReceipt,
+  type GateReceipt,
+  type RunIncident,
+} from "../contracts/schemas.js"
 import {
   evaluateJobPreconditions,
   recordJobSkip,
@@ -102,8 +115,13 @@ const HOST_ONLY_JOBS = new Set([
   "fc-source-review",
   "audit",
   "outcomes-settle",
+  "delivery-retry",
   "wallet-review",
   "harness-improve",
+  "fomo-trader-sync",
+  "fomo-signal-scan",
+  "fomo-narrative-source-scan",
+  "narrative-source-review",
 ])
 
 export type RunPaths = Readonly<{
@@ -260,6 +278,11 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
 
     archive = await ensureArchive(opts.paths.archiveRoot)
     const layout = archive
+    await migrateGenericNarrativeResearchQueue({
+      agentRoot: opts.paths.agentRoot,
+      archiveRoot: opts.paths.archiveRoot,
+      nowIso: systemClock.nowIso(),
+    })
     store = createJournalStore(layout)
 
     let runId: string
@@ -304,7 +327,17 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       fypCasts: [],
       postCount: 0,
     }
+    let chatFactsExtras: {
+      proposals?: Readonly<{ accepted: number; rejected: number; blockedExternal?: number }>
+      narrativeLogReport?: unknown
+      engagementReport?: unknown
+      fcEngagementReport?: unknown
+      platformNotes?: readonly string[]
+    } = {}
     const canary = loadActiveCanaryAssignment(opts.paths.archiveRoot, runId)
+    // Hoisted for post-seal ingest/chat/discord status-quo dedupe
+    let narrativeLogBefore: NarrativeLogEntry[] = []
+    let narrativeLogAfter: NarrativeLogEntry[] | undefined
 
     if (!resumingPostSeal) {
     const collectPayload = {
@@ -372,9 +405,20 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
 
     // agent-checked — source-list-review, audit, and wallet host phases are deterministic
-    let narrativeLogBefore: NarrativeLogEntry[] = []
-    if (job.name === "narrative-scan") {
-      const retentionDays = loadConfig().narratives.retention_days
+    // Snapshot narrative heat for broadcast/chat/discord status-quo dedupe (all fanout jobs)
+    if (
+      job.name === "narrative-scan"
+      || job.name === "list-scan"
+      || job.name === "farcaster-scan"
+      || job.name === "review"
+    ) {
+      const retentionDays = (() => {
+        try {
+          return loadConfig().narratives.retention_days
+        } catch {
+          return 14
+        }
+      })()
       const path = narrativeLogPath(opts.paths.agentRoot)
       narrativeLogBefore = pruneNarrativeLogInMemory(
         existsSync(path) ? readFileSync(path, "utf8") : "",
@@ -422,25 +466,31 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ? ""
           : `If you propose watchlist verdicts, write them only to reports/${runId}/decision-proposals.json — never mutate state/.`,
         job.name === "list-scan"
-          ? `Write autonomous FYP feed-training choices to reports/${runId}/x-engagement.json (like/follow/unfollow; narrative/sentiment utility; max 2 likes per 10 minutes). Engagement targets must be post ids and authors listed only in inbox/${runId}/x-fyp-eligible.json — never operator-list or managed-list posts.`
+          ? `Write autonomous FYP feed-training choices to reports/${runId}/x-engagement.json (like/follow/unfollow; narrative/sentiment utility; max 2 likes per 10 minutes). Engagement targets must be post ids and authors listed only in inbox/${runId}/x-fyp-eligible.json — never operator-list or managed-list posts. When two or more independent authors cite the same canonical chain:address verbatim in this run's sealed inbox, you may propose at most three research nominations in reports/${runId}/research-candidates.json (never invent CAs; ticker-only nominations are rejected; host enqueues research only — never watchlist/ledger/wallets).`
           : "",
         job.name === "farcaster-scan"
-          ? `Write autonomous for-you feed-training likes to reports/${runId}/fc-engagement.json (like only on cast hashes from this run's for-you feed; max 2 likes per 10 minutes; never propose follow/unfollow).`
+          ? `Write autonomous for-you feed-training likes to reports/${runId}/fc-engagement.json (like only on cast hashes from this run's for-you feed; max 2 likes per 10 minutes; never propose follow/unfollow). When two or more independent authors cite the same canonical chain:address verbatim in this run's sealed inbox, you may propose at most three research nominations in reports/${runId}/research-candidates.json (never invent CAs; ticker-only nominations are rejected; host enqueues research only — never watchlist/ledger/wallets).`
           : "",
         job.name === "research"
           ? `If optional web search would help, write queries only to reports/${runId}/web-search-requests.json (schema 1, runId ${runId}); the host may fetch and you will not see results in this same pass.`
           : "",
         job.name === "list-scan" || job.name === "farcaster-scan" || job.name === "review" || job.name === "narrative-scan"
-          ? `If you distilled durable knowledge worth retaining, propose it only in reports/${runId}/alpha-digest.json; propose any operator broadcast only in outbox/${runId}.json as {schema:1,items:[{severity,text,refs,auditClaim}]} — never a top-level broadcasts key or bare text; text ≤280 chars. The host validates and applies both.`
+          ? `If you distilled durable knowledge worth retaining, propose it only in reports/${runId}/alpha-digest.json; propose any operator broadcast only in outbox/${runId}.json as {schema:1,items:[{severity,text,refs,auditClaim}]} — never a top-level broadcasts key or bare text; text ≤280 chars; refs must be state/… or inbox/${runId}/… paths that already exist as frozen regular files (host rejects traversal, cross-run, missing, and mutable refs). The host validates and applies both.`
           : "",
         job.name === "narrative-scan"
-          ? `Propose narrative log updates only in reports/${runId}/narrative-proposals.jsonl (one JSON object per line: slug, title, firstSeen, lastSeen, evidence, stage, optional tickers). Never write state/narratives/ directly — the host merges proposals after schema validation. Add tickers only when the evidence explicitly names them. Update lastSeen/stage for known slugs; append only genuinely new narratives. Propose one narrative-emergence (or rotation) broadcast in outbox/${runId}.json per newly appended slug only — never for re-sightings or fades.`
+          ? `Propose narrative log updates only in reports/${runId}/narrative-proposals.jsonl (one JSON object per line: slug, title, firstSeen, lastSeen, evidence, stage, optional tickers). Never write state/narratives/ directly — the host merges proposals after schema validation. Add tickers only when the evidence explicitly names them. Update lastSeen/stage for known slugs; append only genuinely new narratives. Propose one outbox broadcast per newly appended slug OR per stage change (emerging↔peaking↔fading) — never for same-stage re-sightings. Do not restate known heat in outbox text or chat-summary (e.g. omit "RH still peaking" when the log already says peaking).`
             + (collection.collectionStatus === "degraded" || collection.marketBlind
               ? " Market attention degraded this run (see narrative-collection-status / narrative-trending). Do not claim capital rotation without category evidence; fallback boosts are not rotation confirmation."
               : "")
           : "",
+        job.name === "list-scan" || job.name === "farcaster-scan"
+          ? "When broadcasting or writing chat-summary context, omit narratives whose stage is unchanged in state/narratives/log.jsonl — mention heat only when it drops or increases."
+          : "",
+        job.name === "fomo-x-source-review"
+          ? `Follow skills/fomo-x-source-review/SKILL.md. Write only reports/${runId}/fomo-x-classification.json. Cite sealed post IDs from inbox/${runId}/x-source-manifest.json only. Never mutate state/ or follow accounts.`
+          : "",
         CHAT_SUMMARY_JOBS.has(job.name)
-          ? `When you propose operator broadcasts, also write reports/${runId}/chat-summary.json (schema 1: itemIds as item:0 item:1 per outbox index or canonical sha256 event ids, 3–8 context bullets ≤280 chars each, sources as confined inbox/state/reports paths). Never write reports/chat/ directly — the host renders reports/chat/${runId}.md after validation.`
+          ? `Optionally write reports/${runId}/chat-summary.json for operator Q&A context (schema 1: itemIds empty or item:0… matching staged outbox / sha256 event ids, 3–8 context bullets ≤280 chars each, sources as confined same-run inbox/state/reports paths). Never write reports/chat/ directly — the host always renders reports/chat/${runId}.md from trusted run facts and appends validated context when present.`
           : "",
       ].filter(Boolean).join(" ")
       const session = await runOneShotSession({
@@ -518,15 +568,16 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     if (job.name === "review" && researchBeforeReview !== undefined) {
       const researchAfter = hashResearchDir(opts.paths.agentRoot)
       if (researchAfter !== researchBeforeReview) {
-        indexReconcileReport = await reconcileIndex({
+        indexReconcileReport = await reconcileIndexWithReceipt({
           agentRoot: opts.paths.agentRoot,
           state,
           nowIso: systemClock.nowIso(),
+          layout,
+          runId,
+          job: job.name,
+          archiveRoot: opts.paths.archiveRoot,
+          reportDir,
         })
-        await writeJsonRecordFsync(
-          join(runDir, "index-reconcile-receipt.json"),
-          indexReconcileReport as never,
-        )
       }
     }
 
@@ -700,6 +751,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "x-engagement-host.json"),
         `${JSON.stringify(engagementReport, null, 2)}\n`,
       )
+      chatFactsExtras = { ...chatFactsExtras, engagementReport }
       if (
         engagementReport
         && typeof engagementReport === "object"
@@ -734,6 +786,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "fc-engagement-host.json"),
         `${JSON.stringify(fcEngagementReport, null, 2)}\n`,
       )
+      chatFactsExtras = { ...chatFactsExtras, fcEngagementReport }
       if (
         fcEngagementReport
         && typeof fcEngagementReport === "object"
@@ -754,6 +807,23 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         })
       }
     }
+    let researchCandidatesReport: unknown
+    if (
+      (job.name === "list-scan" || job.name === "farcaster-scan")
+      && !opts.dryCollect
+      && !skipAgent
+    ) {
+      researchCandidatesReport = await validateAndEnqueueResearchCandidates({
+        agentRoot: opts.paths.agentRoot,
+        layout,
+        runId,
+        nowIso: systemClock.nowIso(),
+      })
+      writeFileSync(
+        join(reportDir, "research-candidates-host.json"),
+        `${JSON.stringify(researchCandidatesReport, null, 2)}\n`,
+      )
+    }
     let outcomesReport: unknown
     if ((job.name === "outcomes-settle" || job.name === "audit") && !opts.dryCollect) {
       const nowIso = systemClock.nowIso()
@@ -767,6 +837,131 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "outcomes-settle.json"),
         `${JSON.stringify(outcomesReport, null, 2)}\n`,
       )
+    }
+    let deliveryRetryReport: unknown
+    if (job.name === "delivery-retry" && !opts.dryCollect && !canary.blockExternalEffects) {
+      const routerUrl = process.env["TRENCHCOAT_ROUTER_URL"]?.trim()
+      const hmacKey = process.env["TRENCHCOAT_ROUTER_HMAC_KEY"]?.trim()
+      if (routerUrl && hmacKey) {
+        const { retryPendingDeliveries } = await import("./delivery.js")
+        const nowIso = systemClock.nowIso()
+        deliveryRetryReport = await retryPendingDeliveries({
+          layout,
+          routerUrl,
+          hmacKey,
+          nowIso,
+          fetcher: fetch,
+          prepareRun: async (pendingRunId) => {
+            const config = loadConfig()
+            const distillDay = dayKey(new Date(nowIso))
+            const distillCapPath = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
+            let usedToday = 0
+            if (existsSync(distillCapPath)) {
+              try {
+                const raw = JSON.parse(readFileSync(distillCapPath, "utf8")) as { used?: unknown }
+                if (typeof raw.used === "number" && Number.isFinite(raw.used) && raw.used >= 0) {
+                  usedToday = Math.floor(raw.used)
+                }
+              } catch {
+                usedToday = 0
+              }
+            }
+            const receiptPath = join(runArchiveDir(layout, pendingRunId), "chat-summary-receipt.json")
+            const chatSummary = (() => {
+              if (!existsSync(receiptPath)) return undefined
+              try {
+                return ChatSummaryReceiptSchema.parse(JSON.parse(readFileSync(receiptPath, "utf8")))
+              } catch {
+                return undefined
+              }
+            })()
+            const distillCfg = config.broadcast.discord_distiller
+            const telegramOverviewCfg = config.broadcast.telegram_overview
+            const retryUnchanged = (() => {
+              try {
+                const path = narrativeLogPath(opts.paths.agentRoot)
+                const entries = pruneNarrativeLogInMemory(
+                  existsSync(path) ? readFileSync(path, "utf8") : "",
+                  nowIso,
+                  config.narratives.retention_days,
+                ).entries
+                return statusQuoNarratives(entries)
+              } catch {
+                return []
+              }
+            })()
+            const distillRunSession = distillCfg.enabled || telegramOverviewCfg.enabled
+              ? async (distillArgs: Readonly<{ prompt: string; message: string }>) => {
+                const session = await runOneShotSession({
+                  prompt: `${distillArgs.prompt}\n\n${distillArgs.message}`,
+                  cwd: opts.paths.agentRoot,
+                  mode: "ask",
+                  sandbox: true,
+                  timeoutMs: 120_000,
+                })
+                if (session.status !== "finished" || !session.text) {
+                  throw new Error(session.error ?? "distill session failed")
+                }
+                return session.text
+              }
+              : undefined
+            const rendered = await renderChannelPayloads({
+              agentRoot: opts.paths.agentRoot,
+              layout,
+              runId: pendingRunId,
+              nowIso,
+              ...(chatSummary ? { chatSummary } : {}),
+              discordBudget: {
+                dailyBudget: config.broadcast.daily_budget,
+                urgentCeiling: config.broadcast.urgent_ceiling,
+              },
+              distiller: {
+                enabled: distillCfg.enabled,
+                dailyCap: distillCfg.daily_cap,
+                usedToday,
+                ...(distillRunSession && distillCfg.enabled
+                  ? { runSession: distillRunSession }
+                  : {}),
+              },
+              telegramOverview: {
+                enabled: telegramOverviewCfg.enabled,
+                dailyCap: telegramOverviewCfg.daily_cap,
+                usedToday,
+                ...(distillRunSession && telegramOverviewCfg.enabled
+                  ? { runSession: distillRunSession }
+                  : {}),
+              },
+              ...(retryUnchanged.length > 0 ? { unchangedStages: retryUnchanged } : {}),
+            })
+            if (rendered.distillUsedToday !== usedToday) {
+              await writeJsonRecordFsync(distillCapPath, {
+                schema: 1,
+                day: distillDay,
+                used: rendered.distillUsedToday,
+                updatedAt: nowIso,
+              } as never)
+            }
+          },
+        })
+        writeFileSync(
+          join(reportDir, "delivery-retry.json"),
+          `${JSON.stringify(deliveryRetryReport, null, 2)}\n`,
+        )
+        const report = deliveryRetryReport as {
+          receipts?: Array<{ status: string, eventId: string }>
+        }
+        for (const receipt of report.receipts ?? []) {
+          if (receipt.status !== "conflict") continue
+          await appendRunIncident(layout, runId, {
+            schema: 1,
+            incidentId: sha256Json({ runId, eventId: receipt.eventId, status: receipt.status }),
+            runId,
+            kind: "delivery-conflict",
+            message: `delivery-retry conflict for ${receipt.eventId}`.slice(0, 500),
+            occurredAt: nowIso,
+          } satisfies RunIncident)
+        }
+      }
     }
     let auditReport: unknown
     if (job.name === "audit" && !opts.dryCollect) {
@@ -836,7 +1031,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         `${JSON.stringify(mergeReport, null, 2)}\n`,
       )
       const path = narrativeLogPath(opts.paths.agentRoot)
-      const narrativeLogAfter = pruneNarrativeLogInMemory(
+      narrativeLogAfter = pruneNarrativeLogInMemory(
         existsSync(path) ? readFileSync(path, "utf8") : "",
         systemClock.nowIso(),
         retentionDays,
@@ -865,11 +1060,30 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "narrative-log-prune.json"),
         `${JSON.stringify(narrativeLogReport, null, 2)}\n`,
       )
-      await reconcileIndex({
+      chatFactsExtras = { ...chatFactsExtras, narrativeLogReport }
+      indexReconcileReport = await reconcileIndexWithReceipt({
         agentRoot: opts.paths.agentRoot,
         state,
         nowIso: systemClock.nowIso(),
+        layout,
+        runId,
+        job: job.name,
+        archiveRoot: opts.paths.archiveRoot,
+        reportDir,
       })
+    }
+    let fomoXClassificationReport: unknown
+    if (job.name === "fomo-x-source-review" && !skipAgent) {
+      fomoXClassificationReport = await mergeFomoXClassification({
+        agentRoot: opts.paths.agentRoot,
+        archiveRoot: opts.paths.archiveRoot,
+        runId,
+        nowIso: systemClock.nowIso(),
+      })
+      writeFileSync(
+        join(reportDir, "fomo-x-classification-merge.json"),
+        `${JSON.stringify(fomoXClassificationReport, null, 2)}\n`,
+      )
     }
     const watchlist = state.loadWatchlist()
     if (job.name === "research" && researchDue) {
@@ -915,11 +1129,42 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       ...(harnessImproveReport ? { harnessImproveReport } : {}),
       ...(engagementReport ? { engagementReport } : {}),
       ...(fcEngagementReport ? { fcEngagementReport } : {}),
+      ...(researchCandidatesReport ? { researchCandidatesReport } : {}),
       ...(outcomesReport ? { outcomesReport } : {}),
       ...(auditReport ? { auditReport } : {}),
       ...(narrativeLogReport ? { narrativeLogReport } : {}),
       ...(narrativeBridgeReport ? { narrativeBridgeReport } : {}),
       ...(indexReconcileReport ? { indexReconcileReport } : {}),
+    }
+    const platformNotes: string[] = []
+    if (collection.collectionStatus) {
+      platformNotes.push(`collectionStatus=${collection.collectionStatus}`)
+    }
+    if (collection.marketBlind) {
+      platformNotes.push(
+        `marketBlind=${collection.marketBlindReason ?? "true"}`,
+      )
+    }
+    if (job.name === "farcaster-scan") {
+      platformNotes.push(
+        `fypCasts=${collection.fypCasts.length}`,
+        `fcDiscovery=${collection.fcDiscoverySightings.length}`,
+      )
+    }
+    if (job.name === "list-scan") {
+      platformNotes.push(
+        `fypPosts=${collection.fypPosts.length}`,
+        `discovery=${collection.discoverySightings.length}`,
+      )
+    }
+    chatFactsExtras = {
+      ...chatFactsExtras,
+      proposals: {
+        accepted: proposalReport.accepted,
+        rejected: proposalReport.rejected,
+        blockedExternal: proposalReport.blockedExternal,
+      },
+      ...(platformNotes.length > 0 ? { platformNotes } : {}),
     }
     journal = await advance(store, opts.paths.agentRoot, journal, "host-prepared", hostPrepared)
 
@@ -970,10 +1215,15 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         resolveGate,
         commit: true,
       })
-      await reconcileIndex({
+      indexReconcileReport = await reconcileIndexWithReceipt({
         agentRoot: opts.paths.agentRoot,
         state,
         nowIso: systemClock.nowIso(),
+        layout,
+        runId,
+        job: job.name,
+        archiveRoot: opts.paths.archiveRoot,
+        reportDir,
       })
     }
     } // end !resumingPostSeal
@@ -1019,20 +1269,22 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           daily_budget: 5,
           urgent_ceiling: 10,
           discord_distiller: { enabled: false, daily_cap: 10 },
+          telegram_overview: { enabled: false, daily_cap: 10 },
         }
       }
     })()
     const ingestNowIso = systemClock.nowIso()
+    const unchangedStages = statusQuoNarratives(narrativeLogBefore, narrativeLogAfter)
     const ingest = journal.phase === "events-staged" || canary.blockExternalEffects
       ? { staged: 0, rejected: 0, rejects: [] as const, items: [] as const }
       : await ingestOutbox({
         agentRoot: opts.paths.agentRoot,
         layout: layout,
         runId,
-        dailyBudget: broadcast.daily_budget,
-        urgentCeiling: broadcast.urgent_ceiling,
         nowIso: ingestNowIso,
         ...(collection.marketBlind ? { marketBlind: true } : {}),
+        ...(narrativeLogBefore.length > 0 ? { narrativeLogBefore } : {}),
+        ...(narrativeLogAfter ? { narrativeLogAfter } : {}),
       })
     const chatSummary = journal.phase === "alpha-purged" && CHAT_SUMMARY_JOBS.has(job.name)
       ? await validateAndPromoteChatReport({
@@ -1041,27 +1293,53 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         runId,
         nowIso: ingestNowIso,
         ingest,
+        facts: buildHostChatFacts({
+          job: job.name,
+          runStatus: journal.status,
+          collection,
+          ...(researchDue ? { researchDue } : {}),
+          ...(chatFactsExtras.proposals ? { proposals: chatFactsExtras.proposals } : {}),
+          ...(chatFactsExtras.narrativeLogReport
+            ? { narrativeLogReport: chatFactsExtras.narrativeLogReport }
+            : {}),
+          ...(chatFactsExtras.engagementReport
+            ? { engagementReport: chatFactsExtras.engagementReport }
+            : {}),
+          ...(chatFactsExtras.fcEngagementReport
+            ? { fcEngagementReport: chatFactsExtras.fcEngagementReport }
+            : {}),
+          ...(chatFactsExtras.platformNotes
+            ? { platformNotes: chatFactsExtras.platformNotes }
+            : {}),
+          ingest,
+          receiptPaths: [
+            `reports/${runId}/agent.md`,
+            ...(job.name === "list-scan" ? [`reports/${runId}/x-engagement-host.json`] : []),
+            ...(job.name === "farcaster-scan" ? [`reports/${runId}/fc-engagement-host.json`] : []),
+          ],
+        }),
         blockPromotion: canary.blockExternalEffects,
+        ...(unchangedStages.length > 0 ? { unchangedStages } : {}),
       })
       : undefined
     if (
       chatSummary
-      && !chatSummary.promoted
-      && typeof chatSummary.reason === "string"
-      && /invalid-json|schema-mismatch|not-regular-file/u.test(chatSummary.reason)
+      && typeof chatSummary.proposalReason === "string"
+      && /invalid-json|schema-mismatch|not-regular-file/u.test(chatSummary.proposalReason)
     ) {
       await appendRunIncident(layout, runId, {
         schema: 1,
-        incidentId: sha256Json({ runId, kind: "malformed-chat-summary", reason: chatSummary.reason }),
+        incidentId: sha256Json({ runId, kind: "malformed-chat-summary", reason: chatSummary.proposalReason }),
         runId,
         kind: "other",
-        message: `malformed chat-summary proposal: ${chatSummary.reason}`,
+        message: `malformed chat-summary proposal: ${chatSummary.proposalReason}`,
         occurredAt: ingestNowIso,
       })
     }
     let channelRender: Awaited<ReturnType<typeof renderChannelPayloads>> | undefined
     if (journal.phase === "alpha-purged" && !canary.blockExternalEffects && ingest.staged > 0) {
       const distillCfg = broadcast.discord_distiller
+      const telegramOverviewCfg = broadcast.telegram_overview
       const distillDay = dayKey(new Date(ingestNowIso))
       const distillCapPath = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
       let distillUsedToday = 0
@@ -1075,7 +1353,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           distillUsedToday = 0
         }
       }
-      const runSession = distillCfg.enabled
+      const runSession = distillCfg.enabled || telegramOverviewCfg.enabled
         ? async (args: Readonly<{ prompt: string; message: string }>) => {
           const session = await runOneShotSession({
             prompt: `${args.prompt}\n\n${args.message}`,
@@ -1096,12 +1374,23 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         runId,
         nowIso: ingestNowIso,
         ...(chatSummary ? { chatSummary } : {}),
+        discordBudget: {
+          dailyBudget: broadcast.daily_budget,
+          urgentCeiling: broadcast.urgent_ceiling,
+        },
         distiller: {
           enabled: distillCfg.enabled,
           dailyCap: distillCfg.daily_cap,
           usedToday: distillUsedToday,
-          ...(runSession ? { runSession } : {}),
+          ...(runSession && distillCfg.enabled ? { runSession } : {}),
         },
+        telegramOverview: {
+          enabled: telegramOverviewCfg.enabled,
+          dailyCap: telegramOverviewCfg.daily_cap,
+          usedToday: distillUsedToday,
+          ...(runSession && telegramOverviewCfg.enabled ? { runSession } : {}),
+        },
+        ...(unchangedStages.length > 0 ? { unchangedStages } : {}),
       })
       if (channelRender.distillUsedToday !== distillUsedToday) {
         await writeJsonRecordFsync(distillCapPath, {
@@ -1158,12 +1447,18 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           rendered: channelRender.rendered,
           skipped: channelRender.skipped,
           usedDistill: channelRender.usedDistill,
+          discordBudgetSkipped: channelRender.discordBudgetSkipped,
         },
       } : {}),
       ...(chatSummary ? {
         chatSummary: {
           promoted: chatSummary.promoted,
           ...(chatSummary.reason ? { reason: chatSummary.reason } : {}),
+          ...(chatSummary.proposalReason ? { proposalReason: chatSummary.proposalReason } : {}),
+          ...(chatSummary.proposalAccepted !== undefined
+            ? { proposalAccepted: chatSummary.proposalAccepted }
+            : {}),
+          ...(chatSummary.hostOnly !== undefined ? { hostOnly: chatSummary.hostOnly } : {}),
         },
       } : {}),
     })

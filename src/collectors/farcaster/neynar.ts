@@ -5,6 +5,9 @@ export const NEYNAR_HOST = "api.neynar.com"
 export const NEYNAR_ROOT = `https://${NEYNAR_HOST}`
 
 const RATE = { capacity: 500, refillPerSecond: 500 / 60 } as const
+/** Neynar `/feed/trending` rejects limit > 10 (ExceededMaxLimit) */
+const TRENDING_MAX_LIMIT = 10
+const FEED_MAX_LIMIT = 50
 
 export type FarcasterEngagement = Readonly<{
   likes?: number
@@ -155,7 +158,18 @@ async function neynarGet(
       "x-api-key": apiKey,
     },
   })
-  if (!response.ok) throw new Error(`Neynar request failed with HTTP ${response.status}`)
+  if (!response.ok) {
+    let detail = ""
+    try {
+      const text = await response.text()
+      if (text.trim()) detail = `: ${text.slice(0, 200)}`
+    } catch {
+      // ignore body read failures
+    }
+    throw new Error(
+      `Neynar request failed with HTTP ${response.status} ${url.pathname}${detail}`,
+    )
+  }
   return readJsonBody(response)
 }
 
@@ -172,7 +186,9 @@ export async function fetchNeynarFeed(
 ): Promise<FarcasterFeed> {
   const key = requireApiKey(apiKey)
   assertCursor(opts.cursor)
-  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 50)
+  const maxLimit = kind === "trending" ? TRENDING_MAX_LIMIT : FEED_MAX_LIMIT
+  const defaultLimit = Math.min(25, maxLimit)
+  const limit = Math.min(Math.max(opts.limit ?? defaultLimit, 1), maxLimit)
   const query: Record<string, string> = { limit: String(limit) }
   if (opts.cursor) query["cursor"] = opts.cursor
 
@@ -201,6 +217,20 @@ export async function fetchNeynarFeed(
   }
 
   return parseFeedPayload(await neynarGet(fetcher, key, path, query))
+}
+
+/** One-shot trending recovery for stale For You — no cursor, no cache-bust params */
+export async function fetchNeynarTrendingFallback(
+  fetcher: FetchLike,
+  apiKey: string,
+  opts: Readonly<{ limit?: number }> = {},
+): Promise<FarcasterFeed> {
+  return fetchNeynarFeed(
+    fetcher,
+    apiKey,
+    "trending",
+    opts.limit === undefined ? {} : { limit: opts.limit },
+  )
 }
 
 export async function searchCasts(

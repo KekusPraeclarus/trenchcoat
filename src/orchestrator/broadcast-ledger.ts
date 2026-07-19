@@ -36,9 +36,10 @@ export type ReserveResult = Readonly<{
 }>
 
 /**
- * Reserve one broadcast slot, idempotent by reservationKey. Urgent items draw
- * against the urgent ceiling, everything else against the daily budget. A repeated
- * key returns the existing ledger without double counting, so retries are safe.
+ * Reserve one Discord broadcast slot, idempotent by reservationKey. Urgent items
+ * draw against the urgent ceiling; everything else against the daily Discord
+ * budget. Telegram is not gated here. A repeated key returns the existing ledger
+ * without double counting, so retries are safe.
  */
 export async function reserveBroadcast(args: Readonly<{
   layout: ArchiveLayout

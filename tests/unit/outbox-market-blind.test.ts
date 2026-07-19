@@ -39,6 +39,8 @@ async function ingest(items: unknown[], marketBlind: boolean) {
   const agentRoot = join(root, "agent")
   const layout = await ensureArchive(join(root, "archive"))
   mkdirSync(join(agentRoot, "outbox"), { recursive: true })
+  mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+  writeFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), "")
   writeFileSync(
     join(agentRoot, "outbox", `${RUN_ID}.json`),
     `${JSON.stringify({ schema: 1, items }, null, 2)}\n`,
@@ -47,8 +49,6 @@ async function ingest(items: unknown[], marketBlind: boolean) {
     agentRoot,
     layout,
     runId: RUN_ID,
-    dailyBudget: 5,
-    urgentCeiling: 10,
     nowIso: NOW,
     marketBlind,
   })

@@ -64,6 +64,7 @@ const DISCOVERY_ORIGINS: readonly SourceDiscoveryOrigin[] = [
   "fyp",
   "operator-list-1",
   "operator-list-2",
+  "fomo-leaderboard",
 ]
 
 export function isDiscoveryOrigin(value: string): value is SourceDiscoveryOrigin {

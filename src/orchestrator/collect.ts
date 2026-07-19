@@ -7,6 +7,7 @@ import {
 import {
   scrapeConfiguredFarcaster,
   type FarcasterFeedAssessment,
+  buildFarcasterCollectionReceipt,
   castAgeSec,
   freshnessTierForAge,
   summarizeFarcasterAssessments,
@@ -30,8 +31,13 @@ import {
   collectResearchDossier,
   resolveResearchSubject,
 } from "./research-collect.js"
-import { collectReview } from "./review-collect.js"
+import { capManifestLines, collectReview, listPendingAlphaPaths } from "./review-collect.js"
 import { writeXFypEligibleSnapshot } from "./x-fyp-eligible.js"
+import { collectFomoTraderSync } from "./fomo-trader-collect.js"
+import { collectFomoSignalScan } from "./fomo-signal-collect.js"
+import { collectFomoXSourceReview } from "./fomo-x-source-review.js"
+import { collectFomoNarrativeSourceScan } from "./fomo-narrative-source-scan.js"
+import { runNarrativeSourceReview } from "./narrative-source-review.js"
 
 export type DiscoverySighting = Readonly<{
   handle: string
@@ -138,6 +144,7 @@ export async function collectForJob(args: Readonly<{
     case "fc-source-review":
     case "audit":
     case "outcomes-settle":
+    case "delivery-retry":
     case "wallet-review":
     case "harness-improve":
     case "recover":
@@ -155,6 +162,42 @@ export async function collectForJob(args: Readonly<{
     case "wallet-scan-solana":
     case "wallet-scan-evm":
       return collectWalletEvidence(args, job)
+    case "fomo-trader-sync":
+      return collectFomoTraderSync({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+        ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+      })
+    case "fomo-signal-scan":
+      return collectFomoSignalScan({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+        ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+      })
+    case "fomo-x-source-review":
+      return collectFomoXSourceReview({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+      })
+    case "fomo-narrative-source-scan":
+      return collectFomoNarrativeSourceScan({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+      })
+    case "narrative-source-review":
+      return collectNarrativeSourceReviewHost(args)
     default: {
       const _exhaustive: never = job
       throw new Error(`Unhandled job collection policy: ${String(_exhaustive)}`)
@@ -356,6 +399,48 @@ async function collectHostOnly(
   }
 }
 
+async function collectNarrativeSourceReviewHost(
+  args: Readonly<{
+    runId: string
+    writer: SnapshotWriter
+    fetchedAt: string
+    agentRoot: string
+    archiveRoot: string
+  }>,
+): Promise<CollectionSummary> {
+  const report = await runNarrativeSourceReview({
+    agentRoot: args.agentRoot,
+    nowIso: args.fetchedAt,
+    runId: args.runId,
+    archiveRoot: args.archiveRoot,
+  })
+  await args.writer.writeInbox(args.runId, "collection-status", {
+    source: "host.narrative-source-review",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:narrative-source-review`,
+      text: [
+        `kind=review ok=${report.ok} reason=${report.reason}`,
+        `promoted=${report.promoted} demoted=${report.demoted}`,
+        `followed=${report.followed} unfollowed=${report.unfollowed}`,
+        report.followSkippedReason ? `followSkipped=${report.followSkippedReason}` : "",
+      ].filter(Boolean).join(" "),
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: ["collection-status"],
+    postCount: 1,
+    skipAgent: true,
+    collectionStatus: report.reason,
+    collectionKind: "host-only",
+  }
+}
+
 async function collectUnavailable(
   args: Readonly<{ runId: string; writer: SnapshotWriter; fetchedAt: string }>,
   job: JobName,
@@ -387,6 +472,7 @@ async function collectResearch(args: Readonly<{
   runId: string
   writer: SnapshotWriter
   fetchedAt: string
+  archiveRoot?: string
   researchSubject?: Readonly<{
     subject: string
     queueId?: string
@@ -451,6 +537,8 @@ async function collectResearch(args: Readonly<{
     subject: args.researchSubject.subject,
     identity: resolved.identity,
     fetchedAt: args.fetchedAt,
+    pairs: resolved.pairs,
+    ...(args.archiveRoot ? { archiveRoot: args.archiveRoot } : {}),
     ...(args.researchSubject.queueId ? { queueId: args.researchSubject.queueId } : {}),
     ...(args.fetcher ? { fetcher: args.fetcher } : {}),
   })
@@ -503,10 +591,37 @@ async function writeResearchStatus(
   })
 }
 
+/** Path-only inbox snapshot so list-scan can digest alpha-queue (INV-Q1). */
+export async function writeListScanAlphaManifest(args: Readonly<{
+  runId: string
+  writer: SnapshotWriter
+  fetchedAt: string
+  agentRoot: string
+}>): Promise<Readonly<{ snapshotName: "list-scan-alpha-manifest"; pendingCount: number }>> {
+  const pendingAlphaPaths = listPendingAlphaPaths(args.agentRoot)
+  const alphaLines = capManifestLines(
+    pendingAlphaPaths.map((path) => `path=${path}`),
+  )
+  await args.writer.writeInbox(args.runId, "list-scan-alpha-manifest", {
+    source: "host.list-scan-collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: (alphaLines.length > 0 ? alphaLines : ["pendingAlpha=(none)"]).map((text, index) => ({
+      provenance: `${args.runId}:list-scan-alpha-manifest:${index}`,
+      text,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    })),
+  })
+  return { snapshotName: "list-scan-alpha-manifest", pendingCount: pendingAlphaPaths.length }
+}
+
 async function collectListScan(args: Readonly<{
   runId: string
   writer: SnapshotWriter
   fetchedAt: string
+  agentRoot: string
 }>): Promise<CollectionSummary> {
   const config = loadConfig()
   const bundles = await scrapeConfiguredTwitter(config)
@@ -557,6 +672,9 @@ async function collectListScan(args: Readonly<{
       posts: fypPosts,
     })
   }
+
+  const alpha = await writeListScanAlphaManifest(args)
+  names.push(alpha.snapshotName)
 
   return {
     snapshotNames: names,
@@ -641,6 +759,8 @@ async function collectFarcaster(args: Readonly<{
   const seenKeys = new Set<string>()
   const fypCasts: CollectionSummary["fypCasts"][number][] = []
   let postCount = 0
+  const assessments = bundles.map((b) => b.assessment)
+  const receipt = buildFarcasterCollectionReceipt(assessments)
 
   for (const bundle of bundles) {
     const assessment = bundle.assessment
@@ -659,17 +779,21 @@ async function collectFarcaster(args: Readonly<{
             origin,
           })
         }
-        if (origin === "fc-fyp") {
-          fypAuthors.add(cast.author)
-          fypCasts.push({
-            hash: cast.hash,
-            author: cast.author,
-            authorFid: cast.authorFid,
-            text: cast.text,
-            timestamp: cast.timestamp,
-            ...(cast.url ? { url: cast.url } : {}),
-          })
-        }
+      }
+    }
+    // Engagement allowlist: verified live For You only — fallback/trending never authorizes likes
+    if (assessment.engagementEligible && assessment.target.kind === "for_you") {
+      for (const cast of assessment.eligibleCasts) {
+        if (freshnessTierForAge(castAgeSec(args.fetchedAt, cast.timestamp)) !== "live") continue
+        fypAuthors.add(cast.author)
+        fypCasts.push({
+          hash: cast.hash,
+          author: cast.author,
+          authorFid: cast.authorFid,
+          text: cast.text,
+          timestamp: cast.timestamp,
+          ...(cast.url ? { url: cast.url } : {}),
+        })
       }
     }
     await writeFarcasterBundle(args, name, assessment)
@@ -692,7 +816,7 @@ async function collectFarcaster(args: Readonly<{
         : "following-populated")
     : "following-not-targeted"
   const fypAssessment = bundles.find((b) => b.assessment.target.kind === "for_you")?.assessment
-  const skipAgent = Boolean(fypAssessment?.skipAgent)
+  const skipAgent = receipt.skipAgent
 
   await args.writer.writeInbox(args.runId, "farcaster-collection-status", {
     source: "host.collector",
@@ -703,7 +827,10 @@ async function collectFarcaster(args: Readonly<{
       text: [
         `botFid=${config.farcaster.bot_fid}`,
         `targets=${bundles.map((b) => `${b.assessment.target.label}:${b.assessment.counts.total}`).join(",")}`,
-        `eligible=${summarizeFarcasterAssessments(bundles.map((b) => b.assessment))}`,
+        `eligible=${summarizeFarcasterAssessments(assessments)}`,
+        `usableEvidence=${receipt.usableEvidenceCount}`,
+        `fallbackUsed=${receipt.fallbackUsed}`,
+        `engagementDisabled=${receipt.engagementDisabled}`,
         `desiredManagedFollows=${desiredManaged}`,
         `followingCount=${followingCount}`,
         `followingStatus=${followingStatus}`,
@@ -718,6 +845,21 @@ async function collectFarcaster(args: Readonly<{
     }],
   })
   names.push("farcaster-collection-status")
+
+  await args.writer.writeInbox(args.runId, "farcaster-collection-receipt", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:fc-receipt`,
+      text: JSON.stringify(receipt),
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+      dedupeKey: `${args.runId}:fc-receipt`,
+    }],
+  })
+  names.push("farcaster-collection-receipt")
 
   return {
     snapshotNames: names,
@@ -734,9 +876,14 @@ async function collectFarcaster(args: Readonly<{
     ...(skipAgent
       ? {
         skipAgent: true,
-        collectionStatus: fypAssessment?.rejectReason ?? "fyp-rejected",
+        collectionStatus: fypAssessment?.rejectReason
+          ?? (receipt.usableEvidenceCount === 0 ? "no-usable-fc-evidence" : "fc-unusable"),
       }
-      : { collectionStatus: followingStatus }),
+      : {
+        collectionStatus: receipt.engagementDisabled
+          ? `analysis-only:${followingStatus}`
+          : followingStatus,
+      }),
     collectionKind: "external",
   }
 }

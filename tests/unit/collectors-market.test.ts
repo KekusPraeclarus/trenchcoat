@@ -23,6 +23,26 @@ describe("market collectors", () => {
     expect(pair.buys24h + pair.sells24h).toBe(200)
   })
 
+  it("skips DexScreener pairs with overlong or missing token fields", () => {
+    const good = (fixture("dex-pair.json") as { pairs: unknown[] }).pairs[0]!
+    const pairs = parseDexScreenerPairs({
+      pairs: [
+        {
+          ...good as object,
+          baseToken: {
+            address: "Token11111111111111111111111111111111111111",
+            symbol: "x".repeat(513),
+            name: "Bad",
+          },
+        },
+        good,
+        { chainId: "solana" },
+      ],
+    })
+    expect(pairs).toHaveLength(1)
+    expect(pairs[0]?.baseToken.symbol).toBe("TEST")
+  })
+
   it("version-tags deterministic indicator helpers", () => {
     expect(computeVolumeZScore(candles(192), 3_600).featureSpecVersion).toBe(FEATURE_SPEC_VERSION)
     expect(computeEmaStructure(candles(50), 3_600).value?.structure).toBe("bullish")

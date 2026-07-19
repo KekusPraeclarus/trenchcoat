@@ -1,12 +1,32 @@
 ---
-description: Provider knowledge — Discord webhook fanout from the router.
+description: Provider knowledge — Discord webhook fanout (router) and Gateway research bot (isolated).
 scope: project
 status: active
+last_verified: 2026-07-19
 ---
 
 # Discord
 
+## Broadcast webhook (router)
+
 - Router-only webhook delivery with `wait=true`
 - `allowed_mentions.parse=[]` always
 - At-least-once; ambiguous timeouts may duplicate
-- Dedicated E2E webhook distinct from production
+- Consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render (Telegram uncapped)
+- Env: `DISCORD_WEBHOOK_URL`
+
+## Research bot (Gateway)
+
+- **Separate token**: `DISCORD_RESEARCH_BOT_TOKEN` — never the broadcast webhook
+- Intents: Guilds, GuildMessages, Message Content (privileged) — required so
+  plain channel text works without an @mention
+- Channel permissions: View Channels, Read Message History, Send Messages,
+  Embed Links, Add Reactions
+- No @mention required in allowed channels
+- FIFO research queue (one runner); ✅ when claimed; `chat.discord.model`
+  defaults to `composer-2.5-fast`
+- State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
+- Does not use main `agent/.lock` or research queue
+- Config: schema 10 `chat.discord.*` (disabled by default)
+- CLI: `tc listen discord`, `tc discord watchlist scan`
+- See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010

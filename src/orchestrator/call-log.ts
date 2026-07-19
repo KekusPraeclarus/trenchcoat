@@ -9,6 +9,7 @@ import {
   SourceCallEventSchema,
   type SourceCallEvent,
 } from "../contracts/schemas.js"
+import { provenanceToSource } from "./rug-dock.js"
 
 export function sourceCallLogPath(layout: ArchiveLayout): string {
   return join(layout.root, "source-call-log.jsonl")
@@ -16,10 +17,15 @@ export function sourceCallLogPath(layout: ArchiveLayout): string {
 
 /**
  * Provenance strings carry '@' and ':' which SafeId forbids, and ':' would break the
- * sourceId:token subjectId split. Map to a stable, colon-free SafeId, bounded so the
- * later subjectId stays within SafeId length.
+ * sourceId:token subjectId split. Prefer lifecycle-compatible ids (x_handle) from
+ * provenanceToSource; fall back to a colon-free SafeId for unknown platforms.
  */
-function toSafeSourceId(provenance: string): string {
+export function toSafeSourceId(provenance: string): string {
+  const parts = provenance.split(":")
+  if (parts.length >= 2) {
+    const mapped = provenanceToSource(`${parts[0]}:${parts[1]}`)
+    if (mapped) return mapped.sourceId
+  }
   const cleaned = provenance
     .replace(/@/gu, "")
     .replace(/:/gu, ".")
@@ -29,7 +35,7 @@ function toSafeSourceId(provenance: string): string {
   return /^[A-Za-z0-9]/u.test(bounded) ? bounded : `s${bounded}`.slice(0, 80)
 }
 
-function eventId(fields: Readonly<{
+export function sourceCallEventId(fields: Readonly<{
   sourceId: string
   rawAddress: string
   mentionedAt: string
@@ -39,15 +45,91 @@ function eventId(fields: Readonly<{
   return `sc_${digest}`
 }
 
-function readExistingEventIds(path: string): Set<string> {
+export function readExistingSourceCallEventIds(path: string): Set<string> {
   const ids = new Set<string>()
   if (!existsSync(path)) return ids
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line.trim()) continue
-    const parsed = SourceCallEventSchema.safeParse(JSON.parse(line))
-    if (parsed.success) ids.add(parsed.data.eventId)
+    try {
+      const parsed = SourceCallEventSchema.safeParse(JSON.parse(line))
+      if (parsed.success) ids.add(parsed.data.eventId)
+    } catch {
+      continue
+    }
   }
   return ids
+}
+
+export type CallLogItemInput = Readonly<{
+  provenance: string
+  text: string
+  ts: string
+  clusterId?: string
+}>
+
+export type AppendCallEventsReport = Readonly<{
+  eventsExtracted: number
+  appended: number
+  skipped: number
+  events: readonly SourceCallEvent[]
+}>
+
+/** Idempotent append of bullish CA call events from snapshot-shaped items. */
+export async function appendSourceCallEventsFromItems(
+  layout: ArchiveLayout,
+  items: readonly CallLogItemInput[],
+  opts?: Readonly<{ sourceIdOverride?: string }>,
+): Promise<AppendCallEventsReport> {
+  const logPath = sourceCallLogPath(layout)
+  const existing = readExistingSourceCallEventIds(logPath)
+  const appendedThisRun = new Set<string>()
+  const events: SourceCallEvent[] = []
+  let eventsExtracted = 0
+  let appended = 0
+  let skipped = 0
+
+  for (const item of items) {
+    const rawItemHash = sha256Json(item as never)
+    const sourceId = opts?.sourceIdOverride ?? toSafeSourceId(item.provenance)
+    const calls = extractCallEvents({
+      sourceId,
+      provenance: item.provenance,
+      text: item.text,
+      mentionedAt: item.ts,
+    })
+    for (const call of calls) {
+      eventsExtracted += 1
+      const idSource = opts?.sourceIdOverride ?? toSafeSourceId(call.provenance)
+      const id = sourceCallEventId({
+        sourceId: idSource,
+        rawAddress: call.rawAddress,
+        mentionedAt: call.mentionedAt,
+        provenance: call.provenance,
+      })
+      if (existing.has(id) || appendedThisRun.has(id)) {
+        skipped += 1
+        continue
+      }
+      const event: SourceCallEvent = SourceCallEventSchema.parse({
+        schema: 1,
+        eventId: id,
+        sourceId: idSource,
+        provenance: call.provenance,
+        rawAddress: call.rawAddress,
+        chainHint: call.chainHint,
+        mentionedAt: call.mentionedAt,
+        parserVersion: 1,
+        rawItemHash,
+        ...(item.clusterId !== undefined ? { clusterId: item.clusterId } : {}),
+      })
+      await appendJsonl(logPath, event)
+      appendedThisRun.add(id)
+      events.push(event)
+      appended += 1
+    }
+  }
+
+  return { eventsExtracted, appended, skipped, events }
 }
 
 export type CallLogAppendReport = Readonly<{
@@ -70,9 +152,6 @@ export async function appendSourceCallEventsFromArchiveInbox(
   _agentRoot?: string,
 ): Promise<CallLogAppendReport> {
   const inboxDir = join(layout.runs, runId, "inbox")
-  const logPath = sourceCallLogPath(layout)
-  const existing = readExistingEventIds(logPath)
-
   let filesScanned = 0
   let eventsExtracted = 0
   let appended = 0
@@ -82,56 +161,38 @@ export async function appendSourceCallEventsFromArchiveInbox(
     return { runId, filesScanned, eventsExtracted, appended, skipped }
   }
 
-  const appendedThisRun = new Set<string>()
+  const items: CallLogItemInput[] = []
   for (const name of readdirSync(inboxDir).sort()) {
     if (!name.endsWith(".json")) continue
-    const parsed = SnapshotEnvelopeSchema.safeParse(
-      JSON.parse(readFileSync(join(inboxDir, name), "utf8")),
-    )
+    let parsed
+    try {
+      parsed = SnapshotEnvelopeSchema.safeParse(
+        JSON.parse(readFileSync(join(inboxDir, name), "utf8")),
+      )
+    } catch {
+      continue
+    }
     if (!parsed.success) continue
     filesScanned += 1
 
     for (const item of parsed.data.items) {
-      const rawItemHash = sha256Json(item as never)
-      const calls = extractCallEvents({
-        sourceId: toSafeSourceId(item.provenance),
+      items.push({
         provenance: item.provenance,
         text: item.text,
-        mentionedAt: item.ts,
+        ts: item.ts,
+        ...(item.clusterId !== undefined ? { clusterId: item.clusterId } : {}),
       })
-      for (const call of calls) {
-        eventsExtracted += 1
-        const sourceId = toSafeSourceId(call.provenance)
-        const id = eventId({
-          sourceId,
-          rawAddress: call.rawAddress,
-          mentionedAt: call.mentionedAt,
-          provenance: call.provenance,
-        })
-        if (existing.has(id) || appendedThisRun.has(id)) {
-          skipped += 1
-          continue
-        }
-        const event: SourceCallEvent = SourceCallEventSchema.parse({
-          schema: 1,
-          eventId: id,
-          sourceId,
-          provenance: call.provenance,
-          rawAddress: call.rawAddress,
-          chainHint: call.chainHint,
-          mentionedAt: call.mentionedAt,
-          parserVersion: 1,
-          rawItemHash,
-          ...(item.clusterId !== undefined ? { clusterId: item.clusterId } : {}),
-        })
-        await appendJsonl(logPath, event)
-        appendedThisRun.add(id)
-        appended += 1
-      }
     }
   }
 
-  return { runId, filesScanned, eventsExtracted, appended, skipped }
+  const report = await appendSourceCallEventsFromItems(layout, items)
+  return {
+    runId,
+    filesScanned,
+    eventsExtracted: report.eventsExtracted,
+    appended: report.appended,
+    skipped: report.skipped,
+  }
 }
 
 export function readSourceCallLog(layout: ArchiveLayout): SourceCallEvent[] {

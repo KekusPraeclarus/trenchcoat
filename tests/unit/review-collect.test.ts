@@ -55,7 +55,7 @@ async function seedSealedRun(args: Readonly<{
 }
 
 describe("review prerequisites", () => {
-  it("skips when no sealed reports, pending alpha, or watchlist scope", async () => {
+  it("keeps review in scope when health finds empty queues without reports", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-review-empty-"))
     const agentRoot = join(root, "agent")
     const archiveRoot = join(root, "archive")
@@ -71,10 +71,11 @@ describe("review prerequisites", () => {
       maxReports: 30,
     })
 
-    expect(prereqs.skipReason).toBe("no-review-scope")
+    expect(prereqs.skipReason).toBeUndefined()
     expect(prereqs.sealedReports).toHaveLength(0)
     expect(prereqs.pendingAlphaPaths).toHaveLength(0)
     expect(prereqs.watchlistSubjects).toBe(0)
+    expect(prereqs.health?.warnings.some((w) => /research queue empty/u.test(w))).toBe(true)
   })
 
   it("allows review when pending alpha exists without reports", async () => {
@@ -136,6 +137,44 @@ describe("review prerequisites", () => {
       "list-scan-2026-07-12T00-00-00-000Z",
     ])
     expect(reports[0]?.reportPath).toBe("reports/research-2026-07-17T00-00-00-000Z/agent.md")
+  })
+
+  it("includes legacy complete journals missing status and skips corrupt ones", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "tc-review-legacy-")))
+    const agentRoot = join(root, "agent")
+    mkdirSync(agentRoot, { recursive: true })
+    const archiveRoot = join(root, "archive")
+    const layout = await ensureArchive(archiveRoot)
+    const legacyId = "list-scan-2026-07-17T10-00-00-000Z"
+    writeFileSync(join(layout.transactions, `${legacyId}.json`), `${JSON.stringify({
+      schema: 1,
+      runId: legacyId,
+      phase: "complete",
+      phaseHashes: {},
+      sideEffects: {},
+    })}\n`)
+    const runDir = runArchiveDir(layout, legacyId)
+    mkdirSync(runDir, { recursive: true })
+    writeFileSync(join(runDir, "manifest.json"), `${JSON.stringify({
+      schema: 1,
+      runId: legacyId,
+      job: "list-scan",
+      createdAt: "2026-07-17T10:00:00.000Z",
+      inboxManifest: {},
+      fileHashes: {},
+    }, null, 2)}\n`)
+    mkdirSync(join(agentRoot, "reports", legacyId), { recursive: true })
+    writeFileSync(join(agentRoot, "reports", legacyId, "agent.md"), "# legacy\n")
+    writeFileSync(join(layout.transactions, "list-scan-2026-07-17T11-00-00-000Z.json"), "{not-json")
+
+    const reports = await listSealedCompletedReports({
+      layout,
+      agentRoot,
+      lookbackDays: 7,
+      maxReports: 30,
+      nowIso: NOW,
+    })
+    expect(reports.map((r) => r.runId)).toEqual([legacyId])
   })
 })
 
@@ -203,7 +242,7 @@ describe("review collector", () => {
     expect(alphaManifest).toContain("alpha-queue/alpha/msg-1.json")
   })
 
-  it("skips agent when prerequisites are empty", async () => {
+  it("writes health and skip ledger snapshots when only health scope exists", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-review-skip-"))
     const agentRoot = join(root, "agent")
     const archiveRoot = join(root, "archive")
@@ -217,15 +256,25 @@ describe("review collector", () => {
       fetchedAt: NOW,
       agentRoot,
       archiveRoot,
+      fetcher: async () => new Response(JSON.stringify({
+        data: [{ value: "42", value_classification: "Fear", timestamp: String(Math.floor(Date.parse(NOW) / 1000)) }],
+      }), { status: 200, headers: { "content-type": "application/json" } }),
     })
 
-    expect(result.skipAgent).toBe(true)
-    expect(result.collectionStatus).toBe("skipped")
+    expect(result.skipAgent).toBe(false)
+    expect(result.collectionStatus).toBe("completed")
+    expect(result.snapshotNames).toContain("review-health-snapshot")
+    expect(result.snapshotNames).toContain("review-skip-ledger")
+    const healthBody = readFileSync(
+      join(agentRoot, "inbox", "review-2026-07-18T12-00-00-000Z", "review-health-snapshot.json"),
+      "utf8",
+    )
+    expect(healthBody).toContain("researchActionable=0")
   })
 })
 
 describe("review prerequisite runJob skip", () => {
-  it("skips review before creating agent artifacts", async () => {
+  it("no longer skips review solely because reports/alpha/watchlist are empty", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-review-run-skip-"))
     const agentRoot = join(root, "agent")
     const archiveRoot = join(root, "archive")
@@ -236,10 +285,12 @@ describe("review prerequisite runJob skip", () => {
     const result = await runJob({
       job: "review",
       paths: { agentRoot, archiveRoot },
+      skipAgent: true,
+      dryCollect: true,
     })
 
-    expect(result).toMatchObject({ runId: "none", exitCode: 0 })
-    expect(existsSync(join(agentRoot, "reports"))).toBe(false)
+    expect(result.runId).not.toBe("none")
+    expect(result.exitCode).toBe(0)
   })
 })
 

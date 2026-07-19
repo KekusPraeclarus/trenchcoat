@@ -41,7 +41,7 @@ export async function prepareTelegramReply(args: Readonly<{
 
     const summaryBudget = Math.min(1_800, chunkLimit - 120)
     const summaryBody = summarizeForTelegram(trimmed, summaryBudget)
-    const notice = `${summaryBody}\n\nfull reply at ${rel}`
+    const notice = `${summaryBody}\n\n(full reply saved on host — ask if you need it)`
     return { parts: splitTelegramText(notice, chunkLimit), persistedPath: rel }
   }
 

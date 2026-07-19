@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV7 } from "../migrations/config.js"
+import { migrateConfigToV10 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(7),
+  schema: z.literal(10),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -155,9 +155,15 @@ export const ConfigSchema = z.object({
     }).default({}),
   }),
   broadcast: z.object({
+    // Discord-only daily message budget (Telegram is uncapped after schema validation)
     daily_budget: z.number().int().min(0).max(50).default(5),
     urgent_ceiling: z.number().int().min(1).max(100).default(10),
     discord_distiller: z.object({
+      enabled: z.boolean().default(false),
+      daily_cap: z.number().int().min(0).max(50).default(10),
+    }).default({ enabled: false, daily_cap: 10 }),
+    // Telegram landscape overview LLM (shares distill session counter with Discord)
+    telegram_overview: z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(50).default(10),
     }).default({ enabled: false, daily_cap: 10 }),
@@ -263,6 +269,64 @@ export const ConfigSchema = z.object({
       readd_min_new_events: z.number().int().default(5),
     }),
   }),
+  fomo: z.object({
+    enabled: z.boolean().default(false),
+    shadow_mode: z.boolean().default(true),
+    daily_navigation_budget: z.number().int().min(1).max(500).default(200),
+    min_delay_ms: z.number().int().min(0).max(30_000).default(1_500),
+    max_delay_ms: z.number().int().min(0).max(60_000).default(3_500),
+    navigation_timeout_ms: z.number().int().min(1_000).max(120_000).default(30_000),
+    max_payload_bytes: z.number().int().min(1_000).max(5_000_000).default(1_000_000),
+    max_event_age_hours: z.number().int().min(1).max(48).default(6),
+    trader_sync: z.object({
+      enabled: z.boolean().default(false),
+      max_handles: z.number().int().min(1).max(200).default(50),
+      max_profile_pages: z.number().int().min(1).max(100).default(20),
+      max_wallet_candidates: z.number().int().min(1).max(100).default(20),
+    }).default({}),
+    signal_scan: z.object({
+      enabled: z.boolean().default(false),
+      feed: z.boolean().default(false),
+      trending: z.boolean().default(false),
+      alerts: z.boolean().default(false),
+      convergence: z.boolean().default(false),
+      pressure: z.boolean().default(false),
+      min_trade_usd: z.number().min(0).default(500),
+      convergence_window_minutes: z.number().int().min(1).max(1_440).default(60),
+      min_converging_traders: z.number().int().min(2).max(50).default(2),
+      pressure_window_minutes: z.number().int().min(1).max(1_440).default(60),
+      min_pressure_traders: z.number().int().min(2).max(50).default(3),
+      max_enqueues_per_day: z.number().int().min(0).max(50).default(1),
+    }).default({}),
+    theses: z.object({
+      enabled: z.boolean().default(false),
+      max_per_run: z.number().int().min(0).max(100).default(20),
+    }).default({}),
+    x_source_review: z.object({
+      enabled: z.boolean().default(false),
+      max_pending: z.number().int().min(1).max(500).default(100),
+      max_reviews_per_day: z.number().int().min(0).max(50).default(4),
+      daily_history_page_budget: z.number().int().min(1).max(200).default(20),
+      lookback_days: z.number().int().min(1).max(365).default(90),
+      max_posts_per_review: z.number().int().min(1).max(500).default(200),
+      max_pages_per_review: z.number().int().min(1).max(20).default(5),
+      min_posts: z.number().int().min(1).max(200).default(20),
+      min_active_days: z.number().int().min(1).max(90).default(3),
+      min_role_evidence_posts: z.number().int().min(1).max(100).default(5),
+      retry_after_hours: z.number().int().min(1).max(168).default(24),
+      max_attempts: z.number().int().min(1).max(10).default(3),
+    }).default({}),
+    narrative_source_probation: z.object({
+      enabled: z.boolean().default(false),
+      probation_days: z.number().int().min(1).max(90).default(14),
+      max_profiles_per_scan: z.number().int().min(1).max(50).default(5),
+      max_pages_per_profile: z.number().int().min(1).max(5).default(1),
+      daily_profile_page_budget: z.number().int().min(1).max(200).default(20),
+      min_accepted_contributions: z.number().int().min(1).max(100).default(3),
+      min_distinct_narratives: z.number().int().min(1).max(50).default(2),
+      demotion_idle_days: z.number().int().min(1).max(180).default(28),
+    }).default({}),
+  }).default({}),
   source_safety: z.object({
     intent_classifier_daily_cap: z.number().int().default(20),
   }),
@@ -274,6 +338,21 @@ export const ConfigSchema = z.object({
   chat: z.object({
     idle_timeout_minutes: z.number().int().default(30),
     research_confirm_ttl_minutes: z.number().int().min(1).max(120).default(15),
+    discord: z.object({
+      enabled: z.boolean().default(false),
+      guild_id: z.string().regex(/^\d{17,20}$/u).optional(),
+      channel_ids: z.array(z.string().regex(/^\d{17,20}$/u)).max(20).default([]),
+      per_user_daily_cap: z.number().int().min(1).max(20).default(5),
+      server_daily_cap: z.number().int().min(1).max(200).default(20),
+      // Max queued+running requests per user (FIFO globally; one runs at a time)
+      max_active_per_user: z.number().int().min(1).max(20).default(5),
+      /** Cursor model for Discord research sessions only */
+      model: z.string().min(1).max(64).default("composer-2.5-fast"),
+      watch_days: z.literal(30).default(30),
+      watch_scan_hours: z.literal(6).default(6),
+      max_watched_tokens: z.number().int().min(1).max(2_000).default(500),
+      max_subscribers_per_token: z.number().int().min(1).max(500).default(100),
+    }).default({}),
   }),
   router: z.object({
     bind_host: z.string().default("127.0.0.1"),
@@ -316,6 +395,30 @@ export const ConfigSchema = z.object({
       path: ["wallets"],
     })
   }
+  if (cfg.chat.discord.enabled) {
+    if (!cfg.chat.discord.guild_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "chat.discord.guild_id required when chat.discord.enabled",
+        path: ["chat", "discord", "guild_id"],
+      })
+    }
+    if (cfg.chat.discord.channel_ids.length < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "chat.discord.channel_ids must contain 1–20 ids when enabled",
+        path: ["chat", "discord", "channel_ids"],
+      })
+    }
+    const uniqueChannels = new Set(cfg.chat.discord.channel_ids)
+    if (uniqueChannels.size !== cfg.chat.discord.channel_ids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "chat.discord.channel_ids must be unique",
+        path: ["chat", "discord", "channel_ids"],
+      })
+    }
+  }
 })
 
 export type TrenchcoatConfig = z.infer<typeof ConfigSchema>
@@ -343,6 +446,7 @@ export type EnvSecrets = Readonly<{
   farcasterAppFid?: string
   /** App custody mnemonic for SignedKeyRequest during account creation */
   farcasterAppMnemonic?: string
+  discordResearchBotToken?: string
 }>
 
 function requireEnv(name: string): string {
@@ -377,6 +481,7 @@ export function loadEnvSecrets(requireAll = false): EnvSecrets {
     neynarWalletId: process.env["NEYNAR_WALLET_ID"],
     farcasterAppFid: process.env["FARCASTER_APP_FID"],
     farcasterAppMnemonic: process.env["FARCASTER_APP_MNEMONIC"],
+    discordResearchBotToken: process.env["DISCORD_RESEARCH_BOT_TOKEN"],
   }
 
   if (requireAll) {
@@ -409,7 +514,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV7(raw))
+  return ConfigSchema.parse(migrateConfigToV10(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{
@@ -423,10 +528,25 @@ export function validateConfigFile(path = defaultConfigPath()): Readonly<{
 
 export async function migrateAndSaveConfig(
   path = defaultConfigPath(),
-): Promise<Readonly<{ schema: number; path: string }>> {
+): Promise<Readonly<{ schema: number; path: string; researchQueueRepair?: unknown }>> {
   const cfg = loadConfig(path)
   await saveConfig(cfg, path)
-  return { schema: cfg.schema, path }
+  const home = join(homedir(), ".trenchcoat")
+  const agentRoot = existsSync(join(home, "agent"))
+    ? join(home, "agent")
+    : join(process.cwd(), "agent")
+  const archiveRoot = existsSync(join(home, "archive"))
+    ? join(home, "archive")
+    : join(process.cwd(), ".trenchcoat-local", "archive")
+  let researchQueueRepair: unknown
+  if (existsSync(join(agentRoot, "state"))) {
+    const { migrateGenericNarrativeResearchQueue } = await import("../migrations/research-queue.js")
+    researchQueueRepair = await migrateGenericNarrativeResearchQueue({
+      agentRoot,
+      archiveRoot,
+    })
+  }
+  return { schema: cfg.schema, path, ...(researchQueueRepair ? { researchQueueRepair } : {}) }
 }
 
 export function securityThresholdsFromConfig(

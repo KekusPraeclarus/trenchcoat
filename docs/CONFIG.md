@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -21,6 +21,7 @@ read_when:
 | `TELEGRAM_OPERATOR_ID` | chat service | the allowlist (INV-B3) — single numeric user id |
 | `TELEGRAM_ROUTER_BOT_TOKEN` / `TELEGRAM_ROUTER_CHAT_ID` | router fanout | dedicated broadcast bot + destination chat/channel id |
 | `DISCORD_WEBHOOK_URL` | router fanout | Discord webhook for broadcast/lifecycle fanout |
+| `DISCORD_RESEARCH_BOT_TOKEN` | discord listener | Gateway bot token for private-guild research (never logged or stored in config) |
 | `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` | collectors | security gate, EVM chains |
 | `COINGECKO_DEMO_KEY` | collectors | trending endpoint |
 | `HELIUS_API_KEY` | wallet jobs | Solana finalized wallet feeds |
@@ -40,9 +41,12 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **7** (`narratives.retention_days`, plus prior v6
-`farcaster` / `research.farcaster_search` and v5 `harness_improvement`).
-`loadConfig` migrates v1–v6 shapes via `migrateConfigToV7`.
+Current schema is **10** (`chat.discord` private-guild research bot section, plus
+prior schema **9** `fomo` web scrape section with `x_source_review` /
+`narrative_source_probation`, plus prior v8 Fomo fields, v7
+`narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
+v5 `harness_improvement`).
+`loadConfig` migrates v1–v9 shapes via `migrateConfigToV10`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -51,10 +55,10 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 7,
+  "schema": 10,
   "telegram_channels": [
     {
-      "channel": "somechannel",
+      "channel": "KashKyshAlpha",
       "mode": "preview"
     },
     {
@@ -117,12 +121,20 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
       "recent_window_hours": 48
     },
     "farcaster_search": {
-      "enabled": true,
+      "enabled": false,
       "max_casts": 40,
       "recent_window_hours": 48
     }
+    // farcaster_search: watchlist-scan only; operator/queue research dossiers skip FC
   },
-  "broadcast": { "daily_budget": 5, "urgent_ceiling": 10, "discord_distiller": { "enabled": false, "daily_cap": 10 } },
+  "broadcast": {
+    "daily_budget": 5,
+    "urgent_ceiling": 10,
+    "discord_distiller": { "enabled": false, "daily_cap": 10 },
+    "telegram_overview": { "enabled": false, "daily_cap": 10 }
+  },
+  // daily_budget / urgent_ceiling = Discord message caps only (Telegram uncapped after validation)
+  // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
   "narratives": { "retention_days": 14 },
   "source_safety": { "intent_classifier_daily_cap": 20 },
   "farcaster": {
@@ -224,6 +236,36 @@ Knowledge-distillation job scope.
 | `lookback_days` | `7` | Sealed complete runs considered for path-only report manifests |
 | `max_reports` | `30` | Cap on report manifests per review run (newest first) |
 
+### `fomo` (schema 9)
+
+Authenticated `fomo.family` web scrape for trader nomination and signal scans.
+Defaults keep the integration fully off. Scheduled jobs also fail closed unless
+`archive/provider-evaluations/fomo/gates.json` is fresh and the relevant gate is
+`pass`. Burner session via `pnpm dev:cli auth fomo`. See
+[knowledge/fomo-family.md](knowledge/fomo-family.md).
+
+| Field | Default | Role |
+|---|---|---|
+| `enabled` | `false` | Master switch; false ⇒ no Fomo navigation |
+| `shadow_mode` | `true` | Snapshots/receipts only; no wallet, research-queue, X-nomination, watchlist, engagement, or broadcast mutation |
+| `daily_navigation_budget` | `200` | Local ledger cap on page navigations |
+| `trader_sync.enabled` | `false` | Lane A wallet nomination job |
+| `signal_scan.enabled` | `false` | Lane B signal job |
+| `signal_scan.feed` / `trending` / `alerts` / `convergence` / `pressure` | `false` | Per-signal capability flags |
+| `theses.enabled` | `false` | Thesis attachment (adapter-ready; runtime off until gate pass) |
+| `x_source_review.enabled` | `false` | Classify Fomo-nominated X accounts |
+| `x_source_review.max_pending` | `100` | Pending nomination queue cap |
+| `x_source_review.max_reviews_per_day` | `4` | Reviews per UTC day |
+| `x_source_review.daily_history_page_budget` | `20` | Shared X history/probation page budget (`archive/provider-usage/twitter/fomo-source-review/`) |
+| `x_source_review.lookback_days` / `max_posts_per_review` / `max_pages_per_review` | `90` / `200` / `5` | History scrape bounds |
+| `x_source_review.min_posts` / `min_active_days` / `min_role_evidence_posts` | `20` / `3` / `5` | Classification sample floors |
+| `narrative_source_probation.enabled` | `false` | Narrative-source probation scan/review |
+| `narrative_source_probation.max_profiles_per_scan` / `max_pages_per_profile` | `5` / `1` | Round-robin live scan bounds |
+| `narrative_source_probation.daily_profile_page_budget` | `20` | Shares the X page-budget ledger with history review |
+| `narrative_source_probation.probation_days` | `14` | Utility measurement window |
+| `narrative_source_probation.min_accepted_contributions` / `min_distinct_narratives` | `3` / `2` | Follow eligibility floors |
+| `narrative_source_probation.demotion_idle_days` | `28` | Idle unfollow trigger |
+
 ### `retention`
 
 Agent-workspace pruning on every completed run (`retainWorkspaceArtifacts`).
@@ -279,7 +321,7 @@ application is not wired yet — only wallets are applied today.
 |---|---|
 | `tc run <job>` | run one job (cron entry point); refuses if the workspace writer lock is held. Jobs include `list-scan`, `farcaster-scan`, `source-list-review`, `fc-source-review`, `wallet-discovery`, `wallet-scan-solana`, `wallet-scan-evm`, `wallet-review`, `harness-improve`, plus the scan/research/audit set in orchestrator.md |
 | `tc config validate` | migrate+parse config in memory; no write |
-| `tc config migrate --write` | persist schema-7 migration to `~/.trenchcoat/config.json` |
+| `tc config migrate --write` | persist schema-8 migration to `~/.trenchcoat/config.json` |
 | `tc watchlist remove <chain:token> --subject <symbol> --reason <text>` | host removal of ignored/revisit/dropped entries; reconciles `state/INDEX.md` |
 | `tc probe farcaster` | Neynar feed probe + dynamic signer status + FC lifecycle/engagement summary |
 | `tc auth farcaster --create --fname <name>` | programmatic bot account + signer (no app tap) |
@@ -303,10 +345,25 @@ application is not wired yet — only wallets are applied today.
 | `tc research <subject>` | operator-priority enqueue + locked research run (`chain:address` preferred); `--skip-agent` / `--dry-collect` supported |
 | `tc undock <id>` / `tc confirm <id>` | terminal exoneration decisions (INV-S13) |
 | `tc listen telegram` | Telegram listener + async research pump after operator confirm |
+| `tc listen` | KeepAlive operator listeners (Telegram + Discord research when enabled) |
+| `tc listen discord` | Discord Gateway research only (debug) |
+| `tc discord watchlist scan` | six-hour material-change monitor for Discord watch subscriptions |
 | `tc listen channels` | Telegram alpha-channel poller (preview + gramjs scaffold); cursors under `~/.trenchcoat/telegram-channels/` |
 | `tc auth telegram-channels` | Scaffold GramJS session path under `~/.trenchcoat/telegram-session/` |
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
-| `tc status` | last run per job, queue depth, open ledger positions, lock state |
+| `tc status` | shared health snapshot (lock/runs/jobs/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
+
+### `chat.discord` (schema 10)
+
+Private-guild research bot. Disabled by default. When enabled requires
+`guild_id` and 1–20 unique `channel_ids`. Caps: `per_user_daily_cap` (default 5),
+`server_daily_cap` (20), `max_active_per_user` (default 5 — max queued+running per
+user; global FIFO, one research at a time), `model` (default
+`composer-2.5-fast`, Discord research sessions only), `max_watched_tokens` (500),
+`max_subscribers_per_token` (100). Watch subscriptions last `watch_days` (30);
+monitor cadence `watch_scan_hours` (6). State lives under
+`~/.trenchcoat/discord/` — see
+[architecture/discord-research.md](architecture/discord-research.md).
 
 Exit codes: `0` success, `1` run never started (env/config problem,
 `CursorAgentError`), `2` run failed mid-flight (inspect transcript), `3` lock

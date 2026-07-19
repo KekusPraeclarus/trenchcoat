@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 import * as fc from "fast-check"
 import {
+  registerDiscoveryCandidates,
   registerFypCandidates,
   reviewSourceLifecycle,
   type SourceLifecycleThresholds,
 } from "../../src/sources/lifecycle.js"
 import { computeMembershipDiff } from "../../src/collectors/twitter/managed-list.js"
-import { migrateConfigToV7 } from "../../src/migrations/config.js"
+import { migrateConfigToV10 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { sha256Json } from "../../src/lib/canonical-json.js"
 import type { SourceLifecycleFile, SourcePerformance } from "../../src/contracts/schemas.js"
@@ -48,12 +49,22 @@ describe("prop_inv_s21_fyp_only_candidacy", () => {
         return file.candidates.every((c) => (
           (c.discoveredFrom === "fyp"
             || c.discoveredFrom === "operator-list-1"
-            || c.discoveredFrom === "operator-list-2")
+            || c.discoveredFrom === "operator-list-2"
+            || c.discoveredFrom === "fomo-leaderboard")
           && c.status === "probation"
           && /^[A-Za-z0-9_]{1,15}$/u.test(c.handle)
         ))
       },
     ))
+  })
+
+  it("accepts fomo-leaderboard origin for registerDiscoveryCandidates", () => {
+    const file = registerDiscoveryCandidates(
+      { schema: 1, candidates: [], transitions: [], pendingTransitionIds: [] },
+      [{ handle: "Alpha", origin: "fomo-leaderboard" }],
+      "2026-07-10T00:00:00.000Z",
+    )
+    expect(file.candidates[0]?.discoveredFrom).toBe("fomo-leaderboard")
   })
 })
 
@@ -131,7 +142,7 @@ describe("prop membership diff commutative", () => {
 
 describe("config migration v5", () => {
   it("lifts single curated list into two operator slots with harness defaults", () => {
-    const v5 = migrateConfigToV7({
+    const v5 = migrateConfigToV10({
       schema: 2,
       twitter: {
         curated_list_url: "https://x.com/i/lists/111",
@@ -156,7 +167,7 @@ describe("config migration v5", () => {
       router: {},
     })
     const parsed = ConfigSchema.parse(v5)
-    expect(parsed.schema).toBe(7)
+    expect(parsed.schema).toBe(10)
     expect(parsed.twitter.operator_list_urls[0]).toBe("https://x.com/i/lists/111")
     expect(parsed.twitter.engagement.enabled).toBe(true)
     expect(parsed.harness_improvement.enabled).toBe(false)

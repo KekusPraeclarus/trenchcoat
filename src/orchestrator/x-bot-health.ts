@@ -13,9 +13,9 @@ export function emptyXBotHealth(nowIso: string): XBotHealth {
   }
 }
 
-// Consecutive verification failures before the executor is considered unhealthy
-// and engagement should pause for operator attention rather than keep retrying
-// against selectors X may have changed.
+// Consecutive all-ambiguous execution batches before the executor is considered
+// unhealthy and engagement should pause for operator attention rather than keep
+// mutating against selectors X may have changed.
 export const X_BOT_HEALTH_ESCALATION_THRESHOLD = 3
 
 export type XBotHealthEscalation = Readonly<{
@@ -35,6 +35,10 @@ export function xBotHealthEscalation(
     threshold,
     ...(health.lastFailure?.error ? { lastError: health.lastFailure.error } : {}),
   }
+}
+
+export function isAllAmbiguousBatch(receipts: readonly XEngagementReceipt[]): boolean {
+  return receipts.length > 0 && receipts.every((receipt) => receipt.ambiguous)
 }
 
 export function transitionXBotHealth(args: Readonly<{
@@ -68,7 +72,10 @@ export function transitionXBotHealth(args: Readonly<{
             target: lastFail.target,
             runId: args.runId,
             attemptedAt: lastFail.attemptedAt,
-            error: lastFail.error ?? "post-action verification failed",
+            error: lastFail.error
+              ?? lastFail.verificationError
+              ?? lastFail.attemptError
+              ?? "post-action verification failed",
             ambiguous: lastFail.ambiguous,
           },
         }
@@ -77,6 +84,9 @@ export function transitionXBotHealth(args: Readonly<{
           : {}),
     })
   }
+
+  // Only all-ambiguous batches escalate; definitive failures do not auto-block
+  if (!isAllAmbiguousBatch(args.receipts)) return args.current
 
   const firstFail = failed[0]!
   return XBotHealthSchema.parse({
@@ -91,7 +101,10 @@ export function transitionXBotHealth(args: Readonly<{
       target: firstFail.target,
       runId: args.runId,
       attemptedAt: firstFail.attemptedAt,
-      error: firstFail.error ?? "post-action verification failed",
+      error: firstFail.error
+        ?? firstFail.verificationError
+        ?? firstFail.attemptError
+        ?? "post-action verification failed",
       ambiguous: firstFail.ambiguous,
     },
   })
@@ -116,5 +129,24 @@ export async function recordEngagementExecutionHealth(args: Readonly<{
     || next.lastFailure !== current.lastFailure) {
     await args.state.saveXBotHealth(next)
   }
+  return next
+}
+
+/** Explicit operator recovery — clears the escalation counter without inventing a verified action. */
+export async function recoverXBotHealth(args: Readonly<{
+  state: StateStore
+  nowIso: string
+}>): Promise<XBotHealth> {
+  const current = args.state.loadXBotHealth(args.nowIso)
+  const next = XBotHealthSchema.parse({
+    schema: 1,
+    updatedAt: args.nowIso,
+    consecutiveFailures: 0,
+    ...(current.lastVerifiedAction
+      ? { lastVerifiedAction: current.lastVerifiedAction }
+      : {}),
+    ...(current.lastFailure ? { lastFailure: current.lastFailure } : {}),
+  })
+  await args.state.saveXBotHealth(next)
   return next
 }

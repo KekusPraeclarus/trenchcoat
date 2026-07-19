@@ -1,5 +1,7 @@
 /** Thin Bot API client for the operator chat listener (not market collectors). */
 
+import { formatTelegramOperatorText, stripLocalWorkspaceRefs } from "./telegram-format.js"
+
 export type TelegramBotFetcher = (
   url: string,
   init?: RequestInit,
@@ -36,12 +38,32 @@ export async function telegramSendMessage(
   token: string,
   chatId: string,
   text: string,
+  opts?: Readonly<{ parseMode?: "HTML" }>,
 ): Promise<void> {
   await callBot(fetcher, token, "sendMessage", {
     chat_id: chatId,
     text,
     disable_web_page_preview: true,
+    ...(opts?.parseMode ? { parse_mode: opts.parseMode } : {}),
   })
+}
+
+/**
+ * Operator DMs: strip workspace paths, convert markdown → HTML, fall back to
+ * plain stripped text if Telegram rejects the markup.
+ */
+export async function telegramSendOperatorMessage(
+  fetcher: TelegramBotFetcher,
+  token: string,
+  chatId: string,
+  text: string,
+): Promise<void> {
+  const html = formatTelegramOperatorText(text)
+  try {
+    await telegramSendMessage(fetcher, token, chatId, html, { parseMode: "HTML" })
+  } catch {
+    await telegramSendMessage(fetcher, token, chatId, stripLocalWorkspaceRefs(text))
+  }
 }
 
 /** Send one Telegram message per chunk; never truncates. */
@@ -55,6 +77,23 @@ export async function telegramSendMessageChunks(
   const parts = splitTelegramText(text, limit)
   for (const part of parts) {
     await telegramSendMessage(fetcher, token, chatId, part)
+  }
+  return parts.length
+}
+
+/** Operator DMs with path strip + HTML; chunks markdown before conversion */
+export async function telegramSendOperatorMessageChunks(
+  fetcher: TelegramBotFetcher,
+  token: string,
+  chatId: string,
+  text: string,
+  limit = TELEGRAM_SAFE_CHUNK,
+): Promise<number> {
+  // Leave headroom for HTML tags after conversion
+  const mdLimit = Math.max(64, Math.min(limit, TELEGRAM_SAFE_CHUNK - 400))
+  const parts = splitTelegramText(stripLocalWorkspaceRefs(text), mdLimit)
+  for (const part of parts) {
+    await telegramSendOperatorMessage(fetcher, token, chatId, part)
   }
   return parts.length
 }

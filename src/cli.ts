@@ -17,6 +17,7 @@ import {
   telegramSendChatAction,
   telegramSendMessage,
   telegramSendMessageDraft,
+  telegramSendOperatorMessageChunks,
 } from "./lib/telegram-bot.js"
 
 function usage(): never {
@@ -29,9 +30,10 @@ Commands:
   config validate
   config migrate --write
   outcomes settle
+  delivery retry
   undock <id>
   confirm <id>
-  status [--heal]
+  status [--heal] [--json]
   watchlist remove <chain:token> --subject <symbol> --reason <text>
   preflight [--live]
   probe twitter [--headed]
@@ -56,11 +58,12 @@ Commands:
   harness promote <hypothesis-id>
   harness rollback --reason <text>
   router serve
-  listen telegram
-  listen channels
+  listen [telegram|discord|channels]
+  discord watchlist scan
   backup
   research <subject>
   auth twitter [--create-managed-list] [--headed]
+  auth fomo [--headed]
   auth farcaster --create --fname <name>
   auth farcaster --fid <n> --username <name> --mnemonic-stdin
   auth telegram-channels
@@ -93,6 +96,16 @@ async function cmdInit(seedPath?: string, operatorSeedPath?: string): Promise<vo
     cpSync(agentSrc, agentDest, { recursive: true })
   }
   mkdirSync(join(destDir, "archive"), { recursive: true, mode: 0o700 })
+  if (existsSync(join(agentDest, "state")) || existsSync(join(process.cwd(), "agent", "state"))) {
+    const { migrateGenericNarrativeResearchQueue } = await import("./migrations/research-queue.js")
+    const repair = await migrateGenericNarrativeResearchQueue({
+      agentRoot: existsSync(agentDest) ? agentDest : join(process.cwd(), "agent"),
+      archiveRoot: join(destDir, "archive"),
+    })
+    if (repair.repairedCount > 0) {
+      console.log(`repaired ${repair.repairedCount} generic narrative queue entries`)
+    }
+  }
   if (operatorSeedPath) {
     const { applyOperatorWalletSeed } = await import("./orchestrator/wallet-seed.js")
     const report = await applyOperatorWalletSeed({
@@ -245,6 +258,32 @@ async function cmdAuthTelegramChannels(): Promise<void> {
   }
 }
 
+async function cmdListenAll(): Promise<void> {
+  const { superviseAgentListeners } = await import("./listen/supervisor.js")
+  await superviseAgentListeners({ runTelegram: cmdListenTelegram })
+}
+
+async function cmdListenDiscord(): Promise<void> {
+  const token = process.env["DISCORD_RESEARCH_BOT_TOKEN"]
+  if (!token) throw new Error("DISCORD_RESEARCH_BOT_TOKEN required")
+
+  const { loadConfig } = await import("./lib/config.js")
+  const cfg = loadConfig()
+  if (!cfg.chat.discord.enabled) {
+    throw new Error("chat.discord.enabled is false in config")
+  }
+
+  const { runDiscordListener, resolveDiscordRepoRoot } = await import("./discord/listener.js")
+  await runDiscordListener({ token, repoRoot: resolveDiscordRepoRoot() })
+}
+
+async function cmdDiscordWatchlistScan(): Promise<void> {
+  const token = process.env["DISCORD_RESEARCH_BOT_TOKEN"]
+  if (!token) throw new Error("DISCORD_RESEARCH_BOT_TOKEN required")
+  const { runDiscordWatchlistScan } = await import("./discord/monitor.js")
+  await runDiscordWatchlistScan({ token })
+}
+
 async function cmdListenTelegram(): Promise<void> {
   const token = process.env["TELEGRAM_BOT_TOKEN"]
   const operatorId = process.env["TELEGRAM_OPERATOR_ID"]
@@ -329,12 +368,17 @@ async function cmdListenTelegram(): Promise<void> {
           store: researchStore,
           choiceTtlMinutes: researchConfirmTtlMinutes,
           notify: async (text) => {
-            await telegramSendMessage(fetch, token, operatorId, text)
+            await telegramSendOperatorMessageChunks(fetch, token, operatorId, text)
           },
           summarize: async (reportPath, subject) => {
             try {
               return await runTurn(
-                `Summarize the completed research report at ${reportPath} for subject ${subject}. Plain Telegram text. Cite the report path.`,
+                [
+                  `Summarize the completed research report at ${reportPath} for subject ${subject}.`,
+                  "Write operator-facing Telegram markdown: **bold** section headers, short paragraphs, hyphen bullets.",
+                  "Do not cite local workspace paths, report filenames, inbox paths, Source: lines, or decision-proposals.json.",
+                  "External URLs and @handles are fine.",
+                ].join(" "),
               )
             } catch {
               return undefined
@@ -433,7 +477,8 @@ async function cmdListenTelegram(): Promise<void> {
             }
             : {}),
           agentRoot,
-          send: (chatId, text) => telegramSendMessage(fetch, token, chatId, text),
+          statusHomes: { agentRoot, archiveRoot },
+          send: (chatId, text) => telegramSendOperatorMessageChunks(fetch, token, chatId, text).then(() => undefined),
         })
       } catch (error) {
         // Always advance offset below — a single bad update must not crash-loop launchd
@@ -640,6 +685,10 @@ async function main(): Promise<void> {
       if (rest[0] !== "settle") usage()
       await cmdRun("outcomes-settle", rest.slice(1))
       break
+    case "delivery":
+      if (rest[0] !== "retry") usage()
+      await cmdRun("delivery-retry", rest.slice(1))
+      break
     case "undock":
       if (!rest[0]) usage()
       await cmdExoneration(rest[0]!, "undock")
@@ -652,27 +701,83 @@ async function main(): Promise<void> {
       for (const job of JOBS) console.log(`${job.name}\t${job.description}`)
       break
     case "status": {
+      const wantJson = rest.includes("--json")
+      const { archiveRoot, agentRoot } = resolveHomes()
       const pf = runPreflight({ live: false })
-      for (const c of pf.checks) console.log(`${c.ok ? "OK" : "FAIL"} ${c.name}: ${c.detail}`)
+      let configOk = true
+      let runtimeOk = true
+      const configLines: string[] = []
+      for (const c of pf.checks) {
+        configLines.push(`${c.ok ? "OK" : "FAIL"} ${c.name}: ${c.detail}`)
+      }
       try {
         const { loadConfig, defaultConfigPath } = await import("./lib/config.js")
         const { loadDeploymentManifest } = await import("./lib/deployment.js")
         const cfg = loadConfig()
-        console.log(`OK config: schema ${cfg.schema} at ${defaultConfigPath()}`)
+        configLines.push(`OK config: schema ${cfg.schema} at ${defaultConfigPath()}`)
         const manifest = loadDeploymentManifest()
         if (manifest) {
-          console.log(
+          configLines.push(
             `OK runtime: v${manifest.packageVersion} schema=${manifest.configSchema} built=${manifest.builtAt}`
-              + (manifest.sourceCommit ? ` commit=${manifest.sourceCommit.slice(0, 12)}` : ""),
+              + (manifest.sourceCommit ? ` commit=${manifest.sourceCommit.slice(0, 12)}` : "")
+              + (manifest.sourceDirty ? " DIRTY" : "")
+              + ` src=${manifest.sourceHash.slice(0, 19)}`,
           )
         } else {
-          console.log("FAIL runtime: deployment.json missing — re-run ops/install-launchd.sh")
+          runtimeOk = false
+          configLines.push("FAIL runtime: deployment.json missing — re-run ops/install-launchd.sh")
         }
       } catch (error) {
-        console.log(`FAIL config: ${error instanceof Error ? error.message : String(error)}`)
+        configOk = false
+        configLines.push(`FAIL config: ${error instanceof Error ? error.message : String(error)}`)
       }
+
+      const {
+        buildHealthSnapshot,
+        formatHealthText,
+        toHealthJsonPayload,
+      } = await import("./orchestrator/health.js")
+      const health = await buildHealthSnapshot({ agentRoot, archiveRoot })
+      let discordStatus: Awaited<ReturnType<typeof import("./discord/status.js")["loadDiscordStatus"]>> | undefined
+      try {
+        const { loadConfig } = await import("./lib/config.js")
+        const cfg = loadConfig()
+        if (cfg.chat.discord.enabled) {
+          const { loadDiscordStatus } = await import("./discord/status.js")
+          discordStatus = loadDiscordStatus()
+        }
+      } catch {
+        // discord status is best-effort
+      }
+
+      if (wantJson) {
+        console.log(JSON.stringify({
+          preflight: { ok: pf.ok && configOk && runtimeOk, checks: pf.checks },
+          health: toHealthJsonPayload(health),
+          ...(discordStatus ? { discord: discordStatus } : {}),
+        }, null, 2))
+      } else {
+        for (const line of configLines) console.log(line)
+        console.log("")
+        console.log(formatHealthText(health))
+        if (discordStatus) {
+          console.log("")
+          console.log("Discord research:")
+          console.log(`  queue=${discordStatus.queueDepth} running=${discordStatus.running}`)
+          console.log(`  watched tokens=${discordStatus.watchedTokens} subscribers=${discordStatus.subscribers}`)
+          if (discordStatus.listenerHeartbeatAgeSec != null) {
+            console.log(`  listener heartbeat age=${discordStatus.listenerHeartbeatAgeSec}s`)
+          }
+          if (discordStatus.monitorHeartbeatAgeSec != null) {
+            console.log(`  monitor heartbeat age=${discordStatus.monitorHeartbeatAgeSec}s`)
+          }
+          if (discordStatus.lastListenerError) {
+            console.log(`  listener error: ${discordStatus.lastListenerError}`)
+          }
+        }
+      }
+
       if (rest.includes("--heal")) {
-        const { archiveRoot, agentRoot } = resolveHomes()
         const { listIncompleteRuns } = await import("./orchestrator/run.js")
         const incomplete = await listIncompleteRuns(archiveRoot)
         if (incomplete.length === 0) {
@@ -702,7 +807,8 @@ async function main(): Promise<void> {
         console.log("heal: re-scaffold agent if missing")
         spawn("pnpm", ["prepare:agent"], { stdio: "inherit" })
       }
-      process.exit(pf.ok ? 0 : 1)
+      // Health warnings stay non-fatal; config/auth/runtime integrity failures exit non-zero
+      process.exit(pf.ok && configOk && runtimeOk ? 0 : 1)
       break
     }
     case "preflight":
@@ -719,8 +825,19 @@ async function main(): Promise<void> {
     case "listen":
       if (rest[0] === "telegram") {
         await cmdListenTelegram()
+      } else if (rest[0] === "discord") {
+        await cmdListenDiscord()
       } else if (rest[0] === "channels") {
         await cmdListenChannels()
+      } else if (rest[0] === undefined) {
+        await cmdListenAll()
+      } else {
+        usage()
+      }
+      break
+    case "discord":
+      if (rest[0] === "watchlist" && rest[1] === "scan") {
+        await cmdDiscordWatchlistScan()
       } else {
         usage()
       }
@@ -918,6 +1035,9 @@ async function main(): Promise<void> {
           const { authTwitterInteractive } = await import("./collectors/social/twitter-auth.js")
           await authTwitterInteractive()
         }
+      } else if (rest[0] === "fomo") {
+        const { authFomoInteractive } = await import("./collectors/social/fomo-auth.js")
+        await authFomoInteractive()
       } else if (rest[0] === "farcaster") {
         await cmdAuthFarcaster(rest.slice(1))
       } else if (rest[0] === "telegram-channels") {

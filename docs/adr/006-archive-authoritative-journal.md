@@ -40,12 +40,19 @@ Operator decisions for the remaining gaps:
 6. Journal `status` is `running | complete | failed`. Interrupted or errored
    runs are marked `failed` (terminal); `findIncompleteRuns` only resumes
    `running` journals. Failed runs are not auto-resumed.
+7. **Legacy compatibility (post-ADR):** pre-status archive journals are accepted
+   in-memory only — `phase: "complete"` ⇒ `status: "complete"`, otherwise
+   `running` (or `failed` when a `failure` object is present). Historical files
+   are not rewritten. Bulk narrative/review scans isolate corrupt journals;
+   direct load/resume remains strict. Legacy `phase: "created"` journals older
+   than six hours are reported abandoned and never auto-resumed.
 
 ## Consequences
 
 - INV-S8 verification points at archive seal, not per-run Git.
 - Wired in `run.ts` / `journal-store.ts`: seal before purge/egress; quarantine on
   hash conflict; `markRunFailed` on mid-flight errors; `findIncompleteRuns` for
-  resume (resume depth still PARTIAL).
+  resume (resume depth still PARTIAL). Legacy status derivation lives in
+  `tryParseJournal` / `loadJournalForScan`.
 - Rollback/recovery reads the last completed archive transaction, not arbitrary
   Git HEAD.

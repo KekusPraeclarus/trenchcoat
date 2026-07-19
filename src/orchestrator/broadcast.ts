@@ -15,6 +15,7 @@ export function canSendBroadcast(
   budget: BudgetState,
   limits: Readonly<{ daily_budget: number; urgent_ceiling: number }>,
 ): { ok: true; next: BudgetState } | { ok: false; reason: string } {
+  // Discord-only daily message budget (Telegram is uncapped at ingest).
   if (item.severity === "urgent") {
     if (budget.urgentUsed >= limits.urgent_ceiling) {
       return { ok: false, reason: "urgent-ceiling" }

@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process"
 import type { PreflightResult } from "./preflight-types.js"
 import { resolveCursorCliBin } from "../orchestrator/session.js"
+import { loadConfig } from "./config.js"
+import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
 
 export type { PreflightResult }
 
@@ -64,6 +66,20 @@ export function runPreflight(opts: Readonly<{ live?: boolean }> = {}): Preflight
       const present = Boolean(process.env[key]?.trim())
       checks.push({ name: `env:${key}`, ok: present, detail: present ? "set" : "missing" })
     }
+  }
+
+  try {
+    const cfg = loadConfig()
+    if (cfg.fomo.enabled) {
+      const present = fomoSessionExists()
+      checks.push({
+        name: "fomo-session",
+        ok: present,
+        detail: present ? "present" : "missing (required when fomo.enabled)",
+      })
+    }
+  } catch {
+    // config may be absent during early install
   }
 
   return { ok: checks.every((c) => c.ok), checks }

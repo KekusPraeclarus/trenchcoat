@@ -13,6 +13,9 @@ status: active
 ## DexScreener
 - Pair/search/boost only — never OHLCV
 - Budget below 200/min
+- Search responses can include junk rows (empty or multi-KB concatenated
+  symbols/names). `parseDexScreenerPairs` skips malformed pairs rather than
+  failing the whole search
 
 ## CoinGecko
 - Trending coins/categories; monthly quota accounting; Demo key in host env

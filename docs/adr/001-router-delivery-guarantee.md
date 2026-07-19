@@ -24,4 +24,6 @@ The router provides durable at-least-once fanout:
 
 - Tests assert one ingress event and ≤N destination attempts, not zero duplicates
 - Dead letters are visible and never dropped
-- Wallet lifecycle and market findings share durability, not budget
+- Wallet lifecycle and market findings share durability, not Discord market budget
+  (Discord `daily_budget` / `urgent_ceiling` are reserved at channel-render;
+  Telegram stays uncapped after schema validation)

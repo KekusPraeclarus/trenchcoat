@@ -38,11 +38,20 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `fc-source-review` | daily (Farcaster follow-graph sync) |
 | `narrative-scan` | every 6h |
 | `research` | scheduler dequeues from the research queue, cap in config |
+| `fomo-trader-sync` | daily (host-only; skips unless `fomo.enabled` + gates) |
+| `fomo-signal-scan` | every 30m (host-only; skips unless `fomo.enabled` + gates) |
+| `fomo-x-source-review` | every 6h (one nomination; requires `fomo.x_source_review.enabled`) |
+| `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
+| `narrative-source-review` | daily (promote/demote + gated follow) |
+| `delivery-retry` | every 15m (host-only; retries staged router ingress without a terminal receipt; skips when router env missing or backlog empty) |
+
+Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbook:
+[ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
 | `harness-improve` | weekly after audit (optional) — opens PR only; never merges |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
-| `listener` (KeepAlive) | always — operator Telegram DMs |
+| `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |
 
 ### Operator research (Telegram / CLI)
 
@@ -83,8 +92,9 @@ docs/architecture/orchestrator.md / router.md), schedules the weekly backup
 (`com.trenchcoat.backup`, Sun 05:00 → `ops/backup.sh`), writes
 `runtime/deployment.json` after staging + `config validate`, and bootstraps job
 cadences below. Re-run after CLI changes. Flags: `--dry-run`, `--no-load`,
-`--with-harness`, `--jobs-only`, `--sync-env`. The wipe matters: plain `tsc`
-leaves deleted modules in `dist/`, which would otherwise ship into the runtime.
+`--with-harness`, `--jobs-only`, `--sync-env`, `--allow-dirty`. The wipe matters:
+plain `tsc` leaves deleted modules in `dist/`, which would otherwise ship into
+the runtime.
 
 `--sync-env` atomically copies repo `.env` → `~/.trenchcoat/env` (mode 600) after
 validating required key **names** (values never read); used alone it syncs and
@@ -92,23 +102,40 @@ exits without redeploying, otherwise it refreshes env before deploy. This is how
 `TAVILY_API_KEY` and the router/destination secrets reach launchd jobs (which
 cannot read `~/Documents` under TCC).
 
+Dirty trees are refused by default so `deployment.json` provenance stays exact
+(commit + `sourceDirty` + `sourceHash` + config schema + cli/config hashes). Pass
+`--allow-dirty` only when you intentionally ship uncommitted edits; `tc status`
+warns when the active runtime was built dirty.
+
 Staging safety: the installer builds into a staging dir, validates config with
 the staged binary, then atomically swaps `runtime/` (previous kept as
-`runtime.previous`). A missing `deployment.json` is flagged by `tc status`.
+`runtime.previous`). A missing or stale-schema `deployment.json` is flagged by
+`tc status`.
 
 For harness improvement only: `./ops/install-launchd.sh --with-harness`
 (requires `harness_improvement.enabled` + `schedule_enabled`, `gh` auth).
 
 ## Health checks
 
-- `tc status` — last run per job, queue depth, lock state. A job whose last
-  completed run is older than 3x its cadence is unhealthy.
+- `tc status` — shared host health snapshot (`src/orchestrator/health.ts`):
+  workspace lock / incomplete / abandoned runs, last success|failure|skip ages
+  for key jobs, skip-reason counts from `archive/skips/*.jsonl`, research
+  actionable/ambiguous depth, watchlist + wallet counts, X pending/bot-health,
+  FC stale streak/fallback from recent receipts, router ingress backlog, and
+  deployment provenance (commit, dirty flag, schema compatibility). FOMO appears
+  in a separate parallel section and never certifies legacy research/wallet
+  health. Health degradation prints as warnings; config/auth/runtime integrity
+  failures still exit non-zero. `tc status --json` emits a bounded JSON payload
+  of the same snapshot. A job whose last completed run is older than 3x its
+  cadence is treated as unhealthy in operator review of that snapshot.
+- Telegram `/status` — same host-derived summary (not merely `trenchcoat online`).
 - Router health: `curl -sS http://127.0.0.1:8787/healthz` must return
   `{"ok":true}`. Without `com.trenchcoat.router`, staged broadcasts never fan
   out. Logs: `/tmp/trenchcoat.router.*.log`. Kick after env/runtime changes:
   `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.router`. Telegram fanout
   needs both `TELEGRAM_ROUTER_BOT_TOKEN` and `TELEGRAM_ROUTER_CHAT_ID` in
-  `~/.trenchcoat/env` (Discord needs `DISCORD_WEBHOOK_URL`). If err logs show
+  `~/.trenchcoat/env` (Discord broadcast needs `DISCORD_WEBHOOK_URL`; Discord
+  research needs `DISCORD_RESEARCH_BOT_TOKEN` when `chat.discord.enabled`). If err logs show
   missing `better_sqlite3.node`, re-run `./ops/install-launchd.sh` (installer
   rebuilds the native addon after prod install).
 - Listener health: the listener touches a heartbeat file every poll cycle;
@@ -116,24 +143,59 @@ For harness improvement only: `./ops/install-launchd.sh --with-harness`
   a silently wedged process is caught by the heartbeat and killed by
   the next `tc status --heal` (safe: alpha-queue appends are atomic per
   message, INV-Q1).
-- Operator Telegram chat: `com.trenchcoat.listener` runs `tc listen telegram`,
-  which bridges private DMs to a resumable Cursor `--mode ask` session over
-  `~/.trenchcoat/agent` and streams tokens via `sendMessageDraft` before the
-  final `sendMessage` (docs/architecture/chat-agent.md). Research asks are
-  confirmation-gated on the host; confirmed work runs asynchronously under the
-  workspace lock. After CLI / chat / research code changes, re-run
-  `./ops/install-launchd.sh` (deploys `~/.trenchcoat/runtime`) and kick the
-  listener: `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.listener`.
+- Daily `review` (07:00 local, unchanged cadence) always receives the health
+  snapshot plus append-only skip ledgers, so empty queues, silent wallets,
+  stale FC, and recurring skips remain in scope even when no agent report
+  directory exists.
+- Operator Telegram chat: `com.trenchcoat.listener` runs `tc listen`, which keeps
+  the Telegram operator bridge alive and spawns a supervised Discord research
+  child when `chat.discord.enabled` and `DISCORD_RESEARCH_BOT_TOKEN` are set.
+  Discord logs share `/tmp/trenchcoat.listener.*.log` with Telegram. After CLI /
+  chat / research / discord code changes, re-run `./ops/install-launchd.sh`
+  (deploys `~/.trenchcoat/runtime`) and kick the listener:
+  `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.listener`.
   `install-launchd.sh` does **not** sync `agent/skills/` — copy changed skills
   from the repo into `~/.trenchcoat/agent/skills/` or the ask-mode chat agent
   will keep old deferral text. Stale runtime is the usual cause of research
   asks falling through to a long ask-mode lecture instead of
   `Research <subject>? Reply confirm or cancel.` Session id lives in
-  `~/.trenchcoat/chat-session.json`.
+  `~/.trenchcoat/chat-session.json`. Research asks are confirmation-gated on the
+  host; confirmed work runs asynchronously under the workspace lock
+  (docs/architecture/chat-agent.md).
+- **Discord research** (optional): enabled via config — no separate launchd unit.
+  Same `com.trenchcoat.listener` supervises `tc listen discord` as a child process.
+  Requires `DISCORD_RESEARCH_BOT_TOKEN` (separate from `DISCORD_WEBHOOK_URL`).
+  State under `~/.trenchcoat/discord/`. Watch monitor:
+  `com.trenchcoat.job.discord-watchlist-scan` (0/6/12/18 local). See
+  docs/architecture/discord-research.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that
   predate `scripts/scaffold-agent.ts` creating the file need a one-time copy
   from repo `agent/state/INDEX.md` (docs/architecture/agent-workspace.md).
+
+## Deploy canary and rollback (operator)
+
+Do **not** install from a dirty tree unless you pass `--allow-dirty` and accept
+the `tc status` dirty warning. Preferred sequence after a reviewed clean commit:
+
+1. Backup host state/archive (`ops/backup.sh` / `tc backup`).
+2. `pnpm typecheck && pnpm lint && pnpm test:all` (plus FOMO shadow suites when
+   touching that path).
+3. `./ops/install-launchd.sh` (clean tree) — stages, writes schema-2
+   `deployment.json`, swaps `runtime/` while keeping `runtime.previous`.
+4. Confirm `tc status` shows matching config/runtime schema, commit, and
+   `sourceDirty=false`.
+5. Canary in order: FC collect with agent skipped (live or labeled fallback, no
+   engagement); one narrative-scan (complete journal + chat report); next organic
+   list-scan for X settlement; one non-public canary broadcast + `delivery-retry`
+   proof; one daily review health/chat snapshot. Keep FOMO in shadow and compare
+   metrics separately.
+
+**Rollback:** if journal parsing, host integrity, mutation confinement, router
+delivery, or schema migration fails, restore runtime by swapping
+`~/.trenchcoat/runtime.previous` back to `runtime` (and matching config backup
+under `~/.trenchcoat/backups/`). Do not delete receipts to “undo”; restore
+predeploy backup only when migration itself corrupted host state.
 
 ## Operator procedures
 
@@ -162,9 +224,15 @@ For harness improvement only: `./ops/install-launchd.sh --with-harness`
   default 14). If `~/.trenchcoat/config.json` is still schema 6 on disk,
   `loadConfig` migrates in memory — re-save or copy from repo `config.json` to
   persist `narratives` on disk.
-- **Adding a Telegram channel** — add to `config.json` with `mode: "preview"`;
-  if the first poll flags previews-disabled, switch to `"gramjs"` and restart
-  the listener.
+- **Adding a Telegram channel** — add to `~/.trenchcoat/config.json` under
+  `telegram_channels` with `mode: "preview"` (preferred). Restart
+  **`com.trenchcoat.channels`** (`launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels`),
+  not `com.trenchcoat.listener` (that is operator DMs). Verify within a few
+  minutes: logs show `preview:N` and `telegram preview polled`,
+  `~/.trenchcoat/agent/alpha-queue/<channel>/` grows, and cursors list the
+  real handle (never a stray `telegram` product-blog key unless you meant that
+  handle). If `t.me/s/<channel>` returns no messages, switch that entry to
+  `"gramjs"` only after a session exists — GramJS auth is still operator-driven.
 - **Removing a watchlist entry** — for ignored/revisit/dropped subjects (e.g.
   after research rejected `$REPPO`):  
   `tc watchlist remove <chain:token> --subject <SYMBOL> --reason <text>`.  

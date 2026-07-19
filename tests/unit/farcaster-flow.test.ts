@@ -76,9 +76,32 @@ describe("neynar cast parsing", () => {
       status: 200,
       headers: { "content-type": "application/json" },
     })
-    const feed = await fetchNeynarFeed(fetcher, "key", "trending")
+    const feed = await fetchNeynarFeed(fetcher, "key", "trending", { limit: 25 })
     expect(feed.casts).toHaveLength(1)
     expect(feed.casts[0]?.author).toBe("alice")
+  })
+
+  it("clamps trending limit to 10 (Neynar ExceededMaxLimit)", async () => {
+    let seen = ""
+    const fetcher = async (input: RequestInfo | URL) => {
+      seen = String(input)
+      return new Response(JSON.stringify({ casts: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }
+    await fetchNeynarFeed(fetcher, "key", "trending", { limit: 25 })
+    expect(seen).toMatch(/[?&]limit=10(?:&|$)/u)
+  })
+
+  it("includes path and body snippet on HTTP errors", async () => {
+    const fetcher = async () => new Response(
+      JSON.stringify({ code: "ExceededMaxLimit", message: "limit must be between 1 and 10" }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    )
+    await expect(fetchNeynarFeed(fetcher, "key", "trending", { limit: 10 })).rejects.toThrow(
+      /HTTP 400 \/v2\/farcaster\/feed\/trending.*ExceededMaxLimit/u,
+    )
   })
 
   it("rejects oversized cast arrays", async () => {

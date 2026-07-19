@@ -3,9 +3,18 @@ import { join } from "node:path"
 import { Outbox } from "../lib/outbox.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
 import { sha256Json } from "../lib/canonical-json.js"
+import { canonicalizeBroadcastRefs } from "./broadcast-refs.js"
+import type { NarrativeLogEntry } from "./narrative-log.js"
+import {
+  assertNarrativeBroadcastAllowed,
+  restatesUnchangedNarrativeStage,
+  statusQuoNarratives,
+} from "./narrative-stage-dedupe.js"
+import {
+  capSeverityForPlatformCoverage,
+  resolveSocialPlatformsForClaim,
+} from "./platform-coverage.js"
 import { buildBroadcastRouterEvent, validateBroadcastItem } from "./router.js"
-import { dayKey } from "./broadcast.js"
-import { reserveBroadcast } from "./broadcast-ledger.js"
 import type { BroadcastItem, BroadcastRejectReceipt } from "../contracts/schemas.js"
 
 /** agent/outbox/<run-id>.json — zero or more untrusted broadcast proposals */
@@ -58,26 +67,30 @@ export type OutboxIngestReport = Readonly<{
 }>
 
 /**
- * Validate the agent's broadcast proposals, reserve daily/urgent budget for each,
- * and stage the survivors as durable RouterEvents. Rejections are archived with a
- * receipt so every dropped item is auditable.
+ * Validate the agent's broadcast proposals and stage survivors as durable
+ * RouterEvents. Telegram is uncapped at ingest; Discord daily budget is applied
+ * later in `renderChannelPayloads`. Rejections are archived with a receipt.
  */
 export async function ingestOutbox(args: Readonly<{
   agentRoot: string
   layout: ArchiveLayout
   runId: string
-  dailyBudget: number
-  urgentCeiling: number
   nowIso: string
   marketBlind?: boolean
+  /** Pre-session narrative log — used to reject same-heat re-sightings */
+  narrativeLogBefore?: readonly NarrativeLogEntry[]
+  /** Post-merge narrative log — stage deltas unlock heat-change broadcasts */
+  narrativeLogAfter?: readonly NarrativeLogEntry[]
 }>): Promise<OutboxIngestReport> {
   const proposed = readProposedItems(args.agentRoot, args.runId)
-  const day = dayKey(new Date(args.nowIso))
   const outbox = new Outbox(join(args.layout.routerOutbox, args.runId))
 
   const accepted: BroadcastItem[] = []
   const rejects: { reason: string; itemHash?: `sha256:${string}` }[] = []
   const receipts: BroadcastRejectReceipt[] = []
+  const logBefore = args.narrativeLogBefore ?? []
+  const logAfter = args.narrativeLogAfter
+  const statusQuo = statusQuoNarratives(logBefore, logAfter)
 
   const reject = (reason: string, itemHash?: `sha256:${string}`): void => {
     rejects.push(itemHash ? { reason, itemHash } : { reason })
@@ -123,25 +136,41 @@ export async function ingestOutbox(args: Readonly<{
       }
     }
 
-    // eventId is derived from run id + content only, so it is a stable idempotency
-    // key across retries even though occurredAt varies.
-    const event = buildBroadcastRouterEvent(args.runId, args.nowIso, item)
-    const reservation = await reserveBroadcast({
-      layout: args.layout,
-      dayKey: day,
-      reservationKey: event.eventId,
-      severity: item.severity,
-      dailyBudget: args.dailyBudget,
-      urgentCeiling: args.urgentCeiling,
-      nowIso: args.nowIso,
+    const stageGate = assertNarrativeBroadcastAllowed({
+      item,
+      logBefore,
+      ...(logAfter ? { logAfter } : {}),
     })
-    if (!reservation.ok) {
-      reject(`budget:${reservation.reason ?? "rejected"}`, event.eventId as `sha256:${string}`)
+    if (!stageGate.ok) {
+      reject(stageGate.reason, rawHash)
       continue
     }
 
+    if (statusQuo.length > 0 && restatesUnchangedNarrativeStage(item.text, statusQuo)) {
+      reject("status-quo-narrative-stage", rawHash)
+      continue
+    }
+
+    const frozen = canonicalizeBroadcastRefs({
+      agentRoot: args.agentRoot,
+      layout: args.layout,
+      runId: args.runId,
+      refs: item.refs,
+    })
+    if (!frozen.ok) {
+      reject(frozen.reason, rawHash)
+      continue
+    }
+    const withDurableRefs: BroadcastItem = { ...item, refs: [...frozen.refs] }
+
+    const platforms = resolveSocialPlatformsForClaim(args.agentRoot, withDurableRefs)
+    const capped = capSeverityForPlatformCoverage(withDurableRefs, platforms)
+
+    // eventId is derived from run id + content only, so it is a stable idempotency
+    // key across retries even though occurredAt varies.
+    const event = buildBroadcastRouterEvent(args.runId, args.nowIso, capped)
     await outbox.stage(event)
-    accepted.push(item)
+    accepted.push(capped)
     staged += 1
   }
 

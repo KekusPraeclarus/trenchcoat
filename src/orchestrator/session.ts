@@ -354,6 +354,7 @@ export const SCRUBBED_CHILD_ENV_KEYS = Object.freeze([
   "HELIUS_API_KEY",
   "INFURA_API_KEY",
   "DISCORD_WEBHOOK_URL",
+  "DISCORD_RESEARCH_BOT_TOKEN",
   "TAVILY_API_KEY",
 ] as const)
 

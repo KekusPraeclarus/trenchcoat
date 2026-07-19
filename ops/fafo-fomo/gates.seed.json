@@ -1,0 +1,42 @@
+{
+  "schema": 2,
+  "probeRunId": "probe-2026-07-19",
+  "evaluatedAt": "2026-07-19T00:00:00.000Z",
+  "fixtureHashes": {
+    "unavailable.json": "seed-stub"
+  },
+  "gates": {
+    "provider": {
+      "verdict": "fail",
+      "successRate": 0,
+      "longestOutageHours": 48,
+      "p95LatencyMs": 15000,
+      "sampleSize": 0
+    },
+    "leaderboard": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    },
+    "feed": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    },
+    "trending": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    },
+    "alerts": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    },
+    "walletNomination": {
+      "verdict": "insufficient-sample",
+      "exactAddresses": false,
+      "sampleSize": 0
+    },
+    "theses": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    }
+  }
+}

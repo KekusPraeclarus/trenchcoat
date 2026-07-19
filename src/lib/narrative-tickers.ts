@@ -7,14 +7,33 @@ export const STOPWORDS = new Set([
   "MEME", "COIN", "TOKEN", "NARRATIVE", "TRENDING", "ROTATION", "ALPHA",
 ])
 
+/** Chain-native / stable / wrap symbols that must never become research subjects */
+export const GENERIC_CHAIN_SYMBOLS = new Set([
+  "SOL", "ETH", "BTC", "BNB", "USDC", "USDT", "DAI", "WETH", "WSOL", "WBNB",
+  "WBTC", "STETH", "CBETH", "MATIC", "POL", "AVAX", "TRX", "TON", "XRP",
+  "DOGE", "ADA", "DOT", "LINK", "UNI", "ARB", "OP", "ATOM", "NEAR", "SUI",
+  "APT", "HYPE", "NATIVE",
+])
+
+export function isGenericChainSymbol(raw: string): boolean {
+  return GENERIC_CHAIN_SYMBOLS.has(raw.trim().replace(/^\$/u, "").toUpperCase())
+}
+
+export const GENERIC_CHAIN_SYMBOL_REASON = "generic-chain-symbol"
+
 export function normalizeSymbol(raw: string): string | undefined {
   const symbol = raw.trim().replace(/^\$/u, "").trim()
   if (!/^[A-Za-z][A-Za-z0-9]{1,20}$/u.test(symbol)) return undefined
-  if (STOPWORDS.has(symbol.toUpperCase())) return undefined
+  const upper = symbol.toUpperCase()
+  if (STOPWORDS.has(upper)) return undefined
+  if (GENERIC_CHAIN_SYMBOLS.has(upper)) return undefined
   return symbol
 }
 
-/** Tickers named explicitly or inferred from a narrative's title and slug. */
+/**
+ * Explicit tickers only: bounded `tickers` fields and cashtags ($TICKER).
+ * Never infer bare uppercase/title words from title/slug (those produced SOL noise).
+ */
 export function extractNarrativeTickers(entry: NarrativeLogEntry): string[] {
   const found = new Map<string, string>()
   const add = (raw: string): void => {
@@ -30,12 +49,6 @@ export function extractNarrativeTickers(entry: NarrativeLogEntry): string[] {
 
   const text = `${entry.title} ${entry.slug.replace(/-/gu, " ")}`
   for (const match of text.matchAll(/\$([A-Za-z][A-Za-z0-9]{1,20})\b/gu)) {
-    add(match[1] ?? "")
-  }
-  for (const match of text.matchAll(/\b([A-Z][A-Z0-9]{2,14})\b/gu)) {
-    add(match[1] ?? "")
-  }
-  for (const match of text.matchAll(/\b([A-Z][a-z]{2,12}[A-Z][A-Za-z0-9]*)\b/gu)) {
     add(match[1] ?? "")
   }
   return [...found.values()]

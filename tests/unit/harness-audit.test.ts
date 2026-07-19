@@ -17,7 +17,7 @@ import { assignEpisode } from "../../src/harness/canary.js"
 import { confineDiff } from "../../src/harness/prepare.js"
 import { checkSafetyFloors, primaryImproved } from "../../src/harness/evaluate.js"
 import { shouldStopCanary } from "../../src/harness/lifecycle.js"
-import { migrateConfigToV7 } from "../../src/migrations/config.js"
+import { migrateConfigToV10 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 
 const CONFIG_HASH = `sha256:${"b".repeat(64)}` as const
@@ -169,7 +169,7 @@ describe("harness gates", () => {
   })
 
   it("migrates config to v5 with harness defaults disabled", () => {
-    const v5 = ConfigSchema.parse(migrateConfigToV7({
+    const v5 = ConfigSchema.parse(migrateConfigToV10({
       schema: 4,
       telegram_channels: [],
       twitter: {
@@ -217,7 +217,7 @@ describe("harness gates", () => {
       chat: {},
       router: {},
     }))
-    expect(v5.schema).toBe(7)
+    expect(v5.schema).toBe(10)
     expect(v5.harness_improvement.enabled).toBe(false)
     expect(v5.harness_improvement.allocation_bps).toBe(1_000)
     expect(v5.narratives.retention_days).toBe(14)

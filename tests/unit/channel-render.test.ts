@@ -10,6 +10,9 @@ import { chatReportPath } from "../../src/orchestrator/chat-report.js"
 
 const RUN_ID = "20260718T190000Z-channel"
 const NOW = "2026-07-18T19:00:00.000Z"
+const DISCORD_BUDGET = { dailyBudget: 5, urgentCeiling: 10 } as const
+const TG_OFF = { enabled: false, dailyCap: 10, usedToday: 0 } as const
+const DC_OFF = { enabled: false, dailyCap: 10, usedToday: 0 } as const
 
 const ITEM = {
   severity: "notable" as const,
@@ -70,7 +73,9 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      distiller: { enabled: false, dailyCap: 10, usedToday: 0 },
+      discordBudget: DISCORD_BUDGET,
+      distiller: DC_OFF,
+      telegramOverview: TG_OFF,
     })
     expect(report.rendered).toBe(1)
     const event = outbox.list()[0]
@@ -78,15 +83,146 @@ describe("renderChannelPayloads", () => {
     expect(event?.channels?.discord?.text).toBe(ITEM.text)
   })
 
-  it("attaches full report to telegram and distilled discord text", async () => {
+  it("annotates single-platform rotation broadcasts as X-only", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-xonly-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
+    writeFileSync(
+      join(agentRoot, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify({
+        slug: "rh-chain-meme-rotation",
+        title: "RH",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@alice:1", "coingecko:trending:rh"],
+        stage: "peaking",
+      })}\n`,
+    )
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, {
+      ...ITEM,
+      severity: "watch",
+    }))
+
+    await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      discordBudget: DISCORD_BUDGET,
+      distiller: DC_OFF,
+      telegramOverview: TG_OFF,
+    })
+    const event = outbox.list()[0]
+    expect(event?.channels?.telegram?.text).toContain("[X-only]")
+    expect(event?.channels?.discord?.text).toContain("[X-only]")
+  })
+
+  it("attaches telegram overview and distilled discord text", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-render-rep-"))
     const agentRoot = join(root, "agent")
     mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
     const layout = await ensureArchive(join(root, "archive"))
     const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
     await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
-    const reportMd = "# Chat summary\n\nDominant lane right now: Brian Armstrong PFP flip\n"
+    const reportMd = [
+      "# Chat recall",
+      "",
+      "## Host summary",
+      "",
+      "- job: list-scan",
+      "",
+      "## Receipt paths",
+      "",
+      "- `reports/list-scan/agent.md`",
+      "",
+      "## Agent context (untrusted evidence)",
+      "",
+      "- Dominant lane: Brian Armstrong PFP flip",
+      "- rh-chain-meme-rotation still peaking",
+    ].join("\n")
     writeFileSync(chatReportPath(agentRoot, RUN_ID), reportMd)
+
+    const overviewText = [
+      "**Brian PFP flip**",
+      "",
+      "Dominant lane right now.",
+      "",
+      "**RH rotation**",
+      "",
+      "Still peaking.",
+    ].join("\n")
+    const discordText = "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip"
+
+    let tgLaunches = 0
+    let dcLaunches = 0
+    const report = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      chatSummary: {
+        schema: 1,
+        runId: RUN_ID,
+        validatedAt: NOW,
+        promoted: true,
+        itemIds: [],
+        reportPath: `reports/chat/${RUN_ID}.md`,
+        untrustedEvidence: true,
+      },
+      discordBudget: DISCORD_BUDGET,
+      distiller: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 0,
+        runSession: async () => {
+          dcLaunches += 1
+          return discordText
+        },
+      },
+      telegramOverview: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 0,
+        runSession: async () => {
+          tgLaunches += 1
+          return overviewText
+        },
+      },
+      unchangedStages: [{
+        slug: "rh-chain-meme-rotation",
+        title: "RH",
+        stage: "peaking",
+      }],
+    })
+    expect(report.usedDistill).toBe(1)
+    expect(report.usedTelegramOverview).toBe(1)
+    expect(report.distillUsedToday).toBe(2)
+    expect(tgLaunches).toBe(1)
+    expect(dcLaunches).toBe(1)
+    const event = outbox.list()[0]
+    expect(event?.channels?.telegram?.text).toBe(overviewText)
+    expect(event?.channels?.telegram?.text).not.toContain("Chat recall")
+    expect(event?.channels?.telegram?.text).not.toContain("Receipt paths")
+    expect(event?.channels?.discord?.text).toBe(discordText)
+    expect(report.receipts[0]?.telegram).toBe("overview")
+    expect(report.receipts[0]?.discord).toBe("distilled")
+    expect(existsSync(join(runArchiveDir(layout, RUN_ID), "channel-render-receipts.json"))).toBe(true)
+  })
+
+  it("fails closed telegram overview to broadcast text", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-tg-fail-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
+    writeFileSync(
+      chatReportPath(agentRoot, RUN_ID),
+      "# Chat recall\n\n## Receipt paths\n\n- `reports/x.md`\n",
+    )
 
     const report = await renderChannelPayloads({
       agentRoot,
@@ -102,20 +238,20 @@ describe("renderChannelPayloads", () => {
         reportPath: `reports/chat/${RUN_ID}.md`,
         untrustedEvidence: true,
       },
-      distiller: {
+      discordBudget: DISCORD_BUDGET,
+      distiller: DC_OFF,
+      telegramOverview: {
         enabled: true,
         dailyCap: 10,
         usedToday: 0,
-        runSession: async () => "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip",
+        runSession: async () => "see reports/list-scan/agent.md",
       },
     })
-    expect(report.usedDistill).toBe(1)
+    expect(report.usedTelegramOverview).toBe(0)
     const event = outbox.list()[0]
-    expect(event?.channels?.telegram?.text).toContain("Chat summary")
-    expect(event?.channels?.discord?.text).toBe(
-      "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip",
-    )
-    expect(existsSync(join(runArchiveDir(layout, RUN_ID), "channel-render-receipts.json"))).toBe(true)
+    expect(event?.channels?.telegram?.text).toBe(ITEM.text)
+    expect(report.receipts[0]?.telegram).toBe("broadcast-text")
+    expect(report.receipts[0]?.telegramReason).toBe("workspace-path")
   })
 
   it("skips already-enriched events on resume", async () => {
@@ -136,7 +272,17 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
+      discordBudget: DISCORD_BUDGET,
       distiller: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 0,
+        runSession: async () => {
+          launches += 1
+          return "should not run"
+        },
+      },
+      telegramOverview: {
         enabled: true,
         dailyCap: 10,
         usedToday: 0,
@@ -180,9 +326,36 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
+      discordBudget: DISCORD_BUDGET,
       distiller: { enabled: true, dailyCap: 10, usedToday: 0 },
+      telegramOverview: TG_OFF,
     })
     expect(report.skipped).toBe(1)
     expect(outbox.list()[0]?.channels).toBeUndefined()
+  })
+
+  it("omits Discord when the Discord daily budget is exhausted", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-budget-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(agentRoot, { recursive: true })
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
+
+    const report = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      discordBudget: { dailyBudget: 0, urgentCeiling: 10 },
+      distiller: DC_OFF,
+      telegramOverview: TG_OFF,
+    })
+    expect(report.rendered).toBe(1)
+    expect(report.discordBudgetSkipped).toBe(1)
+    const event = outbox.list()[0]
+    expect(event?.channels?.telegram?.text).toBe(ITEM.text)
+    expect(event?.channels?.discord).toBeUndefined()
+    expect(report.receipts[0]?.discord).toBe("budget-skipped")
   })
 })

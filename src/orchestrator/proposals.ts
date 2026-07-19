@@ -64,13 +64,25 @@ export function proposalsPath(agentRoot: string, runId: string): string {
   return join(agentRoot, "reports", runId, "decision-proposals.json")
 }
 
+/**
+ * Untrusted agent artifact. Missing or malformed files are treated as no
+ * proposals (fail closed on mutations, never abort the run).
+ */
 export function loadDecisionProposals(
   agentRoot: string,
   runId: string,
 ): DecisionProposalFile | undefined {
   const path = proposalsPath(agentRoot, runId)
   if (!existsSync(path)) return undefined
-  return DecisionProposalFileSchema.parse(JSON.parse(readFileSync(path, "utf8")))
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"))
+  } catch {
+    return undefined
+  }
+  const validated = DecisionProposalFileSchema.safeParse(parsed)
+  if (!validated.success || validated.data.runId !== runId) return undefined
+  return validated.data
 }
 
 export function formatDecisionMarkdown(proposal: DecisionProposal): string {

@@ -59,6 +59,22 @@ describe("research intent", () => {
       subject: "REPPO",
       chainHint: "base",
     })
+    expect(extractResearchIntent(
+      "perform deep research on CRED (Solana) CREDBHvvqREBCAxMihzr8D1nepHMr2gmQoZWpmgGmeta",
+    )).toMatchObject({
+      kind: "research",
+      subject: "solana:CREDBHvvqREBCAxMihzr8D1nepHMr2gmQoZWpmgGmeta",
+      chainHint: "solana",
+      tokenHint: "CREDBHvvqREBCAxMihzr8D1nepHMr2gmQoZWpmgGmeta",
+      confidence: 90,
+    })
+    expect(extractResearchIntent(
+      "perform deep research on CREDBHvvqREBCAxMihzr8D1nepHMr2gmQoZWpmgGmeta",
+    )).toMatchObject({
+      kind: "research",
+      subject: "CREDBHvvqREBCAxMihzr8D1nepHMr2gmQoZWpmgGmeta",
+      tokenHint: "CREDBHvvqREBCAxMihzr8D1nepHMr2gmQoZWpmgGmeta",
+    })
   })
 
   it("confirm prompt names the chain when hinted", async () => {

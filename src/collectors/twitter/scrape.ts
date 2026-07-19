@@ -83,6 +83,18 @@ async function detectChallenge(page: Page): Promise<boolean> {
   return login > 0 && home === 0
 }
 
+async function waitForTweetArticles(page: Page, timeoutMs: number): Promise<boolean> {
+  try {
+    await page.locator("article[data-testid='tweet']").first().waitFor({
+      state: "attached",
+      timeout: timeoutMs,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function scrapeTarget(
   page: Page,
   target: TwitterScrapeTarget,
@@ -104,6 +116,11 @@ async function scrapeTarget(
     }
   }
 
+  // Token search often hydrates after domcontentloaded — wait before first parse
+  if (target.kind === "token-search") {
+    await waitForTweetArticles(page, 12_000)
+  }
+
   const seen = new Map<string, TwitterPost>()
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     const batch = await parseTwitterSearchPage(page)
@@ -112,6 +129,17 @@ async function scrapeTarget(
     }
     await page.mouse.wheel(0, 2_800)
     await page.waitForTimeout(1_200 + Math.floor(Math.random() * 1_800))
+  }
+
+  // One soft retry: empty Latest/Top timelines are often a hydration race, not "no posts"
+  if (target.kind === "token-search" && seen.size === 0) {
+    await page.waitForTimeout(2_500)
+    if (await waitForTweetArticles(page, 10_000)) {
+      const batch = await parseTwitterSearchPage(page)
+      for (const post of batch) {
+        if (!seen.has(post.id)) seen.set(post.id, post)
+      }
+    }
   }
 
   return {
@@ -224,29 +252,46 @@ export async function scrapeResearchTokenTwitter(args: Readonly<{
 
     const page = await context.newPage()
     for (const query of queries) {
-      const target: TwitterScrapeTarget = {
-        kind: "token-search",
-        url: twitterSearchUrl(query.query),
-        label: `research-${query.label}`,
-      }
-      log.info("twitter research search", { label: target.label, query: query.query })
-      try {
-        const bundle = await scrapeTarget(page, target, Math.max(1, args.maxPages))
-        if (bundle.challenged) challenged = true
-        else queriesSucceeded += 1
-        const unique = bundle.posts.filter((post) => {
-          if (globalSeen.has(post.id)) return false
-          globalSeen.set(post.id, post)
-          return true
-        })
-        bundles.push({ ...bundle, posts: unique })
-      } catch (error) {
-        log.warn("twitter research search failed", {
+      const tabs = ["live", "top"] as const
+      let completedWithoutChallenge = false
+      for (const tab of tabs) {
+        const target: TwitterScrapeTarget = {
+          kind: "token-search",
+          url: twitterSearchUrl(query.query, tab),
+          label: `research-${query.label}-${tab}`,
+        }
+        log.info("twitter research search", {
           label: target.label,
-          detail: error instanceof Error ? error.message : "unknown",
+          query: query.query,
+          tab,
         })
-        bundles.push({ target, posts: [], challenged: false })
+        try {
+          const bundle = await scrapeTarget(page, target, Math.max(1, args.maxPages))
+          if (bundle.challenged) {
+            challenged = true
+            completedWithoutChallenge = false
+            bundles.push({ ...bundle, posts: [] })
+            break
+          }
+          completedWithoutChallenge = true
+          const unique = bundle.posts.filter((post) => {
+            if (globalSeen.has(post.id)) return false
+            globalSeen.set(post.id, post)
+            return true
+          })
+          bundles.push({ ...bundle, posts: unique })
+          // Latest empty → try Top once before next host query
+          if (bundle.posts.length > 0) break
+        } catch (error) {
+          log.warn("twitter research search failed", {
+            label: target.label,
+            detail: error instanceof Error ? error.message : "unknown",
+          })
+          bundles.push({ target, posts: [], challenged: false })
+        }
+        await page.waitForTimeout(800 + Math.floor(Math.random() * 800))
       }
+      if (completedWithoutChallenge) queriesSucceeded += 1
       await page.waitForTimeout(1_000 + Math.floor(Math.random() * 1_000))
     }
     await context.close()

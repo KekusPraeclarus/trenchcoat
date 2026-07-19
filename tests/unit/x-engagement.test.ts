@@ -13,14 +13,20 @@ import {
   isAllowedEngagementRestUrl,
   isForbiddenEngagementMutation,
   isEngagementChallengeUrl,
+  isFavoriteTweetResponse,
+  settleEngagementOutcome,
+  tweetArticleCssForPostId,
   ENGAGEMENT_VERIFY_ATTEMPTS,
   retryEngagementVerify,
 } from "../../src/collectors/twitter/engagement.js"
 import { registerDiscoveryCandidates } from "../../src/sources/lifecycle.js"
-import { processListScanEngagement } from "../../src/orchestrator/x-engagement.js"
+import {
+  processListScanEngagement,
+  reconcilePendingEngagement,
+} from "../../src/orchestrator/x-engagement.js"
 import { writeXFypEligibleSnapshot } from "../../src/orchestrator/x-fyp-eligible.js"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -657,6 +663,217 @@ describe("engagement executor allowlist", () => {
       },
     })
     expect(result.ambiguousActionIds).toHaveLength(1)
+    expect(result.receipts[0]?.outcome).toBe("ambiguous")
+  })
+
+  it("settles verified-after-attempt-error when click times out but UI verifies", async () => {
+    const result = await executeEngagementActions({
+      accepted: [{
+        schema: 1 as const,
+        actionId: "sha256:1111111111111111111111111111111111111111111111111111111111111111" as const,
+        action: "like" as const,
+        target: "1234567890",
+        reasonCode: "narrative_signal",
+        topics: [],
+        accepted: true,
+        runId: "r1",
+        decidedAt: "2026-07-16T00:00:00.000Z",
+      }],
+      nowIso: "2026-07-16T00:00:00.000Z",
+      driver: {
+        like: async () => ({
+          stage: "attempted",
+          attemptError: "Timeout 10000ms exceeded",
+          mutationObserved: true,
+        }),
+        follow: async () => undefined,
+        unfollow: async () => undefined,
+        verifyLiked: async () => true,
+      },
+    })
+    expect(result.verifiedActionIds).toHaveLength(1)
+    expect(result.receipts[0]?.outcome).toBe("verified-after-attempt-error")
+    expect(result.receipts[0]?.attemptError).toContain("Timeout")
+  })
+
+  it("stays ambiguous when FavoriteTweet is observed but verification fails", async () => {
+    const result = await executeEngagementActions({
+      accepted: [{
+        schema: 1 as const,
+        actionId: "sha256:2222222222222222222222222222222222222222222222222222222222222222" as const,
+        action: "like" as const,
+        target: "1234567890",
+        reasonCode: "narrative_signal",
+        topics: [],
+        accepted: true,
+        runId: "r1",
+        decidedAt: "2026-07-16T00:00:00.000Z",
+      }],
+      nowIso: "2026-07-16T00:00:00.000Z",
+      driver: {
+        like: async () => ({
+          stage: "attempted",
+          mutationObserved: true,
+        }),
+        follow: async () => undefined,
+        unfollow: async () => undefined,
+        verifyLiked: async () => false,
+      },
+    })
+    expect(result.ambiguousActionIds).toHaveLength(1)
+    expect(result.verifiedActionIds).toHaveLength(0)
+    expect(result.receipts[0]?.outcome).toBe("ambiguous")
+  })
+
+  it("never marks success merely because a verifier was absent", async () => {
+    const result = await executeEngagementActions({
+      accepted: [{
+        schema: 1 as const,
+        actionId: "sha256:3333333333333333333333333333333333333333333333333333333333333333" as const,
+        action: "like" as const,
+        target: "1234567890",
+        reasonCode: "narrative_signal",
+        topics: [],
+        accepted: true,
+        runId: "r1",
+        decidedAt: "2026-07-16T00:00:00.000Z",
+      }],
+      nowIso: "2026-07-16T00:00:00.000Z",
+      driver: {
+        like: async () => ({ stage: "attempted", mutationObserved: true }),
+        follow: async () => undefined,
+        unfollow: async () => undefined,
+      },
+    })
+    expect(result.receipts[0]?.verified).toBe(false)
+    expect(result.receipts[0]?.ambiguous).toBe(true)
+    expect(result.receipts[0]?.outcome).toBe("ambiguous")
+    expect(result.receipts[0]?.verificationError).toBe("verifier-absent")
+  })
+
+  it("scopes like controls to the article owning the exact post id", () => {
+    expect(tweetArticleCssForPostId("1234567890")).toContain('/status/1234567890')
+    expect(tweetArticleCssForPostId("1234567890")).toContain('article[data-testid="tweet"]')
+    expect(tweetArticleCssForPostId("1234567890")).not.toContain(".first()")
+    expect(() => tweetArticleCssForPostId("not-a-digit")).toThrow(/invalid engagement post id/)
+    expect(isFavoriteTweetResponse(
+      "https://x.com/i/api/graphql/abc/query",
+      JSON.stringify({ operationName: "FavoriteTweet" }),
+    )).toBe(true)
+    expect(isFavoriteTweetResponse(
+      "https://x.com/i/api/graphql/abc/CreateTweet",
+      JSON.stringify({ operationName: "CreateTweet" }),
+    )).toBe(false)
+  })
+
+  it("maps settlement outcomes without inventing verified flags", () => {
+    expect(settleEngagementOutcome({
+      attempt: { stage: "already-satisfied" },
+      desiredState: true,
+    }).outcome).toBe("already-satisfied")
+    expect(settleEngagementOutcome({
+      attempt: { stage: "failed-before-mutation", attemptError: "missing" },
+      desiredState: false,
+    })).toMatchObject({ outcome: "failed-before-mutation", verified: false, ambiguous: false })
+    expect(settleEngagementOutcome({
+      attempt: { stage: "attempted", attemptError: "timeout" },
+      desiredState: true,
+    }).outcome).toBe("verified-after-attempt-error")
+    expect(settleEngagementOutcome({
+      attempt: { stage: "attempted" },
+      desiredState: undefined,
+    }).outcome).toBe("ambiguous")
+  })
+
+  it("reconciles pending likes read-only without re-clicking", async () => {
+    const actionId = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const
+    const state: XEngagementFile = {
+      ...emptyState(),
+      pendingActionIds: [actionId],
+      decisions: [{
+        schema: 1,
+        actionId,
+        action: "like",
+        target: "1234567890",
+        reasonCode: "narrative_signal",
+        topics: [],
+        accepted: true,
+        runId: "list-scan-1",
+        decidedAt: "2026-07-16T00:00:00.000Z",
+      }],
+    }
+    const report = await reconcilePendingEngagement({
+      state,
+      nowIso: "2026-07-16T01:00:00.000Z",
+      runId: "list-scan-2",
+      driver: {
+        verifyLiked: async () => true,
+      },
+    })
+    expect(report.settled).toBe(1)
+    expect(report.nextState.likedPostIds).toContain("1234567890")
+    expect(report.nextState.pendingActionIds).toHaveLength(0)
+    expect(report.receipts[0]?.outcome).toBe("already-satisfied")
+  })
+
+  it("clears pending as absent only after negative verify and cooldown", async () => {
+    const actionId = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as const
+    const state: XEngagementFile = {
+      ...emptyState(),
+      pendingActionIds: [actionId],
+      decisions: [{
+        schema: 1,
+        actionId,
+        action: "like",
+        target: "1234567890",
+        reasonCode: "narrative_signal",
+        topics: [],
+        accepted: true,
+        runId: "list-scan-1",
+        decidedAt: "2026-07-16T00:00:00.000Z",
+      }],
+    }
+    const tooSoon = await reconcilePendingEngagement({
+      state,
+      nowIso: "2026-07-16T00:05:00.000Z",
+      runId: "list-scan-2",
+      cooldownMs: 15 * 60_000,
+      driver: { verifyLiked: async () => false },
+    })
+    expect(tooSoon.clearedAbsent).toBe(0)
+    expect(tooSoon.leftPending).toBe(1)
+
+    const afterCooldown = await reconcilePendingEngagement({
+      state,
+      nowIso: "2026-07-16T00:20:00.000Z",
+      runId: "list-scan-2",
+      cooldownMs: 15 * 60_000,
+      driver: { verifyLiked: async () => false },
+    })
+    expect(afterCooldown.clearedAbsent).toBe(1)
+    expect(afterCooldown.nextState.pendingActionIds).toHaveLength(0)
+    expect(afterCooldown.nextState.likedPostIds).toHaveLength(0)
+    expect(afterCooldown.receipts[0]?.outcome).toBe("failed-before-mutation")
+  })
+
+  it("regression: browser evaluate callbacks use new Function not bare arrows", () => {
+    const sessionSrc = readFileSync(
+      new URL("../../src/collectors/twitter/session.ts", import.meta.url),
+      "utf8",
+    )
+    const profileSrc = readFileSync(
+      new URL("../../src/collectors/twitter/profile-history.ts", import.meta.url),
+      "utf8",
+    )
+    const engagementSrc = readFileSync(
+      new URL("../../src/collectors/twitter/engagement.ts", import.meta.url),
+      "utf8",
+    )
+    expect(sessionSrc).toMatch(/new Function\(/)
+    expect(profileSrc).toMatch(/new Function\(/)
+    expect(sessionSrc).not.toMatch(/\.evaluate(?:All)?\(\s*(?:async\s*)?\(/)
+    expect(profileSrc).not.toMatch(/\.evaluate(?:All)?\(\s*(?:async\s*)?\(/)
+    expect(engagementSrc).not.toMatch(/\.evaluate(?:All)?\(\s*(?:async\s*)?\(/)
   })
 })
 

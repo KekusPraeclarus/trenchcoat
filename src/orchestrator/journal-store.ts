@@ -9,30 +9,110 @@ import type { JsonValue } from "../lib/canonical-json.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { assertRunId } from "../lib/run-id.js"
 import type { JournalStore } from "../contracts/interfaces.js"
-import { RUN_PHASES, type RunJournal } from "./journal.js"
+import { RUN_PHASES, type RunJournal, type RunPhase, type RunStatus } from "./journal.js"
+
+export type JournalParseMode = "strict" | "scan"
+
+export type JournalParseResult =
+  | Readonly<{ ok: true; journal: RunJournal; legacyStatus: boolean }>
+  | Readonly<{ ok: false; reason: string }>
+
+function isRunPhase(value: unknown): value is RunPhase {
+  return typeof value === "string" && (RUN_PHASES as readonly string[]).includes(value)
+}
+
+function isRunStatus(value: unknown): value is RunStatus {
+  return value === "complete" || value === "failed" || value === "running"
+}
+
+/** Derive status for pre-ADR-006 journals that only stored phase */
+export function deriveLegacyJournalStatus(args: Readonly<{
+  phase: RunPhase
+  status?: unknown
+  failure?: unknown
+}>): Readonly<{ status: RunStatus; legacyStatus: boolean }> {
+  if (isRunStatus(args.status)) {
+    return { status: args.status, legacyStatus: false }
+  }
+  if (args.status !== undefined) {
+    throw new TypeError(`Journal status is invalid: ${String(args.status)}`)
+  }
+  if (args.phase === "complete") {
+    return { status: "complete", legacyStatus: true }
+  }
+  if (args.failure !== undefined) {
+    return { status: "failed", legacyStatus: true }
+  }
+  return { status: "running", legacyStatus: true }
+}
+
+/**
+ * Canonical journal parse. Bulk archive scans use mode "scan" so one corrupt
+ * file cannot abort narrative/review; direct load/resume stay strict.
+ */
+export function tryParseJournal(
+  raw: unknown,
+  mode: JournalParseMode = "strict",
+): JournalParseResult {
+  try {
+    if (typeof raw !== "object" || raw === null) {
+      throw new TypeError("Journal is not an object")
+    }
+    const candidate = raw as Record<string, unknown>
+    const schema = candidate["schema"]
+    if (schema !== undefined && schema !== 1) {
+      throw new TypeError(`Journal schema is invalid: ${String(schema)}`)
+    }
+    assertRunId(String(candidate["runId"]))
+    if (!isRunPhase(candidate["phase"])) {
+      throw new TypeError("Journal phase is invalid")
+    }
+    const phase = candidate["phase"]
+    const derived = deriveLegacyJournalStatus({
+      phase,
+      status: candidate["status"],
+      failure: candidate["failure"],
+    })
+    if (phase === "complete" && derived.status !== "complete") {
+      throw new TypeError("Journal phase complete requires status complete")
+    }
+    const journal: RunJournal = {
+      ...(raw as RunJournal),
+      schema: 1,
+      status: derived.status,
+    }
+    return { ok: true, journal, legacyStatus: derived.legacyStatus }
+  } catch (error) {
+    if (mode === "strict") throw error
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
 
 function parseJournal(raw: unknown): RunJournal {
-  if (typeof raw !== "object" || raw === null) {
-    throw new TypeError("Journal is not an object")
+  const parsed = tryParseJournal(raw, "strict")
+  if (!parsed.ok) throw new TypeError(parsed.reason)
+  return parsed.journal
+}
+
+/** Soft-load for bulk scans: corrupt journals return undefined instead of throwing */
+export async function loadJournalForScan(
+  layout: ArchiveLayout,
+  runId: string,
+): Promise<RunJournal | undefined> {
+  assertRunId(runId)
+  const path = transactionJournalPath(layout, runId)
+  if (!existsSync(path)) return undefined
+  let raw: unknown
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"))
+  } catch {
+    return undefined
   }
-  const candidate = raw as Record<string, unknown>
-  assertRunId(String(candidate["runId"]))
-  if (!RUN_PHASES.includes(candidate["phase"] as never)) {
-    throw new TypeError("Journal phase is invalid")
-  }
-  const phase = candidate["phase"] as RunJournal["phase"]
-  const statusRaw = candidate["status"]
-  if (statusRaw !== "complete" && statusRaw !== "failed" && statusRaw !== "running") {
-    throw new TypeError(`Journal status is invalid: ${String(statusRaw)}`)
-  }
-  const status = statusRaw
-  if (phase === "complete" && status !== "complete") {
-    throw new TypeError("Journal phase complete requires status complete")
-  }
-  return {
-    ...(raw as RunJournal),
-    status,
-  }
+  const parsed = tryParseJournal(raw, "scan")
+  return parsed.ok ? parsed.journal : undefined
 }
 
 // Archive is authoritative; the agent mirror is diagnostic and never read back

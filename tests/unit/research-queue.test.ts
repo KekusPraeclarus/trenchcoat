@@ -18,6 +18,7 @@ import { WebSearchRequestFileSchema } from "../../src/contracts/schemas.js"
 
 const NOW = "2026-07-17T12:00:00.000Z"
 const LATER = "2026-07-18T12:00:00.000Z"
+const TOKEN = "So11111111111111111111111111111111111111112"
 
 function entry(partial: Partial<ResearchQueueEntry> & Pick<ResearchQueueEntry, "queueId" | "subject" | "trigger">): ResearchQueueEntry {
   return {
@@ -165,6 +166,43 @@ describe("research queue", () => {
     expect(file.entries).toHaveLength(1)
     expect(file.entries[0]?.trigger).toBe("narrative")
     expect(file.entries[0]?.provenance).toContain("narrative:hoodrat-season")
+  })
+
+  it("excludes ambiguous and rejected entries from actionable dequeue", () => {
+    const file: ResearchQueueFile = {
+      schema: 1,
+      entries: [
+        entry({
+          queueId: "rq-amb",
+          subject: "AMBIG",
+          status: "ambiguous",
+          resolution: "ambiguous",
+          trigger: "narrative",
+        }),
+        entry({
+          queueId: "rq-rej",
+          subject: "SOL",
+          status: "rejected",
+          reason: "generic-chain-symbol",
+          trigger: "narrative",
+        }),
+        entry({
+          queueId: "rq-ok",
+          subject: `solana:${TOKEN}`,
+          chain: "solana",
+          tokenAddress: TOKEN,
+          status: "pending",
+          resolution: "resolved",
+          trigger: "social",
+        }),
+      ],
+    }
+    const dequeued = dequeueDue(file, NOW, 3, 3)
+    expect(dequeued.due).toHaveLength(1)
+    expect(dequeued.due[0]?.queueId).toBe("rq-ok")
+    expect(dequeued.next.entries.some((e) => e.queueId === "rq-amb" && e.status === "ambiguous")).toBe(true)
+    // Terminal rejected entries are not actionable and are not kept in the due set
+    expect(dequeued.due.some((e) => e.status === "rejected" || e.status === "ambiguous")).toBe(false)
   })
 
   it("rolls completedToday on first touch of a new day", () => {

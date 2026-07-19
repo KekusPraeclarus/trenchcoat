@@ -1,8 +1,8 @@
-import { loadConfig, loadEnvSecrets, securityThresholdsFromConfig } from "../lib/config.js"
+import { loadConfig, securityThresholdsFromConfig } from "../lib/config.js"
 import { log } from "../lib/log.js"
 import type { SnapshotWriter } from "../lib/snapshot.js"
 import { resolveFromCandidates, type ResolveCandidate } from "../lib/resolve.js"
-import { searchDexScreener } from "../collectors/market/providers.js"
+import { searchDexScreener, type MarketPair } from "../collectors/market/providers.js"
 import { fetchSecurityGate } from "../collectors/market/security.js"
 import { scrapeResearchTokenTwitter } from "../collectors/twitter/scrape.js"
 import type { TwitterPopularitySummary } from "../collectors/twitter/popularity.js"
@@ -14,6 +14,101 @@ import {
 import type { FarcasterCast } from "../collectors/farcaster/neynar.js"
 import type { CanonicalIdentity } from "../contracts/schemas.js"
 import { getChain } from "../lib/chains.js"
+import {
+  liveTokenContext,
+  loadObservationCache,
+  observationEventTime,
+  type FomoObservation,
+} from "../collectors/fomo/observations.js"
+import { freshnessFromIso } from "../collectors/fomo/freshness.js"
+
+const FOMO_CONTEXT_JSON_MAX = 1_500
+
+function compactFomoRecord(item: FomoObservation): string {
+  try {
+    return JSON.stringify(item.record).slice(0, FOMO_CONTEXT_JSON_MAX)
+  } catch {
+    return "{}"
+  }
+}
+
+async function writeFomoContextSnapshot(args: Readonly<{
+  writer: SnapshotWriter
+  runId: string
+  identity: CanonicalIdentity
+  fetchedAt: string
+  archiveRoot: string
+}>): Promise<string | undefined> {
+  const config = loadConfig()
+  if (!config.fomo.enabled) return undefined
+
+  try {
+    const cache = loadObservationCache(args.archiveRoot)
+    const live = cache
+      ? liveTokenContext(
+        cache,
+        args.identity.chain,
+        args.identity.tokenAddress,
+        args.fetchedAt,
+      )
+      : []
+
+    const items = []
+    for (const [index, item] of live.entries()) {
+      const eventIso = observationEventTime(item)
+      const fields = freshnessFromIso(eventIso, args.fetchedAt)
+      if (!fields.ok || fields.ts === undefined || fields.ageSec === undefined || !fields.freshnessTier) {
+        continue
+      }
+      items.push({
+        provenance: `${args.runId}:fomo-context:${item.kind}:${index}`,
+        text: `kind=${item.kind} ${compactFomoRecord(item)}`,
+        ts: fields.ts,
+        ageSec: fields.ageSec,
+        freshnessTier: fields.freshnessTier,
+        dedupeKey: `${item.kind}:${fields.ts}:${index}`,
+      })
+    }
+
+    if (items.length === 0) {
+      await args.writer.writeInbox(args.runId, "fomo-context", {
+        source: "host.fomo-observation-cache",
+        fetchedAt: args.fetchedAt,
+        trust: "untrusted-external",
+        items: [{
+          provenance: `${args.runId}:fomo-context:status`,
+          text: "kind=status status=empty-or-unavailable",
+          ts: args.fetchedAt,
+          ageSec: 0,
+          freshnessTier: "live",
+        }],
+      })
+      return "fomo-context"
+    }
+
+    await args.writer.writeInbox(args.runId, "fomo-context", {
+      source: "host.fomo-observation-cache",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items,
+    })
+    return "fomo-context"
+  } catch {
+    await args.writer.writeInbox(args.runId, "fomo-context", {
+      source: "host.fomo-observation-cache",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${args.runId}:fomo-context:status`,
+        text: "kind=status status=cache-unavailable",
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    }).catch(() => undefined)
+    return "fomo-context"
+  }
+}
 
 export type ResearchSubjectInput = Readonly<{
   subject: string
@@ -22,16 +117,45 @@ export type ResearchSubjectInput = Readonly<{
 }>
 
 export type ResolveSubjectResult =
-  | { status: "resolved"; identity: CanonicalIdentity; candidates: ResolveCandidate[] }
+  | {
+    status: "resolved"
+    identity: CanonicalIdentity
+    candidates: ResolveCandidate[]
+    /** Full DexScreener pairs from the resolve search — reuse to skip a second lookup */
+    pairs: readonly MarketPair[]
+  }
   | { status: "ambiguous"; shortlist: CanonicalIdentity[] }
   | { status: "empty" }
   | { status: "unsupported-chain"; chain: string }
+
+export type ResearchDossierMarket = Readonly<{
+  priceUsd: number | null
+  liquidityUsd: number | null
+  volume24hUsd: number | null
+  fdvUsd: number | null
+  buys24h: number | null
+  sells24h: number | null
+}>
+
+export type ResearchDossierTwitter = Readonly<{
+  postCount: number
+  authorCount: number
+  recentCount: number
+  posts: readonly Readonly<{
+    authorId?: string
+    likes?: number | null
+    views?: number | null
+    replies?: number | null
+    reposts?: number | null
+  }>[]
+}>
 
 export type ResearchDossierResult = Readonly<{
   snapshotNames: readonly string[]
   security: { status: string; hardFail: boolean; flags: readonly string[] }
   twitterPopularity?: TwitterPopularitySummary
-  farcasterPopularity?: FarcasterPopularitySummary
+  market?: ResearchDossierMarket
+  twitter?: ResearchDossierTwitter
 }>
 
 function snapshotName(base: string, suffix?: string): string {
@@ -104,7 +228,12 @@ export async function resolveResearchSubject(
     ...(expectedSymbol ? { expectedSymbol } : {}),
   })
   if (resolved.status === "resolved") {
-    return { status: "resolved", identity: resolved.identity, candidates }
+    return {
+      status: "resolved",
+      identity: resolved.identity,
+      candidates,
+      pairs,
+    }
   }
   if (resolved.status === "ambiguous") {
     return { status: "ambiguous", shortlist: resolved.shortlist }
@@ -115,6 +244,31 @@ export async function resolveResearchSubject(
   return { status: "empty" }
 }
 
+function matchPairsForIdentity(
+  pairs: readonly MarketPair[],
+  identity: CanonicalIdentity,
+): MarketPair[] {
+  return pairs.filter((p) => (
+    p.baseToken.address.toLowerCase() === identity.tokenAddress.toLowerCase()
+    || p.pairAddress.toLowerCase() === identity.pairAddress.toLowerCase()
+  )).slice(0, 5)
+}
+
+export function marketSummaryFromPairs(
+  matched: readonly MarketPair[],
+): ResearchDossierMarket | undefined {
+  const primary = matched[0]
+  if (!primary) return undefined
+  return {
+    priceUsd: primary.priceUsd ?? null,
+    liquidityUsd: primary.liquidityUsd ?? null,
+    volume24hUsd: primary.volume24hUsd ?? null,
+    fdvUsd: primary.fdv ?? null,
+    buys24h: primary.buys24h ?? null,
+    sells24h: primary.sells24h ?? null,
+  }
+}
+
 export async function writeMarketSnapshots(args: Readonly<{
   writer: SnapshotWriter
   runId: string
@@ -122,23 +276,38 @@ export async function writeMarketSnapshots(args: Readonly<{
   fetchedAt: string
   fetcher?: typeof fetch
   snapshotSuffix?: string
+  /** When set, skip a second DexScreener search */
+  pairs?: readonly MarketPair[]
 }>): Promise<{
   names: string[]
   marketPairCount: number
   security: { status: string; hardFail: boolean; flags: readonly string[] }
+  market?: ResearchDossierMarket
 }> {
   const fetcher = args.fetcher ?? fetch
   const names: string[] = []
   const marketName = snapshotName("market-dex", args.snapshotSuffix)
   const securityName = snapshotName("security-gate", args.snapshotSuffix)
-  const pairs = await searchDexScreener(
-    fetcher,
-    args.identity.tokenAddress.slice(0, 128),
-  )
-  const matched = pairs.filter((p) => (
-    p.baseToken.address.toLowerCase() === args.identity.tokenAddress.toLowerCase()
-    || p.pairAddress.toLowerCase() === args.identity.pairAddress.toLowerCase()
-  )).slice(0, 5)
+  const thresholds = securityThresholdsFromConfig(loadConfig())
+
+  const [pairs, security] = await Promise.all([
+    args.pairs
+      ? Promise.resolve([...args.pairs])
+      : searchDexScreener(fetcher, args.identity.tokenAddress.slice(0, 128)),
+    fetchSecurityGate(
+      fetcher,
+      args.identity.chain,
+      args.identity.tokenAddress,
+      thresholds,
+    ).catch((error: unknown) => ({
+      status: "pending" as const,
+      hardFail: false,
+      flags: [] as string[],
+      reason: error instanceof Error ? error.message : "security check failed",
+    })),
+  ])
+
+  const matched = matchPairsForIdentity(pairs, args.identity)
 
   await args.writer.writeInbox(args.runId, marketName, {
     source: "dexscreener.search",
@@ -166,19 +335,6 @@ export async function writeMarketSnapshots(args: Readonly<{
   })
   names.push(marketName)
 
-  const thresholds = securityThresholdsFromConfig(loadConfig())
-  const security = await fetchSecurityGate(
-    fetcher,
-    args.identity.chain,
-    args.identity.tokenAddress,
-    thresholds,
-  ).catch((error: unknown) => ({
-    status: "pending" as const,
-    hardFail: false,
-    flags: [] as string[],
-    reason: error instanceof Error ? error.message : "security check failed",
-  }))
-
   await args.writer.writeInbox(args.runId, securityName, {
     source: "host.security",
     fetchedAt: args.fetchedAt,
@@ -201,7 +357,13 @@ export async function writeMarketSnapshots(args: Readonly<{
     }],
   })
   names.push(securityName)
-  return { names, marketPairCount: matched.length, security }
+  const market = marketSummaryFromPairs(matched)
+  return {
+    names,
+    marketPairCount: matched.length,
+    security,
+    ...(market ? { market } : {}),
+  }
 }
 
 export async function writeTwitterResearchSnapshots(args: Readonly<{
@@ -214,7 +376,11 @@ export async function writeTwitterResearchSnapshots(args: Readonly<{
   recentWindowHours: number
   scrape?: typeof scrapeResearchTokenTwitter
   snapshotSuffix?: string
-}>): Promise<{ names: string[]; popularity: TwitterPopularitySummary }> {
+}>): Promise<{
+  names: string[]
+  popularity: TwitterPopularitySummary
+  twitter: ResearchDossierTwitter
+}> {
   const scrape = args.scrape ?? scrapeResearchTokenTwitter
   const searchName = snapshotName("twitter-token-search", args.snapshotSuffix)
   const popularityName = snapshotName("twitter-popularity", args.snapshotSuffix)
@@ -226,6 +392,18 @@ export async function writeTwitterResearchSnapshots(args: Readonly<{
     recentWindowHours: args.recentWindowHours,
   })
   const popularity = result.popularity
+  const twitter: ResearchDossierTwitter = {
+    postCount: popularity.postCount,
+    authorCount: popularity.uniqueAuthors,
+    recentCount: popularity.recentPostCount,
+    posts: result.posts.map((post) => ({
+      authorId: post.author,
+      likes: post.engagement.likes ?? null,
+      views: post.engagement.views ?? null,
+      replies: post.engagement.replies ?? null,
+      reposts: post.engagement.reposts ?? null,
+    })),
+  }
 
   const fetchedMs = Date.parse(args.fetchedAt)
   await args.writer.writeInbox(args.runId, searchName, {
@@ -277,6 +455,7 @@ export async function writeTwitterResearchSnapshots(args: Readonly<{
   return {
     names: [searchName, popularityName],
     popularity,
+    twitter,
   }
 }
 
@@ -383,31 +562,7 @@ function unavailableTwitterPopularity(
   }
 }
 
-function unavailableFarcasterPopularity(
-  reason: string,
-  recentWindowHours: number,
-): FarcasterPopularitySummary {
-  return {
-    status: "unavailable",
-    reason,
-    castCount: 0,
-    uniqueAuthors: 0,
-    recentCastCount: 0,
-    recentWindowHours,
-    queriesAttempted: 0,
-    queriesSucceeded: 0,
-    engagement: {
-      castsWithLikes: 0,
-      totalLikesKnown: 0,
-      totalRecastsKnown: 0,
-      totalRepliesKnown: 0,
-      medianLikesKnown: null,
-    },
-    sampleNote: "Farcaster sample unavailable — do not invent sentiment or popularity",
-  }
-}
-
-/** Meta + market + optional socials for a bound identity (shared by cron and operator). */
+/** Meta + market + optional X for a bound identity (shared by cron and operator). */
 export async function collectResearchDossier(args: Readonly<{
   writer: SnapshotWriter
   runId: string
@@ -415,9 +570,11 @@ export async function collectResearchDossier(args: Readonly<{
   identity: CanonicalIdentity
   fetchedAt: string
   queueId?: string
+  archiveRoot?: string
   fetcher?: typeof fetch
   twitterScrape?: typeof scrapeResearchTokenTwitter
-  farcasterSearch?: typeof searchResearchTokenFarcaster
+  /** Pairs from resolveResearchSubject — skips a second DexScreener search */
+  pairs?: readonly MarketPair[]
 }>): Promise<ResearchDossierResult> {
   const config = loadConfig()
   const snapshotNames: string[] = []
@@ -445,17 +602,34 @@ export async function collectResearchDossier(args: Readonly<{
   })
   snapshotNames.push("meta")
 
-  const market = await writeMarketSnapshots({
+  // Independent I/O after meta: market/security, cached FOMO, and X
+  const marketPromise = writeMarketSnapshots({
     writer: args.writer,
     runId: args.runId,
     identity: args.identity,
     fetchedAt: args.fetchedAt,
     ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+    ...(args.pairs ? { pairs: args.pairs } : {}),
   })
-  snapshotNames.push(...market.names)
 
-  let twitterPopularity: TwitterPopularitySummary | undefined
-  if (config.research.twitter_search.enabled) {
+  const fomoPromise = args.archiveRoot
+    ? writeFomoContextSnapshot({
+      writer: args.writer,
+      runId: args.runId,
+      identity: args.identity,
+      fetchedAt: args.fetchedAt,
+      archiveRoot: args.archiveRoot,
+    })
+    : Promise.resolve(undefined)
+
+  const twitterPromise = (async (): Promise<{
+    names: string[]
+    popularity?: TwitterPopularitySummary
+    twitter?: ResearchDossierTwitter
+  }> => {
+    if (!config.research.twitter_search.enabled) {
+      return { names: [] }
+    }
     try {
       const twitter = await writeTwitterResearchSnapshots({
         writer: args.writer,
@@ -467,12 +641,15 @@ export async function collectResearchDossier(args: Readonly<{
         recentWindowHours: config.research.twitter_search.recent_window_hours,
         ...(args.twitterScrape ? { scrape: args.twitterScrape } : {}),
       })
-      snapshotNames.push(...twitter.names)
-      twitterPopularity = twitter.popularity
+      return {
+        names: twitter.names,
+        popularity: twitter.popularity,
+        twitter: twitter.twitter,
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : "twitter scrape failed"
       log.warn("twitter research scrape skipped", { detail: reason })
-      twitterPopularity = unavailableTwitterPopularity(
+      const popularity = unavailableTwitterPopularity(
         reason,
         config.research.twitter_search.recent_window_hours,
       )
@@ -482,61 +659,41 @@ export async function collectResearchDossier(args: Readonly<{
         trust: "untrusted-external",
         items: [{
           provenance: `${args.runId}:twitter-popularity`,
-          text: JSON.stringify(twitterPopularity),
+          text: JSON.stringify(popularity),
           ts: args.fetchedAt,
           ageSec: 0,
           freshnessTier: "live",
         }],
       })
-      snapshotNames.push("twitter-popularity")
-    }
-  }
-
-  let farcasterPopularity: FarcasterPopularitySummary | undefined
-  if (config.research.farcaster_search.enabled) {
-    const secrets = loadEnvSecrets()
-    if (secrets.neynarApiKey) {
-      try {
-        const farcaster = await writeFarcasterResearchSnapshots({
-          writer: args.writer,
-          runId: args.runId,
-          identity: args.identity,
-          fetchedAt: args.fetchedAt,
-          maxCasts: config.research.farcaster_search.max_casts,
-          recentWindowHours: config.research.farcaster_search.recent_window_hours,
-          apiKey: secrets.neynarApiKey,
-          ...(args.farcasterSearch ? { search: args.farcasterSearch } : {}),
-        })
-        snapshotNames.push(...farcaster.names)
-        farcasterPopularity = farcaster.popularity
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : "farcaster search failed"
-        log.warn("farcaster research search skipped", { detail: reason })
-        farcasterPopularity = unavailableFarcasterPopularity(
-          reason,
-          config.research.farcaster_search.recent_window_hours,
-        )
-        await args.writer.writeInbox(args.runId, "farcaster-popularity", {
-          source: "host.farcaster-popularity",
-          fetchedAt: args.fetchedAt,
-          trust: "untrusted-external",
-          items: [{
-            provenance: `${args.runId}:farcaster-popularity`,
-            text: JSON.stringify(farcasterPopularity),
-            ts: args.fetchedAt,
-            ageSec: 0,
-            freshnessTier: "live",
-          }],
-        })
-        snapshotNames.push("farcaster-popularity")
+      return {
+        names: ["twitter-popularity"],
+        popularity,
+        twitter: {
+          postCount: 0,
+          authorCount: 0,
+          recentCount: 0,
+          posts: [],
+        },
       }
     }
-  }
+  })()
+
+  const [market, fomoName, twitterBranch] = await Promise.all([
+    marketPromise,
+    fomoPromise,
+    twitterPromise,
+  ])
+
+  // Deterministic order after settle: market/security, fomo, twitter
+  snapshotNames.push(...market.names)
+  if (fomoName) snapshotNames.push(fomoName)
+  snapshotNames.push(...twitterBranch.names)
 
   return {
     snapshotNames,
     security: market.security,
-    ...(twitterPopularity ? { twitterPopularity } : {}),
-    ...(farcasterPopularity ? { farcasterPopularity } : {}),
+    ...(twitterBranch.popularity ? { twitterPopularity: twitterBranch.popularity } : {}),
+    ...(market.market ? { market: market.market } : {}),
+    ...(twitterBranch.twitter ? { twitter: twitterBranch.twitter } : {}),
   }
 }

@@ -255,7 +255,7 @@ describe("empty collector prerequisites", () => {
     ))).toBe(true)
   })
 
-  it("skips review before creating agent artifacts", async () => {
+  it("keeps empty health in review scope at precheck", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-review-run-empty-"))
     const agentRoot = join(root, "agent")
     const archiveRoot = join(root, "archive")
@@ -263,12 +263,14 @@ describe("empty collector prerequisites", () => {
     const state = new StateStore(join(agentRoot, "state"))
     await state.saveWatchlist({ schema: 1, entries: [] })
 
-    const result = await runJob({
+    const { precheckJob } = await import("../../src/orchestrator/preconditions.js")
+    const decision = await precheckJob({
       job: "review",
-      paths: { agentRoot, archiveRoot },
+      agentRoot,
+      archiveRoot,
     })
-
-    expect(result).toMatchObject({ runId: "none", exitCode: 0 })
+    // Empty queues / silent wallets are health findings, not a skip
+    expect(decision?.skip).not.toBe(true)
     expect(existsSync(join(agentRoot, "reports"))).toBe(false)
   })
 

@@ -203,7 +203,7 @@ describe("job preconditions", () => {
     })
   })
 
-  it("review skip writes append-only skip ledger", async () => {
+  it("review no longer skips solely for empty traditional scope", async () => {
     const { agentRoot, archiveRoot } = emptyWorkspace()
     const state = new StateStore(join(agentRoot, "state"))
     await state.saveWatchlist({ schema: 1, entries: [] })
@@ -211,13 +211,12 @@ describe("job preconditions", () => {
     const result = await runJob({
       job: "review",
       paths: { agentRoot, archiveRoot },
+      skipAgent: true,
+      dryCollect: true,
     })
-    expect(result).toMatchObject({ runId: "none", exitCode: 0 })
+    expect(result.runId).not.toBe("none")
+    expect(result.exitCode).toBe(0)
     const ledger = skipLedgerPath(archiveRoot, "review")
-    expect(existsSync(ledger)).toBe(true)
-    expect(JSON.parse(readFileSync(ledger, "utf8").trim())).toMatchObject({
-      job: "review",
-      reason: "no-review-scope",
-    })
+    expect(existsSync(ledger)).toBe(false)
   })
 })

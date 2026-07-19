@@ -4,7 +4,13 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { writeAtomicFile } from "./fs-atomic.js"
 
-export const DEPLOYMENT_MANIFEST_SCHEMA = 1 as const
+/** Manifest schema for ~/.trenchcoat/runtime/deployment.json */
+export const DEPLOYMENT_MANIFEST_SCHEMA = 2 as const
+
+/** Must match live config schema in src/lib/config.ts / migrations */
+export const DEPLOYMENT_CONFIG_SCHEMA = 9 as const
+
+export type Sha256Digest = `sha256:${string}`
 
 export type DeploymentManifest = Readonly<{
   schema: typeof DEPLOYMENT_MANIFEST_SCHEMA
@@ -12,13 +18,46 @@ export type DeploymentManifest = Readonly<{
   packageVersion: string
   configSchema: number
   sourceCommit: string | null
-  cliHash: `sha256:${string}`
-  configModuleHash: `sha256:${string}`
+  /** true when install ran against a dirty git tree (--allow-dirty) */
+  sourceDirty: boolean
+  /** Deterministic provenance of commit + tree + dirty diff (if any) */
+  sourceHash: Sha256Digest
+  cliHash: Sha256Digest
+  configModuleHash: Sha256Digest
 }>
 
-function sha256File(path: string): `sha256:${string}` {
-  const body = readFileSync(path)
+function sha256Digest(body: Buffer | string): Sha256Digest {
   return `sha256:${createHash("sha256").update(body).digest("hex")}`
+}
+
+function sha256File(path: string): Sha256Digest {
+  return sha256Digest(readFileSync(path))
+}
+
+function isSha256Digest(value: unknown): value is Sha256Digest {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value)
+}
+
+/**
+ * Hash of commit + HEAD tree + dirty flag + porcelain/diff payload.
+ * Clean trees yield a stable hash for the same commit; dirty trees fold in
+ * status + diff so two dirty builds with different edits diverge.
+ */
+export function computeSourceHash(args: Readonly<{
+  sourceCommit: string | null
+  sourceDirty: boolean
+  treeOid: string | null
+  porcelain: string
+  diff: string
+}>): Sha256Digest {
+  const h = createHash("sha256")
+  h.update(`commit:${args.sourceCommit ?? "null"}\n`)
+  h.update(`tree:${args.treeOid ?? "null"}\n`)
+  h.update(`dirty:${args.sourceDirty ? "1" : "0"}\n`)
+  h.update(args.porcelain)
+  h.update("\n---\n")
+  h.update(args.diff)
+  return `sha256:${h.digest("hex")}`
 }
 
 export function defaultRuntimeRoot(): string {
@@ -29,12 +68,42 @@ export function deploymentManifestPath(runtimeRoot = defaultRuntimeRoot()): stri
   return join(runtimeRoot, "deployment.json")
 }
 
+export function parseDeploymentManifest(raw: unknown): DeploymentManifest | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const o = raw as Record<string, unknown>
+  if (o["schema"] !== DEPLOYMENT_MANIFEST_SCHEMA) return undefined
+  if (typeof o["builtAt"] !== "string" || o["builtAt"].length === 0) return undefined
+  if (typeof o["packageVersion"] !== "string" || o["packageVersion"].length === 0) return undefined
+  if (typeof o["configSchema"] !== "number" || !Number.isInteger(o["configSchema"])) return undefined
+  const sourceCommit = o["sourceCommit"]
+  if (!(sourceCommit === null || (typeof sourceCommit === "string" && /^[0-9a-f]{7,64}$/iu.test(sourceCommit)))) {
+    return undefined
+  }
+  if (typeof o["sourceDirty"] !== "boolean") return undefined
+  if (!isSha256Digest(o["sourceHash"])) return undefined
+  if (!isSha256Digest(o["cliHash"])) return undefined
+  if (!isSha256Digest(o["configModuleHash"])) return undefined
+  return {
+    schema: DEPLOYMENT_MANIFEST_SCHEMA,
+    builtAt: o["builtAt"],
+    packageVersion: o["packageVersion"],
+    configSchema: o["configSchema"],
+    sourceCommit: sourceCommit === null ? null : sourceCommit.toLowerCase(),
+    sourceDirty: o["sourceDirty"],
+    sourceHash: o["sourceHash"],
+    cliHash: o["cliHash"],
+    configModuleHash: o["configModuleHash"],
+  }
+}
+
 export function buildDeploymentManifest(args: Readonly<{
   runtimeRoot: string
   builtAt: string
   packageVersion: string
   configSchema: number
   sourceCommit?: string | null
+  sourceDirty: boolean
+  sourceHash: Sha256Digest
 }>): DeploymentManifest {
   const cliPath = join(args.runtimeRoot, "dist", "cli.js")
   const configPath = join(args.runtimeRoot, "dist", "lib", "config.js")
@@ -47,6 +116,8 @@ export function buildDeploymentManifest(args: Readonly<{
     packageVersion: args.packageVersion,
     configSchema: args.configSchema,
     sourceCommit: args.sourceCommit ?? null,
+    sourceDirty: args.sourceDirty,
+    sourceHash: args.sourceHash,
     cliHash: sha256File(cliPath),
     configModuleHash: sha256File(configPath),
   }
@@ -68,7 +139,9 @@ export function loadDeploymentManifest(
 ): DeploymentManifest | undefined {
   const path = deploymentManifestPath(runtimeRoot)
   if (!existsSync(path)) return undefined
-  const raw = JSON.parse(readFileSync(path, "utf8")) as DeploymentManifest
-  if (raw.schema !== DEPLOYMENT_MANIFEST_SCHEMA) return undefined
-  return raw
+  try {
+    return parseDeploymentManifest(JSON.parse(readFileSync(path, "utf8")))
+  } catch {
+    return undefined
+  }
 }

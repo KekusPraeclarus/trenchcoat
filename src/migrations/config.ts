@@ -103,7 +103,7 @@ export function migrateConfigToV3(raw: unknown): unknown {
 
 export function migrateConfigToV4(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 4 || record?.["schema"] === 5 || record?.["schema"] === 6 || record?.["schema"] === 7) return raw
+  if (record?.["schema"] === 4 || record?.["schema"] === 5 || record?.["schema"] === 6 || record?.["schema"] === 7 || record?.["schema"] === 8 || record?.["schema"] === 9) return raw
   const v3 = migrateConfigToV3(raw) as Record<string, unknown>
   const twitter = (v3["twitter"] ?? {}) as Record<string, unknown>
   return {
@@ -122,7 +122,7 @@ export function migrateConfigToV4(raw: unknown): unknown {
 
 export function migrateConfigToV5(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 5 || record?.["schema"] === 6 || record?.["schema"] === 7) return raw
+  if (record?.["schema"] === 5 || record?.["schema"] === 6 || record?.["schema"] === 7 || record?.["schema"] === 8 || record?.["schema"] === 9) return raw
   const v4 = migrateConfigToV4(raw) as Record<string, unknown>
   return {
     ...v4,
@@ -148,7 +148,7 @@ export function migrateConfigToV5(raw: unknown): unknown {
 
 export function migrateConfigToV6(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 6 || record?.["schema"] === 7) return raw
+  if (record?.["schema"] === 6 || record?.["schema"] === 7 || record?.["schema"] === 8 || record?.["schema"] === 9) return raw
   const v5 = migrateConfigToV5(raw) as Record<string, unknown>
   const research = (v5["research"] ?? {}) as Record<string, unknown>
   return {
@@ -202,7 +202,7 @@ export function migrateConfigToV6(raw: unknown): unknown {
 
 export function migrateConfigToV7(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 7) return raw
+  if (record?.["schema"] === 7 || record?.["schema"] === 8 || record?.["schema"] === 9) return raw
   const v6 = migrateConfigToV6(raw) as Record<string, unknown>
   return {
     ...v6,
@@ -213,6 +213,138 @@ export function migrateConfigToV7(raw: unknown): unknown {
     review: {
       lookback_days: 7,
       max_reports: 30,
+    },
+  }
+}
+
+export function migrateConfigToV8(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 8 || record?.["schema"] === 9) return raw
+  const v7 = migrateConfigToV7(raw) as Record<string, unknown>
+  return {
+    ...v7,
+    schema: 8,
+    fomo: {
+      enabled: false,
+      shadow_mode: true,
+      daily_call_budget: 200,
+      requests_per_minute: 8,
+      timeout_ms: 15_000,
+      max_response_bytes: 1_000_000,
+      trader_sync: {
+        enabled: false,
+        max_handles: 50,
+        max_wallet_candidates: 20,
+      },
+      signal_scan: {
+        enabled: false,
+        convergence: false,
+        hot_tokens: false,
+        activity: false,
+        min_trade_usd: 500,
+      },
+      theses: {
+        enabled: false,
+        max_per_run: 20,
+      },
+    },
+  }
+}
+
+export function defaultFomoConfigV9(): Record<string, unknown> {
+  return {
+    enabled: false,
+    shadow_mode: true,
+    daily_navigation_budget: 200,
+    min_delay_ms: 1_500,
+    max_delay_ms: 3_500,
+    navigation_timeout_ms: 30_000,
+    max_payload_bytes: 1_000_000,
+    max_event_age_hours: 6,
+    trader_sync: {
+      enabled: false,
+      max_handles: 50,
+      max_profile_pages: 20,
+      max_wallet_candidates: 20,
+    },
+    signal_scan: {
+      enabled: false,
+      feed: false,
+      trending: false,
+      alerts: false,
+      convergence: false,
+      pressure: false,
+      min_trade_usd: 500,
+      convergence_window_minutes: 60,
+      min_converging_traders: 2,
+      pressure_window_minutes: 60,
+      min_pressure_traders: 3,
+      max_enqueues_per_day: 1,
+    },
+    theses: {
+      enabled: false,
+      max_per_run: 20,
+    },
+    x_source_review: {
+      enabled: false,
+      max_pending: 100,
+      max_reviews_per_day: 4,
+      daily_history_page_budget: 20,
+      lookback_days: 90,
+      max_posts_per_review: 200,
+      max_pages_per_review: 5,
+      min_posts: 20,
+      min_active_days: 3,
+      min_role_evidence_posts: 5,
+      retry_after_hours: 24,
+      max_attempts: 3,
+    },
+    narrative_source_probation: {
+      enabled: false,
+      probation_days: 14,
+      max_profiles_per_scan: 5,
+      max_pages_per_profile: 1,
+      daily_profile_page_budget: 20,
+      min_accepted_contributions: 3,
+      min_distinct_narratives: 2,
+      demotion_idle_days: 28,
+    },
+  }
+}
+
+export function migrateConfigToV9(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 9 || record?.["schema"] === 10) return raw
+  const v8 = migrateConfigToV8(raw) as Record<string, unknown>
+  return {
+    ...v8,
+    schema: 9,
+    fomo: defaultFomoConfigV9(),
+  }
+}
+
+export function migrateConfigToV10(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 10) return raw
+  const v9 = migrateConfigToV9(raw) as Record<string, unknown>
+  const chat = (v9["chat"] as Record<string, unknown> | undefined) ?? {}
+  return {
+    ...v9,
+    schema: 10,
+    chat: {
+      ...chat,
+      discord: {
+        enabled: false,
+        channel_ids: [],
+        per_user_daily_cap: 5,
+        server_daily_cap: 20,
+        max_active_per_user: 5,
+        model: "composer-2.5-fast",
+        watch_days: 30,
+        watch_scan_hours: 6,
+        max_watched_tokens: 500,
+        max_subscribers_per_token: 100,
+      },
     },
   }
 }

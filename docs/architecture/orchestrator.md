@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -34,14 +34,14 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
 | `watchlist-scan` | every 2h | active watchlist market + security snapshots, optional bounded X/Farcaster token search; **host-pre skip** when empty watchlist | watchlist evidence review |
-| `list-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | FYP + two operator X lists + managed list *(live)*; coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** |
-| `farcaster-scan` | ~every 4h (same jitter gate as list-scan) | Neynar for-you + operator channels + following *(live when `farcaster.enabled`)* | trends, discovery candidates, bot `fc-engagement.json` likes only (≤2 likes/10m) |
+| `list-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | FYP + two operator X lists + managed list *(live)*; host `list-scan-alpha-manifest` (pending `alpha-queue/` paths); coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** via `alpha-digest.json` |
+| `farcaster-scan` | ~every 4h (same jitter gate as list-scan) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
 | `source-list-review` | daily + after sealed audit | lagged source-score epoch + managed-list membership | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
 | `fc-source-review` | daily | lagged `fc_*` source-score + follow-graph sync | **no agent** — promote/demote then Neynar follow/unfollow |
-| `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new narratives → outbox (`narrative-emergence` / `rotation`; rotation host-rejected when market-blind) |
+| `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new slug **or stage-change** → outbox (`narrative-emergence` / `narrative-fade` / `rotation`; same-stage re-sightings host-rejected; rotation host-rejected when market-blind; single-platform rotation/sentiment-collapse capped at `watch` and labeled `X-only` / `Farcaster-only`) |
 | `research` | on queue (research-queue.md), daily cap from config; also `tc research` / Telegram confirm | market data + security + bounded X + Farcaster token search (+ optional Tavily web search on operator path) | verdict (track / ignore / revisit) + research file with sentiment/popularity section, sources cited |
 | `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
-| `review` | daily | sealed report manifests (path-only) + pending alpha manifest + bounded watchlist/macro snapshots; **host-pre skip** when no scope | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
+| `review` | daily 07:00 | sealed report manifests (path-only) + pending alpha + watchlist/macro + **host health snapshot** + skip-ledger counts; scope also from empty queues / silent wallets / stale FC / recurring skips | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
 | `outcomes-settle` | frequent / before audit | mature source-call + wallet-buy observations | **no agent** — resumable settlement writers |
 | `wallet-discovery` | every 6h | watchlist token identities → Helius/Infura/Robinhood early buyers | host stages `candidate` wallets + cursors; evidence-only agent reads frozen snapshot |
@@ -134,9 +134,25 @@ Recovery resumes the first incomplete phase; it does not replay earlier side
 effects. Periodic Git (`tc backup`) is backup-only and never gates completion.
 
 **Deployment manifest** — `ops/install-launchd.sh` stages a runtime, writes
-`deployment.json` (cli/config hashes, package version, config schema, source
-commit), validates config against the staged binary, then swaps
-`~/.trenchcoat/runtime`. `tc status` flags a missing manifest.
+schema-2 `deployment.json` (commit, `sourceDirty`, deterministic `sourceHash`,
+config schema, cli/config module hashes, package version), validates config
+against the staged binary, then swaps `~/.trenchcoat/runtime`. Dirty trees are
+refused unless `--allow-dirty`. `tc status` flags a missing/stale manifest,
+schema mismatch, or dirty provenance.
+
+**Status / health snapshot** — `src/orchestrator/health.ts` builds one read-only
+snapshot used by `tc status` (default text + `--json`), Telegram `/status`, and
+daily `review` inbox inputs. It covers lock / incomplete / abandoned runs
+(`findIncompleteRunRefs`), last success|failure|skip ages for key jobs,
+`archive/skips/*.jsonl` reason counts, research actionable vs ambiguous depth,
+watchlist/wallet counts, X pending + bot-health escalation, FC stale
+streak/fallback from recent sealed receipts, router ingress backlog via
+`snapshotBroadcastPipeline`, and deployment provenance / schema compatibility.
+FOMO is a separate parallel section and cannot declare legacy arms healthy.
+Health warnings are non-fatal; preflight/config/runtime failures still exit
+non-zero. Review keeps empty queues, silent wallets, stale FC, and recurring
+skips in scope even without agent report directories (cadence remains once-daily
+07:00).
 
 **INDEX reconcile** — host `reconcileIndex` rewrites `state/INDEX.md` (integrity-
 protected) after accepted decision proposals (watchlist mutations), after
@@ -144,7 +160,11 @@ protected) after accepted decision proposals (watchlist mutations), after
 and after `tc watchlist remove`. Tokens rollup includes
 watchlist entries, decided/removed subjects from `decisions.md`, and
 narrative-linked tickers from `narratives/log.jsonl`. Agents do not own this
-file.
+file. Successful reconciles archive `index-reconcile-receipt.json` under
+`archive/runs/<run-id>/` (mirrored to `agent/reports/<run-id>/`) with before/after
+INDEX hashes and source timestamps. Health/status narrative age must come from
+sealed complete `narrative-scan` journals (`resolveSealedNarrativeFreshness`),
+never from human-readable dates inside `INDEX.md`.
 
 **Workspace retention** — after delivery, each run age-prunes `agent/inbox/` and
 `agent/reports/chat/` per `config.retention` (`retention.ts`). Never prunes
@@ -330,8 +350,8 @@ Two different “outbox” surfaces — do not conflate them:
 
 | Path | Contents | Module |
 |---|---|---|
-| `agent/outbox/<run-id>.json` | Agent **BroadcastItem** proposals (schema: `BroadcastItemSchema` in `src/contracts/schemas.ts`) | Validated by `ingestOutbox` → `validateBroadcastItem` + budget maths in `broadcast-ledger.ts`. Wrong envelopes (`broadcasts`, bare `text`) are rejected with an auditable receipt, never silently dropped. Wired in the run loop after seal (`events-staged`) |
-| `agent/reports/<run-id>/chat-summary.json` | Agent chat-recall proposal for broadcast runs (`ChatSummaryFileSchema`) | Validated by `validateAndPromoteChatReport` after `ingestOutbox`; host renders `reports/chat/<run-id>.md` from validated broadcast text + accepted context. Missing/invalid proposals are non-fatal with archived reject receipts; canary/no-broadcast runs promote nothing |
+| `agent/outbox/<run-id>.json` | Agent **BroadcastItem** proposals (schema: `BroadcastItemSchema` in `src/contracts/schemas.ts`) | Validated by `ingestOutbox` → `validateBroadcastItem` (no Telegram count limit). Wrong envelopes (`broadcasts`, bare `text`) are rejected with an auditable receipt, never silently dropped. Wired in the run loop after seal (`events-staged`) |
+| `agent/reports/<run-id>/chat-summary.json` | Optional agent chat-recall context (`ChatSummaryFileSchema`; `itemIds` may be empty) | `validateAndPromoteChatReport` after `ingestOutbox` for list/narrative/fc/review/research: host always renders `reports/chat/<run-id>.md` from trusted facts; appends accepted context when present. Missing/invalid proposals are non-fatal (`proposalReason`); canary still blocks promotion |
 | `~/.trenchcoat/archive/router-outbox/<runId>/` | Durable **RouterEvent** files staged for HMAC POST | `src/lib/outbox.ts` (`Outbox.stage`). Used today by wallet-review / wallet-seed |
 
 There is no `src/orchestrator/outbox.ts`. Agent proposals are not the same type as
@@ -340,22 +360,25 @@ staged router events.
 - Validator resolves the subject against host state and accepts only known
   host-owned rules compatible with the claim type/direction (`isKnownVerificationRule`).
   Unauditable claims do not leave the machine
-- Budget rules: `watch`/`notable` consume the daily budget (default 5).
-  **`urgent` bypasses the budget** — new narrative forming, sudden sentiment
-  collapse, early chain rotation must never queue behind routine items. A failsafe
-  ceiling (default 10 urgent/day) exists solely to contain a runaway agent; hitting
-  it is an incident, not a tuning knob (INV-B4)
-- Over-budget non-urgent items are logged in the run report as "not broadcast",
-  never silently dropped
+- Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5)
+  when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
+  that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
+  Discord failsafe (INV-B4). Telegram is never count-limited after schema validation.
+  Separate: `broadcast.discord_distiller.daily_cap` and
+  `broadcast.telegram_overview.daily_cap` cap LLM sessions (shared used counter under
+  `archive/broadcast-budget/discord-distill-<day>.json`), not Discord message count
+- Over Discord budget: omit `channels.discord` (router skips Discord; Telegram still
+  sends). Receipted as `budget-skipped`, never silently dropped
 - Host stages validated items, then `renderChannelPayloads` attaches per-destination
-  text (`channels.telegram` / `channels.discord`) before HMAC-POST to the long-lived
-  router (`com.trenchcoat.router` / `tc router serve`; `TRENCHCOAT_ROUTER_*` — see
-  [router.md](router.md)). Telegram gets the promoted chat report as-is when one
-  exists; Discord gets a fail-closed host distiller pass (`distill-session.ts`)
-  when `broadcast.discord_distiller.enabled` (else the short broadcast text).
-  Bare intake hosts default to `/v1/events`; loopback HTTP is allowed. Severity
-  `lifecycle` (wallet add/drop) skips the market broadcast budget and is never
-  distilled
+  text (`channels.telegram` always; `channels.discord` when Discord budget allows)
+  before HMAC-POST to the long-lived router (`com.trenchcoat.router` / `tc router serve`;
+  `TRENCHCOAT_ROUTER_*` — see [router.md](router.md)). Telegram gets a fail-closed
+  landscape overview (`distill-session.ts` / `telegram_overview`) when enabled —
+  longer chat-style report that may restate current narrative heat; else short
+  `event.text`. Discord gets a fail-closed new-things-only distiller when
+  `broadcast.discord_distiller.enabled` (else short broadcast text). Bare intake
+  hosts default to `/v1/events`; loopback HTTP is allowed. Severity `lifecycle`
+  (wallet add/drop) skips Discord market budget and is never distilled
 - Send failures never fail the run; durable fanout retries with dead-letter visibility
 
 ## Design patterns
@@ -389,12 +412,15 @@ staged router events.
 - `src/orchestrator/run.ts` — collector orchestration + Cursor CLI session
 - `src/orchestrator/journal.ts` / `journal-store.ts` — run journal phases +
   `running|complete|failed` status
-- `src/orchestrator/index-reconcile.ts` — host `state/INDEX.md` rewrite
+- `src/orchestrator/index-reconcile.ts` — host `state/INDEX.md` rewrite +
+  `index-reconcile-receipt.json` (before/after hash, source timestamps,
+  sealed narrative freshness note)
 - `src/orchestrator/chart-collect.ts` / `narrative-collect.ts` — collector jobs
 - `src/lib/deployment.ts` — runtime `deployment.json` manifest
-- `src/orchestrator/broadcast.ts` — daily/urgent budget maths + known verification rules
-- `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals + budget reserve + stage
-- `src/orchestrator/chat-report.ts` — validate `chat-summary.json` proposals and host-render `reports/chat/<run-id>.md` after `ingestOutbox` (`list-scan`, `narrative-scan`)
+- `src/orchestrator/broadcast.ts` — Discord-only daily/urgent budget maths + known verification rules
+- `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals and stage (no count limit)
+- `src/orchestrator/channel-render.ts` — attach Telegram/Discord payloads; Discord budget reserve
+- `src/orchestrator/chat-report.ts` — host-render `reports/chat/<run-id>.md` from trusted run facts after `ingestOutbox` (`list-scan`, `narrative-scan`, `farcaster-scan`, `review`, `research`); optional `chat-summary.json`/`.md` context appended when valid
 - `src/orchestrator/narrative-log.ts` — `pruneNarrativeLog`: drop malformed lines + purge `lastSeen` older than `narratives.retention_days` (default 14)
 - `src/orchestrator/router.ts` — BroadcastItem validation + HMAC `deliverRouterEvent`
 - `src/lib/outbox.ts` — durable RouterEvent staging under archive
@@ -417,9 +443,9 @@ staged router events.
 - Broadcast text is downstream of untrusted tweets/alpha messages: the router
   sender transmits the schema-checked `text` field only, never raw snapshot
   content (INV-B2)
-- The urgent bypass is the obvious abuse vector for a prompt-injected agent —
-  that's what the failsafe ceiling and the audit's broadcast-precision-per-severity
-  metric exist for; do not remove either (INV-B4)
+- The Discord urgent bypass is the obvious abuse vector for a prompt-injected agent —
+  that's what the Discord failsafe ceiling and the audit's broadcast-precision-per-severity
+  metric exist for; do not remove either (INV-B4). Telegram stays uncapped after validation.
 - Purge only what the digest manifest lists — a crash between digest and purge must
   not lose undigested messages (INV-Q1)
 - Log `run.id` and `agent.agentId` immediately after session start, before waiting —

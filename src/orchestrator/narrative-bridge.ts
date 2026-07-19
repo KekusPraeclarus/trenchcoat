@@ -2,13 +2,14 @@ import { join } from "node:path"
 import { type ResearchQueueEntry } from "../contracts/schemas.js"
 import { writeJsonRecordFsync, archiveLayout, runArchiveDir } from "../lib/archive.js"
 import { loadConfig } from "../lib/config.js"
-import { extractNarrativeTickers } from "../lib/narrative-tickers.js"
+import { extractNarrativeTickers, isGenericChainSymbol, GENERIC_CHAIN_SYMBOL_REASON } from "../lib/narrative-tickers.js"
 import { enqueueResearch } from "../lib/research-queue.js"
 import { StateStore } from "../lib/state.js"
 import { resolveResearchSubject, type ResolveSubjectResult } from "./research-collect.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
 
 const MAX_SYMBOLS_PER_RUN = 10
+export { GENERIC_CHAIN_SYMBOL_REASON } from "../lib/narrative-tickers.js"
 
 export type NarrativeBridgeItem = Readonly<{
   slug: string
@@ -146,6 +147,16 @@ export async function bridgeNarrativeTickers(args: {
   let skippedWatchlist = 0
 
   for (const { entry, symbol } of candidates) {
+    // Defense in depth: never resolve reserved generics even if extraction regresses
+    if (isGenericChainSymbol(symbol)) {
+      items.push({
+        slug: entry.slug,
+        symbol,
+        status: "rejected",
+        reason: GENERIC_CHAIN_SYMBOL_REASON,
+      })
+      continue
+    }
     if (isTrackedOrWatching(state, symbol)) {
       skippedWatchlist += 1
       items.push({

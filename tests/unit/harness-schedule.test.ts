@@ -13,7 +13,7 @@ import {
 import { openHarnessPullRequest } from "../../src/harness/pr.js"
 import { runHarnessImprove } from "../../src/harness/schedule.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV7 } from "../../src/migrations/config.js"
+import { migrateConfigToV10 } from "../../src/migrations/config.js"
 
 const CONFIG_HASH = `sha256:${"d".repeat(64)}` as const
 
@@ -60,7 +60,7 @@ async function seal(archiveRoot: string, epochId: string): Promise<void> {
 
 function writeEnabledConfig(trenchcoatDir: string, scheduleEnabled = true): void {
   mkdirSync(trenchcoatDir, { recursive: true })
-  const raw = migrateConfigToV7({
+  const raw = migrateConfigToV10({
     schema: 4,
     telegram_channels: [],
     twitter: {

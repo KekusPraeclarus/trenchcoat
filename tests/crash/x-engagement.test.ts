@@ -184,4 +184,65 @@ describe("integration engagement crash boundary", () => {
     expect(state.loadXBotHealth().updatedAt).toBe(before.updatedAt)
     expect(state.loadXBotHealth().consecutiveFailures).toBe(1)
   })
+
+  it("retry idempotency: pending reconcile settles without duplicate like click", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-eng-reconcile-"))
+    const archiveRoot = join(root, "archive")
+    const runId = "list-scan-reconcile"
+    const actionId = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    mkdirSync(join(root, "state"), { recursive: true })
+    mkdirSync(join(root, "reports", runId), { recursive: true })
+    writeFileSync(join(root, "state", "x-engagement.json"), `${JSON.stringify({
+      schema: 1,
+      followedHandles: [],
+      likedPostIds: [],
+      lastLikedAt: {},
+      lastFollowedAt: {},
+      pendingActionIds: [actionId],
+      decisions: [{
+        schema: 1,
+        actionId,
+        action: "like",
+        target: "1234567890",
+        reasonCode: "narrative_signal",
+        topics: [],
+        accepted: true,
+        runId: "list-scan-prev",
+        decidedAt: "2026-07-16T00:00:00.000Z",
+      }],
+      receipts: [],
+      daily: { day: "2026-07-16", likes: 1, follows: 0, unfollows: 0 },
+    }, null, 2)}\n`)
+    writeFileSync(join(root, "reports", runId, "x-engagement.json"), `${JSON.stringify({
+      schema: 1,
+      runId,
+      proposedAt: "2026-07-16T01:00:00.000Z",
+      items: [],
+    }, null, 2)}\n`)
+
+    let likeClicks = 0
+    const report = await processListScanEngagement({
+      agentRoot: root,
+      archiveRoot,
+      runId,
+      nowIso: "2026-07-16T01:00:00.000Z",
+      execute: true,
+      driver: {
+        like: async () => {
+          likeClicks += 1
+        },
+        follow: async () => undefined,
+        unfollow: async () => undefined,
+        verifyLiked: async () => true,
+      },
+    })
+
+    const state = new StateStore(join(root, "state"))
+    const file = state.loadXEngagement()
+    expect(likeClicks).toBe(0)
+    expect(report.reconciled).toBe(1)
+    expect(file.likedPostIds).toContain("1234567890")
+    expect(file.pendingActionIds).toHaveLength(0)
+    writeFileSync(join(root, "ok"), "1")
+  })
 })

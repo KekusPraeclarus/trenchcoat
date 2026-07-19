@@ -204,4 +204,36 @@ describe("narrative bridge", () => {
     expect(state.loadResearchQueue().entries).toHaveLength(0)
     expect(readFileSync(state.watchlistPath(), "utf8")).toBe(beforeWatchlist)
   })
+
+  it("rejects generic cashtags and does not enqueue them", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narrative-generic-"))
+    const agentRoot = join(root, "agent")
+    const report = await bridgeNarrativeTickers({
+      agentRoot,
+      runId: "narrative-bridge-generic",
+      nowIso: NOW,
+      logBefore: [],
+      logAfter: [narrative({ title: "$SOL season", tickers: ["SOL"] })],
+      fetcher: fetcher("SOL"),
+    })
+
+    expect(report.consideredSymbols).toBe(0)
+    expect(report.enqueued).toBe(0)
+    expect(new StateStore(join(agentRoot, "state")).loadResearchQueue().entries).toHaveLength(0)
+  })
+
+  it("does not infer bare uppercase title words as tickers", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narrative-bare-"))
+    const report = await bridgeNarrativeTickers({
+      agentRoot: join(root, "agent"),
+      runId: "narrative-bridge-bare",
+      nowIso: NOW,
+      logBefore: [],
+      logAfter: [narrative({ title: "SOL MEME rotation without cashtag" })],
+      fetcher: fetcher(),
+    })
+
+    expect(report.consideredSymbols).toBe(0)
+    expect(report.enqueued).toBe(0)
+  })
 })

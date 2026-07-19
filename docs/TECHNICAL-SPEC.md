@@ -2,7 +2,7 @@
 description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
   - You are about to add a dependency, data source, or change the harness/model routing.
@@ -44,8 +44,9 @@ lean: minimum tokens for undiminished results.
    `state/narratives/log.jsonl` (slug, stage, first/last seen, evidence). The log
    is host-owned/integrity-protected: the bot proposes updates in
    `reports/<run-id>/narrative-proposals.jsonl` and the host schema-merges them.
-   Genuinely new slugs get a short `narrative-emergence` (or `rotation`)
-   broadcast; re-sightings only refresh the log. Host prunes entries older than
+   New slugs or stage changes get a short `narrative-emergence` /
+   `narrative-fade` (or `rotation`) broadcast; same-stage re-sightings only
+   refresh the log. Host prunes entries older than
    `narratives.retention_days` (default 14) after each `narrative-scan`.
 5. **Chart analysis** — OHLCV from GeckoTerminal; deterministic indicators computed
    by collectors (RSI, volume z-score, breakouts, EMA structure); LLM interprets,
@@ -79,11 +80,12 @@ lean: minimum tokens for undiminished results.
    canary a bounded share of internal decisions with egress blocked; promotion is
    human-gated.
 9. **Broadcasts** — brief key findings staged into the **in-repo SQLite router**
-   (`src/router/**`, ADR 001) for Telegram/Discord fan-out. Sparingly and briefly.
-   Severity `urgent` (new narrative forming, sudden sentiment collapse, early
-   chain rotation) **bypasses the daily budget**; a generous hard ceiling exists
-   purely as a runaway-agent failsafe. Wallet add/drop uses a separate
-   `lifecycle` lane that does not consume market broadcast budget.
+   (`src/router/**`, ADR 001) for Telegram/Discord fan-out. Sparingly and briefly
+   on Discord: severity `urgent` (new narrative forming, sudden sentiment collapse,
+   early chain rotation) **bypasses the Discord daily budget**; a generous hard
+   ceiling exists purely as a runaway-agent failsafe. Telegram has no daily count
+   limit after schema validation. Wallet add/drop uses a separate `lifecycle` lane
+   that does not consume Discord market broadcast budget.
 10. **Chat agent** — a conversational agent reachable via Telegram to discuss
     findings, probe anything never broadcast, and give an opinion on any token.
     The chat session is a minimal orchestrator that delegates heavy work to
@@ -201,6 +203,9 @@ Minimising burn without harming results, enforced by design rather than hope:
     (ADR 002; keys in env, never under `agent/`)
   - Neynar (Farcaster) — for-you / channels / following, likes + follow-graph
     lifecycle (`farcaster.enabled`; ADR 007; keys under `~/.trenchcoat/farcaster/`)
+  - Fomo.family — authenticated Playwright SPA scrape (burner profile under
+    `~/.trenchcoat/fomo-profile/`); leaderboard/feed/trending → research enqueue,
+    wallet candidates, and gated X-source review (ADR 009; FAFO gates required)
 - **Scheduling**: launchd (macOS) / cron invoking the orchestrator CLI
   (`trenchcoat run <job>`, alias `tc`)
 - **Broadcast**: host-validated outbox items → in-repo router intake (HMAC +
@@ -223,9 +228,10 @@ Minimising burn without harming results, enforced by design rather than hope:
   instructions found in them (INV-P*). Alpha-channel text is *more* likely to be
   manipulative than random tweets — same rule, higher suspicion.
 - **The agent proposes broadcasts, the orchestrator sends them.** Outbox items are
-  schema-checked (length cap, severity, refs) before forwarding. `watch`/`notable`
-  consume the daily budget; `urgent` bypasses it (failsafe ceiling only). The
-  sandboxed agent can never reach the router directly.
+  schema-checked (length cap, severity, refs) before forwarding. Discord
+  `watch`/`notable` consume `broadcast.daily_budget`; Discord `urgent` bypasses it
+  (failsafe ceiling only). Telegram is uncapped after validation. The sandboxed
+  agent can never reach the router directly.
 - **Every piece of evidence has provenance.** Snapshot items carry their source
   handle; decisions cite sources; audits grade sources; scans weight by grade.
 - **Autonomy with a paper trail, not a leash.** No approval gates anywhere; instead
@@ -294,9 +300,10 @@ Minimising burn without harming results, enforced by design rather than hope:
   neutral/uncertain stance, and copies are excluded and measured; rug adjacency
   remains separate and immediate (2026-07-16,
   docs/architecture/audit-metrics.md, INV-S12)
-- Broadcast budget initial defaults: 5/day watch+notable, urgent failsafe
-  ceiling 10/day — config values in docs/CONFIG.md, tune after the first
-  weeks of audits (2026-07-16)
+- Discord broadcast budget initial defaults: 5/day watch+notable, urgent failsafe
+  ceiling 10/day (Telegram uncapped after validation) — config values in
+  docs/CONFIG.md, tune after the first weeks of audits (2026-07-16; Discord-only
+  framing 2026-07-18)
 - Broadcast delivery: **in-repo SQLite router** with HMAC intake, idempotency
   keys, and durable Telegram/Discord fan-out (2026-07-16, ADR 001,
   docs/architecture/router.md) — replaces the earlier "external router stub"
@@ -362,8 +369,9 @@ Accepted quality improvements beyond the base flow, in adoption order. Items
     every threshold (audit-metrics.md).
 13. **Narrative lifecycle stages** — `emerging → peaking → fading` on each
     `log.jsonl` entry (optional richer notes in `narratives/<slug>.md`);
-    broadcast fires on **new slug append** only. Rotation = capital leaving a
-    fading narrative for an emerging one → canonical `urgent`.
+    broadcast fires on **new slug append** or **stage change** (heat up/down);
+    same-stage re-sightings stay silent (host-enforced). Rotation = capital
+    leaving a fading narrative for an emerging one → canonical `urgent`.
 14. **Regime-stratified scorecards (v1.5)** — hit rate and calibration split by
     macro regime (Fear & Greed + chain-benchmark volatility percentile) once
     enough decisions exist; a bot that only works in a bull tape should say so.

@@ -2,7 +2,7 @@ import type { CanonicalIdentity } from "../../contracts/schemas.js"
 import type { TwitterPost } from "./session.js"
 
 export type ResearchTwitterQuery = Readonly<{
-  kind: "token-address" | "symbol-chain"
+  kind: "token-address" | "symbol-cashtag" | "symbol-chain"
   query: string
   label: string
 }>
@@ -18,8 +18,13 @@ export function buildResearchTwitterQueries(
       label: "token-address",
     },
   ]
-  const symbol = identity.symbolDisplay.trim()
-  if (symbol.length >= 2 && symbol.length <= 32 && /^[A-Za-z0-9.$]+$/u.test(symbol)) {
+  const symbol = identity.symbolDisplay.trim().replace(/^\$/u, "")
+  if (symbol.length >= 2 && symbol.length <= 32 && /^[A-Za-z0-9.]+$/u.test(symbol)) {
+    queries.push({
+      kind: "symbol-cashtag",
+      query: `$${symbol}`,
+      label: "symbol-cashtag",
+    })
     queries.push({
       kind: "symbol-chain",
       query: `${symbol} ${identity.chain}`,
@@ -29,9 +34,13 @@ export function buildResearchTwitterQueries(
   return queries
 }
 
-export function twitterSearchUrl(query: string): string {
+export function twitterSearchUrl(
+  query: string,
+  tab: "live" | "top" = "live",
+): string {
   const encoded = encodeURIComponent(query)
-  // Latest tab keeps the sample recent for sentiment; host-built query only
+  // Latest first for sentiment recency; Top is a host fallback when Latest is empty
+  if (tab === "top") return `https://x.com/search?q=${encoded}&src=typed_query`
   return `https://x.com/search?q=${encoded}&src=typed_query&f=live`
 }
 

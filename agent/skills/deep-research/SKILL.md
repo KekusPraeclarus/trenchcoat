@@ -13,23 +13,64 @@ Disposable deep research sub-session for operator chat / on-demand research.
 ## Passes
 
 1. First pass: read inbox dossiers by path (market, security, `twitter-token-search`,
-   `twitter-popularity` when present). If a few web queries would help, write ONLY
-   `reports/<run-id>/web-search-requests.json` with schema 1, matching `runId`,
-   and ASCII queries (never URLs). Max a few queries.
+   `twitter-popularity` when present). Research does **not** collect Farcaster —
+   ignore any stale `farcaster-*` inbox files. If a few web queries would help,
+   write ONLY `reports/<run-id>/web-search-requests.json` with schema 1, matching
+   `runId`, and ASCII queries (never URLs). Max a few queries.
 2. Final pass: synthesize from inbox + any host-fetched web snapshots + pass1
-   notes. Write `reports/<run-id>/agent.md` and `reports/chat/<run-id>.md`.
-   Decision proposals go only to `reports/<run-id>/decision-proposals.json`.
+   notes. Write `reports/<run-id>/agent.md` and a chat-facing summary only to
+   `reports/<run-id>/chat-summary.md` (never `reports/chat/` — the host copies
+   that path).
+3. Watchlist mutations (optional): only when proposing `track` / `drop` /
+   `ignore` / `revisit`, write `reports/<run-id>/decision-proposals.json` as
+   `DecisionProposalFile` — `{ schema:1, runId, proposedAt, proposals:[{
+   schema:1, proposalId, runId, proposedAt, card:{ decisionId, runId,
+   decisionTs, verdict, thesis, horizonHours, invalidation, drivers,
+   confidence, signalUse, sources, clusters, countercase, gate, optional
+   identity }, provenanceIds }] }`. Omit the file when not mutating watchlist.
+   Never invent shapes like `{ action, subject, rationale }`.
 
-## Sentiment & popularity (required when twitter-* inbox files exist)
+## agent.md (dossier)
 
-Include a dedicated section covering:
+When twitter-* inbox files exist, include Sentiment & popularity with sample size,
+authors, engagement evidence, and coverage caveats for the operator archive.
+Missing metrics = unknown, not zero. Do not invent Farcaster coverage.
 
-- Sample size (`postCount`), unique authors, recent posts in the host window
-- Known engagement totals/medians from `twitter-popularity` (missing = unknown, not zero)
-- Qualitative sentiment from tweet text with provenance citations
-- Explicit caveats: bounded host search sample, not platform-wide reach; degraded/unavailable status means do not invent coverage
+## chat-summary.md (user-facing)
 
-If `twitter-popularity` status is `unavailable`, say the X sample was missing and skip invented sentiment.
+Aim to fit **one Discord message** (~≤1800 chars). Prefer this skeleton:
+
+```
+# <TICKER> research
+
+## TL;DR
+<2–4 sentences: what it is, why it matters, key risk>
+
+## X
+<short tone/theme overview only>
+
+## Web
+<prose overview — no bullet lists of links/results>
+
+## Read
+<one clear takeaway / what to do next>
+```
+
+Add Market / Security / Risk only when they are material and not already
+covered in TL;DR. Skip empty sections. You may add a short extra section if
+genuinely useful — do not pad.
+
+Title `<TICKER> research` only (no " — chat summary"); no run-id / date meta;
+no "Agent context" or "(untrusted)" labels.
+
+**X must be summarative:**
+- Tone and themes only — no @handles, post lists, engagement tables, or
+  sample-size / "bounded host search" disclaimers
+- If X is missing/unavailable, one short sentence is enough
+
+**Web:** overview prose only — never enumerate search hits or URLs.
+
+Plain markdown. No tables. No mermaid.
 
 ## Voice
 

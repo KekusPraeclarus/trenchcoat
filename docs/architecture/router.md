@@ -2,7 +2,7 @@
 description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -15,6 +15,25 @@ outbox, then POSTs them to the in-repo router over loopback HTTP
 (`http://127.0.0.1:8787`, bare host defaults to `/v1/events`) or HTTPS off-loopback,
 using HMAC headers (`x-tc-timestamp`, `x-tc-nonce`, `x-tc-signature`) — never Bearer
 auth.
+
+Broadcast proposal `refs` may cite `state/…` or same-run `inbox/<run-id>/…` only.
+At ingest the host requires each path to be a regular non-symlink file already
+frozen in the sealed run archive (inbox via pre-archive manifest; state under
+`agent/state`), rejects traversal/cross-run/missing/mutable refs, and
+canonicalizes same-run inbox refs to `archive/runs/<run-id>/inbox/…` **before**
+deriving the router `eventId`.
+
+Failed or skipped ingress is retried by the host-only `delivery-retry` job
+(`tc delivery retry` / `tc run delivery-retry`, launchd every 15m): oldest-first
+bounded batch, channel-render before ingress, persist after every attempt, router
+`(eventId, payloadHash)` dedupe, conflicts terminal/operator-visible, transient failures remain queued
+with backoff. Counts live in `summarizeIngressCounts` /
+`snapshotBroadcastPipeline` for status/health wiring.
+
+`finding.broadcast` ingress fails closed when its Telegram channel payload is
+absent. This prevents a legacy or interrupted raw event from falling back to the
+same short text on both channels: Telegram receives the promoted long-form run
+report, while Discord receives the new-things-only distillation.
 
 The router is a **long-lived KeepAlive process** (`com.trenchcoat.router` via
 `ops/install-launchd.sh` → `tc router serve`). Jobs only stage + HMAC-POST; without
@@ -30,7 +49,7 @@ the router process, broadcasts never fan out. SQLite lives at
 | Durability | SQLite WAL: events, destination snapshots, deliveries, attempts, nonces, idempotency tombstones |
 | Ingress codes | `202` new event, `200` exact duplicate (same eventId + payload hash), `409` eventId/payload conflict (incident log) |
 | Fanout | At-least-once to Telegram and Discord. Providers have no idempotency primitive; ambiguous timeouts record duplicate risk |
-| Lanes | `finding.broadcast` consumes the daily market budget; `wallet.lifecycle` is a separate durable lane and never spends that budget |
+| Lanes | Discord `finding.broadcast` consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render; Telegram is uncapped after validation; `wallet.lifecycle` never spends Discord market budget |
 | Text ownership | Lifecycle one-liners are host-rendered from trusted reason codes/metrics. LLM prose is never forwarded |
 
 ## Event shapes
@@ -46,14 +65,20 @@ payload is a conflict.
 
 ### Per-channel payloads
 
-Host `renderChannelPayloads` (orchestrator, before first POST) may attach:
+`finding.broadcast` ingress **requires** `channels.telegram` already attached —
+`deliverStagedOutbox` fails closed with
+`requires rendered Telegram channel payload before ingress` if channel-render
+was skipped. Host `renderChannelPayloads` (orchestrator, before first POST)
+attaches:
 
 | Destination | Source |
 |---|---|
-| Telegram | Promoted `reports/chat/<run-id>.md` when present; else `event.text` |
-| Discord | Fail-closed distiller from the chat report (new-things-only, no provenance handles, ≤3 tickers, no status-quo filler); on any miss falls back to `event.text` |
+| Telegram | Fail-closed landscape overview from the promoted chat report when `broadcast.telegram_overview.enabled` (longer chat-style report; may restate current narrative heat; no host plumbing / workspace paths / provenance handles; ≤8k); on any miss falls back to `event.text`. No daily message-count limit |
+| Discord | Fail-closed distiller from the chat report (new-things-only, no provenance handles, ≤3 tickers, no status-quo filler / unchanged-stage restatement); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
+When `channels` is present and `channels.discord` is absent, Discord delivery is
+skipped (`skipped-discord-budget`).
 
 ## Delivery workers
 

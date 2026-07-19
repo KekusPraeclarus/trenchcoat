@@ -28,6 +28,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsx scripts/lint-static.ts",
     "probe:gecko": "tsx scripts/probe-geckoterminal.ts",
+    "probe:fomo": "tsx scripts/probe-fomo.ts",
+    "fomo:install-gates": "tsx scripts/install-fomo-gates.ts",
+    "fomo:shadow-metrics": "tsx scripts/fomo-shadow-metrics.ts",
     "check": "pnpm typecheck && pnpm test",
     "prepare:agent": "tsx scripts/scaffold-agent.ts"
   },
@@ -35,6 +38,7 @@
     "@noble/hashes": "^1.8.0",
     "better-sqlite3": "^11.10.0",
     "bs58": "^6.0.0",
+    "discord.js": "^14.16.3",
     "fastify": "^5.10.0",
     "grammy": "^1.36.0",
     "playwright": "^1.54.1",

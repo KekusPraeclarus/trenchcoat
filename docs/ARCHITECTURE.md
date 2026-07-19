@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -52,7 +52,9 @@ entries; writes a briefing to `agent/reports/` and, rarely, a broadcast proposal
 to `agent/outbox/`
 → orchestrator runs post-run integrity checks, writes as-of bundles for new
 decisions, creates entry-pending paper positions, validates outbox items (schema,
-length, budget — `urgent` bypasses budget), and stages deliveries → seals the
+length), attaches per-channel payloads (Telegram uncapped; Discord-only
+daily/urgent budget when attaching `channels.discord` — `urgent` bypasses the
+Discord daily budget), and stages deliveries → seals the
 archive journal (ADR 006; Git is backup-only via `tc backup`) → purges durably
 digested alpha items → sends staged broadcasts with idempotency keys → marks the
 run complete. The archive journal resumes any incomplete phase after a crash.
@@ -76,8 +78,8 @@ in orchestrator.md.
 The **in-repo router** (`src/router/**`, ADR 001) is a KeepAlive process
 (`com.trenchcoat.router` / `tc router serve`) that takes HMAC-signed events and
 fans them out durably to Telegram/Discord. Market broadcasts and wallet
-`lifecycle` events share intake; lifecycle does not consume the daily broadcast
-budget. Jobs only stage + POST — without the router process, nothing fans out.
+`lifecycle` events share intake; lifecycle and Telegram do not consume the Discord
+market broadcast budget. Jobs only stage + POST — without the router process, nothing fans out.
 
 The **chat service** bridges an operator-only Telegram bot to a *minimal
 orchestrator session*: it answers from the index directly when it can, and spawns
@@ -85,6 +87,13 @@ disposable research sub-agent sessions (fresh context, full knowledge-store acce
 optional fresh collector data) that write a report file the chat session then
 relays. The conversational context window stays small no matter how deep the
 research goes.
+
+A separate **Discord research bridge** (`src/discord/`, ADR 010) serves
+configured private-guild channels via Gateway (`tc listen discord`). It shares
+collectors and deep-research passes but roots state under `~/.trenchcoat/discord/`,
+uses final-only replies (no Telegram-style confirm), and never touches the main
+research queue or router webhook broadcasts. See
+[architecture/discord-research.md](architecture/discord-research.md).
 
 ## Directory tree
 
@@ -97,7 +106,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–007
+│   ├── adr/                  # binding decisions 001–010
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
@@ -110,6 +119,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   │   ├── market/           # geckoterminal, dexscreener, coingecko trending,
 │   │   │                     #   fear & greed, security gate, indicators
 │   │   ├── wallets/          # Helius / Infura providers
+│   │   ├── fomo/             # Fomo.family web client (nomination / signals)
 │   │   └── web/              # Tavily search (research)
 │   ├── sources/              # X FYP candidacy + lagged promote/demote (ADR 004);
 │   │                         #   FC follow-graph lifecycle (ADR 007)
@@ -168,6 +178,8 @@ Detailed per-module docs live in [architecture/](architecture/README.md):
   skills, knowledge store (incl. narratives + sources), outbox, sandbox config
 - [chat-agent.md](architecture/chat-agent.md) — telegram bridge, minimal
   orchestrator pattern, research sub-agents
+- [discord-research.md](architecture/discord-research.md) — private-guild Gateway
+  research bot (isolated from router webhook broadcasts; ADR 010)
 - [smart-wallets.md](architecture/smart-wallets.md), [source-lifecycle.md](architecture/source-lifecycle.md),
   [harness-improvement.md](architecture/harness-improvement.md), [router.md](architecture/router.md)
   — wallet scoring/lifecycle, managed X list + FC follow-graph, harness loop, delivery

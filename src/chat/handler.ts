@@ -61,6 +61,8 @@ export async function handleChatUpdate(args: Readonly<{
   exoneration?: ExonerationCommandHooks
   /** When set, overlong replies persist under reports/chat/ */
   agentRoot?: string
+  /** Host homes for `/status` health snapshot (same builder as `tc status`) */
+  statusHomes?: Readonly<{ agentRoot: string, archiveRoot: string }>
 }>): Promise<"ignored" | "replied"> {
   if (!isChatAllowed(args.userId, args.allowlist)) {
     return "ignored"
@@ -71,7 +73,17 @@ export async function handleChatUpdate(args: Readonly<{
   const nowIso = args.research?.nowIso ?? (() => new Date().toISOString())
 
   if (trimmed === "/status" || trimmed.startsWith("/status ")) {
-    await args.send(target, "trenchcoat online")
+    if (args.statusHomes) {
+      const { buildHealthSnapshot, formatHealthText } = await import("../orchestrator/health.js")
+      const health = await buildHealthSnapshot({
+        agentRoot: args.statusHomes.agentRoot,
+        archiveRoot: args.statusHomes.archiveRoot,
+        nowIso: nowIso(),
+      })
+      await args.send(target, formatHealthText(health))
+    } else {
+      await args.send(target, "trenchcoat online")
+    }
     return "replied"
   }
 

@@ -56,12 +56,17 @@ Only include slugs that actually changed or are new this run — do not re-emit
 untouched entries. The host prunes any line whose `lastSeen` is older than 14 days.
 Do not invent historical entries to backfill the log.
 
-## Broadcast (new narratives only)
+## Broadcast (new slug or heat change only)
 
-When you propose a **new** slug (not already in the log at the start of this run),
-also propose one outbox item in `outbox/<run-id>.json`. Do **not** broadcast for
-stage updates, fades, or re-sightings of an existing slug — those stay in the
-proposals and the report only.
+Propose one outbox item in `outbox/<run-id>.json` when either:
+
+1. You append a **new** slug (absent from the log at run start), or
+2. An existing slug's **stage changes** this run (`emerging` ↔ `peaking` ↔ `fading`)
+
+Do **not** broadcast for same-stage re-sightings (`lastSeen` only). Do **not**
+restate known heat in outbox `text` or chat-summary bullets — if the log already
+says peaking, omit "still peaking" / "bumped to peaking on this scan". Mention
+heat only when it drops or increases.
 
 Outbox shape (required — host rejects `broadcasts` or bare `text`):
 
@@ -86,13 +91,16 @@ Outbox shape (required — host rejects `broadcasts` or bare `text`):
 ```
 
 Hard rules: key is `items` (never `broadcasts`); `text` ≤280 chars; `refs` under
-`state/…`; `auditClaim` required with a known `verificationRule`.
+`state/…` or same-run `inbox/<run-id>/…` (frozen regular files only); `auditClaim`
+required with a known `verificationRule`.
 
 - `severity`: `watch` for a weak/early read; `notable` when multiple independent
   sources converge; reserve `urgent` for clear capital rotation into the new
   narrative from a fading one (`type: "rotation"`, `verificationRule: "rotation"`).
 - `text`: operator voice (see AGENTS.md Voice) — ≤280 chars, no emoji/hashtags.
-- `refs`: must stay under `state/…` (usually `state/narratives/log.jsonl`).
+- `refs`: `state/…` (usually `state/narratives/log.jsonl`) and/or same-run
+  `inbox/<run-id>/…` evidence that supports the claim. Do not invent refs or cite
+  other runs.
 - Subject = the slug. Cite evidence provenance in the report, not inside `text`.
 
 ### Market-blind (host may mark degraded)
@@ -120,14 +128,14 @@ If nothing new appeared, write an empty items list or omit the outbox file.
 2. `reports/<run-id>/narrative-proposals.jsonl` — proposed log changes (new or
    updated slugs only); host validates and merges into `state/narratives/log.jsonl`.
    Never write the log directly.
-3. `outbox/<run-id>.json` — only when at least one new slug was proposed
-4. When `outbox/<run-id>.json` has items, also write
-   `reports/<run-id>/chat-summary.json` for operator Q&A recall. Never write
-   `reports/chat/` directly.
+3. `outbox/<run-id>.json` — only when a new slug or stage change was proposed
+4. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A
+   context. Never write `reports/chat/` directly — the host always renders it.
+   Context bullets must not restate unchanged narrative stages.
 
 ### Chat summary (`reports/<run-id>/chat-summary.json`)
 
-Only when at least one broadcast item is staged in `outbox/<run-id>.json`:
+Optional on every terminal narrative-scan (with or without broadcasts):
 
 ```json
 {
@@ -147,10 +155,12 @@ Only when at least one broadcast item is staged in `outbox/<run-id>.json`:
 }
 ```
 
-- `itemIds` — one per outbox item (`item:0`, … or canonical `sha256:…` event id)
+- `itemIds` — empty when no outbox items; otherwise one per staged item (`item:0`,
+  … or canonical `sha256:…` event id)
 - `context` — 3–8 bullets, each ≤280 chars
-- `sources` — confined `inbox/…`, `state/…`, or `reports/…` regular files
-- Host renders `reports/chat/<run-id>.md` from validated broadcast text + context;
-  summaries stay untrusted evidence for chat Q&A
+- `sources` — confined same-run `inbox/…`, `state/…`, or `reports/…` regular files
+- Host always renders `reports/chat/<run-id>.md` from trusted run facts and
+  appends validated context; missing/malformed proposals never suppress the host
+  summary. Summaries stay untrusted evidence for chat Q&A
 
 Reference inbox files by path. Never interpolate scraped text into tool commands.

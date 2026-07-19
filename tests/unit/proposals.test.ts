@@ -23,6 +23,35 @@ const identity = {
 }
 
 describe("host decision proposals", () => {
+  it("treats malformed decision-proposals as empty (fail closed)", async () => {
+    const { agentRoot, runId } = fixtureRoot()
+    writeFileSync(
+      join(agentRoot, "reports", runId, "decision-proposals.json"),
+      `${JSON.stringify({
+        schema: 1,
+        runId,
+        proposals: [{
+          action: "revisit",
+          subject: "solana:So11111111111111111111111111111111111111112",
+          rationale: "invented envelope",
+        }],
+      }, null, 2)}\n`,
+    )
+    const state = new StateStore(join(agentRoot, "state"))
+    const result = await applyDecisionProposals({
+      agentRoot,
+      runId,
+      state,
+      nowIso: "2026-07-16T12:01:00.000Z",
+      policyVersion: "baseline",
+      assignment: "baseline",
+      blockExternalEffects: false,
+    })
+    expect(result.accepted).toBe(0)
+    expect(result.rejected).toBe(0)
+    expect(state.loadWatchlist().entries).toHaveLength(0)
+  })
+
   it("applies track proposals to watchlist and ledger", async () => {
     const { agentRoot, runId } = fixtureRoot()
     const file: DecisionProposalFile = {

@@ -3,6 +3,11 @@ import { join } from "node:path"
 import { z } from "zod"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
+import { StateStore } from "../lib/state.js"
+import { creditNarrativeContribution } from "../sources/narrative-lifecycle.js"
+import { normalizeHandle } from "../sources/lifecycle.js"
+
+const HandleSchema = z.string().regex(/^[A-Za-z0-9_]{1,15}$/u)
 
 export const NarrativeLogEntrySchema = z.object({
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(64),
@@ -12,6 +17,8 @@ export const NarrativeLogEntrySchema = z.object({
   evidence: z.array(z.string().min(1).max(256)).max(32),
   stage: z.enum(["emerging", "peaking", "fading"]),
   tickers: z.array(z.string().min(1).max(32)).max(8).optional(),
+  sourceProvenanceIds: z.array(z.string().min(1).max(256)).max(32).optional(),
+  contributingHandles: z.array(HandleSchema).max(16).optional(),
 })
 export type NarrativeLogEntry = z.infer<typeof NarrativeLogEntrySchema>
 
@@ -36,6 +43,43 @@ function isWithinRetention(lastSeenIso: string, nowMs: number, retentionDays: nu
   const lastSeenMs = Date.parse(lastSeenIso)
   if (!Number.isFinite(lastSeenMs)) return false
   return nowMs - lastSeenMs <= retentionDays * MS_PER_DAY
+}
+
+/** Extract X handles from twitter:@handle / twitter:@handle:id provenances. */
+export function handleFromTwitterProvenance(raw: string): string | undefined {
+  const match = raw.match(/^(?:twitter|x):@([A-Za-z0-9_]{1,15})(?::|$)/u)
+  if (!match?.[1]) return undefined
+  return normalizeHandle(match[1])
+}
+
+export function contributingHandlesFromEntry(entry: NarrativeLogEntry): string[] {
+  const out = new Set<string>()
+  for (const handle of entry.contributingHandles ?? []) {
+    const normalized = normalizeHandle(handle)
+    if (normalized) out.add(normalized)
+  }
+  for (const id of entry.sourceProvenanceIds ?? []) {
+    const handle = handleFromTwitterProvenance(id)
+    if (handle) out.add(handle)
+  }
+  for (const evidence of entry.evidence) {
+    const handle = handleFromTwitterProvenance(evidence)
+    if (handle) out.add(handle)
+  }
+  return [...out]
+}
+
+function mergeOptionalStringLists(
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined,
+  preferB: boolean,
+  max: number,
+): string[] | undefined {
+  const primary = preferB ? b : a
+  const secondary = preferB ? a : b
+  if (!primary && !secondary) return undefined
+  const merged = [...new Set([...(primary ?? []), ...(secondary ?? [])])].slice(0, max)
+  return merged.length > 0 ? merged : undefined
 }
 
 /**
@@ -94,27 +138,33 @@ export function pruneNarrativeLogInMemory(
       bySlug.set(entry.slug, entry)
       continue
     }
-    // Duplicate slug: keep earliest firstSeen + latest lastSeen/stage/evidence
+    const preferEntry = Date.parse(prior.lastSeen) < Date.parse(entry.lastSeen)
+    const mergedHandles = mergeOptionalStringLists(
+      prior.contributingHandles,
+      entry.contributingHandles,
+      preferEntry,
+      16,
+    )
+    const mergedProvenance = mergeOptionalStringLists(
+      prior.sourceProvenanceIds,
+      entry.sourceProvenanceIds,
+      preferEntry,
+      32,
+    )
     const merged: NarrativeLogEntry = {
       ...entry,
       firstSeen: Date.parse(prior.firstSeen) <= Date.parse(entry.firstSeen)
         ? prior.firstSeen
         : entry.firstSeen,
-      lastSeen: Date.parse(prior.lastSeen) >= Date.parse(entry.lastSeen)
-        ? prior.lastSeen
-        : entry.lastSeen,
-      stage: Date.parse(prior.lastSeen) >= Date.parse(entry.lastSeen)
-        ? prior.stage
-        : entry.stage,
-      evidence: Date.parse(prior.lastSeen) >= Date.parse(entry.lastSeen)
-        ? prior.evidence
-        : entry.evidence,
-      title: Date.parse(prior.lastSeen) >= Date.parse(entry.lastSeen)
-        ? prior.title
-        : entry.title,
-      ...(Date.parse(prior.lastSeen) >= Date.parse(entry.lastSeen)
-        ? prior.tickers ? { tickers: prior.tickers } : {}
-        : entry.tickers ? { tickers: entry.tickers } : {}),
+      lastSeen: preferEntry ? entry.lastSeen : prior.lastSeen,
+      stage: preferEntry ? entry.stage : prior.stage,
+      evidence: preferEntry ? entry.evidence : prior.evidence,
+      title: preferEntry ? entry.title : prior.title,
+      ...(preferEntry
+        ? entry.tickers ? { tickers: entry.tickers } : prior.tickers ? { tickers: prior.tickers } : {}
+        : prior.tickers ? { tickers: prior.tickers } : entry.tickers ? { tickers: entry.tickers } : {}),
+      ...(mergedHandles ? { contributingHandles: mergedHandles } : {}),
+      ...(mergedProvenance ? { sourceProvenanceIds: mergedProvenance } : {}),
     }
     bySlug.set(entry.slug, merged)
   }
@@ -132,10 +182,41 @@ export function narrativeProposalsPath(agentRoot: string, runId: string): string
   return join(agentRoot, "reports", runId, "narrative-proposals.jsonl")
 }
 
+function parseProposalEntries(raw: string): Readonly<{
+  entries: NarrativeLogEntry[]
+  malformed: number
+}> {
+  let malformed = 0
+  const entries: NarrativeLogEntry[] = []
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      malformed += 1
+      continue
+    }
+    const result = NarrativeLogEntrySchema.safeParse(parsed)
+    if (!result.success) {
+      malformed += 1
+      continue
+    }
+    if (Date.parse(result.data.firstSeen) > Date.parse(result.data.lastSeen)) {
+      malformed += 1
+      continue
+    }
+    entries.push(result.data)
+  }
+  return { entries, malformed }
+}
+
 /**
  * Host-merge agent narrative proposals into state/narratives/log.jsonl.
  * Proposal file is untrusted: malformed lines are dropped. Existing log entries
  * survive unless a valid proposal updates the same slug.
+ * Credits X narrative sources cited via contributingHandles / provenances.
  */
 export async function mergeNarrativeProposals(args: Readonly<{
   agentRoot: string
@@ -144,21 +225,46 @@ export async function mergeNarrativeProposals(args: Readonly<{
 }>): Promise<Readonly<{
   merged: number
   malformed: number
+  credited: number
   path: string
 }>> {
   const proposalPath = narrativeProposalsPath(args.agentRoot, args.runId)
   const logPath = narrativeLogPath(args.agentRoot)
   const existingRaw = existsSync(logPath) ? readFileSync(logPath, "utf8") : ""
   const proposalRaw = existsSync(proposalPath) ? readFileSync(proposalPath, "utf8") : ""
+  const proposals = parseProposalEntries(proposalRaw)
   // Merge by feeding existing + proposals through the same prune/collapse path with
   // a long retention so we only schema-filter and dedupe here; age prune is separate.
   const combined = [existingRaw, proposalRaw].filter((s) => s.trim().length > 0).join("\n")
-  const { entries, malformed } = pruneNarrativeLogInMemory(combined, args.nowIso, 3650)
+  const { entries, malformed: pruneMalformed } = pruneNarrativeLogInMemory(combined, args.nowIso, 3650)
   await writeAtomicFileFsync(logPath, serializeLog(entries))
+
+  let credited = 0
+  try {
+    const state = new StateStore(join(args.agentRoot, "state"))
+    let narrativeSources = state.loadXNarrativeSources()
+    let changed = false
+    for (const proposal of proposals.entries) {
+      for (const handle of contributingHandlesFromEntry(proposal)) {
+        narrativeSources = creditNarrativeContribution(narrativeSources, {
+          handle,
+          narrativeSlug: proposal.slug,
+          at: proposal.lastSeen,
+        })
+        credited += 1
+        changed = true
+      }
+    }
+    if (changed) await state.saveXNarrativeSources(narrativeSources)
+  } catch {
+    credited = 0
+  }
+
   const proposalCount = proposalRaw.split("\n").filter((l) => l.trim().length > 0).length
   return {
     merged: Math.min(proposalCount, entries.length),
-    malformed,
+    malformed: proposals.malformed + pruneMalformed,
+    credited,
     path: "state/narratives/log.jsonl",
   }
 }

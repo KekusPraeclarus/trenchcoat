@@ -6,16 +6,27 @@ import { sha256Json } from "../lib/canonical-json.js"
 import { Outbox } from "../lib/outbox.js"
 import type {
   AuditClaim,
+  BroadcastItem,
   ChatSummaryReceipt,
   DeliveryReceipt,
   RouterChannelPayloads,
   RouterEvent,
 } from "../contracts/schemas.js"
+import { dayKey } from "./broadcast.js"
+import { reserveBroadcast } from "./broadcast-ledger.js"
 import { chatReportPath } from "./chat-report.js"
 import {
   runDiscordDistiller,
+  runTelegramOverviewDistiller,
   type DistillSessionRunner,
 } from "./distill-session.js"
+import type { StageKnown } from "./narrative-stage-dedupe.js"
+import {
+  annotatePlatformCoverageText,
+  claimRequiresPlatformCorroboration,
+  platformCoverageLabel,
+  resolveSocialPlatformsForClaim,
+} from "./platform-coverage.js"
 
 const TERMINAL: ReadonlySet<DeliveryReceipt["status"]> = new Set([
   "accepted",
@@ -28,9 +39,10 @@ export type ChannelRenderReceipt = Readonly<{
   runId: string
   eventId: `sha256:${string}`
   renderedAt: string
-  telegram: "report" | "broadcast-text"
-  discord: "distilled" | "broadcast-text"
+  telegram: "overview" | "broadcast-text"
+  discord: "distilled" | "broadcast-text" | "budget-skipped"
   distillReason?: string
+  telegramReason?: string
   inputHash?: `sha256:${string}`
 }>
 
@@ -75,8 +87,9 @@ function readPromotedReport(args: Readonly<{
 
 /**
  * Enrich staged finding.broadcast events with per-channel payloads before HMAC
- * delivery. Idempotent: skips events that already have channels or a terminal
- * delivery receipt. wallet.lifecycle is never enriched (INV-S20).
+ * delivery. Telegram is always attached (uncapped). Discord is reserved against
+ * the Discord-only daily/urgent budget and omitted when over budget so the router
+ * skips that destination. Idempotent on resume.
  */
 export async function renderChannelPayloads(args: Readonly<{
   agentRoot: string
@@ -84,17 +97,31 @@ export async function renderChannelPayloads(args: Readonly<{
   runId: string
   nowIso: string
   chatSummary?: ChatSummaryReceipt
+  discordBudget: Readonly<{
+    dailyBudget: number
+    urgentCeiling: number
+  }>
   distiller: Readonly<{
     enabled: boolean
     dailyCap: number
     usedToday: number
     runSession?: DistillSessionRunner
   }>
+  telegramOverview: Readonly<{
+    enabled: boolean
+    dailyCap: number
+    usedToday: number
+    runSession?: DistillSessionRunner
+  }>
+  /** Narratives at unchanged heat — Discord must not restate; Telegram may */
+  unchangedStages?: readonly StageKnown[]
 }>): Promise<Readonly<{
   rendered: number
   skipped: number
   usedDistill: number
+  usedTelegramOverview: number
   distillUsedToday: number
+  discordBudgetSkipped: number
   receipts: readonly ChannelRenderReceipt[]
 }>> {
   const outbox = new Outbox(join(args.layout.routerOutbox, args.runId))
@@ -104,8 +131,11 @@ export async function renderChannelPayloads(args: Readonly<{
   const receipts: ChannelRenderReceipt[] = []
   let rendered = 0
   let skipped = 0
-  let usedToday = args.distiller.usedToday
+  let usedToday = Math.max(args.distiller.usedToday, args.telegramOverview.usedToday)
   let usedDistill = 0
+  let usedTelegramOverview = 0
+  let discordBudgetSkipped = 0
+  const day = dayKey(new Date(args.nowIso))
 
   for (const event of events) {
     if (event.type !== "finding.broadcast") {
@@ -126,43 +156,99 @@ export async function renderChannelPayloads(args: Readonly<{
     let telegramSource: ChannelRenderReceipt["telegram"] = "broadcast-text"
     let discordSource: ChannelRenderReceipt["discord"] = "broadcast-text"
     let distillReason: string | undefined
+    let telegramReason: string | undefined
     let inputHash: `sha256:${string}` | undefined
 
-    if (reportText) {
-      channels.telegram = { text: reportText.slice(0, 64_000) }
-      telegramSource = "report"
+    const coverageLabel = (() => {
+      const claim = event.auditClaim
+      if (!claim || !claimRequiresPlatformCorroboration(claim.type)) return undefined
+      const platforms = resolveSocialPlatformsForClaim(args.agentRoot, {
+        auditClaim: claim,
+        refs: event.refs,
+      })
+      return platformCoverageLabel(platforms)
+    })()
+    const broadcastText = annotatePlatformCoverageText(event.text, coverageLabel)
 
-      if (args.distiller.enabled) {
-        inputHash = sha256Json({
-          report: reportText,
-          claim: event.auditClaim ?? null,
-          fallback: event.text,
-        })
-        const distill = await runDiscordDistiller({
-          reportText,
-          fallbackText: event.text,
-          ...(event.auditClaim ? { auditClaim: event.auditClaim as AuditClaim } : {}),
-          dailyCap: args.distiller.dailyCap,
-          usedToday,
-          enabled: true,
-          ...(args.distiller.runSession ? { runSession: args.distiller.runSession } : {}),
-        })
-        usedToday = distill.used
-        if (!distill.usedFallback) {
-          channels.discord = { text: distill.text }
-          discordSource = "distilled"
-          usedDistill += 1
-        } else {
-          channels.discord = { text: event.text }
-          distillReason = distill.reason
-        }
+    if (reportText && args.telegramOverview.enabled) {
+      inputHash = sha256Json({
+        report: reportText,
+        claim: event.auditClaim ?? null,
+        fallback: broadcastText,
+      })
+      const overview = await runTelegramOverviewDistiller({
+        reportText,
+        fallbackText: broadcastText,
+        ...(event.auditClaim ? { auditClaim: event.auditClaim as AuditClaim } : {}),
+        ...(args.unchangedStages && args.unchangedStages.length > 0
+          ? { knownStages: args.unchangedStages }
+          : {}),
+        dailyCap: args.telegramOverview.dailyCap,
+        usedToday,
+        enabled: true,
+        ...(args.telegramOverview.runSession
+          ? { runSession: args.telegramOverview.runSession }
+          : {}),
+      })
+      usedToday = overview.used
+      if (!overview.usedFallback) {
+        channels.telegram = { text: overview.text.slice(0, 64_000) }
+        telegramSource = "overview"
+        usedTelegramOverview += 1
       } else {
-        channels.discord = { text: event.text }
-        distillReason = "disabled"
+        channels.telegram = { text: broadcastText }
+        telegramReason = overview.reason
       }
     } else {
-      channels.telegram = { text: event.text }
-      channels.discord = { text: event.text }
+      channels.telegram = { text: broadcastText }
+      if (reportText && !args.telegramOverview.enabled) telegramReason = "disabled"
+    }
+
+    const severity = event.severity as BroadcastItem["severity"]
+    const reservation = await reserveBroadcast({
+      layout: args.layout,
+      dayKey: day,
+      reservationKey: event.eventId,
+      severity,
+      dailyBudget: args.discordBudget.dailyBudget,
+      urgentCeiling: args.discordBudget.urgentCeiling,
+      nowIso: args.nowIso,
+    })
+
+    if (!reservation.ok) {
+      discordSource = "budget-skipped"
+      distillReason = `budget:${reservation.reason ?? "rejected"}`
+      discordBudgetSkipped += 1
+    } else if (reportText && args.distiller.enabled) {
+      inputHash ??= sha256Json({
+        report: reportText,
+        claim: event.auditClaim ?? null,
+        fallback: broadcastText,
+      })
+      const distill = await runDiscordDistiller({
+        reportText,
+        fallbackText: broadcastText,
+        ...(event.auditClaim ? { auditClaim: event.auditClaim as AuditClaim } : {}),
+        ...(args.unchangedStages && args.unchangedStages.length > 0
+          ? { unchangedStages: args.unchangedStages }
+          : {}),
+        dailyCap: args.distiller.dailyCap,
+        usedToday,
+        enabled: true,
+        ...(args.distiller.runSession ? { runSession: args.distiller.runSession } : {}),
+      })
+      usedToday = distill.used
+      if (!distill.usedFallback) {
+        channels.discord = { text: distill.text }
+        discordSource = "distilled"
+        usedDistill += 1
+      } else {
+        channels.discord = { text: broadcastText }
+        distillReason = distill.reason
+      }
+    } else {
+      channels.discord = { text: broadcastText }
+      if (reportText && !args.distiller.enabled) distillReason = "disabled"
     }
 
     const enriched: RouterEvent = { ...event, channels }
@@ -176,6 +262,7 @@ export async function renderChannelPayloads(args: Readonly<{
       telegram: telegramSource,
       discord: discordSource,
       ...(distillReason ? { distillReason } : {}),
+      ...(telegramReason ? { telegramReason } : {}),
       ...(inputHash ? { inputHash } : {}),
     }
     receipts.push(receipt)
@@ -194,5 +281,13 @@ export async function renderChannelPayloads(args: Readonly<{
     )
   }
 
-  return { rendered, skipped, usedDistill, distillUsedToday: usedToday, receipts }
+  return {
+    rendered,
+    skipped,
+    usedDistill,
+    usedTelegramOverview,
+    distillUsedToday: usedToday,
+    discordBudgetSkipped,
+    receipts,
+  }
 }

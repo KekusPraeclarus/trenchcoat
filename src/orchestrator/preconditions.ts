@@ -14,6 +14,8 @@ import { getJob, type JobName } from "./jobs.js"
 import { log } from "../lib/log.js"
 import { systemClock } from "../lib/clock.js"
 import { ensureArchive } from "../lib/archive.js"
+import { providerGateAllowsSchedule } from "../collectors/fomo/gates.js"
+import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
 
 export type JobSkipReason =
   | "queue-empty"
@@ -25,6 +27,12 @@ export type JobSkipReason =
   | "no-eligible-solana-wallets"
   | "no-eligible-evm-wallets"
   | "not-initialized"
+  | "fomo-disabled"
+  | "fomo-missing-session"
+  | "fomo-provider-gate"
+  | "fomo-capability-gate"
+  | "router-unconfigured"
+  | "no-pending-ingress"
 
 export type JobPreconditionResult = Readonly<{
   skip: true
@@ -49,6 +57,9 @@ const HOST_GATED_JOBS = new Set<JobName>([
   "wallet-scan-evm",
   "chart-sweep",
   "watchlist-scan",
+  "fomo-trader-sync",
+  "fomo-signal-scan",
+  "delivery-retry",
 ])
 
 export function isHostGatedJob(job: JobName): boolean {
@@ -171,6 +182,7 @@ export async function evaluateJobPreconditions(args: Readonly<{
           sealedReports: reviewPrereqs.sealedReports.length,
           pendingAlpha: reviewPrereqs.pendingAlphaPaths.length,
           watchlistSubjects: reviewPrereqs.watchlistSubjects,
+          healthWarnings: reviewPrereqs.health?.warnings.length ?? 0,
         },
       }
     }
@@ -185,6 +197,44 @@ export async function evaluateJobPreconditions(args: Readonly<{
     const subjects = countActiveWatchlistSubjects(args.agentRoot)
     if (subjects === 0) {
       return { skip: true, reason: "no-active-watchlist-subjects", details: { subjects } }
+    }
+  }
+
+  if (args.job === "fomo-trader-sync" || args.job === "fomo-signal-scan") {
+    let cfg
+    try {
+      cfg = loadConfig()
+    } catch {
+      return { skip: true, reason: "fomo-disabled" }
+    }
+    if (!cfg.fomo.enabled) {
+      return { skip: true, reason: "fomo-disabled" }
+    }
+    if (args.job === "fomo-trader-sync" && !cfg.fomo.trader_sync.enabled) {
+      return { skip: true, reason: "fomo-capability-gate", details: { capability: "trader_sync" } }
+    }
+    if (args.job === "fomo-signal-scan" && !cfg.fomo.signal_scan.enabled) {
+      return { skip: true, reason: "fomo-capability-gate", details: { capability: "signal_scan" } }
+    }
+    if (!fomoSessionExists()) {
+      return { skip: true, reason: "fomo-missing-session" }
+    }
+    if (!providerGateAllowsSchedule(args.archiveRoot)) {
+      return { skip: true, reason: "fomo-provider-gate" }
+    }
+  }
+
+  if (args.job === "delivery-retry") {
+    const routerUrl = process.env["TRENCHCOAT_ROUTER_URL"]?.trim()
+    const hmacKey = process.env["TRENCHCOAT_ROUTER_HMAC_KEY"]?.trim()
+    if (!routerUrl || !hmacKey) {
+      return { skip: true, reason: "router-unconfigured" }
+    }
+    const layout = await ensureArchive(args.archiveRoot)
+    const { listIngressPending } = await import("./delivery.js")
+    const pending = listIngressPending(layout, args.nowIso)
+    if (pending.length === 0) {
+      return { skip: true, reason: "no-pending-ingress", details: { pending: 0 } }
     }
   }
 

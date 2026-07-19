@@ -1,8 +1,8 @@
 ---
-description: Host-owned FYP/X source candidacy and managed private list (ADR 004), plus Farcaster follow-graph lifecycle (ADR 007).
+description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
   - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
@@ -32,6 +32,21 @@ writers are still sparse — empty archives yield no promotions. Prefer
 
 Integrity snapshots include `source-lifecycle.json` (INV-S7 family). The agent
 must not write either file.
+
+## Fomo leaderboard → dual-track X curation
+
+Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
+
+| File | Owner | Role |
+|---|---|---|
+| `agent/state/x-source-nominations.json` | host | Pending Fomo→X nominations (never list/follow by itself) |
+| `agent/state/x-narrative-sources.json` | host | Narrative utility probation / follow eligibility |
+
+- `discoveredFrom: "fomo-leaderboard"` enters `source-lifecycle.json` only after
+  deterministic historical call extraction meets shiller thresholds.
+- Classification agent output never mutates lists or follows. Shiller and
+  narrative tracks graduate independently (`both` must pass both).
+- Historical posts are never reused as live narrative evidence.
 
 ## Farcaster follow-graph (parallel)
 

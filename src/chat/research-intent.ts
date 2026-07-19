@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { validateAddress } from "../lib/chains.js"
 import { sanitizeOperatorText } from "./prompt.js"
 
 export const ResearchIntentKindSchema = z.enum(["chat", "research"])
@@ -31,8 +32,10 @@ const CONFIRM_RE = /^(confirm|yes|y|do\s+it|go\s+ahead|approved?)\s*[!.]*$/iu
 const CANCEL_RE = /^(cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu
 const CHAIN_CA = /^(solana|ethereum|base|bsc|robinhood):([A-Za-z0-9]{32,128})$/iu
 const EVM_CA = /\b(0x[a-fA-F0-9]{40})\b/u
+/** Base58 mint/pool ids; validated with chains.validateAddress before use */
+const SOLANA_CA = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/gu
 const TICKER_RE = /\$([A-Za-z][A-Za-z0-9]{1,15})\b/u
-const FILLER = /\b(run|please|pls|for\s+me|can\s+you|could\s+you|would\s+you|the\s+token|deep|on|about|into|for|a|an|the)\b/giu
+const FILLER = /\b(perform|run|please|pls|for\s+me|can\s+you|could\s+you|would\s+you|the\s+token|deep|on|about|into|for|a|an|the)\b/giu
 
 function normalizeChainWord(word: string): NonNullable<ResearchIntent["chainHint"]> | undefined {
   const lower = word.toLowerCase()
@@ -84,12 +87,20 @@ export function chainHintFrom(text: string): ResearchIntent["chainHint"] | undef
   return undefined
 }
 
+function solanaCaFrom(text: string): string | undefined {
+  for (const match of text.matchAll(SOLANA_CA)) {
+    const candidate = match[1]
+    if (candidate && validateAddress("base58-32", candidate)) return candidate
+  }
+  return undefined
+}
+
 function tokenHintFrom(text: string): string | undefined {
   const chained = text.match(CHAIN_CA)
   if (chained?.[2]) return chained[2]
   const evm = text.match(EVM_CA)
   if (evm?.[1]) return evm[1]
-  return undefined
+  return solanaCaFrom(text)
 }
 
 function subjectFrom(text: string, tokenHint?: string, chainHint?: string): string {
@@ -102,6 +113,7 @@ function subjectFrom(text: string, tokenHint?: string, chainHint?: string): stri
     .replace(ON_CHAIN_RE, " ")
     .replace(ALL_CHAIN_WORDS_RE, " ")
     .replace(FILLER, " ")
+    .replace(/\([^)]*\)/gu, " ")
     .replace(/[?!.,$]+/gu, " ")
     .replace(/\s+/gu, " ")
     .trim()

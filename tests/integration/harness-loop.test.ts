@@ -17,7 +17,7 @@ import { HarnessEvaluationSchema } from "../../src/contracts/schemas.js"
 import { hypothesisDir, saveHypothesis } from "../../src/harness/propose.js"
 import { runHarnessImprove } from "../../src/harness/schedule.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV7 } from "../../src/migrations/config.js"
+import { migrateConfigToV10 } from "../../src/migrations/config.js"
 import { sha256Json } from "../../src/lib/canonical-json.js"
 
 const CONFIG_HASH = `sha256:${"c".repeat(64)}` as const
@@ -67,7 +67,7 @@ async function sealFixture(archiveRoot: string, epochId: string, hitRate: number
 
 function writeEnabledConfig(trenchcoatDir: string): void {
   mkdirSync(trenchcoatDir, { recursive: true })
-  const raw = migrateConfigToV7({
+  const raw = migrateConfigToV10({
     schema: 4,
     telegram_channels: [],
     twitter: {

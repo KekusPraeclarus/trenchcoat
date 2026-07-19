@@ -1,137 +1,137 @@
 {
-  "schema": 7,
+  "schema": 10,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "PowsGemCalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "LittleMustachoCalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "LevisAlpha",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "wuziemakesmoney",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "bagcalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "SlavicCalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "HopiumSelect",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "JamboCalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "cryptolyxecalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "voltixcalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "ralphscall",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "lumosx1000",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "shmooscasino",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "hellokook",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "ProfitsPlays",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "marcellcooks",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "solsticesmoonshots",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "SHITTYCALLZBYPOE",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "lexaprosfeed",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "primegems",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "mduzcalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "houseofdegeneracy",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "DreamCalls100x",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "Discover_0x",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "pattystraphouse",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "EZMoneyCalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "KobesCalls",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "ShitcoinAlphaChannel",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "JulzLabs",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "CryptoDeusGems",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "poptyedev",
-      "mode": "gramjs"
+      "mode": "preview"
     },
     {
       "channel": "nosanitytrades",
-      "mode": "gramjs"
+      "mode": "preview"
     }
   ],
   "twitter": {
@@ -194,7 +194,7 @@
       "recent_window_hours": 48
     },
     "farcaster_search": {
-      "enabled": true,
+      "enabled": false,
       "max_casts": 40,
       "recent_window_hours": 48
     }
@@ -205,6 +205,10 @@
     "discord_distiller": {
       "enabled": true,
       "daily_cap": 10
+    },
+    "telegram_overview": {
+      "enabled": true,
+      "daily_cap": 50
     }
   },
   "narratives": {
@@ -284,6 +288,64 @@
       "readd_min_new_events": 5
     }
   },
+  "fomo": {
+    "enabled": false,
+    "shadow_mode": true,
+    "daily_navigation_budget": 200,
+    "min_delay_ms": 1500,
+    "max_delay_ms": 3500,
+    "navigation_timeout_ms": 30000,
+    "max_payload_bytes": 1000000,
+    "max_event_age_hours": 6,
+    "trader_sync": {
+      "enabled": false,
+      "max_handles": 50,
+      "max_profile_pages": 20,
+      "max_wallet_candidates": 20
+    },
+    "signal_scan": {
+      "enabled": false,
+      "feed": false,
+      "trending": false,
+      "alerts": false,
+      "convergence": false,
+      "pressure": false,
+      "min_trade_usd": 500,
+      "convergence_window_minutes": 60,
+      "min_converging_traders": 2,
+      "pressure_window_minutes": 60,
+      "min_pressure_traders": 3,
+      "max_enqueues_per_day": 1
+    },
+    "theses": {
+      "enabled": false,
+      "max_per_run": 20
+    },
+    "x_source_review": {
+      "enabled": false,
+      "max_pending": 100,
+      "max_reviews_per_day": 4,
+      "daily_history_page_budget": 20,
+      "lookback_days": 90,
+      "max_posts_per_review": 200,
+      "max_pages_per_review": 5,
+      "min_posts": 20,
+      "min_active_days": 3,
+      "min_role_evidence_posts": 5,
+      "retry_after_hours": 24,
+      "max_attempts": 3
+    },
+    "narrative_source_probation": {
+      "enabled": false,
+      "probation_days": 14,
+      "max_profiles_per_scan": 5,
+      "max_pages_per_profile": 1,
+      "daily_profile_page_budget": 20,
+      "min_accepted_contributions": 3,
+      "min_distinct_narratives": 2,
+      "demotion_idle_days": 28
+    }
+  },
   "source_safety": {
     "intent_classifier_daily_cap": 20
   },
@@ -310,7 +372,20 @@
   },
   "chat": {
     "idle_timeout_minutes": 30,
-    "research_confirm_ttl_minutes": 15
+    "research_confirm_ttl_minutes": 15,
+    "discord": {
+      "enabled": true,
+      "guild_id": "1000000000000000001",
+      "channel_ids": ["1000000000000000002"],
+      "per_user_daily_cap": 5,
+      "server_daily_cap": 20,
+      "max_active_per_user": 5,
+      "model": "composer-2.5-fast",
+      "watch_days": 30,
+      "watch_scan_hours": 6,
+      "max_watched_tokens": 250,
+      "max_subscribers_per_token": 100
+    }
   },
   "router": {
     "bind_host": "127.0.0.1",

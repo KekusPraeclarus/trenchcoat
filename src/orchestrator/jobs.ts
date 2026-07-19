@@ -8,12 +8,18 @@ export type JobName =
   | "review"
   | "audit"
   | "outcomes-settle"
+  | "delivery-retry"
   | "source-list-review"
   | "fc-source-review"
   | "wallet-discovery"
   | "wallet-scan-solana"
   | "wallet-scan-evm"
   | "wallet-review"
+  | "fomo-trader-sync"
+  | "fomo-signal-scan"
+  | "fomo-x-source-review"
+  | "fomo-narrative-source-scan"
+  | "narrative-source-review"
   | "recover"
   | "harness-improve"
 
@@ -36,12 +42,18 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "review", skill: "review", description: "Knowledge distillation", preconditionTier: "host" },
   { name: "audit", skill: "review", description: "Sealed audit epoch", preconditionTier: "none" },
   { name: "outcomes-settle", skill: "review", description: "Settle mature source-call and wallet-buy outcomes", preconditionTier: "none" },
+  { name: "delivery-retry", skill: "review", description: "Retry staged router ingress without terminal receipt", preconditionTier: "host" },
   { name: "source-list-review", skill: "review", description: "Deterministic X source-list lifecycle", preconditionTier: "none" },
   { name: "fc-source-review", skill: "review", description: "Deterministic Farcaster follow-graph lifecycle", preconditionTier: "none" },
   { name: "wallet-discovery", skill: "wallet-evidence", description: "Early buyer discovery evidence", preconditionTier: "host" },
   { name: "wallet-scan-solana", skill: "wallet-evidence", description: "Solana wallet evidence", preconditionTier: "host" },
   { name: "wallet-scan-evm", skill: "wallet-evidence", description: "EVM wallet evidence", preconditionTier: "host" },
   { name: "wallet-review", skill: "review", description: "Wallet score/lifecycle review", preconditionTier: "none" },
+  { name: "fomo-trader-sync", skill: "review", description: "Fomo trader wallet nomination", preconditionTier: "host" },
+  { name: "fomo-signal-scan", skill: "review", description: "Fomo feed convergence and pressure signals", preconditionTier: "host" },
+  { name: "fomo-x-source-review", skill: "fomo-x-source-review", description: "Classify Fomo-nominated X accounts", preconditionTier: "host" },
+  { name: "fomo-narrative-source-scan", skill: "review", description: "Scan probation narrative X sources", preconditionTier: "host" },
+  { name: "narrative-source-review", skill: "review", description: "Promote or demote narrative X sources", preconditionTier: "host" },
   { name: "recover", skill: "recover", description: "Recovery assist", preconditionTier: "none" },
   { name: "harness-improve", skill: "review", description: "Propose policy patch PR from sealed audit", preconditionTier: "none" },
 ])

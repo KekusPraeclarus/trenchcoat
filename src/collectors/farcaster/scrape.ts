@@ -2,15 +2,18 @@ import type { TrenchcoatConfig } from "../../lib/config.js"
 import type { FetchLike } from "../market/geckoterminal.js"
 import {
   fetchNeynarFeed,
+  fetchNeynarTrendingFallback,
   type FarcasterCast,
   type NeynarFeedKind,
 } from "./neynar.js"
 
 export type FarcasterScrapeTarget = Readonly<{
-  kind: "for_you" | "channel" | "following"
+  kind: "for_you" | "channel" | "following" | "trending"
   label: string
   channelId?: string
   feedKind: NeynarFeedKind
+  /** Present when this feed was fetched as a bounded For You recovery */
+  fallbackOf?: "for_you"
 }>
 
 export type FarcasterScrapeBundle = Readonly<{
@@ -35,11 +38,35 @@ export type FarcasterFeedAssessment = Readonly<{
   }>
   rejected: boolean
   rejectReason?: string
+  /** Per-feed legacy flag: For You alone would leave analysis empty */
   skipAgent: boolean
+  analysisEligible: boolean
+  engagementEligible: boolean
 }>
 
 export type AssessedFarcasterBundle = Readonly<{
   assessment: FarcasterFeedAssessment
+}>
+
+export type FarcasterFeedReceipt = Readonly<{
+  label: string
+  kind: FarcasterScrapeTarget["kind"]
+  counts: FarcasterFeedAssessment["counts"]
+  rejected: boolean
+  rejectReason?: string
+  fallbackOf?: "for_you"
+  usableEvidence: number
+  analysisEligible: boolean
+  engagementEligible: boolean
+}>
+
+export type FarcasterCollectionReceipt = Readonly<{
+  schema: 1
+  feeds: readonly FarcasterFeedReceipt[]
+  fallbackUsed: boolean
+  usableEvidenceCount: number
+  engagementDisabled: boolean
+  skipAgent: boolean
 }>
 
 export function resolveFarcasterTargets(config: TrenchcoatConfig): FarcasterScrapeTarget[] {
@@ -102,6 +129,12 @@ export function detectRepeatedTwoHashStalePattern(
   return casts.every((cast) => freshnessTierForAge(castAgeSec(fetchedAt, cast.timestamp)) !== "live")
 }
 
+function forYouNeedsTrendingFallback(assessment: FarcasterFeedAssessment): boolean {
+  if (assessment.target.kind !== "for_you" || !assessment.rejected) return false
+  return assessment.rejectReason === "no_live_casts"
+    || assessment.rejectReason === "repeated_two_hash_stale"
+}
+
 export function assessFarcasterBundle(
   bundle: FarcasterScrapeBundle,
   fetchedAt: string,
@@ -115,13 +148,16 @@ export function assessFarcasterBundle(
   }
 
   if (bundle.target.kind !== "for_you") {
+    const analysisEligible = eligibleCasts.length > 0
     return {
       target: bundle.target,
       casts: bundle.casts,
       eligibleCasts,
       counts,
       rejected: false,
-      skipAgent: false,
+      skipAgent: !analysisEligible,
+      analysisEligible,
+      engagementEligible: false,
     }
   }
 
@@ -134,6 +170,8 @@ export function assessFarcasterBundle(
       rejected: true,
       rejectReason: "repeated_two_hash_stale",
       skipAgent: true,
+      analysisEligible: false,
+      engagementEligible: false,
     }
   }
 
@@ -146,9 +184,14 @@ export function assessFarcasterBundle(
       rejected: true,
       rejectReason: "no_live_casts",
       skipAgent: true,
+      analysisEligible: false,
+      engagementEligible: false,
     }
   }
 
+  const liveEligible = eligibleCasts.filter((cast) => (
+    freshnessTierForAge(castAgeSec(fetchedAt, cast.timestamp)) === "live"
+  ))
   return {
     target: bundle.target,
     casts: bundle.casts,
@@ -158,6 +201,35 @@ export function assessFarcasterBundle(
     counts,
     rejected: false,
     skipAgent: false,
+    analysisEligible: liveEligible.length > 0,
+    engagementEligible: liveEligible.length > 0,
+  }
+}
+
+export function buildFarcasterCollectionReceipt(
+  assessments: readonly FarcasterFeedAssessment[],
+): FarcasterCollectionReceipt {
+  const feeds: FarcasterFeedReceipt[] = assessments.map((a) => ({
+    label: a.target.label,
+    kind: a.target.kind,
+    counts: a.counts,
+    rejected: a.rejected,
+    ...(a.rejectReason ? { rejectReason: a.rejectReason } : {}),
+    ...(a.target.fallbackOf ? { fallbackOf: a.target.fallbackOf } : {}),
+    usableEvidence: a.eligibleCasts.length,
+    analysisEligible: a.analysisEligible,
+    engagementEligible: a.engagementEligible,
+  }))
+  const usableEvidenceCount = feeds.reduce((n, f) => n + f.usableEvidence, 0)
+  const analysisOk = assessments.some((a) => a.analysisEligible)
+  const engagementOk = assessments.some((a) => a.engagementEligible)
+  return {
+    schema: 1,
+    feeds,
+    fallbackUsed: assessments.some((a) => a.target.fallbackOf === "for_you"),
+    usableEvidenceCount,
+    engagementDisabled: !engagementOk,
+    skipAgent: !analysisOk,
   }
 }
 
@@ -180,21 +252,44 @@ export async function scrapeConfiguredFarcaster(
   const seen = new Set<string>()
   const assessed: AssessedFarcasterBundle[] = []
 
+  const takeUnique = (casts: readonly FarcasterCast[]): FarcasterCast[] => {
+    const out: FarcasterCast[] = []
+    for (const cast of casts) {
+      if (seen.has(cast.hash)) continue
+      seen.add(cast.hash)
+      out.push(cast)
+    }
+    return out
+  }
+
   for (const target of resolveFarcasterTargets(config)) {
     const feed = await fetchNeynarFeed(fetcher, args.apiKey, target.feedKind, {
       fid: botFid,
       limit,
       ...(target.channelId ? { channelId: target.channelId } : {}),
     })
-    const casts: FarcasterCast[] = []
-    for (const cast of feed.casts) {
-      if (seen.has(cast.hash)) continue
-      seen.add(cast.hash)
-      casts.push(cast)
+    const assessment = assessFarcasterBundle(
+      { target, casts: takeUnique(feed.casts) },
+      fetchedAt,
+    )
+    assessed.push({ assessment })
+
+    // One rate-gated trending recovery when For You has no live evidence — no cursors/cache-bust
+    if (forYouNeedsTrendingFallback(assessment)) {
+      const trending = await fetchNeynarTrendingFallback(fetcher, args.apiKey, { limit })
+      const fallbackTarget: FarcasterScrapeTarget = {
+        kind: "trending",
+        label: "trending-fallback",
+        feedKind: "trending",
+        fallbackOf: "for_you",
+      }
+      assessed.push({
+        assessment: assessFarcasterBundle(
+          { target: fallbackTarget, casts: takeUnique(trending.casts) },
+          fetchedAt,
+        ),
+      })
     }
-    assessed.push({
-      assessment: assessFarcasterBundle({ target, casts }, fetchedAt),
-    })
   }
   return assessed
 }
@@ -202,17 +297,8 @@ export async function scrapeConfiguredFarcaster(
 export function summarizeFarcasterScrape(
   bundles: readonly AssessedFarcasterBundle[],
 ): unknown {
-  return {
-    targets: bundles.map((b) => ({
-      label: b.assessment.target.label,
-      kind: b.assessment.target.kind,
-      counts: b.assessment.counts,
-      rejected: b.assessment.rejected,
-      ...(b.assessment.rejectReason ? { rejectReason: b.assessment.rejectReason } : {}),
-      skipAgent: b.assessment.skipAgent,
-    })),
-    totalEligibleCasts: bundles.reduce((n, b) => n + b.assessment.eligibleCasts.length, 0),
-  }
+  const receipt = buildFarcasterCollectionReceipt(bundles.map((b) => b.assessment))
+  return receipt
 }
 
 export function summarizeFarcasterAssessments(
@@ -221,5 +307,6 @@ export function summarizeFarcasterAssessments(
   return assessments.map((a) => (
     `${a.target.label}:live=${a.counts.live} stale=${a.counts.stale} expired=${a.counts.expired}`
     + (a.rejected ? ` rejected=${a.rejectReason}` : "")
+    + (a.target.fallbackOf ? " fallback=for_you" : "")
   )).join(" ")
 }

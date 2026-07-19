@@ -2,7 +2,7 @@
 description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -16,7 +16,9 @@ The operator's conversational window into everything the bot knows: discuss
 findings, probe research that never met the broadcast bar, and ask for an opinion
 on any token — answered by combining stored knowledge with fresh on-demand
 research. Distinct from broadcasts (outbound, via the in-repo router); this is
-inbound, interactive, operator-only.
+inbound, interactive, operator-only. Host chat-recall markdown under
+`reports/chat/` is a status dump for DM recall — market Telegram fanout uses the
+overview distiller, not that file as-is (see knowledge/telegram.md).
 
 ## Minimal-orchestrator pattern
 
@@ -31,13 +33,17 @@ little as possible itself:
   `~/.trenchcoat/agent/state/INDEX.md` is missing, the session has no rollup
   (scaffold / agent-workspace.md).
 - **Research proposal (host)** — fail-closed host extractor
-  (`src/chat/research-intent.ts`) detects research-shaped operator text and asks
+  (`src/chat/research-intent.ts`, shared CA helpers in
+  `src/chat/research-intent-core.ts`) detects research-shaped operator text and asks
   for an explicit `confirm` / `cancel`. Pending proposals live in
   `~/.trenchcoat/pending-research.json` (mode 600), bound to
   `TELEGRAM_OPERATOR_ID`, with TTL from `config.chat.research_confirm_ttl_minutes`.
-  Chain may be constrained with `on base` / `on solana` / etc. (or `chain:address`);
-  without a hint the host ranks DexScreener hits across supported chains by
-  liquidity+volume credibility (token-resolution.md) — ethereum is not a default.
+  Chain may be constrained with `on base` / `on solana` / etc. (or `chain:address`).
+  Bare Solana base58 mints (32–44 chars) and EVM `0x…` CAs are extracted as
+  `tokenHint` so natural-language filler (`perform deep research on …`) cannot
+  pollute the DexScreener search query. Without a chain hint the host ranks
+  DexScreener hits across supported chains by liquidity+volume credibility
+  (token-resolution.md) — ethereum is not a default.
   When several CAs remain credible, the host DMs a numbered shortlist that always
   includes the chain (`1. base:0x…`) and waits for a pick (`1`–`5` or
   `chain:address`) before continuing.
@@ -46,13 +52,20 @@ little as possible itself:
   `runOperatorResearchNow` (workspace writer lock held). Collectors + optional
   Tavily Search + bounded X token search run on the host only; the agent stays
   network-denied. Reports include a Sentiment & popularity section from
-  `twitter-*` inbox snapshots when present. Report lands at
-  `reports/chat/<run-id>.md`; the chat session may then summarize it.
-- **Broadcast run recall** — `list-scan` and `narrative-scan` runs that stage
-  broadcasts propose `reports/<run-id>/chat-summary.json`; the host validates
-  after `ingestOutbox` and renders `reports/chat/<run-id>.md` from validated
-  broadcast text plus accepted context (`chat-report.ts`). Agents never write
-  `reports/chat/` directly on those jobs; summaries remain untrusted evidence.
+  `twitter-*` inbox snapshots when present. Malformed
+  `decision-proposals.json` is dropped (no watchlist mutation) so the research
+  report still completes — same fail-closed pattern as chat-summary / outbox.
+  Report lands at `reports/chat/<run-id>.md`; the chat session may then
+  summarize it.
+- **Run recall** — `list-scan`, `narrative-scan`, `farcaster-scan`, `review`, and
+  `research` always get a host-rendered `reports/chat/<run-id>.md` after terminal
+  success/degradation (even with zero staged broadcasts). Trusted host facts come
+  first (job/status, collection, freshness/platform coverage, queue/watchlist
+  mutations, engagement, staged broadcasts, receipt paths). Optional agent
+  `chat-summary.json` / research `chat-summary.md` context is appended only when
+  validated (`chat-report.ts`). Missing or malformed proposals never suppress the
+  host summary. Agents never write `reports/chat/` directly; bypass files are
+  removed. Summaries remain untrusted evidence.
 - Ordinary recall questions never take the writer lock.
 
 ## Design
@@ -72,10 +85,14 @@ little as possible itself:
   9.5+; same `draft_id` animates updates). Drafts are ephemeral — the host then
   `sendMessage`s the final text so it persists. Bot API calls live in
   `src/lib/telegram-bot.ts` / `src/cli.ts`, not under `src/chat/` (INV-R4)
-- Replies are plain text. Final `sendMessage` never truncates: `splitTelegramText`
-  chunks at ~3800 chars (`1/n` …). Overlong replies also land under
-  `reports/chat/` with a summary that cites the path. Draft previews may still
-  bound to 4096. Voice from `skills/chat/SKILL.md`
+- Operator DMs use `telegramSendOperatorMessageChunks`: host strips workspace
+  paths / artifact filenames (`reports/…`, `decision-proposals.json`, …), maps a
+  safe markdown subset (`**bold**`, `#` headers, `` `code` ``) to Telegram HTML
+  (`parse_mode=HTML`), and falls back to plain stripped text on Bot API reject.
+  Router/broadcast delivery stays plain. Final `sendMessage` never truncates:
+  `splitTelegramText` chunks at ~3800 chars (`1/n` …). Overlong replies also land
+  under `reports/chat/` with a summary that does **not** cite the path in chat.
+  Draft previews stay plain (no parse_mode). Voice from `skills/chat/SKILL.md`
 - **Outbound operator DMs** (alerts, research progress/completion) remain
   host-authored templates on the same bot — never agent free-text outside the
   chat turn path
@@ -90,7 +107,8 @@ little as possible itself:
 ## Source files
 
 - `src/cli.ts` (`listen telegram`) — Bot API long-poll, draft stream, research pump
-- `src/lib/telegram-bot.ts` — `sendMessage` / chunked send / `sendMessageDraft` / `sendChatAction`
+- `src/lib/telegram-bot.ts` — `sendMessage` / operator HTML send / chunked send / `sendMessageDraft` / `sendChatAction`
+- `src/lib/telegram-format.ts` — strip local refs + markdown → Telegram HTML
 - `src/chat/telegram-reply.ts` — prepare final reply (chunk + optional chat report)
 - `src/chat/handler.ts` — allowlist, host commands, research confirm gate
 - `src/chat/research-intent.ts` — fail-closed research intent extraction
@@ -101,9 +119,24 @@ little as possible itself:
 - `src/chat/prompt.ts` — operator-text scrub / chat prompt / Telegram truncate
 - `src/chat/telegram.ts` — reusable poll helper (idle-bounded)
 - `src/orchestrator/research.ts` — operator enqueue + locked research run
-- `src/orchestrator/chat-report.ts` — host validation + render for list/narrative-scan chat summaries
+- `src/orchestrator/chat-report.ts` — host facts + optional proposal validation/render for list/narrative/farcaster/review/research chat recall
 - `agent/skills/chat/SKILL.md` — conversational contract + voice
 - `agent/skills/deep-research/SKILL.md` — sub-agent contract
+
+## Discord research (separate bridge)
+
+Telegram chat above is **operator-only with confirm/cancel**. Discord research is a
+different product surface (ADR 010):
+
+- Gateway listener (`tc listen discord`), not the router webhook
+- Any guild member in configured channels; no `TELEGRAM_OPERATOR_ID` allowlist
+- ✅ reaction when research starts; final-only text replies (no confirm /
+  progress messages)
+- State under `~/.trenchcoat/discord/` with its own lock; main
+  `pending-research.json` / research queue are not used
+- Intent: `src/discord/intent.ts` (stricter CA-required policy)
+
+Full contract: [discord-research.md](discord-research.md).
 
 ## Gotchas and security-sensitive boundaries
 

@@ -33,6 +33,13 @@ describe("channel render crash resume", () => {
     const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
     const event = buildBroadcastRouterEvent(RUN_ID, NOW, ITEM)
     await outbox.stage(event)
+    await outbox.enrich({
+      ...event,
+      channels: {
+        telegram: { text: "overview before first post" },
+        discord: { text: ITEM.text },
+      },
+    })
 
     let bodies: string[] = []
     const fetcher: FetchLike = async (_url, init) => {
@@ -51,12 +58,12 @@ describe("channel render crash resume", () => {
       fetcher,
     })
     expect(first[0]?.status).toBe("accepted")
-    expect(JSON.parse(bodies[0] ?? "{}").channels).toBeUndefined()
+    expect(JSON.parse(bodies[0] ?? "{}").channels?.telegram?.text).toBe("overview before first post")
 
     await outbox.enrich({
       ...event,
       channels: {
-        telegram: { text: "full report after resume" },
+        telegram: { text: "overview after resume" },
         discord: { text: ITEM.text },
       },
     })
@@ -98,7 +105,14 @@ describe("channel render crash resume", () => {
         reportPath: `reports/chat/${runId}.md`,
         untrustedEvidence: true,
       },
+      discordBudget: { dailyBudget: 5, urgentCeiling: 10 },
       distiller: { enabled: false, dailyCap: 10, usedToday: 0 },
+      telegramOverview: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 0,
+        runSession: async () => "RH still peaking. Fresh PFP lane on top.",
+      },
     })
 
     const bodies: string[] = []
@@ -118,7 +132,7 @@ describe("channel render crash resume", () => {
       fetcher,
     })
     const posted = JSON.parse(bodies[0] ?? "{}")
-    expect(posted.channels?.telegram?.text).toContain("report")
+    expect(posted.channels?.telegram?.text).toBe("RH still peaking. Fresh PFP lane on top.")
     expect(posted.channels?.discord?.text).toBe(ITEM.text)
   })
 })

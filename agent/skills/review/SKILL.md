@@ -37,6 +37,12 @@ tool commands:
    compressed notes). Update existing files in place; create new files only for
    tokens with explicit evidence. Prune stale detail from the live file; history
    stays in git/archive, not bloated prose.
+5. Optional operator broadcasts in `outbox/<run-id>.json` — when used, `refs` must
+   be `state/…` or same-run `inbox/<run-id>/…` frozen regular files (host rejects
+   traversal, cross-run, missing, mutable paths).
+6. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A context
+   (schema 1; cite sealed run-local sources only). Never write `reports/chat/` —
+   the host always renders that path from trusted review facts.
 
 ## Host ownership
 

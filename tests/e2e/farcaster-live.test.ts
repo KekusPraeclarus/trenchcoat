@@ -21,12 +21,27 @@ describe.runIf(live)("farcaster live gates", () => {
 
     const bundles = await scrapeConfiguredFarcaster(cfg, { apiKey: secrets.neynarApiKey! })
     expect(bundles.length).toBeGreaterThan(0)
+    const { buildFarcasterCollectionReceipt } = await import("../../src/collectors/farcaster/scrape.js")
+    const receipt = buildFarcasterCollectionReceipt(bundles.map((b) => b.assessment))
+    expect(receipt.schema).toBe(1)
+    expect(typeof receipt.fallbackUsed).toBe("boolean")
+    expect(typeof receipt.engagementDisabled).toBe("boolean")
+    expect(typeof receipt.usableEvidenceCount).toBe("number")
+    const forYou = bundles.find((b) => b.assessment.target.kind === "for_you")
+    if (forYou?.assessment.rejected) {
+      expect(receipt.fallbackUsed).toBe(true)
+      expect(receipt.engagementDisabled).toBe(true)
+      expect(bundles.some((b) => b.assessment.target.fallbackOf === "for_you")).toBe(true)
+    }
     for (const bundle of bundles) {
       expect(bundle.assessment.counts.total).toBeGreaterThanOrEqual(0)
       for (const cast of bundle.assessment.eligibleCasts) {
         expect(bundle.assessment.counts.expired).toBeGreaterThanOrEqual(0)
         const ageHours = (Date.now() - Date.parse(cast.timestamp)) / 3_600_000
         expect(ageHours).toBeLessThanOrEqual(24)
+      }
+      if (bundle.assessment.target.kind !== "for_you") {
+        expect(bundle.assessment.engagementEligible).toBe(false)
       }
     }
   }, 60_000)

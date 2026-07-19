@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -27,6 +27,30 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
 4. Update the data-sources table in `docs/TECHNICAL-SPEC.md` and add/refresh a
    `docs/knowledge/` file for the provider
 
+### Fomo.family
+
+Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
+
+- `fomo-trader-sync` (daily) — leaderboard → candidate wallets + X nominations
+- `fomo-signal-scan` (30m) — feed/trending/alerts → dated signals + bounded research enqueue
+- `fomo-x-source-review` (6h) — one pending nomination → bounded X history + isolated classifier
+- `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles
+- `narrative-source-review` (daily) — utility promotion and gated X follow/unfollow
+
+All snapshots are `trust: "untrusted-external"`. Historical X posts are tagged
+`purpose=historical-source-evaluation` and never enter live narrative evidence.
+Research dossiers may attach live `fomo-context` from the observation cache;
+`narrative-scan` copies sealed fomo narrative posts into `narrative-social-fomo-x`
+(excluding historical-purpose items). Shadow mode is the default. Knowledge:
+[fomo-family.md](../knowledge/fomo-family.md).
+FAFO status: [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md).
+ADR: [009-fomo-x-source-nomination.md](../adr/009-fomo-x-source-nomination.md).
+
+X profile history scraping lives in `src/collectors/twitter/profile-history.ts`
+and shares a crash-resumable page budget under
+`archive/provider-usage/twitter/fomo-source-review/`. Per-nomination resume
+checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
+
 ## Sources
 
 ### Twitter (Playwright)
@@ -41,13 +65,16 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
   operator lists, and one bot-managed private source list
 - **Research token search** — confirmed operator / queue research runs a bounded
   read-only X search (`scrapeResearchTokenTwitter`) using host-built queries from
-  the resolved `(chain, tokenAddress, symbolDisplay)` only. Writes
-  `twitter-token-search` (raw posts + engagement) and `twitter-popularity`
+  the resolved `(chain, tokenAddress, symbolDisplay)` only: token address, `$SYMBOL`,
+  and `SYMBOL chain`. Each query tries Latest then Top if Latest is empty; the
+  scraper waits for tweet articles (hydration race) before the first parse.
+  Writes `twitter-token-search` (raw posts + engagement) and `twitter-popularity`
   (deterministic host summary: post count, unique authors, recent posts, known
   engagement totals/medians). Caps live under `config.research.twitter_search`.
   Missing auth/challenges produce `unavailable`/`degraded` summaries — never
   silent zero popularity. Sentiment classification stays model-side from untrusted
-  tweet text with sample-size caveats.
+  tweet text with sample-size caveats. Research dossiers do **not** collect
+  Farcaster (watchlist-scan may still use `research.farcaster_search`).
 - Human-ish pacing (randomised delays, capped pages per run) to respect the platform
   and keep the account alive. Scrape read-only; never post, like, or follow.
 
@@ -75,7 +102,15 @@ replies, DMs, and retweets stay blocked (INV-R2).
 - Job `farcaster-scan` fetches for-you (bot FID), two optional operator channels,
   and the following feed. Host assessment tiers casts live ≤6h, stale ≤24h,
   expired >24h; rejects for-you when no live cast or a repeated-two-hash stale
-  pattern; expired casts never enter inbox evidence or the FYP like allowlist.
+  pattern, then makes **one** rate-gated Neynar `trending` fallback request
+  (limit clamped to ≤10; no cursor retries, no cache-bust). Expired casts never
+  enter inbox evidence.
+  Analysis may proceed from any live configured feed or the trending fallback;
+  only verified live for-you casts enter the FYP like allowlist (`fypCasts`) —
+  a stale for-you feed cannot authorize engagement. Structured receipt
+  `farcaster-collection-receipt` records per-feed counts, rejection reason,
+  fallback use, usable-evidence count, and `engagementDisabled`. Agent is
+  skipped only when every bounded FC source is unusable.
   Snapshots are `inbox/<runId>/farcaster-*.json` with
   `provenance: farcaster:@username` and `trust: untrusted-external`.
 - Collection status reports dynamic signer probe output
@@ -88,8 +123,9 @@ replies, DMs, and retweets stay blocked (INV-R2).
   (follow graph = managed list analog). Sync uses cursor pagination,
   idempotent already-following/not-following handling, post-sync refetch, and
   exact desired-vs-actual verification.
-- Research: bounded cast search writes `farcaster-token-search` +
-  `farcaster-popularity` when `research.farcaster_search.enabled`.
+- Watchlist (not operator research): bounded cast search may write
+  `farcaster-token-search` + `farcaster-popularity` when
+  `research.farcaster_search.enabled`.
 
 ### Telegram alpha channels (preview poller + GramJS listener)
 
@@ -97,17 +133,18 @@ Bot API bots cannot read channels without being added by an admin, so no bot pat
 exists. Two ingestion modes, chosen per channel at config time:
 
 - **Preview poller (preferred)** — public channels expose a zero-credential HTML
-  preview at `t.me/s/<channel>` (paginated via `?before=<msg-id>`). Poll it on the
-  collector cycle; no session, no flood-wait, no account risk. Channels with
-  previews disabled are detected (empty message blocks) and flagged for the
-  fallback.
-- **GramJS (MTProto) listener (fallback)** — a long-lived user-session process for
-  channels without previews, running under launchd with keepalive. Session
-  credentials live under `~/.trenchcoat/telegram-session/`, same rules as the
-  browser profile. Respect `FLOOD_WAIT` absolutely; passive only (no sends, no
-  joins beyond the configured list). Currently a scaffold: with no authed session
-  it logs a warning and idles (preview channels keep flowing) rather than
-  crashing — `tc auth telegram-channels` remains an operator step.
+  preview at `t.me/s/<channel>` (paginated via `?before=<msg-id>`). Seed and
+  runbook default every allowlisted channel to `mode: "preview"`. Poll on the
+  collector cycle; no session, no flood-wait, no account risk. `t.me` is
+  rate-gated (20/min); large allowlists stretch a cycle past the 60s sleep via
+  the token bucket. Empty preview pages (disabled or private) accept nothing —
+  there is no auto-flip to GramJS; switch those handles to `"gramjs"` manually.
+- **GramJS (MTProto) listener (fallback)** — scaffold only for preview-disabled
+  channels. Needs `~/.trenchcoat/telegram-session/session.txt` **and** a GramJS
+  listener injected into `tc listen channels` (CLI does not inject one today).
+  Without both, gramjs-mode channels log a warning and idle while preview
+  channels keep flowing. `tc auth telegram-channels` remains unfinished —
+  place a StringSession manually when you need the fallback.
 
 Both modes append every new message to `agent/alpha-queue/<channel>/<msg-id>.json`
 with full provenance and deduplicate on message id; digestion and purge are the
@@ -177,30 +214,41 @@ Reuses sealed **complete** archive inboxes — newest complete `list-scan` and
 boosts + GeckoTerminal new pools populate a fallback snapshot — always
 `marketBlind=true` when categories are absent (`collectionStatus: degraded`).
 `narrative-trending` is always written. Host rejects rotation/urgent-rotation
-broadcasts when market-blind. `skipAgent` when `usableEvidence` is false (no sealed
-social and no market items).
+broadcasts when market-blind. Rotation and sentiment-collapse claims citing only
+one social platform (X / Farcaster / Telegram) remain visible but are capped at
+`watch` and rendered as `X-only` / `Farcaster-only` / equivalent; market and
+FOMO provenance do not count as corroboration. `skipAgent` when `usableEvidence`
+is false (no sealed social and no market items).
 social reuse and no trending payload).
 
 ### Review collector (`review-collect.ts`)
 
-Daily knowledge distillation. Before creating a run id, `evaluateReviewPrerequisites`
-requires at least one of: sealed complete reports in the configured lookback
-(default 7d, max 30, newest first with `agent.md` present), pending
-`alpha-queue/` messages, or active watchlist subjects (`tracking`/`watching`).
-Otherwise one skip log line and no run directory (same pattern as wallet
-evidence empty prerequisites).
+Daily knowledge distillation (07:00 local cadence unchanged). Before creating a
+run id, `evaluateReviewPrerequisites` requires traditional scope (sealed
+complete reports in lookback, pending `alpha-queue/`, or active watchlist) **or**
+health-derived scope from the shared snapshot: empty actionable research queue,
+ambiguous depth, silent wallets, FC stale streak, recurring skip reasons,
+incomplete/abandoned runs, or router ingress backlog. Otherwise one skip log
+line and no run directory.
 
 When scope exists, writes path-only inbox manifests — never report or alpha
 bodies in the host prompt:
 
+- `review-health-snapshot` — lock/runs/queues/X/FC/router/deploy warnings
+- `review-skip-ledger` — aggregated `archive/skips/*.jsonl` reason counts
 - `review-reports-manifest` — run ids + `reports/<run-id>/agent.md` paths
 - `review-alpha-manifest` — pending `alpha-queue/<channel>/<msg-id>.json` paths
+  (list-scan writes the same path-only shape as `list-scan-alpha-manifest`).
+  Both manifests cap at `SNAPSHOT_MAX_ITEMS` (500) with a trailing
+  `truncated=N` line so a preview backlog cannot fail collect on Zod `too_big`.
 - `review-watchlist-snapshot` — bounded active subjects (≤30)
 - `review-macro-snapshot` — fear/greed via `fetchFearGreed` (degraded if unavailable)
 
 After integrity passes, accepted `state/research/` changes trigger host
-`reconcileIndex` and an archived `index-reconcile-receipt.json`. Alpha purge
-still follows validated `reports/<run-id>/alpha-digest.json` after archive seal.
+`reconcileIndex` and an archived (+ report-mirrored) `index-reconcile-receipt.json`
+with before/after INDEX hashes and source timestamps. Narrative-scan does the
+same after prune. Alpha purge still follows validated
+`reports/<run-id>/alpha-digest.json` after archive seal.
 
 ### Job collection routing (`collectForJob`)
 

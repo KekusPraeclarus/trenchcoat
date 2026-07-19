@@ -25,6 +25,15 @@ import {
   type FcSourceLifecycleFile,
   type Scorecard,
 } from "../contracts/schemas.js"
+import {
+  emptyXSourceNominations,
+  type XSourceNominationsFile,
+} from "../sources/x-nominations.js"
+import {
+  emptyNarrativeSources,
+  type NarrativeSource,
+  type NarrativeSourcesFile,
+} from "../sources/narrative-lifecycle.js"
 
 function readOrDefault<T>(path: string, parse: (value: unknown) => T, fallback: T): T {
   if (!existsSync(path)) return fallback
@@ -46,6 +55,8 @@ export class StateStore {
   ledgerPath(): string { return join(this.stateDir, "ledger.json") }
   researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
   walletsPath(): string { return join(this.stateDir, "wallets.json") }
+  xSourceNominationsPath(): string { return join(this.stateDir, "x-source-nominations.json") }
+  xNarrativeSourcesPath(): string { return join(this.stateDir, "x-narrative-sources.json") }
   decisionsPath(): string { return join(this.stateDir, "decisions.md") }
   scorecardPath(): string { return join(this.stateDir, "scorecard.json") }
 
@@ -220,6 +231,50 @@ export class StateStore {
 
   async saveWallets(file: WalletsFile): Promise<void> {
     await writeAtomicFile(this.walletsPath(), `${JSON.stringify(WalletsFileSchema.parse(file), null, 2)}\n`)
+  }
+
+  loadXSourceNominations(): XSourceNominationsFile {
+    return readOrDefault(
+      this.xSourceNominationsPath(),
+      (v) => {
+        const raw = v as XSourceNominationsFile
+        if (raw?.schema !== 1 || !Array.isArray(raw.nominations)) return emptyXSourceNominations()
+        return raw
+      },
+      emptyXSourceNominations(),
+    )
+  }
+
+  async saveXSourceNominations(file: XSourceNominationsFile): Promise<void> {
+    await writeAtomicFile(this.xSourceNominationsPath(), `${JSON.stringify(file, null, 2)}\n`)
+  }
+
+  loadXNarrativeSources(): NarrativeSourcesFile {
+    return readOrDefault(
+      this.xNarrativeSourcesPath(),
+      (v) => {
+        const raw = v as NarrativeSourcesFile
+        if (raw?.schema !== 1 || !Array.isArray(raw.sources)) return emptyNarrativeSources()
+        return {
+          schema: 1,
+          sources: raw.sources.map((item: NarrativeSource) => {
+            const slugs = Array.isArray(item.acceptedNarrativeSlugs)
+              ? item.acceptedNarrativeSlugs.filter((s: string) => typeof s === "string").slice(0, 64)
+              : []
+            return {
+              ...item,
+              acceptedNarrativeSlugs: slugs,
+              distinctNarratives: slugs.length > 0 ? slugs.length : Number(item.distinctNarratives) || 0,
+            }
+          }),
+        }
+      },
+      emptyNarrativeSources(),
+    )
+  }
+
+  async saveXNarrativeSources(file: NarrativeSourcesFile): Promise<void> {
+    await writeAtomicFile(this.xNarrativeSourcesPath(), `${JSON.stringify(file, null, 2)}\n`)
   }
 
   loadScorecard(): Scorecard | undefined {

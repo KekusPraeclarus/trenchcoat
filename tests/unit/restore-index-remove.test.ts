@@ -7,9 +7,13 @@ import {
   extractNarrativeTickers,
   parseDecisionRows,
   reconcileIndex,
+  reconcileIndexWithReceipt,
+  hashIndexMd,
+  resolveSealedNarrativeFreshness,
 } from "../../src/orchestrator/index-reconcile.js"
 import { removeWatchlistEntry } from "../../src/orchestrator/watchlist-remove.js"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
+import { ensureArchive } from "../../src/lib/archive.js"
 
 const NOW = "2026-07-18T12:00:00.000Z"
 const TOKEN = "0xFf8104251E7761163faC3211eF5583FB3F8583d6"
@@ -82,7 +86,7 @@ describe("reconcileIndex", () => {
     expect(report.tokenLines).toBeGreaterThanOrEqual(2)
     expect(body).toContain("$REPPO — removed")
     expect(body).toContain("$HOODRAT — narrative")
-    expect(body).toContain("$CashCat — narrative")
+    expect(body).not.toContain("$CashCat — narrative")
     expect(body).not.toContain("(none yet)")
   })
 
@@ -214,6 +218,59 @@ describe("watchlist remove", () => {
     expect(state.readDecisions()).toContain("dec-reppo-ignore-20260717200344")
     expect(state.readDecisions()).toContain("operator-remove")
     expect(existsSync(join(root, "state", "INDEX.md"))).toBe(true)
+  })
+})
+
+describe("index reconcile receipt", () => {
+  it("hashes before/after and archives source timestamps", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-index-receipt-"))
+    mkdirSync(join(root, "state", "narratives"), { recursive: true })
+    mkdirSync(join(root, "reports", "run-1"), { recursive: true })
+    const archiveRoot = join(root, "archive")
+    const layout = await ensureArchive(archiveRoot)
+    const state = new StateStore(join(root, "state"))
+    await state.saveWatchlist({ schema: 1, entries: [] })
+    writeFileSync(
+      join(root, "state", "INDEX.md"),
+      "# INDEX\n\nold\n\n## Tokens\n\n(none yet)\n\n## Narratives\n\n(none yet)\n",
+    )
+    writeFileSync(
+      join(root, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify({
+        slug: "base-ai",
+        title: "$BASE rotating",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@x"],
+        stage: "emerging",
+      })}\n`,
+    )
+
+    const before = hashIndexMd(root)
+    const receipt = await reconcileIndexWithReceipt({
+      agentRoot: root,
+      state,
+      nowIso: NOW,
+      layout,
+      runId: "run-1",
+      job: "narrative-scan",
+      archiveRoot,
+      reportDir: join(root, "reports", "run-1"),
+    })
+    expect(receipt.beforeHash).toBe(before)
+    expect(receipt.afterHash).toMatch(/^sha256:/)
+    expect(receipt.changed).toBe(true)
+    expect(receipt.sources.narrativesLatestLastSeen).toBe(NOW)
+    expect(receipt.sources.narrativesCount).toBe(1)
+    expect(receipt.freshnessNote).toContain("sealed complete")
+    expect(existsSync(join(archiveRoot, "runs", "run-1", "index-reconcile-receipt.json"))).toBe(true)
+    expect(existsSync(join(root, "reports", "run-1", "index-reconcile-receipt.json"))).toBe(true)
+
+    const freshness = await resolveSealedNarrativeFreshness({
+      archiveRoot,
+      nowIso: NOW,
+    })
+    expect(freshness.lastCompleteRunId).toBeNull()
   })
 })
 

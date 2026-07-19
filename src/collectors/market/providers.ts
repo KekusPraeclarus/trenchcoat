@@ -66,14 +66,14 @@ function coingeckoCategoryId(entry: object): string {
   throw new TypeError("CoinGecko category missing id")
 }
 
-export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
-  if (payload === null || typeof payload !== "object") throw new TypeError("DexScreener response must be an object")
-  const pairs = Reflect.get(payload, "pairs")
-  if (!Array.isArray(pairs) || pairs.length > MAX_LIST) throw new TypeError("DexScreener response has invalid pairs")
-  return pairs.map((raw) => {
-    if (raw === null || typeof raw !== "object") throw new TypeError("DexScreener pair must be an object")
-    const base = Reflect.get(raw, "baseToken")
-    const quote = Reflect.get(raw, "quoteToken")
+function parseDexScreenerPair(raw: unknown): MarketPair | undefined {
+  if (raw === null || typeof raw !== "object") return undefined
+  const base = Reflect.get(raw, "baseToken")
+  const quote = Reflect.get(raw, "quoteToken")
+  if (base === null || typeof base !== "object" || quote === null || typeof quote !== "object") {
+    return undefined
+  }
+  try {
     const liquidity = Reflect.get(raw, "liquidity")
     const volume = Reflect.get(raw, "volume")
     const txns = Reflect.get(raw, "txns")
@@ -83,7 +83,6 @@ export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
     const volume24h = volume !== null && typeof volume === "object"
       ? numberOrUndefined(Reflect.get(volume, "h24"))
       : undefined
-    if (base === null || typeof base !== "object" || quote === null || typeof quote !== "object") throw new TypeError("DexScreener pair is missing tokens")
     return {
       chainId: stringValue(Reflect.get(raw, "chainId"), "chainId"),
       pairAddress: stringValue(Reflect.get(raw, "pairAddress"), "pairAddress"),
@@ -105,6 +104,19 @@ export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
       sells24h: sells ?? 0,
       url: stringValue(Reflect.get(raw, "url"), "url"),
     }
+  } catch {
+    // Skip malformed / overlong Dex rows — one junk hit must not abort search
+    return undefined
+  }
+}
+
+export function parseDexScreenerPairs(payload: unknown): MarketPair[] {
+  if (payload === null || typeof payload !== "object") throw new TypeError("DexScreener response must be an object")
+  const pairs = Reflect.get(payload, "pairs")
+  if (!Array.isArray(pairs) || pairs.length > MAX_LIST) throw new TypeError("DexScreener response has invalid pairs")
+  return pairs.flatMap((raw) => {
+    const pair = parseDexScreenerPair(raw)
+    return pair ? [pair] : []
   })
 }
 

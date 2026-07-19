@@ -185,6 +185,71 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
     }
   })
 
+  it("rejects off-host HTTP and accepts literal loopback HTTP", () => {
+    expect(() => validateRouterUrl("http://127.0.0.1:8787/v1/events")).not.toThrow()
+    expect(() => validateRouterUrl("http://localhost:8787/v1/events")).not.toThrow()
+    expect(() => validateRouterUrl("http://example.com/v1/events")).toThrow(/HTTPS/)
+    expect(() => validateRouterUrl("https://router.example/v1/events")).not.toThrow()
+  })
+
+  it("retries failed ingress via retryPendingDeliveries without duplicating", async () => {
+    const { port } = await startServer()
+    const dir = mkdtempSync(join(tmpdir(), "tc-retry-"))
+    const { ensureArchive } = await import("../../src/lib/archive.js")
+    const { Outbox } = await import("../../src/lib/outbox.js")
+    const { deliverStagedOutbox, retryPendingDeliveries, summarizeIngressCounts } =
+      await import("../../src/orchestrator/delivery.js")
+    const layout = await ensureArchive(join(dir, "archive"))
+    const runId = "20260716T180000Z-retry01"
+    const event = {
+      ...buildBroadcastRouterEvent(runId, "2026-07-16T18:00:00.000Z", item),
+      channels: {
+        telegram: { text: item.text },
+      },
+    }
+    await new Outbox(join(layout.routerOutbox, runId)).stage(event)
+
+    let calls = 0
+    const flaky: typeof fetch = async (input, init) => {
+      calls += 1
+      if (calls === 1) return new Response("", { status: 503 })
+      return fetch(input, init)
+    }
+    const first = await deliverStagedOutbox({
+      layout,
+      runId,
+      routerUrl: `http://127.0.0.1:${port}/v1/events`,
+      hmacKey,
+      nowIso: "2026-07-16T18:00:00.000Z",
+      fetcher: flaky,
+      backoffMs: 0,
+    })
+    expect(first[0]?.status).toBe("failed")
+    expect(summarizeIngressCounts(layout, "2026-07-16T18:01:00.000Z").ingressPending).toBe(1)
+
+    const retry = await retryPendingDeliveries({
+      layout,
+      routerUrl: `http://127.0.0.1:${port}/v1/events`,
+      hmacKey,
+      nowIso: "2026-07-16T18:02:00.000Z",
+      fetcher: fetch,
+      backoffMs: 0,
+    })
+    expect(retry.accepted).toBe(1)
+    expect(retry.attempted).toBe(1)
+    const again = await retryPendingDeliveries({
+      layout,
+      routerUrl: `http://127.0.0.1:${port}/v1/events`,
+      hmacKey,
+      nowIso: "2026-07-16T18:03:00.000Z",
+      fetcher: fetch,
+      backoffMs: 0,
+    })
+    expect(again.attempted).toBe(0)
+    expect(again.pendingBefore).toBe(0)
+    expect(summarizeIngressCounts(layout).accepted).toBe(1)
+  })
+
   it("fans out per-channel text when channels are present", async () => {
     const dir = mkdtempSync(join(tmpdir(), "tc-channels-"))
     const seen: Array<{ kind: string; text: string }> = []

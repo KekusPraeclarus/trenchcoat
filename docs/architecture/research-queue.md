@@ -2,7 +2,7 @@
 description: Research queue lifecycle - how candidates from scans, narrative transitions, new-pool feed, alpha digestion, and chat become bounded research runs. Schema, dedupe, priority, revisit handling, expiry.
 scope: module
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing candidate enqueueing, the research job trigger, narrative bridge, or revisit/expiry handling.
 ---
@@ -81,8 +81,9 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `completedToday` (default 3), after day rollover on first touch
 - **Operator path** — Telegram confirm or `tc research <subject>` calls
   `enqueueOperatorResearch` / `runOperatorResearchNow` under the workspace lock.
-  After resolution + security gate, the host scrapes bounded X search for
-  sentiment/popularity snapshots before the network-denied research passes.
+  After resolution, the host reuses DexScreener pairs from resolve and collects
+  market/security, cached FOMO context, and bounded X search concurrently before
+  the network-denied research passes.
 - **Cron path** — `tc run research` reserves one due entry (kept in-file as
   `researching`), assembles a full dossier (`meta`, `market-dex`,
   `security-gate`, optional socials) via `collectResearchDossier`, then runs the
@@ -91,23 +92,53 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `runId: "none"` (no run directory). `tc precheck research` is a lock-free peek
   only — authoritative expire/dequeue/save still happens under the workspace lock
   inside `runJob` (dequeue mutates status to `researching`). Host Tavily mid-pass
-  may write extra inbox snapshots after the first agent pass — `run.ts` **defers**
-  `preArchiveRun` until after `runResearchPasses` for cron research so those
-  files are frozen before proposals/verifier (operator research archives after
-  passes the same way)
+  may write extra inbox snapshots after the first agent pass (queries run
+  concurrently under `max_queries_per_run`, stable `web-tavily-{index}` names) —
+  `run.ts` **defers** `preArchiveRun` until after `runResearchPasses` for cron
+  research so those files are frozen before proposals/verifier (operator
+  research archives after passes the same way)
 - **Narrative bridge** — after `narrative-scan` integrity succeeds,
-  `bridgeNarrativeTickers` deterministically extracts bounded ticker candidates,
-  resolves them, and writes the queue once. Ambiguous tickers remain
-  `ambiguous` with a bounded shortlist and never launch research. This bridge
-  never writes the watchlist, ledger, or decisions
+  `bridgeNarrativeTickers` deterministically extracts bounded ticker candidates
+  from explicit `tickers` fields and cashtags (`$TICKER`) only — never bare
+  uppercase/title words, and never reserved chain-native/generic symbols
+  (`SOL`, `ETH`, `USDC`, …). It resolves survivors and writes the queue once.
+  Ambiguous tickers remain `ambiguous` with a bounded shortlist and never launch
+  research (excluded from actionable dequeue). A one-time migration receipt
+  (`archive/migrations/generic-chain-symbol-v1.json`) marks historical
+  auto-generated ambiguous narrative generics as `rejected` with reason
+  `generic-chain-symbol` without deleting history. This bridge never writes the
+  watchlist, ledger, or decisions
+- **Social research nominations** — usable `list-scan` / `farcaster-scan` runs may
+  propose `reports/<run-id>/research-candidates.json`. The host validates sealed
+  same-run inbox evidence, requires a verbatim canonical `chain`/`tokenAddress`
+  supported by ≥2 independent authors/clusters, and enqueues at most three
+  `trigger: "social"` entries. Ticker-only, invented, malformed, expired,
+  duplicated, or over-cap nominations are receipted and rejected. Nominations may
+  consume research budget but never write watchlist, decisions, ledger, or wallets
+- **Fomo signal bridge** — `fomo-signal-scan` may enqueue `trigger: "social"`
+  entries from feed/alerts/derived convergence when config + FAFO gates pass and
+  `shadow_mode=false`. Canonical resolution is required before enqueue; cluster
+  count is unique mapped handles. See [knowledge/fomo-family.md](../knowledge/fomo-family.md)
 - **Expiry** — pending/ambiguous entries past `expiresAt` are swept
 - **Ambiguous** — held when DexScreener resolution cannot bind a canonical
   identity; operator should resubmit `chain:address`
 - **Web search** — optional host-mediated Tavily Search from validated
   `web-search-requests.json` queries only (never model URLs); key
-  `TAVILY_API_KEY` stays host-only
+  `TAVILY_API_KEY` stays host-only; failures are isolated per query and all
+  snapshots settle before pass 2
 - **X search** — optional host-mediated burner-profile search
-  (`config.research.twitter_search`); agents never open X themselves
+  (`config.research.twitter_search`); agents never open X themselves.
+  Farcaster is not part of the research dossier path.
+
+## Health / status surfaces
+
+`src/orchestrator/health.ts` reports **actionable** depth (status `pending` with
+a runnable resolution) separately from **ambiguous** parked entries. Empty
+actionable depth and non-zero ambiguous counts are warnings on `tc status` /
+Telegram `/status` and keep daily `review` in scope (with skip-ledger counts)
+even when no sealed agent reports exist. Host precondition skips still append
+`archive/skips/research.jsonl` (`queue-empty` / `daily-cap` / `queue-pending`)
+and those reasons roll into the shared skip-count snapshot.
 
 ## Invariants touched
 

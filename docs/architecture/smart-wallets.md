@@ -2,7 +2,7 @@
 description: Smart-wallet discovery, deterministic scoring, bounded LLM vote, promotion/drop hysteresis, and mandatory lifecycle router events.
 scope: project
 status: active
-last_verified: 2026-07-18
+last_verified: 2026-07-19
 read_when:
   - Editing wallet collectors, scoring, lifecycle transitions, or wallet router events
 ---
@@ -23,7 +23,9 @@ No signing libraries. No transaction submission. Read-only codecs only (INV-A1).
    `tracking-probation` with `reasonCode: operator-seed`, takes the workspace
    writer lock, and stages one `wallet.lifecycle` router event per transition
    (unless canary blocks external effects). Refuses non-empty `wallets.json`.
-   Autonomous discovery can populate an empty file.
+   Autonomous discovery can populate an empty file. Manual Fomo wallet
+   extraction can feed this path when the web scrape cannot expose exact addresses
+   (see [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md)).
 2. **`wallet-discovery`** — host walks watchlist token identities on
    wallet-supported chains, extracts early buyers (Helius mint history /
    EVM Transfer recipients), stages `candidate` wallets, checkpoints
@@ -31,6 +33,10 @@ No signing libraries. No transaction submission. Read-only codecs only (INV-A1).
    may summarize a frozen wallet snapshot, but cannot affect this host work.
    Empty/skip reasons:
    `no-active-watchlist-subjects`, `no-wallet-supported-subjects`, `dry-collect`.
+2b. **`fomo-trader-sync` (optional)** — host-only Fomo leaderboard sync may
+   register additional `candidate` wallets with `discoveredFrom: "fomo"`
+   when `fomo.enabled` + gates pass and `shadow_mode=false`. No lifecycle events
+   at nomination; existing scans/review remain authoritative (INV-S19).
 3. **`wallet-scan-solana` / `wallet-scan-evm`** — host performs incremental finalized action
    scans for candidates/tracking wallets; archives buy outcomes under
    `archive/outcomes/wallet-buy-*.json`. The evidence-only agent may inspect

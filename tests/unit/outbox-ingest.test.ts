@@ -4,7 +4,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ensureArchive } from "../../src/lib/archive.js"
 import { Outbox } from "../../src/lib/outbox.js"
+import { preArchiveRun } from "../../src/orchestrator/pre-archive.js"
 import { ingestOutbox } from "../../src/orchestrator/outbox-ingest.js"
+import { buildBroadcastRouterEvent } from "../../src/orchestrator/router.js"
 
 const RUN_ID = "20260717T120000Z-ab12cd34"
 const NOW = "2026-07-17T12:00:00.000Z"
@@ -22,22 +24,35 @@ const VALID_ITEM = {
   },
 }
 
-async function scaffold(body: unknown) {
+async function scaffold(body: unknown, opts?: { inboxFile?: string }) {
   const root = mkdtempSync(join(tmpdir(), "tc-ingest-"))
   const agentRoot = join(root, "agent")
   const archiveRoot = join(root, "archive")
   const layout = await ensureArchive(archiveRoot)
   mkdirSync(join(agentRoot, "outbox"), { recursive: true })
+  mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+  writeFileSync(join(agentRoot, "state", "narratives", "example.md"), "# example\n")
+  writeFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), "")
   writeFileSync(join(agentRoot, "outbox", `${RUN_ID}.json`), `${JSON.stringify(body, null, 2)}\n`)
+  if (opts?.inboxFile) {
+    mkdirSync(join(agentRoot, "inbox", RUN_ID), { recursive: true })
+    writeFileSync(join(agentRoot, "inbox", RUN_ID, opts.inboxFile), `${JSON.stringify({ ok: true })}\n`)
+  }
+  await preArchiveRun({
+    layout,
+    agentRoot,
+    runId: RUN_ID,
+    job: "list-scan",
+    nowIso: NOW,
+  })
   return { agentRoot, archiveRoot, layout }
 }
 
 describe("outbox ingest", () => {
-  it("stages a valid item and reserves budget", async () => {
+  it("stages a valid item without a Discord budget gate", async () => {
     const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
     const report = await ingestOutbox({
-      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID,
-      dailyBudget: 5, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
     })
     expect(report.staged).toBe(1)
     expect(report.rejected).toBe(0)
@@ -47,18 +62,70 @@ describe("outbox ingest", () => {
   it("accepts a bare array of items", async () => {
     const s = await scaffold([VALID_ITEM])
     const report = await ingestOutbox({
-      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID,
-      dailyBudget: 5, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
     })
     expect(report.staged).toBe(1)
+  })
+
+  it("canonicalizes same-run inbox refs to sealed archive paths before eventId", async () => {
+    const item = {
+      ...VALID_ITEM,
+      refs: [`inbox/${RUN_ID}/twitter-fyp.json`],
+    }
+    const s = await scaffold({ schema: 1, items: [item] }, { inboxFile: "twitter-fyp.json" })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
+    })
+    expect(report.staged).toBe(1)
+    expect(report.items[0]?.refs).toEqual([`archive/runs/${RUN_ID}/inbox/twitter-fyp.json`])
+    const staged = new Outbox(join(s.layout.routerOutbox, RUN_ID)).list()[0]!
+    expect(staged.refs).toEqual([`archive/runs/${RUN_ID}/inbox/twitter-fyp.json`])
+    const expectedId = buildBroadcastRouterEvent(RUN_ID, NOW, {
+      ...VALID_ITEM,
+      refs: [`archive/runs/${RUN_ID}/inbox/twitter-fyp.json`],
+    } as never).eventId
+    expect(staged.eventId).toBe(expectedId)
+  })
+
+  it("rejects traversal and cross-run inbox refs", async () => {
+    const s = await scaffold({
+      schema: 1,
+      items: [
+        { ...VALID_ITEM, refs: ["state/narratives/../secrets.env"] },
+        { ...VALID_ITEM, refs: ["inbox/other-run/twitter-fyp.json"] },
+      ],
+    }, { inboxFile: "twitter-fyp.json" })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejected).toBe(2)
+    expect(report.rejects.some((r) => /safe state-relative|ref-traversal/iu.test(r.reason))).toBe(true)
+    expect(report.rejects.some((r) => r.reason === "ref-cross-run")).toBe(true)
+  })
+
+  it("rejects missing state refs and unfrozen inbox refs", async () => {
+    const s = await scaffold({
+      schema: 1,
+      items: [
+        { ...VALID_ITEM, refs: ["state/narratives/missing.md"] },
+        { ...VALID_ITEM, refs: [`inbox/${RUN_ID}/not-collected.json`] },
+      ],
+    })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejects.map((r) => r.reason)).toEqual(
+      expect.arrayContaining(["ref-missing-or-mutable:state", "ref-not-frozen"]),
+    )
   })
 
   it("rejects an item whose direction contradicts its type", async () => {
     const bad = { ...VALID_ITEM, auditClaim: { ...VALID_ITEM.auditClaim, direction: "down" } }
     const s = await scaffold({ schema: 1, items: [bad] })
     const report = await ingestOutbox({
-      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID,
-      dailyBudget: 5, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
     })
     expect(report.staged).toBe(0)
     expect(report.rejected).toBe(1)
@@ -69,22 +136,21 @@ describe("outbox ingest", () => {
     expect(rejects.rejects).toHaveLength(1)
   })
 
-  it("rejects items once the budget is exhausted", async () => {
+  it("stages items even when Discord daily budget would be exhausted", async () => {
+    // Discord budget is applied later in renderChannelPayloads, not at ingest
     const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
     const report = await ingestOutbox({
-      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID,
-      dailyBudget: 0, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
     })
-    expect(report.staged).toBe(0)
-    expect(report.rejects[0]?.reason).toBe("budget:daily-budget")
+    expect(report.staged).toBe(1)
+    expect(report.rejected).toBe(0)
   })
 
   it("returns an empty report when no outbox file exists", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-ingest-none-"))
     const layout = await ensureArchive(join(root, "archive"))
     const report = await ingestOutbox({
-      agentRoot: join(root, "agent"), layout, runId: RUN_ID,
-      dailyBudget: 5, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: join(root, "agent"), layout, runId: RUN_ID, nowIso: NOW,
     })
     expect(report.staged).toBe(0)
     expect(report.rejected).toBe(0)
@@ -96,8 +162,7 @@ describe("outbox ingest", () => {
       broadcasts: [{ slug: "x", kind: "narrative-emergence", text: "nope" }],
     })
     const report = await ingestOutbox({
-      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID,
-      dailyBudget: 5, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
     })
     expect(report.staged).toBe(0)
     expect(report.rejected).toBe(1)
@@ -115,8 +180,7 @@ describe("outbox ingest", () => {
       text: "freeform broadcast that the host must not send",
     })
     const report = await ingestOutbox({
-      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID,
-      dailyBudget: 5, urgentCeiling: 10, nowIso: NOW,
+      agentRoot: s.agentRoot, layout: s.layout, runId: RUN_ID, nowIso: NOW,
     })
     expect(report.staged).toBe(0)
     expect(report.rejects[0]?.reason).toBe("invalid-envelope:wrap-text-in-items-array")
@@ -142,13 +206,109 @@ describe("outbox ingest", () => {
       agentRoot: s.agentRoot,
       layout: s.layout,
       runId: RUN_ID,
-      dailyBudget: 5,
-      urgentCeiling: 10,
       nowIso: NOW,
       marketBlind: true,
     })
     expect(report.staged).toBe(0)
     expect(report.rejected).toBe(1)
     expect(report.rejects[0]?.reason).toBe("market-blind:rotation-forbidden")
+  })
+
+  it("caps single-platform rotation and sentiment-collapse at watch", async () => {
+    const s = await scaffold({
+      schema: 1,
+      items: [
+        {
+          severity: "urgent",
+          text: "capital rotating into base ai hard",
+          refs: ["state/narratives/log.jsonl"],
+          auditClaim: {
+            type: "rotation",
+            subject: "base-ai",
+            direction: "rotation",
+            horizonHours: 48,
+            verificationRule: "rotation",
+          },
+        },
+        {
+          severity: "notable",
+          text: "sentiment collapsing on sol meme cluster",
+          refs: ["state/narratives/log.jsonl"],
+          auditClaim: {
+            type: "sentiment-collapse",
+            subject: "sol-meme",
+            direction: "down",
+            horizonHours: 24,
+            verificationRule: "sentiment.collapse",
+          },
+        },
+      ],
+    })
+    writeFileSync(
+      join(s.agentRoot, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify({
+        slug: "base-ai",
+        title: "Base AI",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@alice:1", "coingecko:trending:base-ai", "fomo:signal:1"],
+        stage: "peaking",
+      })}\n${JSON.stringify({
+        slug: "sol-meme",
+        title: "Sol meme",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["farcaster:@bob", "dexscreener:boost:1"],
+        stage: "fading",
+      })}\n`,
+    )
+
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+    })
+    expect(report.staged).toBe(2)
+    expect(report.items.map((i) => i.severity)).toEqual(["watch", "watch"])
+    expect(report.items[0]?.auditClaim.type).toBe("rotation")
+    expect(report.items[1]?.auditClaim.type).toBe("sentiment-collapse")
+  })
+
+  it("keeps urgent severity when X and Farcaster independently corroborate", async () => {
+    const s = await scaffold({
+      schema: 1,
+      items: [{
+        severity: "urgent",
+        text: "cross-platform rotation into base ai",
+        refs: ["state/narratives/log.jsonl"],
+        auditClaim: {
+          type: "rotation",
+          subject: "base-ai",
+          direction: "rotation",
+          horizonHours: 48,
+          verificationRule: "rotation",
+        },
+      }],
+    })
+    writeFileSync(
+      join(s.agentRoot, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify({
+        slug: "base-ai",
+        title: "Base AI",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@alice:1", "farcaster:@carol"],
+        stage: "peaking",
+      })}\n`,
+    )
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+    })
+    expect(report.staged).toBe(1)
+    expect(report.items[0]?.severity).toBe("urgent")
   })
 })
