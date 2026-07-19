@@ -261,7 +261,7 @@ pnpm exec vitest run tests/unit/chat-report.test.ts
 
 ### Commit
 
-COMMIT_PLACEHOLDER
+`3536259` — Finalize chat-report status when the run journal terminates.
 
 ### Session learning
 
