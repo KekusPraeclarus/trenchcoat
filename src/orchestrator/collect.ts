@@ -26,12 +26,17 @@ import { desiredFollowFids } from "../sources/fc-lifecycle.js"
 import { getChain } from "../lib/chains.js"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
-import type { CanonicalIdentity } from "../contracts/schemas.js"
+import { SNAPSHOT_MAX_ITEMS, type CanonicalIdentity } from "../contracts/schemas.js"
 import {
   collectResearchDossier,
   resolveResearchSubject,
 } from "./research-collect.js"
-import { capManifestLines, collectReview, listPendingAlphaPaths } from "./review-collect.js"
+import {
+  capEnvelopeItems,
+  capManifestLines,
+  collectReview,
+  listPendingAlphaPaths,
+} from "./review-collect.js"
 import { writeXFypEligibleSnapshot } from "./x-fyp-eligible.js"
 import { collectFomoTraderSync } from "./fomo-trader-collect.js"
 import { collectFomoSignalScan } from "./fomo-signal-collect.js"
@@ -83,6 +88,8 @@ export type CollectionSummary = Readonly<{
   alphaPendingCount?: number
   /** Paths omitted from the capped manifest (`truncated=N`); 0 when none */
   alphaManifestTruncated?: number
+  /** Posts/casts omitted from capped twitter/farcaster/fyp snapshots; 0 when none */
+  snapshotItemsTruncated?: number
 }>
 
 const EMPTY_SUMMARY: CollectionSummary = {
@@ -647,6 +654,7 @@ async function collectListScan(args: Readonly<{
   const seenKeys = new Set<string>()
   const fypPosts: CollectionSummary["fypPosts"][number][] = []
   let postCount = 0
+  let snapshotItemsTruncated = 0
 
   for (const bundle of bundles) {
     if (bundle.challenged) {
@@ -677,20 +685,40 @@ async function collectListScan(args: Readonly<{
         }
       }
     }
-    await writeTwitterBundle(args, name, bundle)
+    snapshotItemsTruncated += await writeTwitterBundle(args, name, bundle)
   }
 
-  if (fypPosts.length > 0) {
+  const fypKeep = fypPosts.length > SNAPSHOT_MAX_ITEMS
+    ? SNAPSHOT_MAX_ITEMS - 1
+    : fypPosts.length
+  const fypTruncated = Math.max(0, fypPosts.length - fypKeep)
+  const summaryFypPosts = fypTruncated > 0 ? fypPosts.slice(0, fypKeep) : fypPosts
+  snapshotItemsTruncated += fypTruncated
+
+  if (summaryFypPosts.length > 0) {
     await writeXFypEligibleSnapshot({
       writer: args.writer,
       runId: args.runId,
       fetchedAt: args.fetchedAt,
-      posts: fypPosts,
+      posts: summaryFypPosts,
+      ...(fypTruncated > 0 ? { truncatedBy: fypTruncated } : {}),
     })
   }
 
   const alpha = await writeListScanAlphaManifest(args)
   names.push(alpha.snapshotName)
+
+  const statusParts: string[] = []
+  if (alpha.pendingCount > 0) {
+    statusParts.push(
+      alpha.truncatedBy > 0
+        ? `alpha-backlog:${alpha.pendingCount};truncated=${alpha.truncatedBy}`
+        : `alpha-pending:${alpha.pendingCount}`,
+    )
+  }
+  if (snapshotItemsTruncated > 0) {
+    statusParts.push(`posts-truncated:${snapshotItemsTruncated}`)
+  }
 
   return {
     snapshotNames: names,
@@ -701,17 +729,14 @@ async function collectListScan(args: Readonly<{
         : a.origin.localeCompare(b.origin)
     )),
     fcDiscoverySightings: [],
-    fypPosts,
+    fypPosts: summaryFypPosts,
     fypCasts: [],
     postCount,
     collectionKind: "external",
     alphaPendingCount: alpha.pendingCount,
     alphaManifestTruncated: alpha.truncatedBy,
-    ...(alpha.truncatedBy > 0
-      ? { collectionStatus: `alpha-backlog:${alpha.pendingCount};truncated=${alpha.truncatedBy}` }
-      : alpha.pendingCount > 0
-        ? { collectionStatus: `alpha-pending:${alpha.pendingCount}` }
-        : {}),
+    ...(snapshotItemsTruncated > 0 ? { snapshotItemsTruncated } : {}),
+    ...(statusParts.length > 0 ? { collectionStatus: statusParts.join(";") } : {}),
   }
 }
 
@@ -782,6 +807,7 @@ async function collectFarcaster(args: Readonly<{
   const seenKeys = new Set<string>()
   const fypCasts: CollectionSummary["fypCasts"][number][] = []
   let postCount = 0
+  let snapshotItemsTruncated = 0
   const assessments = bundles.map((b) => b.assessment)
   const receipt = buildFarcasterCollectionReceipt(assessments)
 
@@ -819,7 +845,7 @@ async function collectFarcaster(args: Readonly<{
         })
       }
     }
-    await writeFarcasterBundle(args, name, assessment)
+    snapshotItemsTruncated += await writeFarcasterBundle(args, name, assessment)
   }
 
   const store = new StateStore(join(args.agentRoot, "state"))
@@ -884,6 +910,13 @@ async function collectFarcaster(args: Readonly<{
   })
   names.push("farcaster-collection-receipt")
 
+  const baseStatus = skipAgent
+    ? (fypAssessment?.rejectReason
+      ?? (receipt.usableEvidenceCount === 0 ? "no-usable-fc-evidence" : "fc-unusable"))
+    : (receipt.engagementDisabled
+      ? `analysis-only:${followingStatus}`
+      : followingStatus)
+
   return {
     snapshotNames: names,
     fypAuthors: [...fypAuthors].sort(),
@@ -896,18 +929,12 @@ async function collectFarcaster(args: Readonly<{
     fypPosts: [],
     fypCasts,
     postCount,
-    ...(skipAgent
-      ? {
-        skipAgent: true,
-        collectionStatus: fypAssessment?.rejectReason
-          ?? (receipt.usableEvidenceCount === 0 ? "no-usable-fc-evidence" : "fc-unusable"),
-      }
-      : {
-        collectionStatus: receipt.engagementDisabled
-          ? `analysis-only:${followingStatus}`
-          : followingStatus,
-      }),
     collectionKind: "external",
+    ...(skipAgent ? { skipAgent: true } : {}),
+    collectionStatus: snapshotItemsTruncated > 0
+      ? `${baseStatus};casts-truncated:${snapshotItemsTruncated}`
+      : baseStatus,
+    ...(snapshotItemsTruncated > 0 ? { snapshotItemsTruncated } : {}),
   }
 }
 
@@ -933,32 +960,44 @@ async function writeTwitterBundle(
   }>,
   name: string,
   bundle: TwitterScrapeBundle,
-): Promise<void> {
+): Promise<number> {
   const fetchedMs = Date.parse(args.fetchedAt)
+  const mapped = bundle.posts.map((post) => {
+    const ageSec = Math.max(
+      0,
+      Math.floor((fetchedMs - Date.parse(post.timestamp)) / 1_000),
+    )
+    return {
+      provenance: post.provenance,
+      text: post.text,
+      url: post.url,
+      ts: post.timestamp,
+      ageSec,
+      freshnessTier: ageSec <= 6 * 3_600
+        ? "live" as const
+        : ageSec <= 48 * 3_600
+          ? "stale" as const
+          : "expired" as const,
+      dedupeKey: post.id,
+    }
+  })
+  const capped = capEnvelopeItems(
+    mapped,
+    (truncatedBy) => ({
+      provenance: `${args.runId}:twitter-${name}:truncated`,
+      text: `truncated=${truncatedBy}`,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    }),
+  )
   await args.writer.writeInbox(args.runId, `twitter-${name}`, {
     source: `twitter.${bundle.target.label}`,
     fetchedAt: args.fetchedAt,
     trust: "untrusted-external",
-    items: bundle.posts.map((post) => {
-      const ageSec = Math.max(
-        0,
-        Math.floor((fetchedMs - Date.parse(post.timestamp)) / 1_000),
-      )
-      return {
-        provenance: post.provenance,
-        text: post.text,
-        url: post.url,
-        ts: post.timestamp,
-        ageSec,
-        freshnessTier: ageSec <= 6 * 3_600
-          ? "live" as const
-          : ageSec <= 48 * 3_600
-            ? "stale" as const
-            : "expired" as const,
-        dedupeKey: post.id,
-      }
-    }),
+    items: capped.items,
   })
+  return capped.truncatedBy
 }
 
 async function writeFarcasterBundle(
@@ -969,24 +1008,36 @@ async function writeFarcasterBundle(
   }>,
   name: string,
   assessment: FarcasterFeedAssessment,
-): Promise<void> {
+): Promise<number> {
+  const mapped = assessment.eligibleCasts.map((cast) => {
+    const ageSec = castAgeSec(args.fetchedAt, cast.timestamp)
+    return {
+      provenance: cast.provenance,
+      text: cast.text,
+      ...(cast.url ? { url: cast.url } : {}),
+      ts: cast.timestamp,
+      ageSec,
+      freshnessTier: freshnessTierForAge(ageSec),
+      dedupeKey: cast.hash,
+    }
+  })
+  const capped = capEnvelopeItems(
+    mapped,
+    (truncatedBy) => ({
+      provenance: `${args.runId}:farcaster-${name}:truncated`,
+      text: `truncated=${truncatedBy}`,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    }),
+  )
   await args.writer.writeInbox(args.runId, `farcaster-${name}`, {
     source: `farcaster.${assessment.target.label}`,
     fetchedAt: args.fetchedAt,
     trust: "untrusted-external",
-    items: assessment.eligibleCasts.map((cast) => {
-      const ageSec = castAgeSec(args.fetchedAt, cast.timestamp)
-      return {
-        provenance: cast.provenance,
-        text: cast.text,
-        ...(cast.url ? { url: cast.url } : {}),
-        ts: cast.timestamp,
-        ageSec,
-        freshnessTier: freshnessTierForAge(ageSec),
-        dedupeKey: cast.hash,
-      }
-    }),
+    items: capped.items,
   })
+  return capped.truncatedBy
 }
 
 function sanitizeSnapshotName(value: string): string {

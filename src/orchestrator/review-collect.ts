@@ -141,6 +141,23 @@ export function capManifestLines(
   return [...lines.slice(0, keep), `truncated=${lines.length - keep}`]
 }
 
+/** Cap snapshot envelope items, reserving the last slot for a host truncation marker */
+export function capEnvelopeItems<T>(
+  items: readonly T[],
+  makeTruncationMarker: (truncatedBy: number) => T,
+  maxItems: number = SNAPSHOT_MAX_ITEMS,
+): Readonly<{ items: T[], truncatedBy: number }> {
+  if (items.length <= maxItems) {
+    return { items: [...items], truncatedBy: 0 }
+  }
+  const keep = Math.max(0, maxItems - 1)
+  const truncatedBy = items.length - keep
+  return {
+    items: [...items.slice(0, keep), makeTruncationMarker(truncatedBy)],
+    truncatedBy,
+  }
+}
+
 export function countWatchlistScope(agentRoot: string): number {
   const state = new StateStore(join(agentRoot, "state"))
   return state.loadWatchlist().entries.filter((entry) => (

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import { SNAPSHOT_MAX_ITEMS } from "../../src/contracts/schemas.js"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { writeListScanAlphaManifest } from "../../src/orchestrator/collect.js"
-import { capManifestLines } from "../../src/orchestrator/review-collect.js"
+import { capEnvelopeItems, capManifestLines } from "../../src/orchestrator/review-collect.js"
 
 describe("writeListScanAlphaManifest", () => {
   it("writes path-only pending alpha lines", async () => {
@@ -104,5 +104,23 @@ describe("capManifestLines", () => {
       ...lines.slice(0, 9),
       "truncated=3",
     ])
+  })
+})
+
+describe("capEnvelopeItems", () => {
+  it("keeps short item lists intact", () => {
+    const items = [{ id: "a" }, { id: "b" }]
+    expect(capEnvelopeItems(items, (n) => ({ id: `truncated=${n}` }))).toEqual({
+      items,
+      truncatedBy: 0,
+    })
+  })
+
+  it("reserves the last slot for a truncation marker", () => {
+    const items = Array.from({ length: 12 }, (_, i) => ({ id: String(i) }))
+    const capped = capEnvelopeItems(items, (n) => ({ id: `truncated=${n}` }), 10)
+    expect(capped.truncatedBy).toBe(3)
+    expect(capped.items).toHaveLength(10)
+    expect(capped.items.at(-1)).toEqual({ id: "truncated=3" })
   })
 })

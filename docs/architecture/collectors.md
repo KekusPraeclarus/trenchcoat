@@ -82,7 +82,10 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
   targets complete.
 - `list-scan` also writes path-only `list-scan-alpha-manifest` (capped at 500 with
   `truncated=N`) so alpha-queue digestion is not review-only; chat notes surface
-  `alphaPending` / `alphaTruncated` when the queue is deep.
+  `alphaPending` / `alphaTruncated` when the queue is deep. Twitter list/FYP
+  snapshots and `x-fyp-eligible` use the same `SNAPSHOT_MAX_ITEMS` cap with a
+  trailing `truncated=N` marker so oversized scrapes cannot fail collect on Zod
+  `too_big`; `collectionStatus` may include `posts-truncated=N`.
 
 The normal collector blocks every mutating HTTP method. A separate host-only
 managed-list synchronizer is the sole exception: it may create one private list
@@ -111,12 +114,17 @@ replies, DMs, and retweets stay blocked (INV-R2).
   pattern, then makes **one** rate-gated Neynar `trending` fallback request
   (limit clamped to ≤10; no cursor retries, no cache-bust). Expired casts never
   enter inbox evidence.
-  Analysis may proceed from any live configured feed or the trending fallback;
-  only verified live for-you casts enter the FYP like allowlist (`fypCasts`) —
-  a stale for-you feed cannot authorize engagement. Structured receipt
+  Analysis may proceed from any live configured feed or the trending fallback
+  (`collectionStatus=analysis-only:…` when engagement is off); only verified
+  live for-you casts enter the FYP like allowlist (`fypCasts`) — a stale
+  for-you feed cannot authorize engagement. Structured receipt
   `farcaster-collection-receipt` records per-feed counts, rejection reason,
   fallback use, usable-evidence count, and `engagementDisabled`. Agent is
-  skipped only when every bounded FC source is unusable.
+  skipped only when every bounded FC source is unusable (`skipAgent`);
+  trending fallback alone keeps the agent on but is not personalized recovery.
+  Status `empty-following-with-desired` means managed follows are desired but
+  the following feed has zero non-expired eligible casts (see LIVE-E2E
+  LIVE-E2E § Farcaster when for-you is stuck on `repeated_two_hash_stale`).
   Snapshots are `inbox/<runId>/farcaster-*.json` with
   `provenance: farcaster:@username` and `trust: untrusted-external`.
 - Collection status reports dynamic signer probe output
