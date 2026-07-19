@@ -41,6 +41,7 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P34 | recall | Does active mint authority hard-fail the security gate? When is a mintable token blocked from tracking / Discord subscribe? | No — `mintable`/`mint-authority` are caution-only (like `low-lp-lock`). Host blocks `track`/subscribe when mint is active and model `projectClassification` is `memecoin`, or classification is missing; justified utility/infrastructure may track. Contextual reject does not rug-dock. Discord subscribe also requires a validated `track` verdict (`evaluateResearchSubscribe`) → ADR 011, security-gate.md, INV-S9 | pass | 2026-07-19 |
 | P35 | recall | Chat says list-scan wrote an alpha digest / “processed” Telegram — were queue messages purged? Why can backlog stay ~500? | Only host `alpha-digest-receipt` with `purgedIds` counts. Agent `reports/.../alpha-digest.json` with narrative `items` fails Zod (`invalidReason=schema-invalid`) and purges nothing (INV-Q1/Q2). Check chat `alphaPurged` / `alphaDigestInvalid`. Do not mass-delete the queue. `analysis-only` + `repeated_two_hash_stale` is **Farcaster**, not X list-scan → telegram.md, orchestrator.md § Alpha-queue, INV-Q1 | pass | 2026-07-19 |
 | P36 | recall | Do list-scan and farcaster-scan share one jitter range? After shortening cadence, why might the old schedule still block runs? | No — per-job `MIN_SEC`/`MAX_SEC` in `ops/run-job-jittered.sh` (list-scan [30m, 1h45m]; farcaster [3h15m, 4h45m] as of 2026-07-19). Success backoff persists in `~/.trenchcoat/var/<job>.next` across redeploy; delete to apply immediately. TG preview cycle is `channels.ts` default + **channels** restart; verify startup `pollMs` → runbook.md § Tuning social scan cadence, telegram.md | pass | 2026-07-19 |
+| P37 | continuation | What must happen before Fomo jobs can mutate wallets / research queue / X nominations in production? | `auth fomo` → `probe:fomo` discover/sanitize/evaluate → `fomo:install-gates` with provider `pass` → 14-day shadow (`ops/fafo-fomo/SHADOW-CANARY.md`) → then `fomo.enabled` + `shadow_mode: false` per lane. Until then fail-closed / scaffold gates. Profile is `~/.trenchcoat/fomo-profile/` only → development.md, LIVE-E2E-BLOCKERS, knowledge/fomo-family.md, ADR 009 | pass | 2026-07-19 |
 
 ## Failure log
 
@@ -176,3 +177,11 @@ patterns become visible.
   index + orchestrator alpha-drain operator path; bumped stale `last_verified`
   on chains/helius/infura/chart-vision. P31/P34/P35/P36 graded pass. Probe suite
   36/36 pass. Always-on unchanged (~306 tokens).
+- 2026-07-19 context-maintenance + session-learning (Fomo Playwright): Fomo
+  dual-track + profile-history already in ADR 009 / collectors / fomo-family /
+  INV-S21/S22. Surprises: work still local/uncommitted (not live); INV-I4
+  false-positive when a file reads `agent/inbox` and `writeAtomicFile`s archive
+  (tightened static test + development.md note); probe cmd block needed
+  sanitize/evaluate. Expanded LIVE-E2E Fomo residual; added P37; regraded
+  P29 + Fomo profile path. Probe suite 37/37 pass. Gotchas empty. Always-on
+  ~306 tokens.

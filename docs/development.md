@@ -56,11 +56,19 @@ the allowlist in `tests/redteam/static.test.ts` (`prop_inv_i4_inbox_writer_owner
 ```bash
 pnpm dev:cli auth fomo
 pnpm probe:fomo discover --run-id probe-$(date -u +%F)
+pnpm probe:fomo sanitize --run-id probe-$(date -u +%F)
+pnpm probe:fomo evaluate --run-id probe-$(date -u +%F)
 pnpm fomo:install-gates path/to/evaluated-gates.json
 pnpm fomo:shadow-metrics --day $(date -u +%F)
 ```
 
 Shadow/canary playbook: [../ops/fafo-fomo/SHADOW-CANARY.md](../ops/fafo-fomo/SHADOW-CANARY.md).
+Mutation of wallets / research queue / X nominations requires gates `pass`,
+`fomo.enabled=true`, and `shadow_mode=false` (shadow first).
+
+`tests/redteam/static.test.ts` INV-I4 ownership: a file that *reads*
+`agent/inbox` and also `writeAtomicFile`s elsewhere is not an inbox writer —
+the check requires `writeInbox` / inbox `mkdirSync`, not mere `join(..., "inbox")`.
 
 ## Static lint (`scripts/lint-static.ts`)
 

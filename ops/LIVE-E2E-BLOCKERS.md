@@ -86,10 +86,14 @@ reference/defense-in-depth only — not the production isolation boundary.
   write confinement + `disableTmpWrite` + scrubbed child env are the enforced bar.
   INV-I5 container smoke remains reference-only / PARTIAL.
 - **Fomo** — adapters + host jobs landed (`fomo-trader-sync`,
-  `fomo-signal-scan`, `fomo-x-source-review`) with fail-closed defaults. Live
-  FAFO probe is still a scaffold (`pnpm probe:fomo`); provider gate = fail until
-  burner discover completes. See `ops/fafo-fomo/REPORT.md`. Optional live
+  `fomo-signal-scan`, `fomo-x-source-review`, `fomo-narrative-source-scan`,
+  `narrative-source-review`) with fail-closed defaults. **Not live yet:**
+  code may still be local/uncommitted; FAFO probe is a scaffold
+  (`pnpm probe:fomo`) until burner `auth fomo` + discover/sanitize/evaluate
+  install gates with provider `pass`. Then 14-day shadow
+  (`ops/fafo-fomo/SHADOW-CANARY.md`) before `shadow_mode: false`. Optional
   read-only: `TRENCHCOAT_LIVE_FOMO=1 pnpm vitest run tests/e2e/fomo-live.test.ts`.
+  See `ops/fafo-fomo/REPORT.md` + [knowledge/fomo-family.md](../docs/knowledge/fomo-family.md).
 
 ## Deploy provenance / canary (docs only — not executed here)
 
