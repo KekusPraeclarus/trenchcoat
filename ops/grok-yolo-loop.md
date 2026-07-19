@@ -266,3 +266,36 @@ pnpm exec vitest run tests/unit/chat-report.test.ts
 ### Session learning
 
 - Chat recall is promoted at alpha-purged (in-flight), not at terminal success — status must be finalized separately.
+
+---
+
+## Iteration 5 — 2026-07-19 (hourly tick) — STOP
+
+### Pipeline evaluation
+
+Latest list-scan `list-scan-2026-07-19T22-39-47-130Z` healthy: narrative read, 2/2 verified X likes, outbox broadcast, chat summary. No new in-repo failure modes since iters 1–4.
+
+**Remaining pain is deploy lag, not missing code**
+| Issue | Status |
+|-------|--------|
+| `run-precheck` → bare `run-with-lock-retry` | Fixed in repo (`659cdbf`); live bin still old → wallet/chart/research ENOENT |
+| `TRENCHCOAT_REPO_ROOT` for harness | Fixed in repo (`9b27308`); live env unset |
+| Chat-report terminal status | Fixed in repo (`3536259`); live runtime still shows `status: running` |
+| Narrative-scan dark since 01:51 | Needs live runtime with legacy journal parse; no further code change identified |
+| Fomo `probe:fomo evaluate` | Operator DX / gate scaffold; cron already overridden — not highest ROI vs deploy |
+
+### Highest-ROI patch chosen
+
+**None.** Further patches would either (a) re-touch already-shipped fixes, (b) require live `install-launchd` (forbidden this loop), or (c) expand Fomo probe scope without unblocking the social/wallet pipeline more than a redeploy would.
+
+### Action
+
+Killed the 1h loop (PID 66339). No commit this iteration.
+
+### Operator next step (outside this loop)
+
+Redeploy once (`ops/install-launchd.sh`) to activate iters 2–4 on the host. That clears precheck ENOENT, sets `TRENCHCOAT_REPO_ROOT`, and ships chat-status finalize + earlier snapshot cap if not already live.
+
+### Session learning
+
+- After a streak of host-wrapper / recall fixes, effectiveness loops should stop when live pain is only “repo ahead of runtime.”
