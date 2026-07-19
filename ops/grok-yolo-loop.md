@@ -69,3 +69,72 @@ pnpm exec vitest run tests/unit/list-scan-alpha-manifest.test.ts tests/unit/snap
 `c2df162` — Cap collector snapshot envelopes at 500 items to prevent list-scan failures.
 
 (`4985dca` — log hash correction only.)
+
+---
+
+## Iteration 2 — 2026-07-19
+
+### Pipeline evaluation
+
+Re-scanned live archive (`~/.trenchcoat/archive/runs/`), agent reports, `/tmp/trenchcoat.*.log`, and launchd job health.
+
+**Working well**
+- Recent `list-scan` / `farcaster-scan` complete with passing post-run verifier; X engagement 2/2 verified (`list-scan-2026-07-19T18-15-07-997Z`)
+- Snapshot 500-cap from iteration 1 is in repo (live redeploy still pending by operator policy)
+- Fomo trader/signal jobs journal and skip cleanly when gated
+
+**Ineffective / broken**
+| Issue | Impact | Evidence |
+|-------|--------|----------|
+| `run-precheck` hardcodes `run-with-lock-retry.sh` | Host-gated jobs that **pass** precheck never reach `tc run` | `/tmp/trenchcoat.{wallet-scan-solana,wallet-scan-evm,chart-sweep,watchlist-scan}.err.log`: `No such file or directory`; install deploys bare `run-with-lock-retry` |
+| Per-run `archive/runs/<id>/journal.json` stuck at `host-prepared`/`running` | Operator/chat still see stale status | Every recent complete run; canonical tx journal is correct |
+| `narrative-scan` failed once then dark | No narrative refresh since 01:51 UTC | `Journal status is invalid: undefined` (likely pre-legacy-status live runtime); last success `…T18-07-04-251Z` |
+| `harness-improve` failed | Weekly harness dark | `Not a trenchcoat repo root: /` |
+| Watchlist/chart empty by design | Expected skip noise | `no-active-watchlist-subjects` |
+
+### Highest-ROI patch chosen
+
+**Resolve lock-retry wrapper as `run-with-lock-retry[.sh]` in `ops/run-precheck.sh` (same pattern as `run-job-jittered`).**
+
+Rationale: Actively breaks every precheck-gated job once prerequisites are non-empty (wallet scans already emitting `skip:false` then dying). List/farcaster survived only because jitter wrappers already had the fallback. One-line class fix; restores INV-S15 lock-retry path for chart/watchlist/research/wallet/review.
+
+**Deferred**
+- Archive per-run journal sync on completion — audit visibility; does not block collection
+- Narrative-scan / harness-improve root causes — need live redeploy + separate investigation
+- Fomo `evaluate` probe subcommand — operator DX; cron already overridden
+
+**Invariant-violating idea (not implemented)**
+None this iteration. Syncing per-run journals by rewriting sealed archive bytes would need careful INV-S3/S8 review (ADR 006: transactions/ is authoritative; per-run copy is informational). Prefer copy-forward of the sealed tx journal rather than mutating history in place — deferred, not blocked as a violation yet.
+
+### Changes
+
+| File | What |
+|------|------|
+| `ops/run-precheck.sh` | Prefer `run-with-lock-retry.sh`, fall back to installed `run-with-lock-retry`; fail closed 127 if neither |
+| `docs/architecture/orchestrator.md` | Document install suffix strip + dual-name resolution |
+
+### Risk assessment
+
+| Risk | Blast radius | Mitigation |
+|------|--------------|------------|
+| Wrong wrapper chosen | All precheck-gated cron jobs | Prefer `.sh` then bare name; executable check; exit 127 if missing |
+| Repo-dev path breaks | Local `ops/run-precheck.sh` runs | Layout A/B temp-dir tests both pass |
+| Live still broken until redeploy | Operator must run install | Explicit: this loop does **not** update live agent; commit+push only |
+
+**INVARIANTS checked:** INV-S15 (lock contention still goes through retry wrapper), INV-I* untouched (host scripts only), no agent workspace / snapshot / egress changes.
+
+### Verification
+
+```
+# Temp-dir layouts: installed (no .sh), repo (.sh), missing→127, old script→ENOENT, fixed→tc run
+ALL_OK
+```
+
+### Commit
+
+_(filled after commit)_
+
+### Session learning
+
+- `install-launchd.sh` strips `.sh` when copying ops wrappers into `~/.trenchcoat/bin/`; any new wrapper that execs a sibling must resolve both names (documented in orchestrator.md).
+- Empty `docs/gotchas.md` Entries — nothing to drain.

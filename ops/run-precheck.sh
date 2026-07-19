@@ -33,4 +33,13 @@ if [ "$rc" -ne 0 ]; then
   exit "$rc"
 fi
 
-exec "$BIN_DIR/run-with-lock-retry.sh" "$JOB" "$@"
+# install-launchd strips the .sh suffix; repo/dev runs keep it
+RETRY_WRAPPER="$BIN_DIR/run-with-lock-retry.sh"
+if [ ! -x "$RETRY_WRAPPER" ]; then
+  RETRY_WRAPPER="$BIN_DIR/run-with-lock-retry"
+fi
+if [ ! -x "$RETRY_WRAPPER" ]; then
+  echo "missing lock-retry wrapper under $BIN_DIR (expected run-with-lock-retry[.sh])" >&2
+  exit 127
+fi
+exec "$RETRY_WRAPPER" "$JOB" "$@"

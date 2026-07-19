@@ -54,7 +54,10 @@ Cadences live in `ops/` templates, not code; tune freely. Host-gated jobs
 (`chart-sweep`, `watchlist-scan`, `research`, wallet evidence jobs, and
 calendar `review`) run through `ops/run-precheck.sh` before the lock: a
 read-only `tc precheck <job>` exits 10 on empty prerequisites so launchd
-avoids a full run; `runJob` re-checks under lock and appends
+avoids a full run; on proceed it execs the lock-retry wrapper. `install-launchd.sh`
+deploys scripts without the `.sh` suffix (`run-precheck`, `run-with-lock-retry`);
+both `run-precheck` and `run-job-jittered` resolve `run-with-lock-retry[.sh]` so
+repo-dev and installed layouts work. `runJob` re-checks under lock and appends
 `archive/skips/<job>.jsonl` (no run journal / inbox / reports). Preconditions
 still apply under `--dry-collect`; missing `agent/state/` fails closed as
 `not-initialized`. When a collector runs but sets `skipAgent` (degraded /
