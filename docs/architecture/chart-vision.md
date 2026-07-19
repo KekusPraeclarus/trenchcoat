@@ -2,7 +2,7 @@
 description: Deterministic offline chart rendering from archived OHLCV plus model vision interpretation with separate audit.
 scope: project
 status: active
-last_verified: 2026-07-16
+last_verified: 2026-07-19
 read_when:
   - Editing chart renderers, chart-sweep skill, or vision audit slices
 ---

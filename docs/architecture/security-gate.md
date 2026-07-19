@@ -1,7 +1,7 @@
 ---
 description: Token security gate - exact GoPlus/RugCheck field-to-flag mapping per chain family, hard-fail vs caution semantics, the market-quality preflight, and fail-closed behaviour for scanner outages and unsupported chains.
 scope: module
-status: draft
+status: active
 last_verified: 2026-07-19
 read_when:
   - Editing src/collectors/market/security.ts, src/orchestrator/gate-evidence.ts, or market-quality checks, or changing what blocks a track verdict.

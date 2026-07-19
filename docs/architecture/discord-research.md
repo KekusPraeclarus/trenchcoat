@@ -113,7 +113,9 @@ all skip subscribe while still delivering the report.
 
 - `src/discord/listener.ts` — Gateway intake + pump
 - `src/discord/pump.ts` — accept + FIFO processor
-- `src/discord/research-run.ts` — isolated research
+- `src/discord/research-run.ts` — isolated research (`evaluateResearchSubscribe`)
+- `src/discord/research-brief.ts` — bounded TL;DR extract for watch context
+- `src/discord/watch-update-session.ts` — host watch-update writer session
 - `src/discord/watchlist.ts` — subscriptions + renewals
 - `src/discord/monitor.ts` — scheduled scan
 - `src/discord/store.ts` — atomic JSON stores

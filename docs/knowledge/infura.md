@@ -2,7 +2,7 @@
 description: Provider knowledge — Infura + Robinhood public RPC for EVM wallet tracking.
 scope: project
 status: active
-last_verified: 2026-07-16
+last_verified: 2026-07-19
 ---
 
 # Infura / Robinhood EVM

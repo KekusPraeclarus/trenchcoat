@@ -2,7 +2,7 @@
 description: Chain registry - the single source of truth for supported chains, per-provider id mappings, address validation, and the flow for adding a new chain. Fail-closed for unsupported chains.
 scope: module
 status: draft
-last_verified: 2026-07-16
+last_verified: 2026-07-19
 read_when:
   - Adding or modifying chain support, or editing any code that passes a chain identifier to an upstream API.
 ---

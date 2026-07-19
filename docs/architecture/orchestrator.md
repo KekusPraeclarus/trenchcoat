@@ -212,6 +212,13 @@ The telegram listener appends continuously; digestion is batch:
    those ids before the completed marker (INV-Q1) — a retry sees the keyed purge
    as already satisfied; knowledge survives in state and raw messages don't linger
 
+**Operator backlog drain** — when agent digests use the wrong shape and the queue
+stalls, `scripts/alpha-queue-drain.ts` writes a host-valid `entries` digest plus a
+minimal archive record, then calls `validateAndPurgeAlphaDigest` in 500-id batches
+(resumable). This acknowledges messages without per-message distillation — prefer
+fixing skills + syncing `~/.trenchcoat/agent/skills/` so normal list-scan/review
+digests succeed. Never delete queue files by hand.
+
 ## The audit job (performance + source scoring)
 
 The agent's paper trail (`state/decisions.md`, append-only, every action with

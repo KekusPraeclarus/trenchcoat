@@ -59,6 +59,8 @@ ingestion is live — check channels poller logs and `alpha-queue/` separately.
   `entries` + content hashes. Receipt shows `invalidReason=schema-invalid` and
   chat `alphaDigestInvalid` / `alphaPurged=0`. Fix skills (list-scan/review), sync
   into `~/.trenchcoat/agent/skills/`, redeploy host; do not mass-delete the queue.
+  Last-resort operator drain: `pnpm exec tsx scripts/alpha-queue-drain.ts` (writes
+  minimal archive record + host-valid digest; see orchestrator.md § Alpha-queue).
 - **Skill / collector edits** — `ops/install-launchd.sh` redeploys the CLI runtime;
   copy `agent/skills/**` into `~/.trenchcoat/agent/skills/` separately (installer
   does not sync skills).
