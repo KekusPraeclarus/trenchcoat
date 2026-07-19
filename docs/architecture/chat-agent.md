@@ -58,14 +58,16 @@ little as possible itself:
   Report lands at `reports/chat/<run-id>.md`; the chat session may then
   summarize it.
 - **Run recall** — `list-scan`, `narrative-scan`, `farcaster-scan`, `review`, and
-  `research` always get a host-rendered `reports/chat/<run-id>.md` after terminal
-  success/degradation (even with zero staged broadcasts). Trusted host facts come
-  first (job/status, collection, freshness/platform coverage, queue/watchlist
-  mutations, engagement, staged broadcasts, receipt paths). Optional agent
-  `chat-summary.json` / research `chat-summary.md` context is appended only when
-  validated (`chat-report.ts`). Missing or malformed proposals never suppress the
-  host summary. Agents never write `reports/chat/` directly; bypass files are
-  removed. Summaries remain untrusted evidence.
+  `research` always get a host-rendered `reports/chat/<run-id>.md` after outbox
+  ingest (even with zero staged broadcasts). Trusted host facts come first
+  (job/status, collection, freshness/platform coverage, queue/watchlist
+  mutations, engagement, staged broadcasts, receipt paths). The host summary
+  status starts as the in-flight journal status and is rewritten to
+  `complete`/`failed` at terminal journal advance (`finalizeChatReportRunStatus`).
+  Optional agent `chat-summary.json` / research `chat-summary.md` context is
+  appended only when validated (`chat-report.ts`). Missing or malformed
+  proposals never suppress the host summary. Agents never write `reports/chat/`
+  directly; bypass files are removed. Summaries remain untrusted evidence.
 - Ordinary recall questions never take the writer lock.
 
 ## Design

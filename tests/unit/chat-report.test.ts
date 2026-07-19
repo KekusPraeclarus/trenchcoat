@@ -521,6 +521,70 @@ describe("promoteResearchChatReport", () => {
   })
 })
 
+describe("finalizeChatReportRunStatus", () => {
+  it("rewrites host status in agent and archive chat reports", async () => {
+    const { finalizeChatReportRunStatus } = await import(
+      "../../src/orchestrator/chat-report.js"
+    )
+    const root = mkdtempSync(join(tmpdir(), "tc-chat-finalize-"))
+    const archiveRoot = join(root, "archive")
+    const agentRoot = join(root, "agent")
+    const layout = await ensureArchive(archiveRoot)
+    const body = [
+      "# Chat recall",
+      "",
+      `Run: \`${RUN_ID}\``,
+      "",
+      "## Host summary",
+      "",
+      "- job: list-scan",
+      "- status: running",
+      "- posts: 12",
+      "",
+      "## Agent context",
+      "",
+      "- status: should-not-change",
+      "",
+    ].join("\n")
+    mkdirSync(join(layout.runs, RUN_ID), { recursive: true })
+    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
+    writeFileSync(join(layout.runs, RUN_ID, "chat-report.md"), body)
+    writeFileSync(chatReportPath(agentRoot, RUN_ID), body)
+
+    expect(
+      finalizeChatReportRunStatus({
+        agentRoot,
+        layout,
+        runId: RUN_ID,
+        runStatus: "complete",
+      }),
+    ).toBe(true)
+
+    const archived = readFileSync(join(layout.runs, RUN_ID, "chat-report.md"), "utf8")
+    const live = readFileSync(chatReportPath(agentRoot, RUN_ID), "utf8")
+    expect(archived).toContain("- status: complete")
+    expect(archived).toContain("- status: should-not-change")
+    expect(archived).not.toMatch(/^- status: running$/mu)
+    expect(live).toContain("- status: complete")
+  })
+
+  it("is a no-op when chat-report is missing", async () => {
+    const { finalizeChatReportRunStatus } = await import(
+      "../../src/orchestrator/chat-report.js"
+    )
+    const root = mkdtempSync(join(tmpdir(), "tc-chat-finalize-miss-"))
+    const layout = await ensureArchive(join(root, "archive"))
+    expect(
+      finalizeChatReportRunStatus({
+        agentRoot: join(root, "agent"),
+        layout,
+        runId: RUN_ID,
+        runStatus: "failed",
+      }),
+    ).toBe(false)
+  })
+})
+
 describe("chat report retention", () => {
   it("age-prunes old chat reports while keeping recent ones", () => {
     const root = mkdtempSync(join(tmpdir(), "tc-chat-retain-"))

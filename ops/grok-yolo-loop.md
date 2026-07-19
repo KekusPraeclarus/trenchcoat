@@ -206,3 +206,63 @@ pnpm exec vitest run tests/unit/harness-repo-root.test.ts tests/unit/harness-sch
 
 - Launchd trenchcoat jobs do not set WorkingDirectory; never trust `process.cwd()` for git checkouts.
 - `~/.trenchcoat/runtime` has `package.json` but no `.git` — harness roots must require both.
+
+---
+
+## Iteration 4 — 2026-07-19 (hourly tick)
+
+### Pipeline evaluation
+
+Latest list-scan `list-scan-2026-07-19T21-05-49-776Z` complete (alpha purge, engagement path healthy). No new collector failures since iter-1 cap.
+
+**Open (mostly awaiting live redeploy)**
+| Issue | Impact | Evidence |
+|-------|--------|----------|
+| Iter-2 precheck still not live | wallet/chart/research ENOENT | err logs through 22:48 |
+| Iter-3 harness REPO_ROOT not in live env | harness still broken until install | `grep TRENCHCOAT_REPO_ROOT ~/.trenchcoat/env` empty |
+| Chat-report `status: running` after success | Operator recall wrong every scan | Latest chat-report.md |
+
+### Highest-ROI patch chosen
+
+**Finalize chat-report host `- status:` to `complete`/`failed` when the journal terminates.**
+
+Rationale: Highest remaining in-repo ROI that does not require live install. Leaves ADR 006 seal-time per-run journals alone; fixes the consumer. Precheck/harness fixes already shipped earlier this loop.
+
+**Deferred**
+- Operator live redeploy (install-launchd) for iters 2–3
+- Narrative-scan dark until runtime refresh
+- Fomo `evaluate` probe
+
+### Changes
+
+| File | What |
+|------|------|
+| `src/orchestrator/chat-report.ts` | `finalizeChatReportRunStatus` |
+| `src/orchestrator/run.ts` | Call on complete + failed |
+| `docs/architecture/orchestrator.md`, `chat-agent.md` | Document mid-run promote + terminal rewrite |
+| `tests/unit/chat-report.test.ts` | Rewrite + missing no-op |
+
+### Risk assessment
+
+| Risk | Blast radius | Mitigation |
+|------|--------------|------------|
+| Rewrites agent context | chat recall markdown | Replaces first `- status:` line only (host summary) |
+| Missing report | none | No-op when file absent |
+| Race with reader | low | Same paths already written mid-run; terminal rewrite is last host write |
+
+**INVARIANTS:** INV-B2 (host-rendered recall stays host-owned); ADR 006 untouched (no sealed journal rewrite).
+
+### Verification
+
+```
+pnpm exec vitest run tests/unit/chat-report.test.ts
+# 16 passed
+```
+
+### Commit
+
+COMMIT_PLACEHOLDER
+
+### Session learning
+
+- Chat recall is promoted at alpha-purged (in-flight), not at terminal success — status must be finalized separately.

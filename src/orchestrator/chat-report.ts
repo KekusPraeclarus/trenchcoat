@@ -602,6 +602,41 @@ export async function validateAndPromoteChatReport(args: Readonly<{
 }
 
 /**
+ * Chat recall is promoted mid-run (after alpha purge) while journal.status is
+ * still `running`. Once the run reaches a terminal status, rewrite the host
+ * summary status line in both agent + archive copies. Does not touch agent
+ * context bullets or ADR 006 seal-time journals.
+ */
+export function finalizeChatReportRunStatus(args: Readonly<{
+  agentRoot: string
+  layout: ArchiveLayout
+  runId: string
+  runStatus: "complete" | "failed"
+}>): boolean {
+  const statusLine = /^- status: .+$/mu
+  let touched = false
+  const paths = [
+    join(runArchiveDir(args.layout, args.runId), "chat-report.md"),
+    chatReportPath(args.agentRoot, args.runId),
+  ]
+  for (const path of paths) {
+    if (!existsSync(path)) continue
+    let raw: string
+    try {
+      raw = readFileSync(path, "utf8")
+    } catch {
+      continue
+    }
+    if (!statusLine.test(raw)) continue
+    const next = raw.replace(statusLine, `- status: ${args.runStatus}`)
+    if (next === raw) continue
+    writeFileSync(path, next)
+    touched = true
+  }
+  return touched
+}
+
+/**
  * User-facing research body: drop host/agent chrome the model often adds.
  * Host facts stay in research-chat-receipt.json, not in the delivered report.
  */

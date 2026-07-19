@@ -141,7 +141,9 @@ seal (`phase: host-prepared`) and is **not** updated when the run completes.
 For terminal status, phase, and side-effect hashes, read
 `archive/transactions/<run-id>.json` (or the agent mirror
 `agent/reports/<run-id>/journal.json` after `mirrorToAgent`). Treating the
-per-run copy as authoritative will show false `running` / stale chat-report status.
+per-run copy as authoritative will show false `running`. Host chat recall is
+promoted mid-run after alpha purge, then `finalizeChatReportRunStatus` rewrites
+the `- status:` line to `complete`/`failed` when the journal terminates.
 
 **Deployment manifest** — `ops/install-launchd.sh` stages a runtime, writes
 schema-2 `deployment.json` (commit, `sourceDirty`, deterministic `sourceHash`,

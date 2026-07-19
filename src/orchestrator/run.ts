@@ -70,6 +70,7 @@ import { validateAndPurgeAlphaDigest } from "./alpha.js"
 import {
   CHAT_SUMMARY_JOBS,
   buildHostChatFacts,
+  finalizeChatReportRunStatus,
   validateAndPromoteChatReport,
 } from "./chat-report.js"
 import { ingestOutbox } from "./outbox-ingest.js"
@@ -1545,6 +1546,12 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       },
     })
     await persistJournal(store, opts.paths.agentRoot, journal)
+    finalizeChatReportRunStatus({
+      agentRoot: opts.paths.agentRoot,
+      layout,
+      runId,
+      runStatus: "complete",
+    })
     log.info("run complete", { runId, job: job.name })
     return { runId, journal, exitCode: 0 }
     }
@@ -1598,6 +1605,14 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           failedAt: systemClock.nowIso(),
         })
         await persistJournal(store, opts.paths.agentRoot, journal)
+        if (archive) {
+          finalizeChatReportRunStatus({
+            agentRoot: opts.paths.agentRoot,
+            layout: archive,
+            runId: journal.runId,
+            runStatus: "failed",
+          })
+        }
       } catch (persistError) {
         log.error("failed to persist failed journal", {
           error: persistError instanceof Error ? persistError.message : String(persistError),
