@@ -136,9 +136,17 @@ effects. Periodic Git (`tc backup`) is backup-only and never gates completion.
 **Deployment manifest** — `ops/install-launchd.sh` stages a runtime, writes
 schema-2 `deployment.json` (commit, `sourceDirty`, deterministic `sourceHash`,
 config schema, cli/config module hashes, package version), validates config
-against the staged binary, then swaps `~/.trenchcoat/runtime`. Dirty trees are
-refused unless `--allow-dirty`. `tc status` flags a missing/stale manifest,
-schema mismatch, or dirty provenance.
+against the staged binary, then swaps `~/.trenchcoat/runtime` (previous kept at
+`~/.trenchcoat/runtime.prev` — not `runtime.previous`). Dirty trees are refused
+unless `--allow-dirty`. `tc status` flags a missing/stale manifest, schema
+mismatch, or dirty provenance.
+
+When bumping the live config schema, keep three sites aligned in the same
+change: `ConfigSchema` / migrations, `DEPLOYMENT_CONFIG_SCHEMA` in
+`src/lib/deployment.ts` (also used by `health.ts` `expectedSchema`), and the
+hardcoded `configSchema` written by `ops/install-launchd.sh`. A mismatch shows
+up as `config/runtime schema mismatch` in `tc status` after an otherwise clean
+deploy.
 
 **Status / health snapshot** — `src/orchestrator/health.ts` builds one read-only
 snapshot used by `tc status` (default text + `--json`), Telegram `/status`, and

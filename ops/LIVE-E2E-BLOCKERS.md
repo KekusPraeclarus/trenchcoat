@@ -86,7 +86,7 @@ trees need `--allow-dirty`; the resulting `deployment.json` records
 Canary after install: status provenance + schema → FC (no engagement) →
 narrative-scan → organic list-scan X settlement → canary broadcast +
 delivery-retry → review health snapshot; FOMO stays shadow. Rollback via
-`runtime.previous` (+ config backup); do not delete receipts. Full sequence:
+`runtime.prev` (+ config backup); do not delete receipts. Full sequence:
 `ops/runbook.md` § Deploy canary and rollback.
 
 ## Commands

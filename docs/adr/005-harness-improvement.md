@@ -50,7 +50,10 @@ retains kill switches and rollback.
    quality, test, repository, canary, or deployment gates.
 8. Host runtime deploy and agent-workspace activation are separate. Agent
    instruction sync waits for the all-work drain predicate and never overwrites
-   state/inbox/outbox/reports/alpha-queue.
+   state/inbox/outbox/reports/alpha-queue. Launchd redeploy waits for
+   `isAgentIdle` (in-flight only) before `bootout`/`kickstart` so KeepAlive
+   reloads do not kill mid-session Cursor/host work; full drain remains the
+   activation gate.
 
 ## Consequences
 

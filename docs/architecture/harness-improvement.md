@@ -69,18 +69,30 @@ development sealed scorecard, and requires protected metrics not to regress.
   external effects are blocked and receipted.
 - One active experiment when `one_active_experiment` is true.
 - Feature defaults **on** for new schema-11 installs; explicit `false` survives migrate.
+- Existing sealed epochs without decision-time `signals` are ineligible until new
+  epochs accumulate — enabling the harness may initially produce typed skips.
+
+## Idle gate (redeploy / restart)
+
+`isAgentIdle` is true when nothing is mid-flight: live workspace lock (non-stale),
+running incomplete archive runs, research `researching>0`, Telegram research
+`running`, or Discord locks/running requests. Abandoned runs and backlog depth
+do **not** block idle — they would hang redeploys forever on a busy host.
+
+`ops/install-launchd.sh` waits for idle (default 30m) before `bootout`/`kickstart`
+so KeepAlive listeners and jobs are not killed mid-session. Escape hatch:
+`--skip-agent-wait`. Operator probe: `tc harness wait-idle`.
 
 ## Drain gate (agent activation)
 
-Clear only when, in one snapshot: workspace lock absent and not stale; no
-incomplete archive runs; research `researching=0` and currently actionable `=0`
-(future-dated pending does not block; ambiguous does not block); no Telegram
-research confirmations; alpha queue idle; Discord worker idle; no pending X
-actions; router ingress backlog empty.
+Full all-work clear requires idle **plus**: lock not stale; research actionable
+`=0`; no Telegram confirmations; alpha queue empty; Discord queued/undelivered
+clear; no pending X actions; router ingress empty. Abandoned incomplete runs do
+not block.
 
-`tc harness activate <id>` rechecks under the writer lock, syncs only approved
-instruction paths (never state/inbox/outbox/reports/alpha-queue), then starts
-the bounded canary.
+`tc harness activate <id>` waits for idle (unless `--no-wait`), then rechecks the
+full drain under the writer lock, syncs only approved instruction paths (never
+state/inbox/outbox/reports/alpha-queue), then starts the bounded canary.
 
 ## CLI
 
@@ -90,8 +102,9 @@ the bounded canary.
 | `tc harness propose --epoch <id>` | Emit one hypothesis from sealed scorecard |
 | `tc harness prepare <id>` | Create confined worktree (after plan approval) |
 | `tc harness evaluate <id> --dev-epoch … --holdout-epoch …` | Offline holdout gates |
-| `tc harness drain` | Print all-work drain snapshot |
-| `tc harness activate <id>` | Drain-gated agent sync + start canary |
+| `tc harness wait-idle` | Block until in-flight work finishes |
+| `tc harness drain [--wait]` | Print all-work drain snapshot (optional idle wait) |
+| `tc harness activate <id>` | Idle-wait + drain-gated agent sync + start canary |
 | `tc harness canary start\|stop` | Bounded-live assignment |
 | `tc harness promote <id>` | Record promotion after maturity |
 | `tc harness rollback --reason …` | Force baseline assignment |

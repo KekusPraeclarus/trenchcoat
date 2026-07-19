@@ -108,9 +108,12 @@ describe("harness drain predicate", () => {
     lockHeld: false,
     lockStale: false,
     incompleteRuns: 0,
+    runningIncompleteRuns: 0,
+    abandonedIncompleteRuns: 0,
     researchActionable: 0,
     researchResearching: 0,
     telegramPendingConfirm: false,
+    telegramResearchRunning: false,
     alphaPendingOrProcessing: 0,
     discordLockHeld: false,
     discordWorkerLockHeld: false,
@@ -126,6 +129,38 @@ describe("harness drain predicate", () => {
     expect(isDrainClear({ ...clear, researchResearching: 1 })).toBe(false)
     expect(isDrainClear({ ...clear, lockStale: true })).toBe(false)
     expect(isDrainClear({ ...clear, routerIngressPending: 2 })).toBe(false)
+    expect(isDrainClear({ ...clear, alphaPendingOrProcessing: 3 })).toBe(false)
+    expect(isDrainClear({ ...clear, abandonedIncompleteRuns: 5 })).toBe(true)
+  })
+
+  it("treats only in-flight work as blocking agent idle", async () => {
+    const { isAgentIdle } = await import("../../src/harness/drain.js")
+    expect(isAgentIdle(clear)).toBe(true)
+    expect(isAgentIdle({ ...clear, lockHeld: true })).toBe(false)
+    expect(isAgentIdle({ ...clear, runningIncompleteRuns: 1, incompleteRuns: 1 })).toBe(false)
+    expect(isAgentIdle({ ...clear, researchResearching: 1 })).toBe(false)
+    expect(isAgentIdle({ ...clear, telegramResearchRunning: true })).toBe(false)
+    expect(isAgentIdle({ ...clear, discordRunning: 1 })).toBe(false)
+    expect(isAgentIdle({ ...clear, discordLockHeld: true })).toBe(false)
+    expect(isAgentIdle({
+      ...clear,
+      abandonedIncompleteRuns: 10,
+      researchActionable: 4,
+      alphaPendingOrProcessing: 50,
+      discordQueued: 2,
+      xPendingActions: 1,
+      routerIngressPending: 3,
+      telegramPendingConfirm: true,
+    })).toBe(true)
+  })
+
+  it("idle ignores backlog while drain still requires it", async () => {
+    const { isAgentIdle } = await import("../../src/harness/drain.js")
+    // Stale lock: idle predicate ignores it (held+not-stale blocks); drain fails closed
+    expect(isAgentIdle({ ...clear, lockStale: true })).toBe(true)
+    expect(isDrainClear({ ...clear, lockStale: true })).toBe(false)
+    expect(isAgentIdle({ ...clear, lockHeld: true, lockStale: true })).toBe(true)
+    expect(isAgentIdle({ ...clear, lockHeld: true, lockStale: false })).toBe(false)
   })
 })
 

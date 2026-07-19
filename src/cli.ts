@@ -52,8 +52,9 @@ Commands:
   harness propose --epoch <id>
   harness prepare <hypothesis-id>
   harness evaluate <hypothesis-id> --dev-epoch <id> --holdout-epoch <id>
-  harness activate <hypothesis-id>
-  harness drain
+  harness activate <hypothesis-id> [--no-wait] [--timeout-ms <n>]
+  harness drain [--wait] [--timeout-ms <n>]
+  harness wait-idle [--timeout-ms <n>]
   harness canary start <hypothesis-id>
   harness canary stop --reason <text>
   harness status
@@ -1172,11 +1173,39 @@ async function cmdHarness(args: string[]): Promise<void> {
     if (cfg && !cfg.harness_improvement.enabled) {
       throw new Error("harness_improvement.enabled is false")
     }
-    const { activateAgentWorkspace, buildDrainSnapshot, isDrainClear } =
+    const noWait = args.includes("--no-wait")
+    const timeoutIdx = args.indexOf("--timeout-ms")
+    const timeoutRaw = timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined
+    const waitTimeoutMs = timeoutRaw !== undefined ? Number(timeoutRaw) : undefined
+    if (timeoutRaw !== undefined && (!Number.isFinite(waitTimeoutMs) || (waitTimeoutMs ?? 0) < 0)) {
+      throw new Error("--timeout-ms must be a non-negative number")
+    }
+    const { activateAgentWorkspace, buildDrainSnapshot, isDrainClear, waitForAgentIdle } =
       await import("./harness/drain.js")
     const { startCanary, advanceHarnessJournal } = await import("./harness/lifecycle.js")
     const { sha256Json } = await import("./lib/canonical-json.js")
     const { spawnSync } = await import("node:child_process")
+    if (!noWait) {
+      const waited = await waitForAgentIdle({
+        agentRoot,
+        archiveRoot,
+        ...(waitTimeoutMs !== undefined ? { timeoutMs: waitTimeoutMs } : {}),
+        onPoll: (snap) => {
+          console.error(JSON.stringify({
+            waiting: true,
+            idle: false,
+            lockHeld: snap.lockHeld,
+            runningIncomplete: snap.runningIncompleteRuns,
+            researching: snap.researchResearching,
+            discordRunning: snap.discordRunning,
+          }))
+        },
+      })
+      if (!waited.ok) {
+        console.log(JSON.stringify({ ok: false, ...waited }, null, 2))
+        process.exit(2)
+      }
+    }
     const drain = await buildDrainSnapshot({ agentRoot, archiveRoot })
     if (!isDrainClear(drain)) {
       console.log(JSON.stringify({ ok: false, reason: "drain not clear", drain }, null, 2))
@@ -1197,6 +1226,7 @@ async function cmdHarness(args: string[]): Promise<void> {
       agentRoot,
       sourceCommit,
       nowIso: systemClock.nowIso(),
+      waitForIdle: false,
     })
     if (!activated.ok) {
       console.log(JSON.stringify(activated, null, 2))
@@ -1218,10 +1248,62 @@ async function cmdHarness(args: string[]): Promise<void> {
     return
   }
 
+  if (sub === "wait-idle") {
+    const timeoutIdx = args.indexOf("--timeout-ms")
+    const timeoutRaw = timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined
+    const waitTimeoutMs = timeoutRaw !== undefined ? Number(timeoutRaw) : undefined
+    if (timeoutRaw !== undefined && (!Number.isFinite(waitTimeoutMs) || (waitTimeoutMs ?? 0) < 0)) {
+      throw new Error("--timeout-ms must be a non-negative number")
+    }
+    const { waitForAgentIdle, isAgentIdle } = await import("./harness/drain.js")
+    const waited = await waitForAgentIdle({
+      agentRoot,
+      archiveRoot,
+      ...(waitTimeoutMs !== undefined ? { timeoutMs: waitTimeoutMs } : {}),
+      onPoll: (snap) => {
+        console.error(JSON.stringify({
+          waiting: true,
+          idle: isAgentIdle(snap),
+          lockHeld: snap.lockHeld,
+          runningIncomplete: snap.runningIncompleteRuns,
+          researching: snap.researchResearching,
+          discordRunning: snap.discordRunning,
+          telegramResearchRunning: snap.telegramResearchRunning,
+        }))
+      },
+    })
+    console.log(JSON.stringify(waited, null, 2))
+    if (!waited.ok) process.exit(2)
+    return
+  }
+
   if (sub === "drain") {
-    const { buildDrainSnapshot, isDrainClear } = await import("./harness/drain.js")
+    const { buildDrainSnapshot, isDrainClear, isAgentIdle, waitForAgentIdle } =
+      await import("./harness/drain.js")
+    const wantWait = args.includes("--wait")
+    const timeoutIdx = args.indexOf("--timeout-ms")
+    const timeoutRaw = timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined
+    const waitTimeoutMs = timeoutRaw !== undefined ? Number(timeoutRaw) : undefined
+    if (timeoutRaw !== undefined && (!Number.isFinite(waitTimeoutMs) || (waitTimeoutMs ?? 0) < 0)) {
+      throw new Error("--timeout-ms must be a non-negative number")
+    }
+    if (wantWait) {
+      const waited = await waitForAgentIdle({
+        agentRoot,
+        archiveRoot,
+        ...(waitTimeoutMs !== undefined ? { timeoutMs: waitTimeoutMs } : {}),
+      })
+      if (!waited.ok) {
+        console.log(JSON.stringify({ clear: false, idle: false, ...waited }, null, 2))
+        process.exit(2)
+      }
+    }
     const snapshot = await buildDrainSnapshot({ agentRoot, archiveRoot })
-    console.log(JSON.stringify({ clear: isDrainClear(snapshot), snapshot }, null, 2))
+    console.log(JSON.stringify({
+      clear: isDrainClear(snapshot),
+      idle: isAgentIdle(snapshot),
+      snapshot,
+    }, null, 2))
     return
   }
 

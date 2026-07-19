@@ -78,7 +78,9 @@ lean: minimum tokens for undiminished results.
    (ADR 005; not Relative Strength Index) may propose one decision-policy
    experiment from sealed scorecards, evaluate on a holdout, and — when enabled —
    canary a bounded share of internal decisions with egress blocked; promotion is
-   human-gated.
+   agent-gated after independent review plus non-waivable host quality gates
+   (local-main integrate + runtime deploy; agent-workspace activation waits for
+   the all-work drain — ADR 005).
 9. **Broadcasts** — brief key findings staged into the **in-repo SQLite router**
    (`src/router/**`, ADR 001) for Telegram/Discord fan-out. Sparingly and briefly
    on Discord: severity `urgent` (new narrative forming, sudden sentiment collapse,

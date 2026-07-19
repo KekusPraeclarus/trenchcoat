@@ -31,10 +31,14 @@ export type DrainSnapshot = Readonly<{
   capturedAt: string
   lockHeld: boolean
   lockStale: boolean
+  /** @deprecated Prefer runningIncompleteRuns — kept for older receipts */
   incompleteRuns: number
+  runningIncompleteRuns: number
+  abandonedIncompleteRuns: number
   researchActionable: number
   researchResearching: number
   telegramPendingConfirm: boolean
+  telegramResearchRunning: boolean
   alphaPendingOrProcessing: number
   discordLockHeld: boolean
   discordWorkerLockHeld: boolean
@@ -63,14 +67,18 @@ function countAlphaQueueItems(agentRoot: string): number {
   return count
 }
 
-function telegramHasPendingConfirm(home: string): boolean {
+function telegramBusy(home: string): Readonly<{
+  pendingConfirm: boolean
+  researchRunning: boolean
+}> {
   const path = join(home, "pending-research.json")
   const store = filePendingResearchStore(path)
   const file = store.load()
-  if (file.pending !== null || file.pendingChoice !== null) return true
-  return file.confirmed.some(
-    (c) => c.status === "queued" || c.status === "running" || c.status === "awaiting-choice",
-  )
+  const pendingConfirm = file.pending !== null
+    || file.pendingChoice !== null
+    || file.confirmed.some((c) => c.status === "queued" || c.status === "awaiting-choice")
+  const researchRunning = file.confirmed.some((c) => c.status === "running")
+  return { pendingConfirm, researchRunning }
 }
 
 function discordBusy(home: string): Readonly<{
@@ -123,17 +131,23 @@ export async function buildDrainSnapshot(opts: Readonly<{
   })
   const layout = archiveLayout(opts.archiveRoot)
   const incomplete = await findIncompleteRunRefs(layout, nowIso)
+  const runningIncomplete = incomplete.filter((r) => r.status === "running").length
+  const abandonedIncomplete = incomplete.filter((r) => r.status === "abandoned").length
   const router = snapshotBroadcastPipeline(layout, nowIso)
   const discord = discordBusy(home)
+  const telegram = telegramBusy(home)
 
   return {
     capturedAt: nowIso,
     lockHeld: health.lock.held,
     lockStale: health.lock.stale === true,
-    incompleteRuns: incomplete.length,
+    incompleteRuns: runningIncomplete,
+    runningIncompleteRuns: runningIncomplete,
+    abandonedIncompleteRuns: abandonedIncomplete,
     researchActionable: health.research.actionable,
     researchResearching: health.research.researching,
-    telegramPendingConfirm: telegramHasPendingConfirm(home),
+    telegramPendingConfirm: telegram.pendingConfirm,
+    telegramResearchRunning: telegram.researchRunning,
     alphaPendingOrProcessing: countAlphaQueueItems(opts.agentRoot),
     discordLockHeld: discord.lockHeld,
     discordWorkerLockHeld: discord.workerLockHeld,
@@ -145,20 +159,92 @@ export async function buildDrainSnapshot(opts: Readonly<{
   }
 }
 
-/** Exact all-work drain predicate from the agent-gated plan */
-export function isDrainClear(snapshot: DrainSnapshot): boolean {
-  if (snapshot.lockHeld || snapshot.lockStale) return false
-  if (snapshot.incompleteRuns > 0) return false
+/**
+ * Safe to restart/redeploy the live agent without interrupting an in-flight
+ * Cursor session or host job. Ignores abandoned history and backlog depth.
+ */
+export function isAgentIdle(snapshot: DrainSnapshot): boolean {
+  if (snapshot.lockHeld && !snapshot.lockStale) return false
+  if (snapshot.runningIncompleteRuns > 0) return false
   if (snapshot.researchResearching > 0) return false
+  if (snapshot.telegramResearchRunning) return false
+  if (snapshot.discordLockHeld || snapshot.discordWorkerLockHeld) return false
+  if (snapshot.discordRunning > 0) return false
+  return true
+}
+
+/** Exact all-work drain predicate for agent-workspace activation */
+export function isDrainClear(snapshot: DrainSnapshot): boolean {
+  if (!isAgentIdle(snapshot)) return false
+  if (snapshot.lockStale) return false
   if (snapshot.researchActionable > 0) return false
   if (snapshot.telegramPendingConfirm) return false
   if (snapshot.alphaPendingOrProcessing > 0) return false
-  if (snapshot.discordLockHeld || snapshot.discordWorkerLockHeld) return false
-  if (snapshot.discordQueued > 0 || snapshot.discordRunning > 0) return false
+  if (snapshot.discordQueued > 0) return false
   if (snapshot.discordUndeliveredCompleted > 0) return false
   if (snapshot.xPendingActions > 0) return false
   if (snapshot.routerIngressPending > 0) return false
   return true
+}
+
+export type WaitForAgentIdleOptions = Readonly<{
+  agentRoot: string
+  archiveRoot: string
+  home?: string
+  /** Poll interval; default 5s */
+  pollMs?: number
+  /** Max wait; default 30m. 0 = wait indefinitely */
+  timeoutMs?: number
+  nowIso?: string
+  sleep?: (ms: number) => Promise<void>
+  onPoll?: (snapshot: DrainSnapshot) => void | Promise<void>
+}>
+
+export type WaitForAgentIdleResult =
+  | Readonly<{ ok: true, snapshot: DrainSnapshot, waitedMs: number }>
+  | Readonly<{ ok: false, reason: "timeout" | "stale-lock", snapshot: DrainSnapshot, waitedMs: number }>
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => {
+  setTimeout(resolve, ms)
+})
+
+/**
+ * Block until in-flight agent/host work finishes. Does not clear abandoned
+ * history or backlog. Stale locks fail closed (operator must heal).
+ */
+export async function waitForAgentIdle(
+  opts: WaitForAgentIdleOptions,
+): Promise<WaitForAgentIdleResult> {
+  const pollMs = Math.max(500, opts.pollMs ?? 5_000)
+  const timeoutMs = opts.timeoutMs ?? 30 * 60_000
+  const sleep = opts.sleep ?? defaultSleep
+  const started = Date.now()
+
+  for (;;) {
+    const snapshot = await buildDrainSnapshot({
+      agentRoot: opts.agentRoot,
+      archiveRoot: opts.archiveRoot,
+      ...(opts.home ? { home: opts.home } : {}),
+      ...(opts.nowIso ? { nowIso: opts.nowIso } : {}),
+    })
+    if (opts.onPoll) await opts.onPoll(snapshot)
+    if (snapshot.lockStale) {
+      return {
+        ok: false,
+        reason: "stale-lock",
+        snapshot,
+        waitedMs: Date.now() - started,
+      }
+    }
+    if (isAgentIdle(snapshot)) {
+      return { ok: true, snapshot, waitedMs: Date.now() - started }
+    }
+    const waitedMs = Date.now() - started
+    if (timeoutMs > 0 && waitedMs >= timeoutMs) {
+      return { ok: false, reason: "timeout", snapshot, waitedMs }
+    }
+    await sleep(pollMs)
+  }
 }
 
 export async function writePendingAgentDeploymentManifest(opts: Readonly<{
@@ -202,8 +288,34 @@ export async function activateAgentWorkspace(opts: Readonly<{
   sourceCommit: string
   nowIso?: string
   home?: string
+  /** Wait for in-flight jobs before syncing; default true */
+  waitForIdle?: boolean
+  waitTimeoutMs?: number
+  waitPollMs?: number
+  sleep?: (ms: number) => Promise<void>
+  onWaitPoll?: (snapshot: DrainSnapshot) => void | Promise<void>
 }>): Promise<ActivateResult> {
   const nowIso = opts.nowIso ?? systemClock.nowIso()
+  if (opts.waitForIdle !== false) {
+    const waited = await waitForAgentIdle({
+      agentRoot: opts.agentRoot,
+      archiveRoot: opts.archiveRoot,
+      ...(opts.home ? { home: opts.home } : {}),
+      ...(opts.waitTimeoutMs !== undefined ? { timeoutMs: opts.waitTimeoutMs } : {}),
+      ...(opts.waitPollMs !== undefined ? { pollMs: opts.waitPollMs } : {}),
+      ...(opts.sleep ? { sleep: opts.sleep } : {}),
+      ...(opts.onWaitPoll ? { onPoll: opts.onWaitPoll } : {}),
+    })
+    if (!waited.ok) {
+      return {
+        ok: false,
+        reason: waited.reason === "stale-lock"
+          ? "stale workspace lock — heal with tc status --heal before activate"
+          : "timed out waiting for in-flight agent work",
+        deferred: true,
+      }
+    }
+  }
   const snapshot = await buildDrainSnapshot({
     agentRoot: opts.agentRoot,
     archiveRoot: opts.archiveRoot,

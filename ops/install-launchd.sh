@@ -4,6 +4,7 @@
 # macOS TCC on ~/Documents.
 # Usage: ops/install-launchd.sh [--dry-run] [--without-harness] [--jobs-only]
 #                               [--no-load] [--sync-env] [--allow-dirty]
+#                               [--skip-agent-wait]
 #   --without-harness  skip installing the weekly harness-improve job (on by default)
 #   --sync-env  atomically copy repo .env → ~/.trenchcoat/env (mode 600) after
 #               validating required key NAMES are present. If it is the only
@@ -11,6 +12,8 @@
 #               before loading the launchd jobs.
 #   --allow-dirty  acknowledge deploying from a dirty git tree. Default refuses
 #               dirty working trees so deployment.json provenance stays exact.
+#   --skip-agent-wait  do not wait for in-flight agent/host jobs before
+#               bootout/kickstart (unsafe; can kill mid-session).
 set -eu
 
 REPO_ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
@@ -31,6 +34,7 @@ JOBS_ONLY=0
 NO_LOAD=0
 SYNC_ENV=0
 ALLOW_DIRTY=0
+SKIP_AGENT_WAIT=0
 # Count non-sync args so `--sync-env` alone runs as a standalone sync
 INSTALL_ARGS=0
 
@@ -48,6 +52,7 @@ for arg in "$@"; do
     --jobs-only) JOBS_ONLY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --no-load) NO_LOAD=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --allow-dirty) ALLOW_DIRTY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
+    --skip-agent-wait) SKIP_AGENT_WAIT=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -621,6 +626,26 @@ bootstrap_label() {
   echo "loaded $label"
 }
 
+# Wait until no in-flight Cursor/host job before bootout/kickstart.
+# Runs after the runtime swap so the active trenchcoat binary includes wait-idle.
+wait_for_agent_idle() {
+  if [ "$SKIP_AGENT_WAIT" -eq 1 ] || [ "$NO_LOAD" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
+    echo "skip agent-idle wait"
+    return 0
+  fi
+  if [ ! -x "$TC" ]; then
+    echo "warning: no trenchcoat binary to wait on agent idle — continuing" >&2
+    return 0
+  fi
+  echo "waiting for in-flight agent/host work to finish before reload…"
+  if ! "$TC" harness wait-idle --timeout-ms 1800000; then
+    echo "refusing reload: in-flight agent work still running (or stale lock)." >&2
+    echo "re-run when idle, or pass --skip-agent-wait (unsafe)." >&2
+    exit 3
+  fi
+  echo "agent idle — proceeding with launchd reload"
+}
+
 # --- host prep ---
 if [ "$DRY_RUN" -eq 0 ]; then
   mkdir -p "$DEST" "$HOME/.trenchcoat/backups"
@@ -700,6 +725,8 @@ fi
 if [ "$WITH_HARNESS" -eq 1 ]; then
   write_interval_plist com.trenchcoat.job.harness-improve harness-improve 604800
 fi
+
+wait_for_agent_idle
 
 # Load
 for label in \

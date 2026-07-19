@@ -97,8 +97,11 @@ docs/architecture/orchestrator.md / router.md), schedules the weekly backup
 `runtime/deployment.json` after staging + `config validate`, and bootstraps job
 cadences below (including weekly `harness-improve` unless opted out). Re-run
 after CLI changes. Flags: `--dry-run`, `--no-load`, `--without-harness`,
-`--jobs-only`, `--sync-env`, `--allow-dirty`. The wipe matters: plain `tsc`
-leaves deleted modules in `dist/`, which would otherwise ship into the runtime.
+`--jobs-only`, `--sync-env`, `--allow-dirty`, `--skip-agent-wait`. Before
+reloading launchd units the installer runs `tc harness wait-idle` (default 30m)
+so in-flight Cursor/host jobs finish; `--skip-agent-wait` bypasses that (unsafe).
+The wipe matters: plain `tsc` leaves deleted modules in `dist/`, which would
+otherwise ship into the runtime.
 
 `--sync-env` atomically copies repo `.env` → `~/.trenchcoat/env` (mode 600) after
 validating required key **names** (values never read); used alone it syncs and
@@ -155,8 +158,10 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   child when `chat.discord.enabled` and `DISCORD_RESEARCH_BOT_TOKEN` are set.
   Discord logs share `/tmp/trenchcoat.listener.*.log` with Telegram. After CLI /
   chat / research / discord code changes, re-run `./ops/install-launchd.sh`
-  (deploys `~/.trenchcoat/runtime`) and kick the listener:
-  `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.listener`.
+  (deploys `~/.trenchcoat/runtime`, waits for agent idle, then reloads units
+  including the listener — no separate `kickstart -k` needed unless you are
+  recovering a wedged process after install). Manual kick without the idle gate
+  can kill mid-session work; prefer `tc harness wait-idle` first.
   `install-launchd.sh` does **not** sync `agent/skills/` — copy changed skills
   from the repo into `~/.trenchcoat/agent/skills/` **and** (when Discord research
   is enabled) `~/.trenchcoat/discord/agent/skills/`, or agents keep stale
@@ -192,7 +197,7 @@ if flags disappear. Preferred sequence after a reviewed clean commit:
 2. `pnpm typecheck && pnpm lint && pnpm test:all` (plus FOMO shadow suites when
    touching that path).
 3. `./ops/install-launchd.sh` (clean tree) — stages, writes schema-2
-   `deployment.json`, swaps `runtime/` while keeping `runtime.previous`.
+   `deployment.json`, swaps `runtime/` while keeping `runtime.prev`.
 4. Confirm `tc status` shows matching config/runtime schema, commit, and
    `sourceDirty=false`.
 5. Canary in order: FC collect with agent skipped (live or labeled fallback, no
@@ -203,7 +208,7 @@ if flags disappear. Preferred sequence after a reviewed clean commit:
 
 **Rollback:** if journal parsing, host integrity, mutation confinement, router
 delivery, or schema migration fails, restore runtime by swapping
-`~/.trenchcoat/runtime.previous` back to `runtime` (and matching config backup
+`~/.trenchcoat/runtime.prev` back to `runtime` (and matching config backup
 under `~/.trenchcoat/backups/`). Do not delete receipts to “undo”; restore
 predeploy backup only when migration itself corrupted host state.
 
