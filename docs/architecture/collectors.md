@@ -77,6 +77,12 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
   Farcaster (watchlist-scan may still use `research.farcaster_search`).
 - Human-ish pacing (randomised delays, capped pages per run) to respect the platform
   and keep the account alive. Scrape read-only; never post, like, or follow.
+  Mid-scrape browser death relaunches the read-only session once and continues
+  remaining targets (`scrapeTargetsWithRecovery`); collect fails only if zero
+  targets complete.
+- `list-scan` also writes path-only `list-scan-alpha-manifest` (capped at 500 with
+  `truncated=N`) so alpha-queue digestion is not review-only; chat notes surface
+  `alphaPending` / `alphaTruncated` when the queue is deep.
 
 The normal collector blocks every mutating HTTP method. A separate host-only
 managed-list synchronizer is the sole exception: it may create one private list
@@ -136,7 +142,7 @@ exists. Two ingestion modes, chosen per channel at config time:
   preview at `t.me/s/<channel>` (paginated via `?before=<msg-id>`). Seed and
   runbook default every allowlisted channel to `mode: "preview"`. Poll on the
   collector cycle; no session, no flood-wait, no account risk. `t.me` is
-  rate-gated (20/min); large allowlists stretch a cycle past the 60s sleep via
+  rate-gated (20/min); large allowlists stretch a cycle past the 30m sleep via
   the token bucket. Empty preview pages (disabled or private) accept nothing —
   there is no auto-flip to GramJS; switch those handles to `"gramjs"` manually.
 - **GramJS (MTProto) listener (fallback)** — scaffold only for preview-disabled
@@ -164,9 +170,11 @@ keeps GramJS sessions under `~/.trenchcoat/telegram-session/` (never `agent/`).
   blacklist/whitelist, buy/sell tax, LP lock flags
 - **RugCheck** — `GET api.rugcheck.xyz/v1/tokens/{mint}/report` (Solana, keyless
   basic lookups): mint/freeze authority, LP lock
-- **`low-lp-lock` is caution-only** — still flagged when locked-or-burned LP
-  fraction is below `gate_thresholds.lp_locked_min`, but never `hardFail` alone
-  (security-gate.md). Remaining hard-fail fields are unchanged.
+- **`low-lp-lock` and active mint (`mintable` / `mint-authority`) are
+  caution-only** — still flagged when locked-or-burned LP fraction is below
+  `gate_thresholds.lp_locked_min` or mint authority is live, but never
+  `hardFail` alone (security-gate.md). Host still blocks `track` for mintable
+  memecoins via model classification. Remaining hard-fail fields are unchanged.
 - Scanner selection per chain via the chain registry (chains.md); no scanner
   coverage → fail-closed, candidate untrackable
 - Runs at research dequeue **and** as the new-pool stream filter; scheduled
@@ -424,7 +432,7 @@ be tracked and purged per message id.
 - `src/collectors/farcaster/engagement.ts` — likes applicator
 - `src/collectors/farcaster/signer.ts` — host custody / KeyGateway setup (INV-A1)
 - `src/collectors/telegram/listener.ts` — gramjs subscription, flood-wait handling
-- `src/collectors/market/security.ts` — GoPlus/RugCheck mapping (LP caution-only)
+- `src/collectors/market/security.ts` — GoPlus/RugCheck mapping (LP + mint caution-only)
 - `src/collectors/market/aggregate.ts` — 15m → higher-TF closed candle aggregation
 
 ## Gotchas and security-sensitive boundaries

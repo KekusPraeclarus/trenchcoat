@@ -24,11 +24,24 @@ last_verified: 2026-07-19
 | Operator DMs | `tc listen telegram` / `com.trenchcoat.listener` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OPERATOR_ID` |
 | Broadcast fanout | `tc router serve` / `com.trenchcoat.router` | `TELEGRAM_ROUTER_*` |
 
-Working alpha: `mode: "preview"`, poller logs `preview:N` / `telegram preview polled`,
-queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.
+Working alpha: `mode: "preview"`, poller logs `preview:N` / `telegram preview polled`
+(on a ~30m cycle per channel batch), queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.
 List-scan writes `list-scan-alpha-manifest`; review writes `review-alpha-manifest`.
 Both are path-only and capped at 500 items (`truncated=N` when the queue is
-deeper) so digest can still run while backlog is drained.
+deeper) so digest can still run while backlog is drained. Overflow keeps the
+first 499 paths in channel/file sort order and drops the rest until later runs
+digest + purge (INV-Q1) shrink the queue — never mass-delete undigested files
+to “fix” the cap. Mid-day 2026-07-19 list-scans aborted with Zod `too_big`
+before the cap shipped; current runtimes must always call `capManifestLines`
+before `SnapshotWriter.writeInbox`. List-scan collection status / chat notes
+surface `alphaPending` and `alphaTruncated` when the queue is non-empty or
+capped. Digests must use `entries[]` with message/record `contentHash` values
+(byte hashes of on-disk files) — narrative-shaped `items`/`slug` digests fail
+Zod and purge **nothing** (`invalidReason=schema-invalid` on the receipt; chat
+notes `alphaDigestInvalid` / `alphaPurged`). 2026-07-19 live backlog (~500) was
+zero successful purges for that reason. Repo skill edits under `agent/skills/**`
+do **not** auto-deploy — copy into `~/.trenchcoat/agent/skills/` before live
+jobs (installer does not sync skills).
 Operator chat working (`operator:telegram:…` research) does **not** imply alpha
 ingestion is live — check channels poller logs and `alpha-queue/` separately.
 
@@ -42,6 +55,10 @@ ingestion is live — check channels poller logs and `alpha-queue/` separately.
   `telegram` cursor key; use real alpha handles.
 - **Seed defaults** — `config/seed.example.json` is preview-first for all listed
   public call channels.
+- **Queue deep / digests never purge** — agent wrote narrative `items` instead of
+  `entries` + content hashes. Receipt shows `invalidReason=schema-invalid` and
+  chat `alphaDigestInvalid` / `alphaPurged=0`. Fix skills (list-scan/review), sync
+  into `~/.trenchcoat/agent/skills/`, redeploy host; do not mass-delete the queue.
 - **Skill / collector edits** — `ops/install-launchd.sh` redeploys the CLI runtime;
   copy `agent/skills/**` into `~/.trenchcoat/agent/skills/` separately (installer
   does not sync skills).

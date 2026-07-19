@@ -141,7 +141,7 @@ export async function runTelegramChannelsListener(args: Readonly<{
   const cursorFile = cursorsPath(home)
   mkdirSync(telegramChannelsHome(home), { recursive: true, mode: 0o700 })
   const fetcher = args.fetcher ?? fetch
-  const pollMs = args.pollIntervalMs ?? 60_000
+  const pollMs = args.pollIntervalMs ?? 30 * 60 * 1000
   const allowlist = new Map(
     args.channels.map((c) => [sanitizePathSegment(c.channel), c.mode] as const),
   )

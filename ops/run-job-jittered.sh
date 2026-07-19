@@ -1,22 +1,26 @@
 #!/bin/sh
 # Gate a job behind a jittered inter-run delay.
 # launchd polls often; this script no-ops until the next due timestamp.
-# Delay after a successful run: uniform in [3h15m, 4h45m] (~4h ± 45m).
+# list-scan: uniform [30m, 1h45m] after success. farcaster-scan: [3h15m, 4h45m].
 # Failure backoff: 1h. Lock contention uses run-with-lock-retry (30–180s).
 # Usage: run-job-jittered.sh <job-name>
 set -eu
 
 JOB="${1:-}"
 case "$JOB" in
-  list-scan|farcaster-scan) ;;
+  list-scan)
+    MIN_SEC=1800
+    MAX_SEC=6300
+    ;;
+  farcaster-scan)
+    MIN_SEC=11700
+    MAX_SEC=17100
+    ;;
   *)
     echo "usage: $0 list-scan|farcaster-scan" >&2
     exit 2
     ;;
 esac
-
-MIN_SEC=11700
-MAX_SEC=17100
 FAIL_SEC=3600
 POLL_STATE_DIR="${TRENCHCOAT_HOME:-$HOME/.trenchcoat}/var"
 NEXT_FILE="$POLL_STATE_DIR/${JOB}.next"

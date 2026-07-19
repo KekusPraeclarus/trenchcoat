@@ -32,7 +32,7 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 |---|---|
 | `chart-sweep` | hourly |
 | `watchlist-scan` | every 2h |
-| `list-scan` | ~every 4h (jittered 3h15m–4h45m; FYP + operator lists) |
+| `list-scan` | ~every 30–105m (jittered 30m–1h45m; FYP + operator lists) |
 | `farcaster-scan` | ~every 4h (jittered 3h15m–4h45m; requires `farcaster.enabled` + Neynar auth) |
 | `source-list-review` | daily and after a sealed audit |
 | `fc-source-review` | daily (Farcaster follow-graph sync) |
@@ -52,6 +52,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 | `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, local main ff, runtime deploy; never activates agent or starts canary |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
 | `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |
+| `channels` (KeepAlive) | always — alpha-channel preview poller (~30m cycle; `tc listen channels`) |
 
 ### Operator research (Telegram / CLI)
 

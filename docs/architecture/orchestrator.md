@@ -34,8 +34,8 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
 | `watchlist-scan` | every 2h | active watchlist market + security snapshots, optional bounded X/Farcaster token search; **host-pre skip** when empty watchlist | watchlist evidence review |
-| `list-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | FYP + two operator X lists + managed list *(live)*; host `list-scan-alpha-manifest` (pending `alpha-queue/` paths); coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** via `alpha-digest.json` |
-| `farcaster-scan` | ~every 4h (same jitter gate as list-scan) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
+| `list-scan` | ~every 30–105m (uniform jitter 30m–1h45m via `ops/run-job-jittered.sh`) | FYP + two operator X lists + managed list *(live)*; host `list-scan-alpha-manifest` (pending `alpha-queue/` paths); coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** via `alpha-digest.json` |
+| `farcaster-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
 | `source-list-review` | daily + after sealed audit | lagged source-score epoch + managed-list membership | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
 | `fc-source-review` | daily | lagged `fc_*` source-score + follow-graph sync | **no agent** — promote/demote then Neynar follow/unfollow |
 | `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new slug **or stage-change** → outbox (`narrative-emergence` / `narrative-fade` / `rotation`; same-stage re-sightings host-rejected; rotation host-rejected when market-blind; single-platform rotation/sentiment-collapse capped at `watch` and labeled `X-only` / `Farcaster-only`) |
@@ -62,8 +62,8 @@ unusable evidence), the run is journaled and sealed as `collector-skip` without
 an `agent.md` stub. `list-scan` and
 `farcaster-scan` are special: launchd polls every 15m and
 `ops/run-job-jittered.sh` (deployed as `~/.trenchcoat/bin/run-<job>`) gates real
-runs to a uniform delay in [3h15m, 4h45m] after each success — anti-patterning
-for the social burners. Cron is the only trigger — no daemon (the telegram
+runs after each success — list-scan uniform in [30m, 1h45m], farcaster-scan in
+[3h15m, 4h45m] — anti-patterning for the social burners. Cron is the only trigger — no daemon (the telegram
 operator listener and `tc listen channels` alpha poller excepted, see
 collectors.md), no human. The CLI also accepts on-demand
 runs (operator or chat service).
@@ -204,7 +204,10 @@ The telegram listener appends continuously; digestion is batch:
 
 1. Alpha-digesting jobs (`list-scan`, `review`) include the queue contents in scope
 2. The agent records anything useful in the knowledge store (with provenance) and
-   writes `reports/<run-id>/alpha-digest.json` listing the message ids it processed
+   writes `reports/<run-id>/alpha-digest.json` as `{schema,runId,proposedAt,entries}`
+   where each entry binds `channel`/`messageId`/`contentHash` to `state/…` record
+   hashes — never narrative-shaped `items`. Wrong shape → receipt
+   `invalidReason` and **no** purge
 3. After the state/report commit is durable, the orchestrator purges exactly
    those ids before the completed marker (INV-Q1) — a retry sees the keyed purge
    as already satisfied; knowledge survives in state and raw messages don't linger
@@ -280,10 +283,11 @@ host-side snapshot archive ──> deterministic attribution ──> score write
   typed hard-fail — research dequeue and the new-pool filter alike — so
   shillers are docked even for candidates that never reach a research session.
 - **Rug-shill dock (immediate)** — triggered only by the typed GoPlus/RugCheck
-  response hard-failing a candidate (honeypot, live mint authority, etc. —
-  not `low-lp-lock` alone; security-gate.md). Every attributed source takes a
-  severe cumulative penalty in the same run; repeat offenders are flagged for
-  operator removal in the next report.
+  response hard-failing a candidate (honeypot, freeze authority, balance
+  mutation, etc. — not `low-lp-lock` or active mint alone; security-gate.md).
+  Contextual mintable-memecoin track rejection does not dock. Every attributed
+  source takes a severe cumulative penalty in the same run; repeat offenders are
+  flagged for operator removal in the next report.
 - **Audit scoring (weekly)** — direct source-call extraction scans the same
   pre-session archive for raw CA/pair matches plus an explicit bullish pattern.
   A deterministic, versioned, negation-aware parser excludes warnings, neutral

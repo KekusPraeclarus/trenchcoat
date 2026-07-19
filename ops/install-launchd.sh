@@ -311,11 +311,16 @@ EOF
   echo "wrote $out"
 }
 
-# Social scans: launchd polls; ops/run-job-jittered.sh gates to ~4h ± 45m
+# Social scans: launchd polls; ops/run-job-jittered.sh gates inter-run delay
 write_jittered_job_plist() {
   job="$1"
   label="com.trenchcoat.job.$job"
   poll_seconds=900
+  case "$job" in
+    list-scan) jitter_desc="30m–1h45m" ;;
+    farcaster-scan) jitter_desc="3h15m–4h45m" ;;
+    *) jitter_desc="jittered" ;;
+  esac
   wrapper="$BIN_DIR/run-$job"
   out="$DEST/$label.plist"
   body=$(cat <<EOF
@@ -344,7 +349,7 @@ write_jittered_job_plist() {
 EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "would write $out ($job jittered 3h15m–4h45m, poll ${poll_seconds}s)"
+    echo "would write $out ($job jittered $jitter_desc, poll ${poll_seconds}s)"
     return
   fi
   printf '%s\n' "$body" >"$out"
