@@ -48,7 +48,11 @@ function rejectReason(agentRoot: string, entry: AlphaDigestEntry): string | unde
   return undefined
 }
 
-function emptyReceipt(runId: string, nowIso: string): AlphaDigestReceipt {
+function emptyReceipt(
+  runId: string,
+  nowIso: string,
+  invalidReason?: AlphaDigestReceipt["invalidReason"],
+): AlphaDigestReceipt {
   return {
     schema: 1,
     runId,
@@ -56,6 +60,7 @@ function emptyReceipt(runId: string, nowIso: string): AlphaDigestReceipt {
     accepted: [],
     rejected: [],
     purgedIds: [],
+    ...(invalidReason ? { invalidReason } : {}),
   }
 }
 
@@ -75,16 +80,28 @@ export async function validateAndPurgeAlphaDigest(args: Readonly<{
 
   if (!existsSync(digestPath)) {
     const receipt = emptyReceipt(args.runId, args.nowIso)
-    await writeJsonRecordFsync(receiptPath, receipt)
+    await writeJsonRecordFsync(receiptPath, receipt as never)
     return receipt
   }
 
-  const parsed = AlphaDigestFileSchema.safeParse(
-    JSON.parse(readFileSync(digestPath, "utf8")),
-  )
-  if (!parsed.success || parsed.data.runId !== args.runId) {
-    const receipt = emptyReceipt(args.runId, args.nowIso)
-    await writeJsonRecordFsync(receiptPath, receipt)
+  let raw: unknown
+  try {
+    raw = JSON.parse(readFileSync(digestPath, "utf8"))
+  } catch {
+    const receipt = emptyReceipt(args.runId, args.nowIso, "schema-invalid")
+    await writeJsonRecordFsync(receiptPath, receipt as never)
+    return receipt
+  }
+
+  const parsed = AlphaDigestFileSchema.safeParse(raw)
+  if (!parsed.success) {
+    const receipt = emptyReceipt(args.runId, args.nowIso, "schema-invalid")
+    await writeJsonRecordFsync(receiptPath, receipt as never)
+    return receipt
+  }
+  if (parsed.data.runId !== args.runId) {
+    const receipt = emptyReceipt(args.runId, args.nowIso, "run-id-mismatch")
+    await writeJsonRecordFsync(receiptPath, receipt as never)
     return receipt
   }
 
@@ -111,6 +128,6 @@ export async function validateAndPurgeAlphaDigest(args: Readonly<{
     rejected,
     purgedIds,
   }
-  await writeJsonRecordFsync(receiptPath, receipt)
+  await writeJsonRecordFsync(receiptPath, receipt as never)
   return receipt
 }

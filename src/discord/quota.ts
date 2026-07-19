@@ -1,5 +1,5 @@
 import type { TrenchcoatConfig } from "../lib/config.js"
-import type { DiscordRequestsFile } from "./schemas.js"
+import type { DiscordRequestRecord, DiscordRequestsFile } from "./schemas.js"
 import { rolloverQuotaDay } from "./store.js"
 
 export const DISCORD_ERRORS = {
@@ -12,6 +12,28 @@ export const DISCORD_ERRORS = {
   BUSY: "Bot is busy. Try again in a moment.",
   WATCH_CAPACITY: "Watchlist capacity reached; this token was not added.",
 } as const
+
+/** Terminal failures do not consume daily quota */
+export function chargesDailyQuota(status: DiscordRequestRecord["status"]): boolean {
+  return status === "queued" || status === "running" || status === "completed"
+}
+
+/** Recompute UTC-day counters from non-failed requests (source of truth) */
+export function recountDailyQuota(
+  file: DiscordRequestsFile,
+  nowIso: string,
+): DiscordRequestsFile {
+  const next = rolloverQuotaDay(file, nowIso)
+  const dailyByUser: Record<string, number> = {}
+  let dailyServer = 0
+  for (const r of next.requests) {
+    if (r.quotaDay !== next.quotaDay) continue
+    if (!chargesDailyQuota(r.status)) continue
+    dailyByUser[r.userId] = (dailyByUser[r.userId] ?? 0) + 1
+    dailyServer += 1
+  }
+  return { ...next, dailyByUser, dailyServer }
+}
 
 export function activeRequestForUser(
   file: DiscordRequestsFile,
@@ -38,7 +60,7 @@ export function quotaAllows(
   config: TrenchcoatConfig,
   nowIso: string,
 ): { ok: true; file: DiscordRequestsFile } | { ok: false; file: DiscordRequestsFile; reason: "user" | "server" } {
-  let next = rolloverQuotaDay(file, nowIso)
+  const next = recountDailyQuota(file, nowIso)
   const userCount = next.dailyByUser[userId] ?? 0
   if (userCount >= config.chat.discord.per_user_daily_cap) {
     return { ok: false, file: next, reason: "user" }
@@ -49,6 +71,7 @@ export function quotaAllows(
   return { ok: true, file: next }
 }
 
+/** @deprecated Prefer recountDailyQuota after mutating requests; kept for tests */
 export function consumeQuota(
   file: DiscordRequestsFile,
   userId: string,

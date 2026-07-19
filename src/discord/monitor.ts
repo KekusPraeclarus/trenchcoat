@@ -5,7 +5,7 @@ import { discordLayout } from "./paths.js"
 import { createDiscordStore } from "./store.js"
 import { pruneExpiredWatchlist } from "./watchlist.js"
 import { tokenKey } from "./schemas.js"
-import { detectMaterialChanges, renderWatchUpdate } from "./materiality.js"
+import { detectMaterialChanges } from "./materiality.js"
 import { createDiscordRestClient } from "./bot-client.js"
 import { chunkDiscordReply } from "./render.js"
 import {
@@ -14,15 +14,21 @@ import {
 } from "./watchlist.js"
 import type { CanonicalIdentity } from "../contracts/schemas.js"
 import { collectWatchObservation } from "./collect-observation.js"
+import { ensureDiscordAgentWorkspace } from "./agent-setup.js"
+import { resolveDiscordRepoRoot } from "./listener.js"
+import { runWatchUpdateWriter } from "./watch-update-session.js"
 
 export async function runDiscordWatchlistScan(args: Readonly<{
   token: string
+  repoRoot?: string
 }>): Promise<void> {
   const config = loadConfig()
   if (!config.chat.discord.enabled) return
 
   const layout = discordLayout()
   const store = createDiscordStore(layout)
+  const repoRoot = args.repoRoot ?? resolveDiscordRepoRoot()
+  const agentRoot = ensureDiscordAgentWorkspace(repoRoot, layout)
   // Worker lock excludes research; store `.lock` stays free for Discord intake
   const worker = new WorkspaceLock(layout.workerLock)
   if (!worker.tryAcquire()) return
@@ -78,14 +84,16 @@ export async function runDiscordWatchlistScan(args: Readonly<{
         continue
       }
 
-      const body = renderWatchUpdate({
+      const written = await runWatchUpdateWriter({
         chain: token.chain,
         tokenAddress: token.tokenAddress,
         ...(token.symbolDisplay ? { symbolDisplay: token.symbolDisplay } : {}),
         observedAt: current.observedAt,
         changes,
+        ...(token.researchBrief ? { researchBrief: token.researchBrief } : {}),
+        agentRoot,
       })
-      const parts = chunkDiscordReply(body)
+      const parts = chunkDiscordReply(written.text)
       const mentionIds = otherSubscriberIds(token, anchor, nowIso)
 
       let delivered = false

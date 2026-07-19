@@ -17,10 +17,18 @@ Sentiment & popularity section in **agent.md** (sample size, engagement evidence
 coverage caveats for the archive). Research does not collect Farcaster — do not
 invent FC coverage.
 
-Watchlist mutations only via `reports/<run-id>/decision-proposals.json` using
-full `DecisionProposalFile` (`schema`/`runId`/`proposedAt` + proposals with
-`card` + `provenanceIds`). Omit the file when not mutating. Never invent
-`{ action, subject, rationale }` shapes — the host drops malformed envelopes.
+Always write `reports/<run-id>/decision-proposals.json` as a full
+`DecisionProposalFile` (`schema`/`runId`/`proposedAt` + proposals with `card` +
+`provenanceIds`). Include `card.projectClassification`
+(`memecoin` | `utility` | `infrastructure` | `unknown`).
+
+**Mint risk is contextual, not automatic hard-fail.** Scanner `mintable` /
+`mint-authority` flags are cautions. Weigh capped emissions, PoW/reward
+schedules, vesting, and authority controls. When mint is active, set
+`mintAssessment: { active, justified, rationale }` and classify honestly —
+host still blocks `track` for mintable memecoins and for missing classification.
+Never invent `{ action, subject, rationale }` shapes — the host drops malformed
+envelopes.
 
 Write `reports/<run-id>/chat-summary.md` for the user-facing reply — never write
 `reports/chat/` directly. Aim for one Discord message (~≤1800 chars):

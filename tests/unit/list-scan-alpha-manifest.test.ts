@@ -31,6 +31,7 @@ describe("writeListScanAlphaManifest", () => {
     expect(result).toEqual({
       snapshotName: "list-scan-alpha-manifest",
       pendingCount: 1,
+      truncatedBy: 0,
     })
     const body = readFileSync(
       join(agentRoot, "inbox", runId, "list-scan-alpha-manifest.json"),
@@ -83,6 +84,7 @@ describe("writeListScanAlphaManifest", () => {
       agentRoot,
     })
     expect(result.pendingCount).toBe(total)
+    expect(result.truncatedBy).toBe(total - (SNAPSHOT_MAX_ITEMS - 1))
     const envelope = JSON.parse(
       readFileSync(join(agentRoot, "inbox", runId, "list-scan-alpha-manifest.json"), "utf8"),
     ) as { items: ReadonlyArray<{ text: string }> }

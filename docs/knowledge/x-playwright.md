@@ -20,9 +20,23 @@ last_verified: 2026-07-19
 - Route guard aborts every non-GET/HEAD/OPTIONS method
 - Targets from config v4: FYP + two operator lists + managed list URL when set
 - Cross-target dedupe by post id; keep first-seen provenance
+- Per-target isolation: a closed page/context/browser relaunches the read-only
+  session **once**, then continues remaining targets; collect fails only when
+  zero targets complete (`scrapeTargetsWithRecovery`)
+- Journal failure codes use `classifyRunFailureCode` — do **not** match bare
+  `config` against Playwright stderr (`--disable-field-trial-config` falsely
+  became `config-error` on 2026-07-19). Browser-closed → `collector-error`
 - Research token search waits for `article[data-testid=tweet]` after navigation,
   soft-retries once on empty, and falls back from Latest (`f=live`) to Top when
   Latest returns zero posts. Host queries: CA, `$SYMBOL`, `SYMBOL chain`.
+
+## list-scan cadence
+
+- Launchd polls every 15m; `ops/run-job-jittered.sh` gates real runs to uniform
+  [30m, 1h45m] after each success (2026-07-19; was 3h15m–4h45m). Farcaster uses
+  the same script with a separate branch — do not assume shared constants.
+- Backoff persists in `~/.trenchcoat/var/list-scan.next` across redeploy; delete
+  to apply a shorter gate immediately after a cadence change.
 
 ## FYP engagement manifest
 

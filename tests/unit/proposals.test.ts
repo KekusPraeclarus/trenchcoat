@@ -267,4 +267,181 @@ describe("host decision proposals", () => {
     expect(result.rejected).toBe(1)
     expect(result.receipts[0]?.blockedExternalEffects).toEqual(["broadcast", "router"])
   })
+
+  it("rejects mintable memecoin track and accepts justified utility mint", async () => {
+    const { agentRoot, runId } = fixtureRoot()
+    const meme: DecisionProposalFile = {
+      schema: 1,
+      runId,
+      proposedAt: "2026-07-16T12:00:00.000Z",
+      proposals: [{
+        schema: 1,
+        proposalId: "p-meme",
+        runId,
+        proposedAt: "2026-07-16T12:00:00.000Z",
+        card: {
+          decisionId: "d-meme",
+          runId,
+          decisionTs: "2026-07-16T12:00:00.000Z",
+          verdict: "track",
+          identity,
+          thesis: "meme pump",
+          horizonHours: 24,
+          invalidation: "fade",
+          drivers: ["social"],
+          confidence: 40,
+          signalUse: {},
+          sources: ["twitter:@a"],
+          clusters: 1,
+          countercase: "rug",
+          gate: "pass with mint caution",
+          projectClassification: "memecoin",
+          mintAssessment: {
+            active: true,
+            justified: false,
+            rationale: "infinite mint on a meme",
+          },
+        },
+        provenanceIds: ["twitter:@a"],
+        externalEffects: [],
+      }],
+    }
+    writeFileSync(
+      join(agentRoot, "reports", runId, "decision-proposals.json"),
+      `${JSON.stringify(meme, null, 2)}\n`,
+    )
+    const state = new StateStore(join(agentRoot, "state"))
+    const blocked = await applyDecisionProposals({
+      agentRoot,
+      runId,
+      state,
+      nowIso: "2026-07-16T12:01:00.000Z",
+      policyVersion: "baseline",
+      assignment: "baseline",
+      blockExternalEffects: false,
+      resolveGate: async () => ({
+        receiptId: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        status: "pass",
+        flags: ["mint-authority"],
+      }),
+    })
+    expect(blocked.accepted).toBe(0)
+    expect(blocked.rejected).toBe(1)
+    expect(blocked.receipts[0]?.rejectReason).toBe("mintable-memecoin")
+    expect(state.loadWatchlist().entries).toHaveLength(0)
+
+    const utility: DecisionProposalFile = {
+      schema: 1,
+      runId,
+      proposedAt: "2026-07-16T12:00:00.000Z",
+      proposals: [{
+        schema: 1,
+        proposalId: "p-util",
+        runId,
+        proposedAt: "2026-07-16T12:00:00.000Z",
+        card: {
+          decisionId: "d-util",
+          runId,
+          decisionTs: "2026-07-16T12:00:00.000Z",
+          verdict: "track",
+          identity,
+          thesis: "capped PoW emissions",
+          horizonHours: 168,
+          invalidation: "mint acceleration",
+          drivers: ["product"],
+          confidence: 70,
+          signalUse: {},
+          sources: ["web:docs"],
+          clusters: 1,
+          countercase: "emission schedule slips",
+          gate: "pass with mint caution",
+          projectClassification: "utility",
+          mintAssessment: {
+            active: true,
+            justified: true,
+            rationale: "capped 131M emission over 15.5y via PoW rewards",
+          },
+        },
+        provenanceIds: ["web:docs"],
+        externalEffects: [],
+      }],
+    }
+    writeFileSync(
+      join(agentRoot, "reports", runId, "decision-proposals.json"),
+      `${JSON.stringify(utility, null, 2)}\n`,
+    )
+    const allowed = await applyDecisionProposals({
+      agentRoot,
+      runId,
+      state,
+      nowIso: "2026-07-16T12:02:00.000Z",
+      policyVersion: "baseline",
+      assignment: "baseline",
+      blockExternalEffects: false,
+      resolveGate: async () => ({
+        receiptId: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        status: "pass",
+        flags: ["mintable"],
+      }),
+    })
+    expect(allowed.accepted).toBe(1)
+    expect(allowed.receipts[0]?.accepted).toBe(true)
+    expect(state.loadWatchlist().entries[0]?.status).toBe("tracking")
+  })
+
+  it("rejects mintable track when projectClassification is missing", async () => {
+    const { agentRoot, runId } = fixtureRoot()
+    const file: DecisionProposalFile = {
+      schema: 1,
+      runId,
+      proposedAt: "2026-07-16T12:00:00.000Z",
+      proposals: [{
+        schema: 1,
+        proposalId: "p-missing",
+        runId,
+        proposedAt: "2026-07-16T12:00:00.000Z",
+        card: {
+          decisionId: "d-missing",
+          runId,
+          decisionTs: "2026-07-16T12:00:00.000Z",
+          verdict: "track",
+          identity,
+          thesis: "unclear",
+          horizonHours: 72,
+          invalidation: "x",
+          drivers: ["social"],
+          confidence: 50,
+          signalUse: {},
+          sources: ["twitter:@a"],
+          clusters: 1,
+          countercase: "n/a",
+          gate: "pass",
+        },
+        provenanceIds: ["twitter:@a"],
+        externalEffects: [],
+      }],
+    }
+    writeFileSync(
+      join(agentRoot, "reports", runId, "decision-proposals.json"),
+      `${JSON.stringify(file, null, 2)}\n`,
+    )
+    const state = new StateStore(join(agentRoot, "state"))
+    const result = await applyDecisionProposals({
+      agentRoot,
+      runId,
+      state,
+      nowIso: "2026-07-16T12:01:00.000Z",
+      policyVersion: "baseline",
+      assignment: "baseline",
+      blockExternalEffects: false,
+      resolveGate: async () => ({
+        receiptId: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        status: "pass",
+        flags: ["mintable"],
+      }),
+    })
+    expect(result.accepted).toBe(0)
+    expect(result.rejected).toBe(1)
+    expect(result.receipts[0]?.rejectReason).toBe("mintable-missing-classification")
+  })
 })

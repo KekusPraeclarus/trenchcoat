@@ -364,11 +364,13 @@ application is not wired yet — only wallets are applied today.
 Private-guild research bot. Disabled by default. When enabled requires
 `guild_id` and 1–20 unique `channel_ids`. Caps: `per_user_daily_cap` (default 5),
 `server_daily_cap` (20), `max_active_per_user` (default 5 — max queued+running per
-user; global FIFO, one research at a time), `model` (default
-`composer-2.5-fast`, Discord research sessions only), `max_watched_tokens` (500),
-`max_subscribers_per_token` (100). Watch subscriptions last `watch_days` (30);
-monitor cadence `watch_scan_hours` (6). State lives under
-`~/.trenchcoat/discord/` — see
+user; global FIFO, one research at a time). Daily caps charge `queued` /
+`running` / `completed` only — terminal `failed` requests do not consume quota.
+`model` (default `composer-2.5-fast`, initial Discord research reply only;
+material watch updates use host `composer-2.5` writer),
+`max_watched_tokens` (500), `max_subscribers_per_token` (100). Watch
+subscriptions last `watch_days` (30); monitor cadence `watch_scan_hours` (6).
+State lives under `~/.trenchcoat/discord/` — see
 [architecture/discord-research.md](architecture/discord-research.md).
 
 Exit codes: `0` success, `1` run never started (env/config problem,

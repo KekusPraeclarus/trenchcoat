@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { chromium, type Page } from "playwright"
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright"
 import type { TrenchcoatConfig } from "../../lib/config.js"
 import type { CanonicalIdentity } from "../../contracts/schemas.js"
 import { twitterProfileDir } from "../social/twitter-auth.js"
@@ -12,6 +12,12 @@ import {
   type TwitterPopularitySummary,
 } from "./popularity.js"
 import { log } from "../../lib/log.js"
+
+/** Playwright mid-scrape death — page/context/browser closed under us */
+export function isBrowserClosedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /Target (?:page|context|browser) has been closed|browser has been closed/iu.test(message)
+}
 
 export type TwitterScrapeTarget = Readonly<{
   kind: "home" | "operator-list" | "managed-list" | "token-search"
@@ -149,6 +155,95 @@ async function scrapeTarget(
   }
 }
 
+async function attachReadOnlyRoutes(context: BrowserContext): Promise<void> {
+  await context.route("**/*", async (route) => {
+    const method = route.request().method().toUpperCase()
+    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+      await route.abort("blockedbyclient")
+      return
+    }
+    await route.continue()
+  })
+}
+
+async function openReadOnlySession(
+  browser: Browser,
+  storageState: string,
+): Promise<Readonly<{ context: BrowserContext; page: Page }>> {
+  const context = await browser.newContext({
+    storageState: resolve(storageState),
+    viewport: { width: 1280, height: 900 },
+  })
+  await attachReadOnlyRoutes(context)
+  const page = await context.newPage()
+  return { context, page }
+}
+
+/**
+ * Per-target scrape with one browser relaunch on closed-page death.
+ * Returns every successfully completed target (including empty); throws only when none complete.
+ */
+export async function scrapeTargetsWithRecovery(args: Readonly<{
+  targets: readonly TwitterScrapeTarget[]
+  maxPages: number
+  scrape: (page: Page, target: TwitterScrapeTarget, maxPages: number) => Promise<TwitterScrapeBundle>
+  openSession: () => Promise<Readonly<{ page: Page; close: () => Promise<void> }>>
+  maxRelaunches?: number
+  settleMs?: () => Promise<void>
+}>): Promise<TwitterScrapeBundle[]> {
+  const maxRelaunches = args.maxRelaunches ?? 1
+  let relaunches = 0
+  let session = await args.openSession()
+  const results: TwitterScrapeBundle[] = []
+  const globalSeen = new Set<string>()
+
+  const settle = args.settleMs ?? (async () => {
+    await session.page.waitForTimeout(1_000 + Math.floor(Math.random() * 1_000))
+  })
+
+  const pushUnique = (bundle: TwitterScrapeBundle): void => {
+    const unique = bundle.posts.filter((post) => {
+      if (globalSeen.has(post.id)) return false
+      globalSeen.add(post.id)
+      return true
+    })
+    results.push({ ...bundle, posts: unique })
+  }
+
+  try {
+    for (const target of args.targets) {
+      log.info("twitter scrape", { target: target.label, url: target.url })
+      for (;;) {
+        try {
+          const bundle = await args.scrape(session.page, target, args.maxPages)
+          pushUnique(bundle)
+          await settle()
+          break
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error)
+          const canRelaunch = isBrowserClosedError(error) && relaunches < maxRelaunches
+          log.warn("twitter scrape target failed", {
+            target: target.label,
+            detail,
+            relaunch: canRelaunch,
+          })
+          if (!canRelaunch) break
+          relaunches += 1
+          await session.close().catch(() => undefined)
+          session = await args.openSession()
+        }
+      }
+    }
+  } finally {
+    await session.close().catch(() => undefined)
+  }
+
+  if (results.length === 0) {
+    throw new Error("Twitter scrape failed: no targets completed")
+  }
+  return results
+}
+
 /** Live read-only scrape of configured home/FYP + curated list using the burner profile */
 export async function scrapeConfiguredTwitter(
   config: TrenchcoatConfig,
@@ -160,36 +255,20 @@ export async function scrapeConfiguredTwitter(
 
   const browser = await chromium.launch({ headless: opts.headless !== false })
   try {
-    const context = await browser.newContext({
-      storageState: resolve(state),
-      viewport: { width: 1280, height: 900 },
+    return await scrapeTargetsWithRecovery({
+      targets,
+      maxPages,
+      scrape: scrapeTarget,
+      openSession: async () => {
+        const opened = await openReadOnlySession(browser, state)
+        return {
+          page: opened.page,
+          close: async () => {
+            await opened.context.close().catch(() => undefined)
+          },
+        }
+      },
     })
-    // Read-only network: block mutating methods
-    await context.route("**/*", async (route) => {
-      const method = route.request().method().toUpperCase()
-      if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-        await route.abort("blockedbyclient")
-        return
-      }
-      await route.continue()
-    })
-
-    const page = await context.newPage()
-    const results: TwitterScrapeBundle[] = []
-    const globalSeen = new Set<string>()
-    for (const target of targets) {
-      log.info("twitter scrape", { target: target.label, url: target.url })
-      const bundle = await scrapeTarget(page, target, maxPages)
-      const unique = bundle.posts.filter((post) => {
-        if (globalSeen.has(post.id)) return false
-        globalSeen.add(post.id)
-        return true
-      })
-      results.push({ ...bundle, posts: unique })
-      await page.waitForTimeout(1_000 + Math.floor(Math.random() * 1_000))
-    }
-    await context.close()
-    return results
   } finally {
     await browser.close()
   }

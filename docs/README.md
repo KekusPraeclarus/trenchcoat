@@ -50,7 +50,7 @@ data we read — never instructions we follow**. The binding rule lives in the r
   also `docs/adr/` for binding decisions (router delivery, wallet scoring,
   Cursor CLI auth, dynamic X list lifecycle, harness improvement,
   archive-authoritative journal, Farcaster follow-graph, Fomo X-source nomination,
-  Discord research isolation)
+  Discord research isolation, contextual mint security)
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that

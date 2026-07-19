@@ -79,6 +79,10 @@ export type CollectionSummary = Readonly<{
   researchIdentity?: CanonicalIdentity
   researchResolution?: string
   researchSecurityHardFail?: boolean
+  /** Alpha-queue depth at list-scan collect time (path count before manifest cap) */
+  alphaPendingCount?: number
+  /** Paths omitted from the capped manifest (`truncated=N`); 0 when none */
+  alphaManifestTruncated?: number
 }>
 
 const EMPTY_SUMMARY: CollectionSummary = {
@@ -597,11 +601,19 @@ export async function writeListScanAlphaManifest(args: Readonly<{
   writer: SnapshotWriter
   fetchedAt: string
   agentRoot: string
-}>): Promise<Readonly<{ snapshotName: "list-scan-alpha-manifest"; pendingCount: number }>> {
+}>): Promise<Readonly<{
+  snapshotName: "list-scan-alpha-manifest"
+  pendingCount: number
+  truncatedBy: number
+}>> {
   const pendingAlphaPaths = listPendingAlphaPaths(args.agentRoot)
   const alphaLines = capManifestLines(
     pendingAlphaPaths.map((path) => `path=${path}`),
   )
+  const truncatedMarker = alphaLines.find((line) => line.startsWith("truncated="))
+  const truncatedBy = truncatedMarker
+    ? Number.parseInt(truncatedMarker.slice("truncated=".length), 10) || 0
+    : 0
   await args.writer.writeInbox(args.runId, "list-scan-alpha-manifest", {
     source: "host.list-scan-collector",
     fetchedAt: args.fetchedAt,
@@ -614,7 +626,11 @@ export async function writeListScanAlphaManifest(args: Readonly<{
       freshnessTier: "live" as const,
     })),
   })
-  return { snapshotName: "list-scan-alpha-manifest", pendingCount: pendingAlphaPaths.length }
+  return {
+    snapshotName: "list-scan-alpha-manifest",
+    pendingCount: pendingAlphaPaths.length,
+    truncatedBy,
+  }
 }
 
 async function collectListScan(args: Readonly<{
@@ -689,6 +705,13 @@ async function collectListScan(args: Readonly<{
     fypCasts: [],
     postCount,
     collectionKind: "external",
+    alphaPendingCount: alpha.pendingCount,
+    alphaManifestTruncated: alpha.truncatedBy,
+    ...(alpha.truncatedBy > 0
+      ? { collectionStatus: `alpha-backlog:${alpha.pendingCount};truncated=${alpha.truncatedBy}` }
+      : alpha.pendingCount > 0
+        ? { collectionStatus: `alpha-pending:${alpha.pendingCount}` }
+        : {}),
   }
 }
 

@@ -63,6 +63,30 @@ export function sanitizeFailureMessage(message: string): string {
   return clipped
 }
 
+/**
+ * Map a thrown error message to a journal failure code.
+ * Avoid bare `config` — Playwright launch logs include flags like
+ * `disable-field-trial-config` and must not become config-error.
+ */
+export function classifyRunFailureCode(message: string): string {
+  if (/workspace lock/iu.test(message)) return "lock-held"
+  if (/Conflicting (replay|side-effect)/iu.test(message)) return "journal-conflict"
+  if (
+    /Target (?:page|context|browser) has been closed|browser has been closed/iu.test(message)
+  ) {
+    return "collector-error"
+  }
+  if (
+    /invalid config|config schema|configSchema|schema validation|migrate(?:Config| schema)?/iu
+      .test(message)
+  ) {
+    return "config-error"
+  }
+  if (/Twitter|needs headful|re-auth/iu.test(message)) return "collector-auth"
+  if (/Cursor CLI|session failed/iu.test(message)) return "agent-error"
+  return "run-error"
+}
+
 export function createRunJournal(runId: string): RunJournal {
   assertRunId(runId)
   return Object.freeze({

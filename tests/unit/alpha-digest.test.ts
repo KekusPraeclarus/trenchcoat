@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ensureArchive } from "../../src/lib/archive.js"
@@ -127,6 +127,63 @@ describe("alpha digest validate and purge", () => {
     })
     expect(receipt.accepted).toHaveLength(0)
     expect(receipt.purgedIds).toHaveLength(0)
+    expect(receipt.invalidReason).toBeUndefined()
+    expect(existsSync(s.messagePath)).toBe(true)
+  })
+
+  it("sets invalidReason=schema-invalid for narrative-shaped items digests", async () => {
+    const s = scaffold()
+    const layout = await ensureArchive(s.archiveRoot)
+    const dir = join(s.agentRoot, "reports", RUN_ID)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, "alpha-digest.json"), `${JSON.stringify({
+      schema: 1,
+      runId: RUN_ID,
+      proposedAt: "2026-07-17T12:05:00.000Z",
+      items: [{
+        slug: "rh-chain-meme-rotation",
+        kind: "narrative",
+        status: "peaking",
+        summary: "wrong shape",
+        provenanceIds: ["telegram:alpha"],
+        confidence: 80,
+      }],
+    }, null, 2)}\n`)
+
+    const receipt = await validateAndPurgeAlphaDigest({
+      agentRoot: s.agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+    })
+    expect(receipt.invalidReason).toBe("schema-invalid")
+    expect(receipt.accepted).toHaveLength(0)
+    expect(receipt.purgedIds).toHaveLength(0)
+    expect(existsSync(s.messagePath)).toBe(true)
+  })
+
+  it("sets invalidReason=run-id-mismatch when digest runId differs", async () => {
+    const s = scaffold()
+    const layout = await ensureArchive(s.archiveRoot)
+    writeDigest(s.agentRoot, {
+      provenance: "tg:alpha:msg:1",
+      channel: "alpha",
+      messageId: "msg-1",
+      contentHash: s.messageHash,
+      records: [{ path: "state/research/example.md", contentHash: s.recordHash }],
+    })
+    const digestPath = join(s.agentRoot, "reports", RUN_ID, "alpha-digest.json")
+    const body = JSON.parse(readFileSync(digestPath, "utf8")) as { runId: string }
+    body.runId = "20260717T999999Z-deadbeef"
+    writeFileSync(digestPath, `${JSON.stringify(body, null, 2)}\n`)
+
+    const receipt = await validateAndPurgeAlphaDigest({
+      agentRoot: s.agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+    })
+    expect(receipt.invalidReason).toBe("run-id-mismatch")
     expect(existsSync(s.messagePath)).toBe(true)
   })
 })

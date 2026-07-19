@@ -62,3 +62,6 @@ ingestion is live — check channels poller logs and `alpha-queue/` separately.
 - **Skill / collector edits** — `ops/install-launchd.sh` redeploys the CLI runtime;
   copy `agent/skills/**` into `~/.trenchcoat/agent/skills/` separately (installer
   does not sync skills).
+- **Poll interval change** — default cycle is code in `channels.ts`, not config;
+  after redeploy restart **`com.trenchcoat.channels`** and confirm startup log
+  `pollMs` (2026-07-19 live: `1800000` = 30m, was `60000`).

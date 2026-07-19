@@ -30,9 +30,38 @@ tool commands:
 2. `reports/<run-id>/decision-proposals.json` — bounded watchlist verdicts only
    when evidence supports a drop/keep/revisit change (max 10 proposals per run).
    Never mutate `state/watchlist.json` or `state/decisions.md` directly.
-3. `reports/<run-id>/alpha-digest.json` — validated digest entries for alpha-queue
-   messages you incorporated into durable knowledge. Each entry must cite the
-   message path + content hash and the `state/research/` record(s) updated.
+3. `reports/<run-id>/alpha-digest.json` — host-validated queue purge receipts for
+   alpha-queue messages you incorporated into durable knowledge. Use **`entries`**
+   only (never top-level `items`; never narrative `slug`/`status` fields).
+   Workflow: write/update `state/research/<token>.md` citing telegram provenance →
+   hash exact bytes of the queue file and each record (`sha256:` + hex) → one
+   entry per message to purge. When `review-alpha-manifest` shows `truncated=N`
+   or a deep queue, prioritize a bounded digest batch (≤500) before other work.
+
+```json
+{
+  "schema": 1,
+  "runId": "<same run id>",
+  "proposedAt": "<ISO>",
+  "entries": [
+    {
+      "provenance": "telegram:ChannelHandle",
+      "channel": "ChannelHandle",
+      "messageId": "9133",
+      "contentHash": "sha256:<hex of alpha-queue/ChannelHandle/9133.json bytes>",
+      "records": [
+        {
+          "path": "state/research/TOKEN.md",
+          "contentHash": "sha256:<hex of that file bytes after your write>"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Wrong shape → host `invalidReason` and **no** purge. Skip the file when nothing
+was retained.
 4. `state/research/<token>.md` — durable distillations (frontmatter +
    compressed notes). Update existing files in place; create new files only for
    tokens with explicit evidence. Prune stale detail from the live file; history

@@ -16,8 +16,15 @@ import {
   type LedgerFile,
 } from "../contracts/schemas.js"
 import { openEntryPending, markExitPending, upsertPosition } from "./ledger.js"
+import { mintTrackBlockReason } from "../collectors/market/security.js"
 
 const TRACK_STATUSES = new Set<WatchlistStatus>(["tracking", "watching"])
+
+export type GateResolveResult = Readonly<{
+  receiptId: `sha256:${string}`
+  status: "pass" | "hard-fail" | "pending" | "unsupported-chain"
+  flags?: readonly string[]
+}>
 
 export type ApplyProposalsOptions = Readonly<{
   agentRoot: string
@@ -35,10 +42,7 @@ export type ApplyProposalsOptions = Readonly<{
    * Host gate resolver — required for track when identity present.
    * Omitting it rejects the proposal (INV-S9 fail-closed).
    */
-  resolveGate?: (proposal: DecisionProposal) => Promise<{
-    receiptId: `sha256:${string}`
-    status: "pass" | "hard-fail" | "pending" | "unsupported-chain"
-  } | undefined>
+  resolveGate?: (proposal: DecisionProposal) => Promise<GateResolveResult | undefined>
   /** Archive root for authoritative validation receipts */
   archiveRoot?: string
   /**
@@ -100,6 +104,12 @@ export function formatDecisionMarkdown(proposal: DecisionProposal): string {
     `- sources: [${card.sources.join(", ")}]  clusters: ${card.clusters}`,
     `- countercase: ${card.countercase}`,
     `- gate: ${card.gate}`,
+    ...(card.projectClassification
+      ? [`- project: ${card.projectClassification}`]
+      : []),
+    ...(card.mintAssessment
+      ? [`- mint: active=${card.mintAssessment.active} justified=${card.mintAssessment.justified} — ${card.mintAssessment.rationale}`]
+      : []),
     `- policy: ${card.policyVersion ?? "baseline"}  assignment: ${card.assignment ?? "baseline"}`,
     "",
   ].join("\n")
@@ -292,6 +302,17 @@ export async function applyDecisionProposals(
         continue
       }
       gateReceiptId = gate.receiptId
+      if (proposal.card.verdict === "track") {
+        const mintBlock = mintTrackBlockReason(
+          gate.flags ?? [],
+          proposal.card.projectClassification,
+        )
+        if (mintBlock) {
+          receipts.push(reject(proposal, opts, mintBlock, blocked))
+          rejected += 1
+          continue
+        }
+      }
     }
 
     // Shadow assignments never mutate production state

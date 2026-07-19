@@ -126,7 +126,9 @@ structured state, markdown for prose knowledge, one index for retrieval.
   full history survives in git, not in the live file. Review writes
   `reports/<run-id>/agent.md`, bounded `decision-proposals.json`, validated
   `reports/<run-id>/alpha-digest.json`, and durable `state/research/*.md`; the
-  host reconciles `INDEX.md` after accepted research changes.
+  host reconciles `INDEX.md` after accepted research changes. Alpha digests must
+  use `entries` with message/record `contentHash` values — narrative-shaped
+  `items` fail Zod and purge nothing (INV-Q1; see knowledge/telegram.md).
 - **`narratives/log.jsonl`** — rolling log of narratives the bot has seen.
   One JSON object per line: `slug`, `title`, `firstSeen`, `lastSeen`,
   `evidence` (provenance ids), `stage: emerging | peaking | fading`. Host-owned

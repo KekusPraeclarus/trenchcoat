@@ -60,6 +60,7 @@ export function subscribeAfterResearch(args: Readonly<{
   messageId: string
   nowIso: string
   baseline: DiscordObservation
+  researchBrief?: string
   securityHardFail?: boolean
 }>): WatchSubscribeResult {
   if (args.securityHardFail) {
@@ -99,6 +100,7 @@ export function subscribeAfterResearch(args: Readonly<{
     const updated: DiscordWatchToken = {
       ...existing,
       symbolDisplay: args.identity.symbolDisplay ?? existing.symbolDisplay,
+      ...(args.researchBrief ? { researchBrief: args.researchBrief } : {}),
       subscriptions: [...withoutUser, subscription],
     }
     return {
@@ -122,6 +124,7 @@ export function subscribeAfterResearch(args: Readonly<{
     chain: args.identity.chain,
     tokenAddress: args.identity.tokenAddress,
     symbolDisplay: args.identity.symbolDisplay,
+    ...(args.researchBrief ? { researchBrief: args.researchBrief } : {}),
     subscriptions: [subscription],
   }
   return { file: { ...file, tokens: [...file.tokens, token] }, subscribed: true }

@@ -18,17 +18,10 @@ export type MaterialChange = Readonly<{
   current: string
 }>
 
-const REASON_COPY: Record<MaterialReason, string> = {
-  "security-status": "Security status changed — review before acting.",
-  "security-hard-fail": "A security hard-fail appeared — treat as high risk.",
-  "security-flags": "Security flags changed — review the new flags.",
-  price: "Price moved materially — momentum or reversal may be underway.",
-  liquidity: "Liquidity shifted materially — slippage and exit risk may have changed.",
-  volume: "24h volume shifted materially — attention or flow may have changed.",
-  fdv: "FDV shifted materially — valuation context may have changed.",
-  "x-authors": "New independent X voices appeared — narrative breadth may be expanding.",
-  "x-engagement": "Known X engagement changed materially — social traction may have shifted.",
-}
+const PRICE_PCT_MIN = 0.50
+const DOUBLE_OR_HALF_MIN = 1.0
+const X_AUTHORS_NET_UP_MIN = 50
+const X_AUTHORS_NET_DOWN_MIN = 100
 
 function pctChange(prior: number, current: number): number | undefined {
   if (!Number.isFinite(prior) || !Number.isFinite(current) || prior <= 0) return undefined
@@ -53,6 +46,10 @@ function setChanged(a: readonly string[], b: readonly string[]): boolean {
   if (sa.size !== sb.size) return true
   for (const x of sa) if (!sb.has(x)) return true
   return false
+}
+
+function doubledOrHalved(prior: number, current: number): boolean {
+  return (pctChange(prior, current) ?? 0) >= DOUBLE_OR_HALF_MIN
 }
 
 export function detectMaterialChanges(
@@ -93,7 +90,7 @@ export function detectMaterialChanges(
 
   if (
     baseline.priceUsd != null && current.priceUsd != null
-    && (pctChange(baseline.priceUsd, current.priceUsd) ?? 0) >= 0.20
+    && (pctChange(baseline.priceUsd, current.priceUsd) ?? 0) >= PRICE_PCT_MIN
   ) {
     out.push({
       reason: "price",
@@ -105,7 +102,7 @@ export function detectMaterialChanges(
 
   if (
     baseline.liquidityUsd != null && current.liquidityUsd != null
-    && (pctChange(baseline.liquidityUsd, current.liquidityUsd) ?? 0) >= 0.25
+    && doubledOrHalved(baseline.liquidityUsd, current.liquidityUsd)
   ) {
     out.push({
       reason: "liquidity",
@@ -117,7 +114,7 @@ export function detectMaterialChanges(
 
   if (
     baseline.volume24hUsd != null && current.volume24hUsd != null
-    && (pctChange(baseline.volume24hUsd, current.volume24hUsd) ?? 0) >= 0.25
+    && doubledOrHalved(baseline.volume24hUsd, current.volume24hUsd)
   ) {
     out.push({
       reason: "volume",
@@ -129,7 +126,7 @@ export function detectMaterialChanges(
 
   if (
     baseline.fdvUsd != null && current.fdvUsd != null
-    && (pctChange(baseline.fdvUsd, current.fdvUsd) ?? 0) >= 0.25
+    && doubledOrHalved(baseline.fdvUsd, current.fdvUsd)
   ) {
     out.push({
       reason: "fdv",
@@ -139,14 +136,16 @@ export function detectMaterialChanges(
     })
   }
 
-  const baseAuthors = new Set(baseline.xAuthorIds)
-  const newAuthors = current.xAuthorIds.filter((id) => !baseAuthors.has(id))
-  if (newAuthors.length >= 3) {
+  const baseCount = baseline.xAuthorIds.length
+  const curCount = current.xAuthorIds.length
+  const netAuthors = curCount - baseCount
+  if (netAuthors >= X_AUTHORS_NET_UP_MIN || netAuthors <= -X_AUTHORS_NET_DOWN_MIN) {
+    const netLabel = netAuthors >= 0 ? `+${netAuthors}` : String(netAuthors)
     out.push({
       reason: "x-authors",
-      label: "New X authors",
-      prior: fmtNum(baseline.xAuthorIds.length),
-      current: fmtNum(current.xAuthorIds.length),
+      label: "X authors",
+      prior: fmtNum(baseCount),
+      current: `${fmtNum(curCount)} (net ${netLabel})`,
     })
   }
 
@@ -169,7 +168,7 @@ export function detectMaterialChanges(
   return out
 }
 
-export function renderWatchUpdate(args: Readonly<{
+export function renderWatchUpdateFactsOnly(args: Readonly<{
   chain: string
   tokenAddress: string
   symbolDisplay?: string
@@ -184,12 +183,9 @@ export function renderWatchUpdate(args: Readonly<{
     `Scan: ${args.observedAt.slice(0, 19)}Z`,
     "",
     ...args.changes.map((c) => `- ${c.label}: ${c.prior} → ${c.current}`),
-    "",
-    ...args.changes.map((c) => REASON_COPY[c.reason]),
   ]
   return lines.join("\n")
 }
 
-export function reasonCopy(reason: MaterialReason): string {
-  return REASON_COPY[reason]
-}
+/** @deprecated use renderWatchUpdateFactsOnly */
+export const renderWatchUpdate = renderWatchUpdateFactsOnly

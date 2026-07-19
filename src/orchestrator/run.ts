@@ -9,6 +9,7 @@ import {
   recordSideEffect,
   sideEffectKey,
   hasSideEffect,
+  classifyRunFailureCode,
   RUN_PHASES,
   type RunJournal,
   type RunPhase,
@@ -479,7 +480,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ? `If optional web search would help, write queries only to reports/${runId}/web-search-requests.json (schema 1, runId ${runId}); the host may fetch and you will not see results in this same pass.`
           : "",
         job.name === "list-scan" || job.name === "farcaster-scan" || job.name === "review" || job.name === "narrative-scan"
-          ? `If you distilled durable knowledge worth retaining, propose it only in reports/${runId}/alpha-digest.json; propose any operator broadcast only in outbox/${runId}.json as {schema:1,items:[{severity,text,refs,auditClaim}]} — never a top-level broadcasts key or bare text; text ≤280 chars; refs must be state/… or inbox/${runId}/… paths that already exist as frozen regular files (host rejects traversal, cross-run, missing, and mutable refs). The host validates and applies both.`
+          ? `If you retained durable knowledge from alpha-queue/, write reports/${runId}/alpha-digest.json as {schema:1,runId,proposedAt,entries:[{provenance,channel,messageId,contentHash,records:[{path,contentHash}]}]} — entries only (never items; never narrative slug/status fields). contentHash values are sha256: hex of exact on-disk bytes for alpha-queue/<channel>/<messageId>.json and each state/… record you wrote. Host purges only byte-verified entries (INV-Q1); wrong shape purges nothing. Propose any operator broadcast only in outbox/${runId}.json as {schema:1,items:[{severity,text,refs,auditClaim}]} — never a top-level broadcasts key or bare text; text ≤280 chars; refs must be state/… or inbox/${runId}/… paths that already exist as frozen regular files (host rejects traversal, cross-run, missing, and mutable refs). The host validates and applies both.`
           : "",
         job.name === "narrative-scan"
           ? `Propose narrative log updates only in reports/${runId}/narrative-proposals.jsonl (one JSON object per line: slug, title, firstSeen, lastSeen, evidence, stage, optional tickers). Never write state/narratives/ directly — the host merges proposals after schema validation. Add tickers only when the evidence explicitly names them. Update lastSeen/stage for known slugs; append only genuinely new narratives. Propose one outbox broadcast per newly appended slug OR per stage change (emerging↔peaking↔fading) — never for same-stage re-sightings. Do not restate known heat in outbox text or chat-summary (e.g. omit "RH still peaking" when the log already says peaking).`
@@ -607,7 +608,11 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(runDir, "gate-receipts", `${resolved.receipt.receiptId.slice(7, 23)}.json`),
         resolved.receipt as never,
       )
-      return { receiptId: resolved.receiptId, status: resolved.status }
+      return {
+        receiptId: resolved.receiptId,
+        status: resolved.status,
+        flags: resolved.receipt.flags,
+      }
     }
     let proposalReport = WALLET_EVIDENCE_JOBS.has(job.name)
       ? {
@@ -1160,6 +1165,12 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         `fypPosts=${collection.fypPosts.length}`,
         `discovery=${collection.discoverySightings.length}`,
       )
+      if (collection.alphaPendingCount !== undefined) {
+        platformNotes.push(`alphaPending=${collection.alphaPendingCount}`)
+      }
+      if (collection.alphaManifestTruncated !== undefined && collection.alphaManifestTruncated > 0) {
+        platformNotes.push(`alphaTruncated=${collection.alphaManifestTruncated}`)
+      }
     }
     chatFactsExtras = {
       ...chatFactsExtras,
@@ -1278,6 +1289,14 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       runId,
       nowIso: systemClock.nowIso(),
     })
+    const alphaNotes = [
+      ...(chatFactsExtras.platformNotes ?? []),
+      `alphaPurged=${purgeReceipt.purgedIds.length}`,
+      ...(purgeReceipt.invalidReason
+        ? [`alphaDigestInvalid=${purgeReceipt.invalidReason}`]
+        : []),
+    ]
+    chatFactsExtras = { ...chatFactsExtras, platformNotes: alphaNotes }
     const digest = { purged: purgeReceipt.purgedIds }
     const purgeKey = sideEffectKey(runId, "alpha-purge", sha256Json(digest))
     if (!hasSideEffect(journal, purgeKey)) {
@@ -1532,17 +1551,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     throw new Error(`run stuck at unexpected phase ${journal.phase}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const code = /workspace lock/iu.test(message)
-      ? "lock-held"
-      : /Conflicting (replay|side-effect)/iu.test(message)
-        ? "journal-conflict"
-        : /config|schema|migrate/iu.test(message)
-          ? "config-error"
-          : /Twitter|needs headful|re-auth/iu.test(message)
-            ? "collector-auth"
-            : /Cursor CLI|session failed/iu.test(message)
-              ? "agent-error"
-              : "run-error"
+    const code = classifyRunFailureCode(message)
 
     // Release a researching claim so a mid-flight failure cannot permanently stuck the queue
     if (researchDue) {

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest"
 import { aggregateClosedCandles } from "../../src/collectors/market/aggregate.js"
 import type { OhlcvCandle } from "../../src/collectors/market/geckoterminal.js"
 import { mapGoPlus, mapRugCheck, DEFAULT_SECURITY_THRESHOLDS } from "../../src/collectors/market/security.js"
-import { sanitizeFailureMessage, createRunJournal, markRunFailed, advanceRunJournal } from "../../src/orchestrator/journal.js"
+import {
+  sanitizeFailureMessage,
+  classifyRunFailureCode,
+  createRunJournal,
+  markRunFailed,
+  advanceRunJournal,
+} from "../../src/orchestrator/journal.js"
 import { JOBS } from "../../src/orchestrator/jobs.js"
 
 function candle(start: number, close = 1): OhlcvCandle {
@@ -37,7 +43,7 @@ describe("aggregateClosedCandles", () => {
   })
 })
 
-describe("LP lock caution", () => {
+describe("LP lock and mint caution", () => {
   it("passes with low-lp-lock alone", () => {
     const go = mapGoPlus({
       result: {
@@ -53,6 +59,20 @@ describe("LP lock caution", () => {
     expect(go.status).toBe("pass")
     expect(go.hardFail).toBe(false)
     expect(go.flags).toContain("low-lp-lock")
+  })
+
+  it("passes with mintable alone", () => {
+    const go = mapGoPlus({
+      result: {
+        "0xabc": {
+          is_mintable: "1",
+          is_open_source: "1",
+        },
+      },
+    })
+    expect(go.status).toBe("pass")
+    expect(go.hardFail).toBe(false)
+    expect(go.flags).toContain("mintable")
   })
 
   it("still hard-fails honeypot with low lp", () => {
@@ -72,13 +92,14 @@ describe("LP lock caution", () => {
     expect(go.flags).toContain("low-lp-lock")
   })
 
-  it("rugcheck surfaces low-lp-lock without hardFail alone", () => {
+  it("rugcheck surfaces mint-authority and low-lp-lock without hardFail alone", () => {
     const rug = mapRugCheck({
-      mintAuthority: null,
+      mintAuthority: "authority",
       freezeAuthority: null,
       lpLockedPct: 10,
     }, { ...DEFAULT_SECURITY_THRESHOLDS, lpLockedMin: 0.8 })
     expect(rug.hardFail).toBe(false)
+    expect(rug.flags).toContain("mint-authority")
     expect(rug.flags).toContain("low-lp-lock")
   })
 })
@@ -99,6 +120,19 @@ describe("journal failure", () => {
     expect(journal.status).toBe("failed")
     expect(journal.phase).toBe("collected")
     expect(journal.failure?.code).toBe("collector-error")
+  })
+
+  it("does not treat Playwright launch-config flags as config-error", () => {
+    const playwright =
+      "locator.evaluateAll: Target page, context or browser has been closed "
+      + "Browser logs: <launching> chrome-headless-shell --disable-field-trial-config"
+    expect(classifyRunFailureCode(playwright)).toBe("collector-error")
+  })
+
+  it("still classifies real config/schema failures", () => {
+    expect(classifyRunFailureCode("invalid config: missing twitter")).toBe("config-error")
+    expect(classifyRunFailureCode("config schema mismatch")).toBe("config-error")
+    expect(classifyRunFailureCode("migrateConfig refused")).toBe("config-error")
   })
 })
 

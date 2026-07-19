@@ -28,12 +28,52 @@ describe("discord quota", () => {
   })
 
   it("blocks when user cap reached", () => {
-    let file = emptyRequestsFile("2026-07-19T12:00:00.000Z")
+    const file = emptyRequestsFile("2026-07-19T12:00:00.000Z")
     for (let i = 0; i < 5; i += 1) {
-      file = consumeQuota(file, "user1", "2026-07-19T12:00:00.000Z")
+      file.requests.push({
+        requestId: String(i),
+        guildId: "100",
+        channelId: "200",
+        messageId: String(i),
+        userId: "user1",
+        subject: `solana:tok${i}`,
+        status: "completed",
+        createdAt: "2026-07-19T12:00:00.000Z",
+        updatedAt: "2026-07-19T12:00:00.000Z",
+        quotaDay: "2026-07-19",
+        deliveredPartKeys: [],
+      })
     }
     const check = quotaAllows(file, "user1", cfg, "2026-07-19T12:00:00.000Z")
     expect(check.ok).toBe(false)
+  })
+
+  it("does not charge failed requests toward daily caps", () => {
+    const file = emptyRequestsFile("2026-07-19T12:00:00.000Z")
+    for (let i = 0; i < 5; i += 1) {
+      file.requests.push({
+        requestId: String(i),
+        guildId: "100",
+        channelId: "200",
+        messageId: String(i),
+        userId: "user1",
+        subject: `solana:tok${i}`,
+        status: i < 4 ? "completed" : "failed",
+        createdAt: "2026-07-19T12:00:00.000Z",
+        updatedAt: "2026-07-19T12:00:00.000Z",
+        quotaDay: "2026-07-19",
+        deliveredPartKeys: [],
+      })
+    }
+    // Stale counters would say 5; recount must ignore the failure
+    file.dailyByUser = { user1: 5 }
+    file.dailyServer = 5
+    const check = quotaAllows(file, "user1", cfg, "2026-07-19T12:00:00.000Z")
+    expect(check.ok).toBe(true)
+    if (check.ok) {
+      expect(check.file.dailyByUser["user1"]).toBe(4)
+      expect(check.file.dailyServer).toBe(4)
+    }
   })
 
   it("counts queued and running toward queue depth", () => {

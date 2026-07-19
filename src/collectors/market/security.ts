@@ -107,11 +107,10 @@ export function mapGoPlus(payload: unknown, thresholds = DEFAULT_SECURITY_THRESH
   if (enabled(fields["anti_whale_modifiable"])) flags.push("anti-whale")
   if (enabled(fields["is_blacklisted"])) flags.push("blacklist")
   if (enabled(fields["is_open_source"]) === false) flags.push("unverified-source")
-  // low-lp-lock is caution-only: still surfaced, never hardFail by itself
+  // mintable and low-lp-lock are caution-only: surfaced, never hardFail alone
   const hardFail = flags.some((flag) => [
     "honeypot",
     "cannot-sell-all",
-    "mintable",
     "owner-can-change-balance",
     "selfdestruct",
     "sell-tax",
@@ -128,13 +127,36 @@ export function mapRugCheck(payload: unknown, thresholds = DEFAULT_SECURITY_THRE
   const concentration = ratio(result["top10HolderPercent"]) ?? ratio(result["top10HoldersPercent"])
   if (lp !== undefined && lp < thresholds.lpLockedMin) flags.push("low-lp-lock")
   if (concentration !== undefined && concentration > thresholds.holderTop10Max) flags.push("top-holder-concentration")
-  // low-lp-lock is caution-only on Solana too
+  // mint-authority and low-lp-lock are caution-only on Solana
   const hardFail = flags.some((flag) => [
-    "mint-authority",
     "freeze-authority",
     "top-holder-concentration",
   ].includes(flag))
   return { status: hardFail ? "hard-fail" : "pass", hardFail, flags, provider: "rugcheck" }
+}
+
+/** Active mint flags that need model classification before track is allowed */
+export const ACTIVE_MINT_FLAGS = ["mintable", "mint-authority"] as const
+
+export function hasActiveMintFlag(flags: readonly string[]): boolean {
+  return flags.some((flag) => (
+    flag === "mintable" || flag === "mint-authority"
+  ))
+}
+
+/**
+ * Host-side contextual mint rule: mintable memecoins stay blocked.
+ * Non-meme classifications may track when the scanner only flagged mint risk.
+ * Missing classification fails closed when mint is active.
+ */
+export function mintTrackBlockReason(
+  flags: readonly string[],
+  projectClassification: string | undefined,
+): "mintable-memecoin" | "mintable-missing-classification" | undefined {
+  if (!hasActiveMintFlag(flags)) return undefined
+  if (projectClassification === undefined) return "mintable-missing-classification"
+  if (projectClassification === "memecoin") return "mintable-memecoin"
+  return undefined
 }
 
 export function preflightMarketQuality(

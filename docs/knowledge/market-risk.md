@@ -36,8 +36,11 @@ status: active
 - Daily Fear & Greed; validate timestamp freshness
 
 ## GoPlus
-- Token security auth + chain discovery; exact hard/caution mappings
+- Token security auth + chain discovery; exact hard/caution mappings in
+  security-gate.md (ADR 011: mintable/mint-authority are caution-only;
+  host still blocks mintable memecoins after model classification)
 - Quota failures fail closed for gate decisions
 
 ## RugCheck
 - Solana scanner; capture raw + mapped flags; honour 429
+- Mint authority is caution-only (same ADR 011 rule as GoPlus mintable)

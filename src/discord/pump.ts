@@ -4,10 +4,10 @@ import { WorkspaceLock } from "../lib/lock.js"
 import { discordLayout } from "./paths.js"
 import { createDiscordStore, pruneOldRequests, rolloverQuotaDay } from "./store.js"
 import {
-  consumeQuota,
   countActiveForUser,
   DISCORD_ERRORS,
   quotaAllows,
+  recountDailyQuota,
 } from "./quota.js"
 import type { DiscordRequestRecord } from "./schemas.js"
 import { runDiscordResearch } from "./research-run.js"
@@ -23,6 +23,7 @@ import {
 import { subscribeAfterResearch } from "./watchlist.js"
 import { tokenKey } from "./schemas.js"
 import { loadConfig } from "../lib/config.js"
+import { extractResearchBrief } from "./research-brief.js"
 
 async function withStoreLockRetry<T>(
   lockPath: string,
@@ -105,7 +106,6 @@ export async function acceptDiscordRequest(args: Readonly<{
       }
     }
 
-    file = consumeQuota(file, args.userId, nowIso)
     const request: DiscordRequestRecord = {
       requestId: args.messageId,
       guildId: args.guildId,
@@ -122,6 +122,7 @@ export async function acceptDiscordRequest(args: Readonly<{
       deliveredPartKeys: [],
     }
     file.requests.push(request)
+    file = recountDailyQuota(file, nowIso)
     await store.saveRequests(file)
     return { accepted: true as const, request }
   })
@@ -213,6 +214,18 @@ export async function processNextDiscordRequest(args: Readonly<{
     let reportText = result.reportText ?? ""
     if (result.securityHardFail) {
       reportText = `${reportText}\n\n**Security hard-fail detected.** No watch subscription was created.`
+    } else if (!result.subscribeAllowed) {
+      const reason = result.subscribeSkipReason
+      const note = reason === "mintable-memecoin"
+        ? "**Mintable memecoin — watch subscription skipped.**"
+        : reason === "mintable-missing-classification"
+          ? "**Mint risk present without project classification — watch subscription skipped.**"
+          : reason === "verdict-missing" || reason === "verdict-identity-mismatch"
+            ? "**No validated track verdict — watch subscription skipped.**"
+            : reason?.startsWith("verdict-")
+              ? `**Model verdict was ${reason.slice("verdict-".length)} — watch subscription skipped.**`
+              : "**Watch subscription skipped.**"
+      reportText = `${reportText}\n\n${note}`
     }
 
     const replyStarted = Date.now()
@@ -234,10 +247,11 @@ export async function processNextDiscordRequest(args: Readonly<{
       return "processed"
     }
 
-    if (result.identity && !result.securityHardFail && result.baseline) {
+    if (result.identity && result.subscribeAllowed && result.baseline) {
       const subscribeStarted = Date.now()
       try {
         const baseline = result.baseline
+        const researchBrief = reportText ? extractResearchBrief(reportText) : undefined
         const subLock = await withStoreLockRetry(layout.lock, async () => {
           let watch = store.loadWatchlist()
           const sub = subscribeAfterResearch({
@@ -249,6 +263,7 @@ export async function processNextDiscordRequest(args: Readonly<{
             messageId: request.messageId,
             nowIso: systemClock.nowIso(),
             baseline,
+            ...(researchBrief ? { researchBrief } : {}),
             securityHardFail: false,
           })
           watch = sub.file

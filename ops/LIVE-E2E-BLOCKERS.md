@@ -52,8 +52,21 @@ reference/defense-in-depth only — not the production isolation boundary.
   `telegram:cryptolyxecalls`). Stale `alpha-queue/telegram` product-blog junk purged.
 - Seed (`config/seed.example.json`) matches: all example channels `mode: "preview"`.
 - List-scan now writes `list-scan-alpha-manifest` (paths only) so alpha-queue
-  digestion is not review-only.
-
+  digestion is not review-only. Manifests are capped at 500 items with a
+  `truncated=N` marker; backlog above the cap drains across successful digests
+  (do not mass-purge). 2026-07-19 afternoon list-scans failed on uncapped
+  writes (`too_big`) and Playwright browser-closed mid-scrape; runtime now
+  caps the manifest, relaunches the browser once on closed-target death, and
+  classifies browser-closed as `collector-error` (not `config-error`).
+  Operator-verified recover seal: `list-scan-2026-07-19T15-47-30-155Z`
+  (`list-scan-alpha-manifest` items=500 last=`truncated=30`, fresh FYP +
+  `x-fyp-eligible`). Alpha-queue stayed ~500 because every agent digest used
+  narrative-shaped `items` (Zod reject → `purged=0`); host now records
+  `invalidReason=schema-invalid` and chat notes `alphaDigestInvalid` /
+  `alphaPurged`. Skills teach the correct `entries` + contentHash contract —
+  **sync `agent/skills/list-scan` and `review` into `~/.trenchcoat/agent/skills/`**
+  (installer does not), redeploy CLI for prompt/receipt changes, then wait for
+  the next list-scan/review. Do **not** mass-delete the queue.
 ## Still operator-driven
 
 - GramJS channel session auth (`tc auth telegram-channels`): still unfinished.

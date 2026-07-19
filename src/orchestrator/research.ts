@@ -283,7 +283,7 @@ export async function runResearchPasses(args: Readonly<{
     "Final agent.md may include a detailed Sentiment & popularity section from twitter-* inbox files when present.",
     `Write the final report to reports/${args.runId}/agent.md.`,
     `Write a chat-facing summary only to reports/${args.runId}/chat-summary.md — never write reports/chat/ directly. Aim for one Discord message (~≤1800 chars). Preferred sections only: "<TICKER> research", then TL;DR, X, Web, Read. Web = prose overview (no link/result lists). X = tone/themes only (no @handles, post lists, engagement tables, or sample disclaimers). Add Market/Security/Risk only if material and not already in TL;DR; other short sections OK if genuinely useful. No run-id meta, no "Agent context", no "(untrusted)" labels.`,
-    `If you propose watchlist verdicts, write them only to reports/${args.runId}/decision-proposals.json — never mutate state/.`,
+    `Always write reports/${args.runId}/decision-proposals.json with a DecisionProposalFile (schema 1) for this subject — never mutate state/. Include card.projectClassification (memecoin|utility|infrastructure|unknown). Active mint (mintable/mint-authority caution flags) is not an automatic hard-fail: weigh capped emissions, reward schedules, and authority controls; set mintAssessment {active,justified,rationale}. Host still blocks track when mint is active and classification is memecoin, or when classification is missing.`,
     "Do not fetch. Do not write web-search-requests.json on this pass.",
   ].join(" ")
 
@@ -473,7 +473,11 @@ export async function runOperatorResearchNow(args: Readonly<{
           join(runDir, "gate-receipts", `${resolved.receipt.receiptId.slice(7, 23)}.json`),
           resolved.receipt as never,
         )
-        return { receiptId: resolved.receiptId, status: resolved.status }
+        return {
+          receiptId: resolved.receiptId,
+          status: resolved.status,
+          flags: resolved.receipt.flags,
+        }
       }
       const planned = await applyDecisionProposals({
         agentRoot: args.paths.agentRoot,

@@ -36,8 +36,11 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P26 | recall | What does `tc precheck <job>` do vs a host precondition skip inside `runJob`? | Precheck is lock-free best-effort (exit 10 = skip); `runJob` re-checks under lock and appends `archive/skips/<job>.jsonl` with `runId: none` (no journal). Host-gated: chart/watchlist/research/wallets/review → orchestrator.md, development.md | pass | 2026-07-18 |
 | P28 | recall | How does Discord interactive research differ from Discord market broadcasts? | Two surfaces: router webhook `DISCORD_WEBHOOK_URL` (budgeted broadcast fanout) vs Gateway `DISCORD_RESEARCH_BOT_TOKEN` + `tc listen discord` (isolated `~/.trenchcoat/discord/`, ✅ start reaction then final-only text replies, INV-D1, ADR 010) → discord-research.md, knowledge/discord.md | pass | 2026-07-19 |
 | P29 | recall | Can Fomo X-source classification directly add accounts to the managed X list or follow them? | No — host upserts nominations only; `fomo-x-source-review` returns strict JSON; merge fail-closes on missing evidence; shiller/`both` need deterministic historical calls + existing gates; narrative/`both` use 14-day probation before host engagement executor → ADR 009, source-lifecycle.md, knowledge/fomo-family.md | pass | 2026-07-19 |
-| P30 | recall | Operator Telegram DMs work — does that mean TG alpha channels are ingesting? Which launchd unit / config / mode? | No — three surfaces. Alpha = `com.trenchcoat.channels` + `telegram_channels[]` (prefer `mode: "preview"`); operator DMs = `com.trenchcoat.listener` + bot token; fanout = `com.trenchcoat.router`. All-`gramjs` + missing session → idle (`preview:0`). Handle `telegram` is the product blog. Digestion: `list-scan-alpha-manifest` / `review-alpha-manifest` → `alpha-digest.json`. Restart **channels** after config change → knowledge/telegram.md, collectors.md, runbook.md | pass | 2026-07-19 |
+| P30 | recall | Operator Telegram DMs work — does that mean TG alpha channels are ingesting? Which launchd unit / config / mode? | No — three surfaces. Alpha = `com.trenchcoat.channels` + `telegram_channels[]` (prefer `mode: "preview"`); operator DMs = `com.trenchcoat.listener` + bot token; fanout = `com.trenchcoat.router`. All-`gramjs` + missing session → idle (`preview:0`). Handle `telegram` is the product blog. Digestion: manifest → `alpha-digest.json` with **`entries` + contentHashes** (never narrative `items`); wrong shape → `invalidReason` / purge 0. Sync skills into `~/.trenchcoat/agent/skills/`. Restart **channels** after config change → knowledge/telegram.md, collectors.md, runbook.md | pass | 2026-07-19 |
 | P31 | recall | Discord research reply landed but later requests stay `queued` — what usually holds the pump, and is watch baseline a second X scrape? | `.worker.lock` held for whole unit; hung Playwright X in dossier (or legacy post-reply scrape) blocks FIFO. Reclaim orphans on listener start; purge = mark `failed` + restart worker. Baseline is dossier-derived (no second Dex/security/X). Skills under `discord/agent/skills/` do not auto-sync on deploy → discord-research.md ops, knowledge/discord.md | | 2026-07-19 |
+| P34 | recall | Does active mint authority hard-fail the security gate? When is a mintable token blocked from tracking / Discord subscribe? | No — `mintable`/`mint-authority` are caution-only (like `low-lp-lock`). Host blocks `track`/subscribe when mint is active and model `projectClassification` is `memecoin`, or classification is missing; justified utility/infrastructure may track. Contextual reject does not rug-dock. Discord subscribe also requires a validated `track` verdict (`evaluateResearchSubscribe`) → ADR 011, security-gate.md, INV-S9 | | 2026-07-19 |
+| P35 | recall | Chat says list-scan wrote an alpha digest / “processed” Telegram — were queue messages purged? Why can backlog stay ~500? | Only host `alpha-digest-receipt` with `purgedIds` counts. Agent `reports/.../alpha-digest.json` with narrative `items` fails Zod (`invalidReason=schema-invalid`) and purges nothing (INV-Q1/Q2). Check chat `alphaPurged` / `alphaDigestInvalid`. Do not mass-delete the queue. `analysis-only` + `repeated_two_hash_stale` is **Farcaster**, not X list-scan → telegram.md, orchestrator.md § Alpha-queue, INV-Q1 | | 2026-07-19 |
+| P36 | recall | Do list-scan and farcaster-scan share one jitter range? After shortening cadence, why might the old schedule still block runs? | No — per-job `MIN_SEC`/`MAX_SEC` in `ops/run-job-jittered.sh` (list-scan [30m, 1h45m]; farcaster [3h15m, 4h45m] as of 2026-07-19). Success backoff persists in `~/.trenchcoat/var/<job>.next` across redeploy; delete to apply immediately. TG preview cycle is `channels.ts` default + **channels** restart; verify startup `pollMs` → runbook.md § Tuning social scan cadence, telegram.md | | 2026-07-19 |
 
 ## Failure log
 
@@ -147,3 +150,24 @@ patterns become visible.
   `runtime.previous` (runbook/LIVE-E2E fixed); empty `{}` holdout replay removed
   (epochs need decision-time signals or skip). TECHNICAL-SPEC §8 updated. Added
   P32/P33. Gotchas empty.
+- 2026-07-19 session-learning (contextual mint): ADR 011 — mintable/mint-authority
+  caution-only; host blocks mintable memecoins via `projectClassification`;
+  Discord subscribe requires validated `track` (`evaluateResearchSubscribe`);
+  no rug-dock on contextual reject. Docs already in security-gate / INV-S9 /
+  discord-research from the change; added ADR + P34; market-risk pointer.
+  Gotchas empty.
+- 2026-07-19 session-learning (list-scan outage + alpha backlog): Afternoon
+  list-scan died on uncapped alpha manifest (`too_big`) then Playwright
+  browser-closed (false `config-error` from `--disable-field-trial-config`).
+  Cap + `scrapeTargetsWithRecovery` + `classifyRunFailureCode` landed.
+  ~500 TG queue backlog was **zero purges** — agent wrote narrative `items` into
+  `alpha-digest.json`; host now `invalidReason` + chat notes; skills teach
+  `entries`+hashes; synced to `~/.trenchcoat/agent/skills/`. FC
+  `analysis-only`/`repeated_two_hash_stale` ≠ X. Updated INV-Q1/Q2, telegram,
+  x-playwright, LIVE-E2E; P30 refreshed; added P35. Gotchas empty.
+- 2026-07-19 session-learning (scan cadence bump): list-scan jitter → [30m, 1h45m];
+  TG preview default → 30m (`pollMs:1800000`); farcaster unchanged in same script.
+  Ops: `.next` files gate until deleted; partial install can leave channels
+  unloaded after listener bootstrap error 5 — verify + manual bootstrap. Added
+  runbook § Tuning social scan cadence, x-playwright cadence note, telegram
+  pollMs verify, P36. Gotchas empty.

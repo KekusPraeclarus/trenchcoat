@@ -9,6 +9,7 @@ import {
   resolveResearchSubject,
 } from "../orchestrator/research-collect.js"
 import { runResearchPasses } from "../orchestrator/research.js"
+import { evaluateResearchSubscribe } from "../orchestrator/research-verdict.js"
 import { captureIntegritySnapshot, assertAgentIntegrity } from "../orchestrator/integrity.js"
 import { buildHostChatFacts, promoteResearchChatReport } from "../orchestrator/chat-report.js"
 import { ensureDiscordAgentWorkspace, readDiscordChatReport } from "./agent-setup.js"
@@ -23,6 +24,9 @@ export type DiscordResearchOutcome = Readonly<{
   reportText?: string
   identity?: CanonicalIdentity
   securityHardFail?: boolean
+  /** Host-validated subscribe decision from structured research verdict */
+  subscribeAllowed?: boolean
+  subscribeSkipReason?: string
   error?: string
   shortlist?: CanonicalIdentity[]
   /** Watch baseline from the research dossier — no second collect */
@@ -153,6 +157,17 @@ export async function runDiscordResearch(args: Readonly<{
       }
     }
 
+    const subscribe = evaluateResearchSubscribe({
+      agentRoot,
+      runId,
+      identity,
+      security: {
+        status: dossier.security.status,
+        hardFail: dossier.security.hardFail,
+        flags: dossier.security.flags,
+      },
+    })
+
     const reportText = readDiscordChatReport(agentRoot, runId)
       ?? `# Research\n\nSubject: ${args.input.subject}\n`
     log.info("discord research stage", {
@@ -160,6 +175,8 @@ export async function runDiscordResearch(args: Readonly<{
       runId,
       ms: stageMs(totalStarted),
       status: "completed",
+      subscribe: subscribe.subscribe,
+      ...(subscribe.reason ? { subscribeReason: subscribe.reason } : {}),
     })
     return {
       status: "completed",
@@ -167,6 +184,8 @@ export async function runDiscordResearch(args: Readonly<{
       reportText,
       identity,
       securityHardFail,
+      subscribeAllowed: subscribe.subscribe,
+      ...(subscribe.reason ? { subscribeSkipReason: subscribe.reason } : {}),
       baseline,
     }
   } catch (error) {

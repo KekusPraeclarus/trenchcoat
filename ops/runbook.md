@@ -54,6 +54,31 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 | `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |
 | `channels` (KeepAlive) | always — alpha-channel preview poller (~30m cycle; `tc listen channels`) |
 
+### Tuning social scan cadence
+
+Cadence lives in code/ops scripts, not `config.json`:
+
+| Surface | Where to edit | Apply |
+|---|---|---|
+| X `list-scan` | `ops/run-job-jittered.sh` — `list-scan` branch (`MIN_SEC`/`MAX_SEC`) | Redeploy via `install-launchd.sh`; clears stale gate if you remove `~/.trenchcoat/var/list-scan.next` |
+| Farcaster `farcaster-scan` | Same script — separate `farcaster-scan` branch (still 3h15m–4h45m as of 2026-07-19) | Same; `~/.trenchcoat/var/farcaster-scan.next` |
+| TG alpha preview | `src/collectors/telegram/channels.ts` — default `pollIntervalMs` | Redeploy runtime + `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels` (not listener) |
+
+Launchd polls jittered jobs every 15m; `run-job-jittered.sh` no-ops until
+`~/.trenchcoat/var/<job>.next` (written after each **successful** run). Changing
+the script does not retroactively shorten an existing `.next` backoff — delete
+that file when you need the new range immediately.
+
+Verify after deploy: channels startup log must show intended `pollMs` (e.g.
+`1800000` = 30m); `~/.trenchcoat/bin/run-job-jittered` contains the new
+`MIN_SEC`/`MAX_SEC` for each job branch.
+
+If `install-launchd.sh` exits non-zero mid-keepalive bootstrap (`Bootstrap
+failed: 5` on `com.trenchcoat.listener` is common when already running), later
+units (`com.trenchcoat.channels`, router) may never load — confirm with
+`launchctl print gui/$(id -u)/com.trenchcoat.channels` and bootstrap +
+`kickstart -k` if missing (same recovery as Discord listener notes below).
+
 ### Operator research (Telegram / CLI)
 
 Ask the chat agent to research a token (or send `/research <subject>` /

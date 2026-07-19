@@ -32,8 +32,9 @@ webhook broadcasts (ADR 010).
   excess gets a terminal queue-full error. Daily caps still apply on accept
 - **Start signal** — ✅ (`white_check_mark`) reaction when claimed
   (`queued` → `running`); queued messages stay silent until then
-- **Model** — `chat.discord.model` (default `composer-2.5-fast`); does not change
-  Telegram / main orchestrator sessions
+- **Model** — `chat.discord.model` (default `composer-2.5-fast`) for the initial
+  research reply only; six-hour watch updates use `composer-2.5` via a host-side
+  update writer. Does not change Telegram / main orchestrator sessions.
 - **Final-only text replies** — no typing/progress messages; next bot message is
   the result or one terminal error (quota / queue-full / bot-busy). Renewal ack
   is the sole non-result text reply
@@ -70,7 +71,8 @@ Malformed state files are quarantined and the process stops (fail closed).
 1. `extractDiscordResearchIntent` (`src/discord/intent.ts`) — stricter than
    Telegram: CA required; shares extraction helpers via
    `src/chat/research-intent-core.ts`
-2. `acceptDiscordRequest` — quota + per-user queue depth; durable `queued` accept
+2. `acceptDiscordRequest` — quota + per-user queue depth; durable `queued` accept.
+   Daily caps charge queued/running/completed only (failures do not consume).
 3. `processNextDiscordRequest` — oldest queued → running under worker lock; ✅
 4. `runDiscordResearch` — resolve + collect + `runResearchPasses` (Discord model)
    under `discord/agent/`; **no** main queue, proposals, INDEX, or outbox.
@@ -89,13 +91,22 @@ Malformed state files are quarantined and the process stops (fail closed).
    (same market/security/X evidence) — no second DexScreener/security/X collect.
 
 Security hard-fail still delivers the report but skips watch subscription.
+Otherwise subscription requires a host-validated `track` verdict from
+`decision-proposals.json` (`evaluateResearchSubscribe`): missing/malformed
+verdicts, `ignore`/`revisit`, mintable memecoins, and mint-without-classification
+all skip subscribe while still delivering the report.
 
 ## Watchlist and monitor
 
 - 30-day subscriptions per `(guildId, userId, chain, tokenAddress)`; renew via
   reply `renew` / `renew watch` / `keep watching` on own anchor (7-day grace)
-- Monitor collects market/security/X without a model; host-rendered diffs when
-  material thresholds cross (see `src/discord/materiality.ts`)
+- On subscribe, host stores a bounded `researchBrief` (≤1200 chars, TL;DR-first)
+  from the delivered research reply for later update context
+- Monitor collects market/security/X without a model; strict material thresholds
+  in `src/discord/materiality.ts` (price ≥50%, liquidity/volume/fdv 2×/0.5×,
+  X authors net +50/−100, engagement 2×/0.5×, security always)
+- Material diffs trigger `composer-2.5` watch-update writer (`PERSONA_VOICE`,
+  fail-closed to facts-only bullets if the session rejects)
 - Resumable scan cursor in `monitor-cursor.json`
 
 ## Source files

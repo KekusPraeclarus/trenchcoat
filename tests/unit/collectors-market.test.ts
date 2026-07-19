@@ -54,7 +54,17 @@ describe("market collectors", () => {
   it("maps hard security flags and keeps cautions non-blocking", () => {
     expect(mapGoPlus({ result: { is_honeypot: "1" } }).status).toBe("hard-fail")
     expect(mapGoPlus({ result: { buy_tax: "0.10", is_open_source: "1" } })).toMatchObject({ status: "pass", flags: ["buy-tax"] })
-    expect(mapRugCheck({ mintAuthority: "authority" }).status).toBe("hard-fail")
+    expect(mapGoPlus({ result: { is_mintable: "1", is_open_source: "1" } })).toMatchObject({
+      status: "pass",
+      hardFail: false,
+      flags: ["mintable"],
+    })
+    expect(mapRugCheck({ mintAuthority: "authority" })).toMatchObject({
+      status: "pass",
+      hardFail: false,
+      flags: ["mint-authority"],
+    })
+    expect(mapRugCheck({ freezeAuthority: "authority" }).status).toBe("hard-fail")
   })
 
   it("fails market quality for one-sided or thin pairs", () => {

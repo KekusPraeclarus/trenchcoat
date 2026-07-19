@@ -40,7 +40,50 @@ Scan FYP + operator discovery lists and curate the feed with likes/follows.
 6. `reports/<run-id>/alpha-digest.json` when you retain durable knowledge from
    `alpha-queue/` (Telegram or other queue sources). Host validates byte-match
    and purges accepted messages only (INV-Q1). Skip when the alpha manifest is
-   `pendingAlpha=(none)` or nothing was worth keeping.
+   `pendingAlpha=(none)` or nothing was worth keeping. When the manifest shows
+   `truncated=N` or a large pending set, prioritize a bounded digest batch (up to
+   500 entries) of listed paths before engagement fluff.
+
+### Alpha digest (`reports/<run-id>/alpha-digest.json`)
+
+Host schema — **`entries` only**. Never use a top-level `items` key. Never put
+narrative `slug` / `kind` / `status` / `summary` fields here (those belong in
+`narrative-proposals.jsonl` or research prose).
+
+Workflow:
+
+1. Write or update durable `state/research/<token>.md` (or another `state/…`
+   record) citing telegram provenance from the queue message.
+2. Hash **exact file bytes** of the queue message and each record
+   (`sha256:` + hex of the bytes on disk, including trailing newline).
+3. Emit one `entries[]` row per message you want purged.
+
+```json
+{
+  "schema": 1,
+  "runId": "<same run id>",
+  "proposedAt": "<ISO>",
+  "entries": [
+    {
+      "provenance": "telegram:ChannelHandle",
+      "channel": "ChannelHandle",
+      "messageId": "9133",
+      "contentHash": "sha256:<hex of alpha-queue/ChannelHandle/9133.json bytes>",
+      "records": [
+        {
+          "path": "state/research/TOKEN.md",
+          "contentHash": "sha256:<hex of that file bytes after your write>"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `channel` + `messageId` must match `alpha-queue/<channel>/<messageId>.json`
+- `records[].path` must be under `state/` and exist after your write
+- Wrong shape → host sets `invalidReason` and purges **nothing**
+- Skip the file entirely when there is nothing to retain (missing digest ≠ error)
 
 ### Research candidates (`reports/<run-id>/research-candidates.json`)
 

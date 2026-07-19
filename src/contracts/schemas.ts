@@ -44,6 +44,20 @@ export type SnapshotEnvelope = z.infer<typeof SnapshotEnvelopeSchema>
 
 export const SignalUseSchema = z.enum(["driver", "confirm", "veto", "observed"])
 export const VerdictSchema = z.enum(["track", "drop", "ignore", "revisit"])
+export type Verdict = z.infer<typeof VerdictSchema>
+export const ProjectClassificationSchema = z.enum([
+  "memecoin",
+  "utility",
+  "infrastructure",
+  "unknown",
+])
+export type ProjectClassification = z.infer<typeof ProjectClassificationSchema>
+export const MintAssessmentSchema = z.object({
+  active: z.boolean(),
+  justified: z.boolean(),
+  rationale: z.string().min(1).max(500),
+})
+export type MintAssessment = z.infer<typeof MintAssessmentSchema>
 export const WatchlistStatusSchema = z.enum([
   "tracking",
   "watching",
@@ -69,6 +83,9 @@ export const DecisionCardSchema = z.object({
   clusters: z.number().int().nonnegative(),
   countercase: z.string().min(1).max(500),
   gate: z.string().min(1).max(500),
+  /** Required by host when scanner flags active mint and verdict is track */
+  projectClassification: ProjectClassificationSchema.optional(),
+  mintAssessment: MintAssessmentSchema.optional(),
   policyVersion: SafeIdSchema.optional(),
   assignment: z.enum(["baseline", "candidate", "shadow"]).optional(),
 })
@@ -1170,6 +1187,8 @@ export const AlphaDigestReceiptSchema = z.object({
     reason: z.string().max(280),
   })).max(500),
   purgedIds: z.array(SafeIdSchema).max(500),
+  /** Set when the digest file exists but fails Zod or runId binding — queue untouched */
+  invalidReason: z.enum(["schema-invalid", "run-id-mismatch"]).optional(),
 })
 export type AlphaDigestReceipt = z.infer<typeof AlphaDigestReceiptSchema>
 

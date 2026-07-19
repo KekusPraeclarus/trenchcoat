@@ -323,8 +323,10 @@ Accepted quality improvements beyond the base flow, in adoption order. Items
 1. **Token security pre-filter (v1)** — before any research verdict: GoPlus token
    security API (EVM chains, free tier — the same source DexScreener's own risk
    warnings use) and RugCheck (Solana, keyless basic report). Hard-gate on
-   honeypot/mint-authority/unlocked-LP flags; a token failing the gate is `ignore`
-   with the flag cited, no LLM time spent. Exact mapping: security-gate.md.
+   honeypot / freeze / balance-mutation / excessive sell-tax flags; active mint
+   and low LP lock are caution-only (mintable memecoins still blocked host-side
+   after model classification). A token failing the gate is `ignore` with the
+   flag cited. Exact mapping: security-gate.md.
 2. **Canonical identity resolution (v1)** — CA-first resolution to
    `(chain, token_address, pair_address)` before anything is counted or
    researched; ambiguous tickers get best-effort model-judged disambiguation

@@ -1202,7 +1202,7 @@ async function cmdHarness(args: string[]): Promise<void> {
         },
       })
       if (!waited.ok) {
-        console.log(JSON.stringify({ ok: false, ...waited }, null, 2))
+        console.log(JSON.stringify({ ...waited, ok: false }, null, 2))
         process.exit(2)
       }
     }

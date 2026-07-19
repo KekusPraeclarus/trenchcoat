@@ -21,14 +21,18 @@ Disposable deep research sub-session for operator chat / on-demand research.
    notes. Write `reports/<run-id>/agent.md` and a chat-facing summary only to
    `reports/<run-id>/chat-summary.md` (never `reports/chat/` — the host copies
    that path).
-3. Watchlist mutations (optional): only when proposing `track` / `drop` /
-   `ignore` / `revisit`, write `reports/<run-id>/decision-proposals.json` as
-   `DecisionProposalFile` — `{ schema:1, runId, proposedAt, proposals:[{
-   schema:1, proposalId, runId, proposedAt, card:{ decisionId, runId,
-   decisionTs, verdict, thesis, horizonHours, invalidation, drivers,
-   confidence, signalUse, sources, clusters, countercase, gate, optional
-   identity }, provenanceIds }] }`. Omit the file when not mutating watchlist.
-   Never invent shapes like `{ action, subject, rationale }`.
+3. Watchlist verdict (required): always write
+   `reports/<run-id>/decision-proposals.json` as `DecisionProposalFile` —
+   `{ schema:1, runId, proposedAt, proposals:[{ schema:1, proposalId, runId,
+   proposedAt, card:{ decisionId, runId, decisionTs, verdict, thesis,
+   horizonHours, invalidation, drivers, confidence, signalUse, sources,
+   clusters, countercase, gate, projectClassification
+   (memecoin|utility|infrastructure|unknown), optional mintAssessment
+   {active,justified,rationale}, optional identity }, provenanceIds }] }`.
+   Mintable / mint-authority scanner flags are cautions — judge emissions,
+   reward mechanics, and controls; host still blocks track for mintable
+   memecoins or missing classification. Never invent shapes like
+   `{ action, subject, rationale }`.
 
 ## agent.md (dossier)
 

@@ -55,6 +55,8 @@ export const DiscordWatchTokenSchema = z.object({
   chain: DiscordChainSchema,
   tokenAddress: z.string().min(32).max(128),
   symbolDisplay: z.string().max(32).optional(),
+  /** Truncated thesis from the research reply — monitor update writer context */
+  researchBrief: z.string().max(1200).optional(),
   subscriptions: z.array(DiscordSubscriptionSchema).max(500),
   lastNotifiedAt: IsoTimestampSchema.optional(),
 })

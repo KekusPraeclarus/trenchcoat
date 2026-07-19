@@ -9,7 +9,7 @@ import {
 } from "./render.js"
 import type { DiscordStore } from "./store.js"
 import type { DiscordRequestRecord } from "./schemas.js"
-import { DISCORD_ERRORS } from "./quota.js"
+import { DISCORD_ERRORS, recountDailyQuota } from "./quota.js"
 import { discordLayout } from "./paths.js"
 
 async function withStoreLockRetry<T>(
@@ -38,10 +38,13 @@ async function persistRequestUpdate(
 ): Promise<boolean> {
   const layout = discordLayout()
   const locked = await withStoreLockRetry(layout.lock, async () => {
-    const file = store.loadRequests()
+    const nowIso = systemClock.nowIso()
+    let file = store.loadRequests()
     const idx = file.requests.findIndex((r) => r.requestId === requestId)
     if (idx < 0) return false
     file.requests[idx] = patch(file.requests[idx]!)
+    // Failures drop out of daily caps; recount keeps counters aligned
+    file = recountDailyQuota(file, nowIso)
     await store.saveRequests(file)
     return true
   })
