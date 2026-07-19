@@ -56,6 +56,12 @@ Cadence: weekly after audits (launchd `harness-improve`, installed by default;
 activates the agent workspace** and **never starts a canary**. Activation is
 `tc harness activate <id>` after drain is clear (starts the bounded canary).
 
+Scheduled runs resolve the checkout via `TRENCHCOAT_REPO_ROOT` (set in
+`~/.trenchcoat/env` by `install-launchd.sh`), then `process.cwd()`. Launchd does
+not set `WorkingDirectory`, so bare `cwd` is often `/` and must not be the only
+signal. The path must contain both `.git` and `package.json` (the installed
+`~/.trenchcoat/runtime` tree is not a valid harness root).
+
 `evaluateHypothesis` replays the holdout through the candidate worktree policy
 (with archived decision-time signals), compares the primary metric to the
 development sealed scorecard, and requires protected metrics not to regress.

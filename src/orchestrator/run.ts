@@ -735,9 +735,10 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     let harnessImproveReport: unknown
     if (job.name === "harness-improve") {
       const { runHarnessImprove } = await import("../harness/schedule.js")
+      const { resolveHarnessRepoRoot } = await import("../harness/pr.js")
       harnessImproveReport = await runHarnessImprove({
         archiveRoot: opts.paths.archiveRoot,
-        repoRoot: process.cwd(),
+        repoRoot: resolveHarnessRepoRoot(),
         nowIso: systemClock.nowIso(),
         dryRun: Boolean(opts.dryCollect),
       })

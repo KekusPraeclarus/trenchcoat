@@ -105,9 +105,32 @@ sync_env() {
   echo "synced repo .env → $ENV_FILE (mode 600)"
 }
 
+# Persist the checkout path harness-improve needs (launchd has no WorkingDirectory).
+upsert_repo_root_env() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "would set TRENCHCOAT_REPO_ROOT=$REPO_ROOT in $ENV_FILE"
+    return
+  fi
+  if [ ! -f "$ENV_FILE" ]; then
+    echo "missing $ENV_FILE — cannot set TRENCHCOAT_REPO_ROOT" >&2
+    exit 1
+  fi
+  tmp="$ENV_FILE.repo.$$"
+  if grep -Eq '^[[:space:]]*TRENCHCOAT_REPO_ROOT=' "$ENV_FILE"; then
+    sed "s|^[[:space:]]*TRENCHCOAT_REPO_ROOT=.*|TRENCHCOAT_REPO_ROOT=$REPO_ROOT|" "$ENV_FILE" >"$tmp"
+  else
+    cat "$ENV_FILE" >"$tmp"
+    printf '\n# Git checkout for harness-improve (launchd cwd is unreliable)\nTRENCHCOAT_REPO_ROOT=%s\n' "$REPO_ROOT" >>"$tmp"
+  fi
+  chmod 600 "$tmp"
+  mv "$tmp" "$ENV_FILE"
+  echo "TRENCHCOAT_REPO_ROOT → $REPO_ROOT"
+}
+
 # Standalone sync: `--sync-env` with no install flags syncs env and exits.
 if [ "$SYNC_ENV" -eq 1 ] && [ "$INSTALL_ARGS" -eq 0 ]; then
   sync_env
+  upsert_repo_root_env
   exit 0
 fi
 
@@ -687,6 +710,8 @@ fi
 if [ "$SYNC_ENV" -eq 1 ]; then
   sync_env
 fi
+
+upsert_repo_root_env
 
 require_clean_source
 deploy_runtime

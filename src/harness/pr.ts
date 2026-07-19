@@ -208,8 +208,36 @@ export async function persistPrReceipt(opts: Readonly<{
   )
 }
 
+/** Harness worktrees need a real git checkout — package.json alone (e.g. runtime) is not enough */
 export function assertRepoRoot(path: string): void {
-  if (!existsSync(join(path, ".git")) && !existsSync(join(path, "package.json"))) {
+  if (!existsSync(join(path, ".git")) || !existsSync(join(path, "package.json"))) {
     throw new Error(`Not a trenchcoat repo root: ${path}`)
   }
+}
+
+/**
+ * launchd jobs often start with cwd `/`; prefer TRENCHCOAT_REPO_ROOT from the
+ * host env file (written by install-launchd), then cwd.
+ */
+export function resolveHarnessRepoRoot(args?: Readonly<{
+  env?: NodeJS.ProcessEnv
+  cwd?: string
+}>): string {
+  const env = args?.env ?? process.env
+  const cwd = args?.cwd ?? process.cwd()
+  const fromEnv = env["TRENCHCOAT_REPO_ROOT"]?.trim()
+  const candidates = [...(fromEnv ? [fromEnv] : []), cwd]
+  const errors: string[] = []
+  for (const path of candidates) {
+    try {
+      assertRepoRoot(path)
+      return path
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+  throw new Error(
+    `Not a trenchcoat repo root: tried ${candidates.join(", ") || "(none)"}`
+      + (errors.length > 0 ? ` (${errors.join("; ")})` : ""),
+  )
 }

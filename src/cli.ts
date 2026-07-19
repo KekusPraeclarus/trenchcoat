@@ -1074,9 +1074,10 @@ async function cmdHarness(args: string[]): Promise<void> {
 
   if (sub === "run") {
     const { runHarnessImprove } = await import("./harness/schedule.js")
+    const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
     const report = await runHarnessImprove({
       archiveRoot,
-      repoRoot: process.cwd(),
+      repoRoot: resolveHarnessRepoRoot(),
       nowIso: systemClock.nowIso(),
       dryRun: args.includes("--dry-run"),
       runTests: !args.includes("--skip-tests"),
@@ -1211,8 +1212,10 @@ async function cmdHarness(args: string[]): Promise<void> {
       console.log(JSON.stringify({ ok: false, reason: "drain not clear", drain }, null, 2))
       process.exit(2)
     }
+    const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
+    const harnessRepoRoot = resolveHarnessRepoRoot()
     const head = spawnSync("git", ["rev-parse", "HEAD"], {
-      cwd: process.cwd(),
+      cwd: harnessRepoRoot,
       encoding: "utf8",
     })
     const sourceCommit = (head.stdout ?? "").trim()
@@ -1222,7 +1225,7 @@ async function cmdHarness(args: string[]): Promise<void> {
     const activated = await activateAgentWorkspace({
       archiveRoot,
       hypothesisId,
-      repoRoot: process.cwd(),
+      repoRoot: harnessRepoRoot,
       agentRoot,
       sourceCommit,
       nowIso: systemClock.nowIso(),

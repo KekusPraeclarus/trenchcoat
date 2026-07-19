@@ -140,3 +140,69 @@ ALL_OK
 
 - `install-launchd.sh` strips `.sh` when copying ops wrappers into `~/.trenchcoat/bin/`; any new wrapper that execs a sibling must resolve both names (documented in orchestrator.md).
 - Empty `docs/gotchas.md` Entries — nothing to drain.
+
+---
+
+## Iteration 3 — 2026-07-19 (hourly tick)
+
+### Pipeline evaluation
+
+Fresh list-scan `list-scan-2026-07-19T20-01-50-074Z` completed with alpha digest, 2/2 X likes, broadcast, chat summary. Core social pipeline healthy.
+
+**Still broken (live not redeployed)**
+| Issue | Impact | Evidence |
+|-------|--------|----------|
+| Iter-2 precheck fix not live | wallet/chart jobs still ENOENT on lock-retry `.sh` | `/tmp/trenchcoat.wallet-scan-*.err.log` as of 21:48 |
+| `harness-improve` uses `process.cwd()` | Weekly harness dead under launchd | Failure `Not a trenchcoat repo root: /`; plist has no WorkingDirectory |
+| Chat-report `status: running` | Operator recall lies after success | Latest chat-report.md; caused by promote-at-alpha-purged + seal-time per-run journal (ADR 006 by design) |
+
+### Highest-ROI patch chosen
+
+**Resolve harness repo root via `TRENCHCOAT_REPO_ROOT` (install writes it), require `.git`+`package.json`, stop using bare `cwd`.**
+
+Rationale: Complete job-class failure with clear RCA. Chat-status is noisy but ADR-documented; fixing it is a follow-up consumer patch, not journal redesign. Precheck already fixed in-repo pending operator redeploy.
+
+**Deferred**
+- Live install of iter-2/3 (operator policy: do not update live agent from this loop)
+- Chat-report final status refresh at `complete` (consumer fix; leave seal-time journal alone per ADR 006)
+- Narrative-scan legacy status (likely fixed in repo; needs live runtime)
+- Fomo `evaluate` probe
+
+**Invariant note (not implemented)**
+Rewriting sealed `archive/runs/<id>/journal.json` after completion would blur ADR 006's seal-time-copy contract. Prefer chat-report finalize or reading `transactions/` — deferred, not coded.
+
+### Changes
+
+| File | What |
+|------|------|
+| `src/harness/pr.ts` | `resolveHarnessRepoRoot`; `assertRepoRoot` requires `.git` and `package.json` |
+| `src/orchestrator/run.ts` / `src/cli.ts` | Use resolver for harness-improve + activate |
+| `ops/install-launchd.sh` | `upsert_repo_root_env` into `~/.trenchcoat/env` |
+| `docs/CONFIG.md`, `docs/architecture/harness-improvement.md`, `.env.example` | Document env |
+| `tests/unit/harness-repo-root.test.ts` | Env prefer, cwd fallback, runtime reject, `/` reject |
+
+### Risk assessment
+
+| Risk | Blast radius | Mitigation |
+|------|--------------|------------|
+| Wrong path in env | harness-improve + activate | assert requires `.git`+`package.json`; runtime tree rejected |
+| Stricter assert breaks old package.json-only fixtures | harness callers | Unit tests; schedule tests still green |
+| sed upsert corrupts env | `~/.trenchcoat/env` | Only replaces `TRENCHCOAT_REPO_ROOT=` line; mode 600 atomic mv |
+
+**INVARIANTS:** INV-S24 (harness still confined; no live activate/push); INV-I3 (path is not a secret, written to host env outside `agent/`).
+
+### Verification
+
+```
+pnpm exec vitest run tests/unit/harness-repo-root.test.ts tests/unit/harness-schedule.test.ts tests/unit/harness-gates.test.ts
+# 15 passed
+```
+
+### Commit
+
+COMMIT_PLACEHOLDER
+
+### Session learning
+
+- Launchd trenchcoat jobs do not set WorkingDirectory; never trust `process.cwd()` for git checkouts.
+- `~/.trenchcoat/runtime` has `package.json` but no `.git` — harness roots must require both.
