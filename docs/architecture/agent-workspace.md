@@ -71,9 +71,11 @@ agent/
 facts (even with zero staged broadcasts), optionally appending validated
 `chat-summary.json` context. **Research** is different: the host copies a
 sanitized `chat-summary.md` body into `reports/chat/<run-id>.md` (no Chat recall /
-Host summary chrome; run-id meta and `(untrusted)` labels stripped). Host facts
-for research stay in `research-chat-receipt.json`. Agents must not write
-`reports/chat/` directly; bypass files are removed.
+Host summary chrome; run-id meta and `(untrusted)` labels stripped). Preferred
+Discord/operator shape is compact TL;DR / X / Web / Read (~one Discord message);
+detail stays in `agent.md`. Host facts for research stay in
+`research-chat-receipt.json`. Agents must not write `reports/chat/` directly;
+bypass files are removed.
 
 **Workspace retention** — each completed run calls `retainWorkspaceArtifacts`
 (`src/orchestrator/retention.ts`): age-prunes `agent/inbox/<run-id>/` and
@@ -113,7 +115,9 @@ structured state, markdown for prose knowledge, one index for retrieval.
   `scripts/scaffold-agent.ts` and the repo `agent/state/INDEX.md` template create
   an empty skeleton; `tc init` copies the repo tree into `~/.trenchcoat/agent`.
   Later skill/`AGENTS.md` edits in the repo do **not** auto-propagate — sync into
-  `~/.trenchcoat/agent/` before live jobs (see chat-agent.md). Homes that predate
+  `~/.trenchcoat/agent/` before live jobs (see chat-agent.md), or wait for
+  harness drain-gated activation (`tc harness activate`) after an approved
+  policy experiment. Homes that predate
   the scaffold must create `state/INDEX.md` once — chat and skills assume it
   exists and have nothing to open first without it.
 - **`research/<token>.md`** — frontmatter (`description`, `status`,

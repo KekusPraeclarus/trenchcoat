@@ -41,12 +41,13 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **10** (`chat.discord` private-guild research bot section, plus
-prior schema **9** `fomo` web scrape section with `x_source_review` /
+Current schema is **11** (agent-gated harness defaults on, local integrate /
+deferred activation; prior schema **10** `chat.discord` private-guild research
+bot section, plus prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v9 shapes via `migrateConfigToV10`.
+`loadConfig` migrates v1–v10 shapes via `migrateConfigToV11`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -55,7 +56,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 10,
+  "schema": 11,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -203,21 +204,26 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 only; HMAC/auth secrets stay in env (`TRENCHCOAT_ROUTER_*`, ADR 001). Full
 defaults live in `config/seed.example.json` and `src/lib/config.ts`.
 
-### `harness_improvement` (schema 5)
+### `harness_improvement` (schema 11)
 
-Bounded self-improvement loop (ADR 005). Defaults keep the feature off.
+Agent-gated self-improvement loop (ADR 005). Schema 11 defaults the feature on
+for new installs; migration preserves explicit `enabled:false` /
+`schedule_enabled:false` from older configs.
 
 | Field | Default | Role |
 |---|---|---|
-| `enabled` | `false` | Master switch for propose / prepare / canary CLI |
-| `schedule_enabled` | `false` | Allow the `harness-improve` job / launchd |
-| `auto_open_pr` | `true` | After green tests, push branch and `gh pr create` (never merges) |
-| `base_branch` | `main` | PR base |
-| `test_command` | `test:unit` | `pnpm run <script>` inside the worktree |
-| `require_two_epochs` | `true` | Distinct sealed development + holdout epochs |
-| `allocation_bps` | `1000` | Canary traffic share (10%) when operator starts canary |
-| `min_events` / `min_holdout_events` | `40` / `20` | Sample floors recorded on the hypothesis |
+| `enabled` | `true` | Master switch for propose / prepare / canary / activate CLI |
+| `schedule_enabled` | `true` | Allow the `harness-improve` job / launchd |
+| `integrate_local_main` | `true` | Fast-forward local `main` after implementation approval |
+| `deploy_runtime` | `true` | Deploy host runtime after integrate |
+| `defer_agent_activation` | `true` | Schedule writes pending agent deploy; no live swap |
+| `test_command` | `test:all` | `pnpm run <script>` inside the worktree |
+| `planner_model` / `reviewer_model` / `builder_model` | `composer-2.5` | Agent models |
+| `require_two_epochs` | `true` | Distinct sealed development + holdout epochs with signals |
+| `allocation_bps` | `1000` | Canary traffic share (10%) when activation starts canary |
+| `min_events` / `min_holdout_events` / `min_mature_paired` | `40` / `20` / `40` | Sample floors |
 | `one_active_experiment` | `true` | Skip schedule while a canary is active |
+| `auto_open_pr` | `false` | Deprecated; PR path removed from schedule |
 
 ### `narratives` (schema 7)
 

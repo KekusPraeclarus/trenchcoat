@@ -1,5 +1,5 @@
 {
-  "schema": 10,
+  "schema": 11,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -350,15 +350,22 @@
     "intent_classifier_daily_cap": 20
   },
   "harness_improvement": {
-    "enabled": false,
-    "schedule_enabled": false,
-    "auto_open_pr": true,
+    "enabled": true,
+    "schedule_enabled": true,
+    "auto_open_pr": false,
     "base_branch": "main",
-    "test_command": "test:unit",
+    "test_command": "test:all",
     "require_two_epochs": true,
+    "integrate_local_main": true,
+    "deploy_runtime": true,
+    "defer_agent_activation": true,
+    "planner_model": "composer-2.5",
+    "reviewer_model": "composer-2.5",
+    "builder_model": "composer-2.5",
     "allocation_bps": 1000,
     "min_events": 40,
     "min_holdout_events": 20,
+    "min_mature_paired": 40,
     "confidence_level": 0.95,
     "error_budget": 3,
     "missingness_max": 0.3,

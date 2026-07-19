@@ -87,7 +87,11 @@ export async function prepareWorktree(opts: Readonly<{
   nowIso: string
 }>): Promise<PrepareResult> {
   const hypothesis = loadHypothesis(opts.archiveRoot, opts.hypothesisId)
-  if (hypothesis.status !== "proposed" && hypothesis.status !== "prepared") {
+  if (
+    hypothesis.status !== "plan_approved"
+    && hypothesis.status !== "proposed"
+    && hypothesis.status !== "prepared"
+  ) {
     throw new Error(`Hypothesis ${opts.hypothesisId} status ${hypothesis.status} cannot prepare`)
   }
 

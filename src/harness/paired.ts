@@ -2,8 +2,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { sha256Json, type JsonValue } from "../lib/canonical-json.js"
-import { harnessRoot } from "./canary.js"
+import { canaryStatePath, harnessRoot } from "./canary.js"
 import {
+  HarnessCanaryStateSchema,
   PairedEpisodeRecordSchema,
   SafeIdSchema,
   type PairedEpisodeRecord,
@@ -99,4 +100,19 @@ export function countMaturePaired(archiveRoot: string): number {
     ))
     .filter((record) => record.mature)
     .length
+}
+
+/** Refresh active-canary.json maturePaired from the paired episode store */
+export async function maybeBumpCanaryMatureCounts(
+  archiveRoot: string,
+): Promise<number> {
+  const path = canaryStatePath(archiveRoot)
+  if (!existsSync(path)) return 0
+  const current = HarnessCanaryStateSchema.parse(JSON.parse(readFileSync(path, "utf8")))
+  if (!current.active) return current.maturePaired
+  const maturePaired = countMaturePaired(archiveRoot)
+  if (maturePaired === current.maturePaired) return maturePaired
+  const next = HarnessCanaryStateSchema.parse({ ...current, maturePaired })
+  await writeAtomicFile(path, `${JSON.stringify(next, null, 2)}\n`)
+  return maturePaired
 }

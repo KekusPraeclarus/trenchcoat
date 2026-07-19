@@ -1,7 +1,8 @@
 ---
-description: ADR — Bounded harness improvement loop with sealed-audit feedback and human-gated promotion.
+description: ADR — Bounded harness improvement loop with sealed-audit feedback and agent-gated promotion.
 status: accepted
 date: 2026-07-16
+last_verified: 2026-07-19
 ---
 
 # ADR 005 — Bounded harness improvement loop
@@ -14,37 +15,54 @@ misread as Relative Strength Index. A free self-modifying skill loop conflicts
 with auditability (INV-S5) and was rejected with Hermes.
 
 We still want the system to refine decision policy from sealed scorecards, but
-only through a host-owned, leakage-free, human-gated lane.
+only through a host-owned, leakage-free lane with non-waivable deterministic
+gates. Human PR review is replaced by an independent review agent; the operator
+retains kill switches and rollback.
 
 ## Decision
 
 1. Name the loop **Harness Improvement Loop** — never overload RSI.
 2. Improvement orchestration is **host-only** under
    `~/.trenchcoat/harness-improvements/`. The `harness-improve` job may run on a
-   schedule, create an isolated worktree, build/test, and open a PR — but it
-   never merges, never writes production `agent/` from the runtime bot session,
-   and never starts a canary without an explicit operator command.
-3. Runtime sessions emit **typed decision proposals** only; host code validates
+   schedule, plan with a read-only agent, require an independent plan review,
+   build only after approval, grade with single-use holdout replay, require an
+   independent implementation review, fast-forward **local** `main`, and deploy
+   the host runtime — but it never pushes to `origin`, never rewrites history,
+   never activates `~/.trenchcoat/agent` while the all-work drain gate is busy,
+   and never starts a canary until activation.
+3. Autonomous mutation is limited to
+   `agent/skills/decision-policy/policy.json`. Audit maths, harness code,
+   router, chat, collectors, secrets, docs, and evaluation fixtures are
+   forbidden. Agents cannot expand their own allowlist.
+4. Runtime sessions emit **typed decision proposals** only; host code validates
    and applies watchlist/ledger/decisions mutations (INV-S1/S2/S10).
-4. Offline evaluation requires distinct development and holdout sealed epochs,
-   path confinement, tests, safety floors, and holdout single-use.
-5. Live canaries may assign a configured fraction (default 10%) of internal
+5. Offline evaluation requires distinct development and holdout sealed epochs
+   with archived decision-time signals, path confinement, full `test:all`,
+   safety floors, protected-metric non-regression, and holdout single-use.
+6. Live canaries may assign a configured fraction (default 10%) of internal
    decision episodes to a candidate **policy version**. Candidate external
    effects (broadcast, router, X mutations, wallet lifecycle) are blocked.
-   Baseline runs in shadow for paired comparison. Rollback means future
-   assignments return to baseline; history stays append-only.
-6. Promotion is **human-gated**. Host/orchestrator/audit/egress code changes
-   never enter a live canary — decision-policy surfaces only.
+   Paired baseline/candidate records are append-only. Rollback routes future
+   assignments to baseline and reverts via a normal git revert + redeploy.
+7. Promotion is **agent-gated** after canary maturity and a final independent
+   review receipt. Deterministic gates remain non-waivable: a review agent may
+   reject but cannot approve a candidate that fails schema, confinement,
+   quality, test, repository, canary, or deployment gates.
+8. Host runtime deploy and agent-workspace activation are separate. Agent
+   instruction sync waits for the all-work drain predicate and never overwrites
+   state/inbox/outbox/reports/alpha-queue.
 
 ## Consequences
 
-- Config schema 5 adds `harness_improvement` (default `enabled: false`,
-  `schedule_enabled: false`).
-- CLI / job: `tc run harness-improve` and `tc harness *`.
-- Scheduled path may open a GitHub PR after green worktree tests; it never
-  self-merges and never enables canary.
-- New invariants INV-S23–S25 cover proposal ownership, harness confinement, and
-  canary egress blocking.
+- Config schema 11 defaults `harness_improvement.enabled` and
+  `schedule_enabled` to `true` for new/missing fields; explicit operator
+  `false` values remain authoritative across migration.
+- CLI / job: `tc run harness-improve`, `tc harness run|activate|drain|*`.
+- Scheduled path ends at `activation_pending` with a pending agent-deployment
+  manifest; `tc harness activate` performs drain-gated sync + canary start.
+- Launchd installs `harness-improve` by default; `--without-harness` opts out.
+- INV-S23–S25 cover proposal ownership, harness confinement, and canary egress
+  blocking.
 - Relative Strength Index remains the chart feature under `indicators.rsi_*`.
 
 ## Enforcement

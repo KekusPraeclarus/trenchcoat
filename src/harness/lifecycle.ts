@@ -4,7 +4,9 @@ import { writeAtomicFile } from "../lib/fs-atomic.js"
 import {
   HarnessCanaryStateSchema,
   HarnessEvaluationSchema,
+  HarnessRejectionReceiptSchema,
   type HarnessCanaryState,
+  type HarnessRejectionReceipt,
 } from "../contracts/schemas.js"
 import { canaryStatePath, harnessRoot, loadCanaryState } from "./canary.js"
 import { loadHypothesis, saveHypothesis, hypothesisDir, listHypothesisIds } from "./propose.js"
@@ -22,8 +24,15 @@ export async function startCanary(opts: Readonly<{
     throw new Error(`Active canary already running: ${existing.hypothesisId}`)
   }
   const hypothesis = loadHypothesis(opts.archiveRoot, opts.hypothesisId)
-  if (hypothesis.status !== "evaluated") {
-    throw new Error("Canary requires evaluated hypothesis")
+  // implementation_approved / activation_pending are agent-gated; evaluated kept for backcompat
+  if (
+    hypothesis.status !== "implementation_approved"
+    && hypothesis.status !== "activation_pending"
+    && hypothesis.status !== "evaluated"
+  ) {
+    throw new Error(
+      "Canary requires implementation_approved, activation_pending, or evaluated hypothesis",
+    )
   }
   const evaluationPath = join(hypothesisDir(opts.archiveRoot, opts.hypothesisId), "evaluation.json")
   const evaluation = HarnessEvaluationSchema.parse(
@@ -133,7 +142,7 @@ export async function promoteHypothesis(opts: Readonly<{
     `${JSON.stringify({
       hypothesisId: opts.hypothesisId,
       promotedAt: opts.nowIso ?? systemClock.nowIso(),
-      note: "Human-gated promotion recorded; merge/scaffold remains operator-owned",
+      note: "Agent-gated promotion recorded after canary quality gates",
     }, null, 2)}\n`,
   )
 }
@@ -155,9 +164,18 @@ export function harnessJournalPath(archiveRoot: string, hypothesisId: string): s
 
 export const HARNESS_PHASES = [
   "created",
-  "proposed",
+  "planned",
+  "plan_validated",
+  "plan_approved",
   "prepared",
-  "evaluated",
+  "built",
+  "static_validated",
+  "holdout_evaluated",
+  "implementation_approved",
+  "committed",
+  "integrated",
+  "runtime_deployed",
+  "activation_pending",
   "canary",
   "complete",
 ] as const
@@ -198,4 +216,21 @@ export async function advanceHarnessJournal(
   }
   await writeAtomicFile(path, `${JSON.stringify(next, null, 2)}\n`)
   return next
+}
+
+export async function writeRejectionReceipt(
+  archiveRoot: string,
+  receipt: HarnessRejectionReceipt,
+): Promise<HarnessRejectionReceipt> {
+  const parsed = HarnessRejectionReceiptSchema.parse(receipt)
+  const dir = hypothesisDir(archiveRoot, parsed.hypothesisId)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  await writeAtomicFile(
+    join(dir, "rejection.json"),
+    `${JSON.stringify(parsed, null, 2)}\n`,
+    0o600,
+  )
+  const hypothesis = loadHypothesis(archiveRoot, parsed.hypothesisId)
+  await saveHypothesis(archiveRoot, { ...hypothesis, status: "rejected" })
+  return parsed
 }

@@ -13,7 +13,7 @@ import {
 import { openHarnessPullRequest } from "../../src/harness/pr.js"
 import { runHarnessImprove } from "../../src/harness/schedule.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV10 } from "../../src/migrations/config.js"
+import { migrateConfigToV11 } from "../../src/migrations/config.js"
 
 const CONFIG_HASH = `sha256:${"d".repeat(64)}` as const
 
@@ -60,7 +60,7 @@ async function seal(archiveRoot: string, epochId: string): Promise<void> {
 
 function writeEnabledConfig(trenchcoatDir: string, scheduleEnabled = true): void {
   mkdirSync(trenchcoatDir, { recursive: true })
-  const raw = migrateConfigToV10({
+  const raw = migrateConfigToV11({
     schema: 4,
     telegram_channels: [],
     twitter: {
@@ -104,12 +104,16 @@ function writeEnabledConfig(trenchcoatDir: string, scheduleEnabled = true): void
     retention: {},
     chat: {},
     router: {},
+    harness_improvement: {
+      enabled: true,
+      schedule_enabled: scheduleEnabled,
+      require_two_epochs: false,
+    },
   })
   const parsed = ConfigSchema.parse(raw)
   parsed.harness_improvement.enabled = true
   parsed.harness_improvement.schedule_enabled = scheduleEnabled
   parsed.harness_improvement.require_two_epochs = false
-  parsed.harness_improvement.auto_open_pr = true
   writeFileSync(join(trenchcoatDir, "config.json"), `${JSON.stringify(parsed, null, 2)}\n`)
 }
 
@@ -148,7 +152,7 @@ describe("harness PR helpers", () => {
 })
 
 describe("scheduled harness-improve", () => {
-  it("builds a branch, runs tests via exec, and opens a PR", async () => {
+  it("skips when sealed epochs lack decision-time signals", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-sched-"))
     const archiveRoot = join(root, "archive")
     const home = join(root, "home")
@@ -161,17 +165,10 @@ describe("scheduled harness-improve", () => {
     const repoRoot = join(root, "repo")
     mkdirSync(repoRoot, { recursive: true })
     spawnSync("git", ["init", "-b", "main"], { cwd: repoRoot })
-    spawnSync("git", ["config", "user.email", "test@example.com"], { cwd: repoRoot })
-    spawnSync("git", ["config", "user.name", "test"], { cwd: repoRoot })
-    mkdirSync(join(repoRoot, "agent", "skills"), { recursive: true })
     writeFileSync(join(repoRoot, "package.json"), `${JSON.stringify({
       name: "trenchcoat",
       private: true,
-      scripts: { "test:unit": "node -e \"process.exit(0)\"" },
     }, null, 2)}\n`)
-    writeFileSync(join(repoRoot, "agent", "skills", "README.md"), "x\n")
-    spawnSync("git", ["add", "."], { cwd: repoRoot })
-    spawnSync("git", ["commit", "-m", "init"], { cwd: repoRoot })
 
     const report = await runHarnessImprove({
       archiveRoot,
@@ -179,32 +176,12 @@ describe("scheduled harness-improve", () => {
       nowIso: "2026-07-16T12:00:00.000Z",
       developmentEpochId: "audit-a",
       holdoutEpochId: "audit-b",
-      runTests: true,
-      exec: (bin, args, opts) => {
-        if (bin === "pnpm" && args[0] === "run") {
-          return { status: 0, stdout: "ok\n", stderr: "" }
-        }
-        if (bin === "gh") {
-          return { status: 0, stdout: "https://github.com/example/trench-bot/pull/42\n", stderr: "" }
-        }
-        if (bin === "git" && args[0] === "push") {
-          return { status: 0, stdout: "ok\n", stderr: "" }
-        }
-        const result = spawnSync(bin, [...args], {
-          cwd: opts?.cwd,
-          encoding: "utf8",
-        })
-        return {
-          status: result.status ?? 1,
-          stdout: result.stdout ?? "",
-          stderr: result.stderr ?? "",
-        }
-      },
+      dryRun: true,
+      runTests: false,
     })
 
-    expect(report.status).toBe("pr_opened")
-    expect(report.prUrl).toContain("/pull/42")
-    expect(report.hypothesisId).toBeTruthy()
+    expect(report.status).toBe("skipped")
+    expect(report.reason).toMatch(/decision-time signals/u)
   })
 
   it("skips when schedule_enabled is false", async () => {

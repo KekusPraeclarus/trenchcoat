@@ -109,6 +109,26 @@ Security hard-fail still delivers the report but skips watch subscription.
 - `src/discord/render.ts` — path strip + Discord markdown safety
 - `src/discord/bot-client.ts` — REST replies (8-attempt retry on 429/5xx)
 
+## Ops pitfalls
+
+- **Stuck FIFO** — `.worker.lock` is held for the whole research unit (dossier +
+  agent passes + reply + subscription). A hung Playwright X scrape blocks the
+  pump even when replies already landed. Symptom: `queued` rows with a live
+  discord child and stale/no stage logs. Fix: kill the discord child (or
+  kickstart `com.trenchcoat.listener`), clear a dead-owner `.worker.lock`, let
+  `reclaimOrphanedDiscordRequests` move orphaned `running` → `queued`. Operator
+  purge: mark the request `failed` in `requests.json` then restart the worker.
+- **No second X scrape** — watch baseline is built from the research dossier.
+  Pre-acceleration builds re-scraped X after reply and were the usual hang.
+- **Skills** — `~/.trenchcoat/discord/agent/skills/` are copied on first workspace
+  create only. `install-launchd.sh` does **not** sync them (same class as main
+  `agent/skills/`). After editing `deep-research` / `research` skills, copy into
+  both `~/.trenchcoat/discord/agent/skills/` and `~/.trenchcoat/agent/skills/`.
+- **Cold start** — supervised `tc listen` can take ~10–20s of ESM load before
+  `discord listener child started` (process may show `STAT U`). Do not treat that
+  window as a hung queue. `launchctl bootstrap` often returns `Bootstrap failed:
+  5`; recover with bootout → sleep → bootstrap → `kickstart -k`.
+
 ## Enablement
 
 1. `tc config migrate --write` (schema 10)

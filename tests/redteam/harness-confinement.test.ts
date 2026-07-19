@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { confineDiff } from "../../src/harness/prepare.js"
 import { assertPathOnlyPrompt } from "../../src/orchestrator/session.js"
-import { HARNESS_PROPOSE_PROMPT } from "../../src/prompts/host.js"
+import {
+  HARNESS_BUILD_PROMPT,
+  HARNESS_PLAN_PROMPT,
+  HARNESS_PROPOSE_PROMPT,
+  HARNESS_REVIEW_PROMPT,
+} from "../../src/prompts/host.js"
+import { DECISION_POLICY_REL_PATH, POLICY_ALLOWLIST } from "../../src/harness/paths.js"
 
 describe("harness red-team confinement", () => {
   it("rejects patches that touch audit or egress surfaces", () => {
@@ -13,7 +19,7 @@ describe("harness red-team confinement", () => {
         ".env",
         "agent/skills/research/SKILL.md",
       ],
-      ["agent/skills/**"],
+      POLICY_ALLOWLIST,
     )
     expect(result.ok).toBe(false)
     expect(result.violations.length).toBeGreaterThanOrEqual(4)
@@ -28,7 +34,7 @@ describe("harness red-team confinement", () => {
         "src/harness/schedule.ts",
         "src/orchestrator/scorecard.ts",
       ],
-      ["agent/skills/**"],
+      POLICY_ALLOWLIST,
     )
     expect(result.ok).toBe(false)
     expect(result.violations.some((v) => v.includes("src/router/") || v.includes("outside-allowlist"))).toBe(true)
@@ -38,26 +44,27 @@ describe("harness red-team confinement", () => {
     expect(result.violations.some((v) => v.includes("scorecard"))).toBe(true)
   })
 
-  it("prop_inv_s24_allows_only_allowlisted_decision_policy_paths", () => {
-    const allow = ["agent/skills/decision-policy/**"]
-    const ok = confineDiff(
-      ["agent/skills/decision-policy/weights.json"],
-      allow,
-    )
+  it("prop_inv_s24_allows_only_exact_decision_policy_path", () => {
+    const ok = confineDiff([DECISION_POLICY_REL_PATH], POLICY_ALLOWLIST)
     expect(ok.ok).toBe(true)
     const bad = confineDiff(
-      ["agent/skills/chat/SKILL.md", "HARNESS_BRIEF.md"],
-      allow,
+      ["agent/skills/chat/SKILL.md", "agent/skills/decision-policy/extra.json", "HARNESS_BRIEF.md"],
+      POLICY_ALLOWLIST,
     )
     expect(bad.ok).toBe(false)
     expect(bad.violations.some((v) => v.includes("agent/skills/chat/SKILL.md"))).toBe(true)
-    // HARNESS_BRIEF is filtered at evaluateWorktreeConfinement, but confineDiff itself
-    // treats it as outside-allowlist when present in the changed set
     expect(bad.violations.some((v) => v.includes("HARNESS_BRIEF.md"))).toBe(true)
   })
 
-  it("harness propose prompt never interpolates scraped content placeholders", () => {
-    expect(HARNESS_PROPOSE_PROMPT).not.toMatch(/\$\{/u)
-    expect(() => assertPathOnlyPrompt(HARNESS_PROPOSE_PROMPT)).not.toThrow()
+  it("harness prompts never interpolate scraped content placeholders", () => {
+    for (const prompt of [
+      HARNESS_PROPOSE_PROMPT,
+      HARNESS_PLAN_PROMPT,
+      HARNESS_REVIEW_PROMPT,
+      HARNESS_BUILD_PROMPT,
+    ]) {
+      expect(prompt).not.toMatch(/\$\{/u)
+      expect(() => assertPathOnlyPrompt(prompt)).not.toThrow()
+    }
   })
 })

@@ -122,7 +122,17 @@ export function migrateConfigToV4(raw: unknown): unknown {
 
 export function migrateConfigToV5(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 5 || record?.["schema"] === 6 || record?.["schema"] === 7 || record?.["schema"] === 8 || record?.["schema"] === 9) return raw
+  if (
+    record?.["schema"] === 5
+    || record?.["schema"] === 6
+    || record?.["schema"] === 7
+    || record?.["schema"] === 8
+    || record?.["schema"] === 9
+    || record?.["schema"] === 10
+    || record?.["schema"] === 11
+  ) {
+    return raw
+  }
   const v4 = migrateConfigToV4(raw) as Record<string, unknown>
   return {
     ...v4,
@@ -314,7 +324,13 @@ export function defaultFomoConfigV9(): Record<string, unknown> {
 
 export function migrateConfigToV9(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 9 || record?.["schema"] === 10) return raw
+  if (
+    record?.["schema"] === 9
+    || record?.["schema"] === 10
+    || record?.["schema"] === 11
+  ) {
+    return raw
+  }
   const v8 = migrateConfigToV8(raw) as Record<string, unknown>
   return {
     ...v8,
@@ -325,7 +341,7 @@ export function migrateConfigToV9(raw: unknown): unknown {
 
 export function migrateConfigToV10(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 10) return raw
+  if (record?.["schema"] === 10 || record?.["schema"] === 11) return raw
   const v9 = migrateConfigToV9(raw) as Record<string, unknown>
   const chat = (v9["chat"] as Record<string, unknown> | undefined) ?? {}
   return {
@@ -345,6 +361,63 @@ export function migrateConfigToV10(raw: unknown): unknown {
         max_watched_tokens: 500,
         max_subscribers_per_token: 100,
       },
+    },
+  }
+}
+
+const HARNESS_V11_DEFAULTS = {
+  enabled: true,
+  schedule_enabled: true,
+  auto_open_pr: false,
+  base_branch: "main",
+  test_command: "test:all",
+  require_two_epochs: true,
+  integrate_local_main: true,
+  deploy_runtime: true,
+  defer_agent_activation: true,
+  planner_model: "composer-2.5",
+  reviewer_model: "composer-2.5",
+  builder_model: "composer-2.5",
+  allocation_bps: 1_000,
+  min_events: 40,
+  min_holdout_events: 20,
+  min_mature_paired: 40,
+  confidence_level: 0.95,
+  error_budget: 3,
+  missingness_max: 0.3,
+  rug_exposure_max: 0.25,
+  one_active_experiment: true,
+} as const
+
+/**
+ * Schema 11: agent-gated harness defaults on for new installs.
+ * Preserves explicit enabled:false / schedule_enabled:false from prior configs.
+ */
+export function migrateConfigToV11(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 11) return raw
+  const v10 = migrateConfigToV10(raw) as Record<string, unknown>
+  const prev = v10["harness_improvement"]
+  if (prev === undefined || prev === null || typeof prev !== "object") {
+    return {
+      ...v10,
+      schema: 11,
+      harness_improvement: { ...HARNESS_V11_DEFAULTS },
+    }
+  }
+  const old = prev as Record<string, unknown>
+  return {
+    ...v10,
+    schema: 11,
+    harness_improvement: {
+      ...HARNESS_V11_DEFAULTS,
+      ...old,
+      // Explicit false stays false; missing keys already filled by defaults above
+      enabled: old["enabled"] === false ? false : (old["enabled"] ?? true),
+      schedule_enabled: old["schedule_enabled"] === false
+        ? false
+        : (old["schedule_enabled"] ?? true),
+      auto_open_pr: old["auto_open_pr"] === true ? true : false,
     },
   }
 }

@@ -41,6 +41,10 @@ import { processFarcasterScanEngagement } from "./fc-engagement.js"
 import { applyDecisionProposals } from "./proposals.js"
 import { reconcileIndexWithReceipt } from "./index-reconcile.js"
 import { loadActiveCanaryAssignment } from "../harness/canary.js"
+import {
+  maybeBumpCanaryMatureCounts,
+  recordPairedEpisode,
+} from "../harness/paired.js"
 import { runWalletDiscovery } from "./wallet-discovery.js"
 import { runWalletScan } from "./wallet-scan.js"
 import { runWalletReview } from "./wallet-review.js"
@@ -1215,6 +1219,32 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         resolveGate,
         commit: true,
       })
+      if (
+        canary.assignment === "candidate"
+        && canary.blockExternalEffects
+      ) {
+        const frozenInboxHash = sha256Json({
+          runId,
+          receipts: proposalReport.receipts.map((r) => r.receiptId),
+        } as never)
+        await recordPairedEpisode({
+          archiveRoot: opts.paths.archiveRoot,
+          episodeId: runId,
+          runId,
+          frozenInboxHash,
+          candidatePolicyVersion: canary.policyVersion,
+          baselinePolicyVersion: "baseline",
+          candidateProposal: {
+            accepted: proposalReport.accepted,
+            rejected: proposalReport.rejected,
+            blockedExternal: proposalReport.blockedExternal,
+            plannedWatchlistHash: proposalReport.plannedWatchlistHash,
+          } as never,
+          mature: false,
+          recordedAt: systemClock.nowIso(),
+        })
+        await maybeBumpCanaryMatureCounts(opts.paths.archiveRoot)
+      }
       indexReconcileReport = await reconcileIndexWithReceipt({
         agentRoot: opts.paths.agentRoot,
         state,

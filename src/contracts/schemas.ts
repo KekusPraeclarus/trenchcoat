@@ -974,8 +974,24 @@ export const DecisionBundleSchema = z.object({
   assignment: z.enum(["baseline", "candidate", "shadow"]).default("baseline"),
   gateReceiptId: Sha256Schema.optional(),
   resolutionReceiptId: Sha256Schema.optional(),
+  /** Decision-time feature vector captured before outcomes; required for holdout replay */
+  signals: z.record(z.number()).default({}),
 })
 export type DecisionBundle = z.infer<typeof DecisionBundleSchema>
+
+/** Autonomous harness may edit exactly this path — never expands its own allowlist */
+export const POLICY_ALLOWLIST_PATH = "agent/skills/decision-policy/policy.json" as const
+export const DECISION_POLICY_REL_PATH = POLICY_ALLOWLIST_PATH
+
+export const PROTECTED_QUALITY_METRICS = [
+  "hitRate",
+  "ignoreMissRate",
+  "calibrationBrier",
+  "paperPnlCostAdjusted",
+  "rugExposure",
+  "outcomeCoverage",
+] as const
+export type ProtectedQualityMetric = typeof PROTECTED_QUALITY_METRICS[number]
 
 export const HarnessHypothesisSchema = z.object({
   schema: z.literal(1),
@@ -994,7 +1010,18 @@ export const HarnessHypothesisSchema = z.object({
   rationale: z.string().min(1).max(2_000),
   status: z.enum([
     "proposed",
+    "planned",
+    "plan_validated",
+    "plan_approved",
     "prepared",
+    "built",
+    "static_validated",
+    "holdout_evaluated",
+    "implementation_approved",
+    "committed",
+    "integrated",
+    "runtime_deployed",
+    "activation_pending",
     "evaluated",
     "canary",
     "promoted",
@@ -1272,6 +1299,93 @@ export const DecisionPolicyDocumentSchema = z.object({
   allowlistPaths: z.array(z.string()).max(64).default([]),
 })
 export type DecisionPolicyDocument = z.infer<typeof DecisionPolicyDocumentSchema>
+
+export const HarnessPlanSchema = z.object({
+  schema: z.literal(1),
+  hypothesisId: SafeIdSchema,
+  createdAt: IsoTimestampSchema,
+  model: z.string().min(1).max(128),
+  baseCommit: z.string().min(7).max(64),
+  developmentEpochId: SafeIdSchema,
+  holdoutEpochId: SafeIdSchema,
+  currentWeakness: z.string().min(1).max(2_000),
+  primaryMetric: z.string().min(1).max(64),
+  proposedPolicyChanges: z.string().min(1).max(4_000),
+  /** Optional full document for host-side apply without a builder session */
+  proposedPolicyDocument: DecisionPolicyDocumentSchema.optional(),
+  expectedPrimaryEffect: z.string().min(1).max(1_000),
+  expectedProtectedEffects: z.record(z.string().min(1).max(500)),
+  applicableInvariants: z.array(z.string().min(1).max(64)).max(64).default([]),
+  pipelineStagesAffected: z.array(z.string().min(1).max(128)).max(32).default([]),
+  failureModes: z.array(z.string().min(1).max(280)).max(32).default([]),
+  validationCases: z.array(z.string().min(1).max(280)).max(32).default([]),
+  rollbackConditions: z.array(z.string().min(1).max(280)).min(1).max(16),
+  currentPolicyHash: Sha256Schema,
+  scorecardSummaryHash: Sha256Schema,
+})
+export type HarnessPlan = z.infer<typeof HarnessPlanSchema>
+
+export const HarnessReviewFindingSchema = z.object({
+  id: z.string().min(1).max(64),
+  pass: z.boolean(),
+  note: z.string().min(1).max(500),
+})
+
+export const HarnessReviewFindingsSchema = z.object({
+  invariantFindings: z.array(HarnessReviewFindingSchema).max(64).default([]),
+  outputQualityPass: z.boolean(),
+  pipelineCompatible: z.boolean(),
+  evidenceSufficient: z.boolean(),
+  testCoverageAdequate: z.boolean(),
+  securitySurfaceOk: z.boolean(),
+  rollbackAdequate: z.boolean(),
+  uncertainty: z.array(z.string().min(1).max(280)).max(16).default([]),
+  rationale: z.string().min(1).max(4_000),
+})
+
+export const HarnessReviewSchema = z.object({
+  schema: z.literal(1),
+  hypothesisId: SafeIdSchema,
+  phase: z.enum(["plan", "implementation"]),
+  createdAt: IsoTimestampSchema,
+  model: z.string().min(1).max(128),
+  verdict: z.enum(["approve", "reject"]),
+  findings: HarnessReviewFindingsSchema,
+  planHash: Sha256Schema.optional(),
+  evaluationHash: Sha256Schema.optional(),
+  diffHash: Sha256Schema.optional(),
+})
+export type HarnessReview = z.infer<typeof HarnessReviewSchema>
+
+export const HarnessRejectionReceiptSchema = z.object({
+  schema: z.literal(1),
+  hypothesisId: SafeIdSchema,
+  rejectedAt: IsoTimestampSchema,
+  phase: z.string().min(1).max(64),
+  reason: z.string().min(1).max(500),
+  reviewHash: Sha256Schema.optional(),
+  planHash: Sha256Schema.optional(),
+  evaluationHash: Sha256Schema.optional(),
+})
+export type HarnessRejectionReceipt = z.infer<typeof HarnessRejectionReceiptSchema>
+
+export const AgentDeploymentFileSchema = z.object({
+  relPath: z.string().min(1).max(256),
+  sourceHash: Sha256Schema,
+  previousHash: Sha256Schema.optional(),
+})
+
+export const AgentDeploymentManifestSchema = z.object({
+  schema: z.literal(1),
+  status: z.enum(["pending", "active", "failed"]),
+  sourceCommit: z.string().min(7).max(64),
+  hypothesisId: SafeIdSchema.optional(),
+  files: z.array(AgentDeploymentFileSchema).max(256),
+  createdAt: IsoTimestampSchema,
+  activatedAt: IsoTimestampSchema.optional(),
+  rollbackSnapshotPath: z.string().min(1).max(512).optional(),
+})
+export type AgentDeploymentManifest = z.infer<typeof AgentDeploymentManifestSchema>
 
 export const HoldoutConsumptionSchema = z.object({
   schema: z.literal(1),

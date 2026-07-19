@@ -129,9 +129,7 @@ export async function proposeFromSealedEpoch(
     primaryMetric: pick.primaryMetric,
     safetyFloors: pick.safetyFloors,
     allowlistPaths: [
-      "agent/skills/**",
-      "agent/AGENTS.md",
-      "docs/architecture/agent-workspace.md",
+      "agent/skills/decision-policy/policy.json",
     ],
     sampleRequirements: {
       minEvents: opts.minEvents ?? 40,

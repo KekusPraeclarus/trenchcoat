@@ -14,14 +14,24 @@ describe("harness journal crash safety", () => {
     const archiveRoot = join(root, "archive")
     const id = "hyp-crash-1"
     const hash = sha256Json({ n: 1 } as never)
-    const first = await advanceHarnessJournal(archiveRoot, id, "proposed", hash)
-    expect(first.phase).toBe("proposed")
-    const replay = await advanceHarnessJournal(archiveRoot, id, "proposed", hash)
+    const first = await advanceHarnessJournal(archiveRoot, id, "planned", hash)
+    expect(first.phase).toBe("planned")
+    const replay = await advanceHarnessJournal(archiveRoot, id, "planned", hash)
     expect(replay).toEqual(first)
     await expect(
-      advanceHarnessJournal(archiveRoot, id, "evaluated", sha256Json({ n: 2 } as never)),
+      advanceHarnessJournal(
+        archiveRoot,
+        id,
+        "holdout_evaluated",
+        sha256Json({ n: 2 } as never),
+      ),
     ).rejects.toThrow(/must advance/u)
-    await advanceHarnessJournal(archiveRoot, id, "prepared", sha256Json({ n: 3 } as never))
+    await advanceHarnessJournal(
+      archiveRoot,
+      id,
+      "plan_validated",
+      sha256Json({ n: 3 } as never),
+    )
     expect(HARNESS_PHASES.includes("canary")).toBe(true)
   })
 })

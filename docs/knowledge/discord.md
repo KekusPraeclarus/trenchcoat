@@ -29,4 +29,9 @@ last_verified: 2026-07-19
 - Does not use main `agent/.lock` or research queue
 - Config: schema 10 `chat.discord.*` (disabled by default)
 - CLI: `tc listen discord`, `tc discord watchlist scan`
+- Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
+  (~≤1800 chars); multipart has no `1/n` labels
+- Watch baseline = dossier evidence (no post-reply Dex/security/X re-collect)
+- Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy
+- Stuck queue: hung scrape holding `.worker.lock` — see discord-research.md ops
 - See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010

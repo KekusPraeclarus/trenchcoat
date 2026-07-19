@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV10 } from "../migrations/config.js"
+import { migrateConfigToV11 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(10),
+  schema: z.literal(11),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -210,30 +210,45 @@ export const ConfigSchema = z.object({
     }),
   }),
   harness_improvement: z.object({
-    enabled: z.boolean().default(false),
-    schedule_enabled: z.boolean().default(false),
-    auto_open_pr: z.boolean().default(true),
+    enabled: z.boolean().default(true),
+    schedule_enabled: z.boolean().default(true),
+    /** @deprecated PR path retired; kept optional for old configs */
+    auto_open_pr: z.boolean().default(false),
     base_branch: z.string().min(1).max(128).default("main"),
-    test_command: z.string().min(1).max(64).default("test:unit"),
+    test_command: z.string().min(1).max(64).default("test:all"),
     require_two_epochs: z.boolean().default(true),
+    integrate_local_main: z.boolean().default(true),
+    deploy_runtime: z.boolean().default(true),
+    defer_agent_activation: z.boolean().default(true),
+    planner_model: z.string().min(1).max(128).default("composer-2.5"),
+    reviewer_model: z.string().min(1).max(128).default("composer-2.5"),
+    builder_model: z.string().min(1).max(128).default("composer-2.5"),
     allocation_bps: z.number().int().min(0).max(10_000).default(1_000),
     min_events: z.number().int().min(1).default(40),
     min_holdout_events: z.number().int().min(1).default(20),
+    min_mature_paired: z.number().int().min(1).default(40),
     confidence_level: z.number().min(0).max(1).default(0.95),
     error_budget: z.number().int().min(0).default(3),
     missingness_max: z.number().min(0).max(1).default(0.3),
     rug_exposure_max: z.number().min(0).max(1).default(0.25),
     one_active_experiment: z.boolean().default(true),
   }).default({
-    enabled: false,
-    schedule_enabled: false,
-    auto_open_pr: true,
+    enabled: true,
+    schedule_enabled: true,
+    auto_open_pr: false,
     base_branch: "main",
-    test_command: "test:unit",
+    test_command: "test:all",
     require_two_epochs: true,
+    integrate_local_main: true,
+    deploy_runtime: true,
+    defer_agent_activation: true,
+    planner_model: "composer-2.5",
+    reviewer_model: "composer-2.5",
+    builder_model: "composer-2.5",
     allocation_bps: 1_000,
     min_events: 40,
     min_holdout_events: 20,
+    min_mature_paired: 40,
     confidence_level: 0.95,
     error_budget: 3,
     missingness_max: 0.3,
@@ -514,7 +529,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV10(raw))
+  return ConfigSchema.parse(migrateConfigToV11(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

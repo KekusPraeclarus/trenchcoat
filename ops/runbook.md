@@ -49,7 +49,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 [ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
-| `harness-improve` | weekly after audit (optional) — opens PR only; never merges |
+| `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, local main ff, runtime deploy; never activates agent or starts canary |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
 | `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |
 
@@ -68,10 +68,14 @@ profile (`pnpm dev:cli auth twitter` if challenged) and writes
 sentiment/popularity snapshots for the report.
 
 Harness improvement requires `harness_improvement.enabled` **and**
-`schedule_enabled` in config. The job proposes from sealed epochs, builds on a
-fresh branch, runs tests, and opens a PR for manual approval
-(docs/architecture/harness-improvement.md). Canary remains a separate explicit
-step after merge.
+`schedule_enabled` in config (defaults true for new schema 11 installs; explicit
+`false` is preserved on migrate). The job proposes from sealed epochs with
+decision-time signals, requires independent plan review before build, grades
+with holdout replay + protected metrics, requires implementation review, then
+fast-forwards local `main` and deploys host runtime. It stops at
+`activation_pending` — use `tc harness drain` / `tc harness activate <id>` after
+the all-work queue is clear (docs/architecture/harness-improvement.md). Canary
+starts only on activate.
 
 Install (preferred):
 
@@ -91,10 +95,10 @@ listener and broadcast router with `KeepAlive: true` (recovery tier 1,
 docs/architecture/orchestrator.md / router.md), schedules the weekly backup
 (`com.trenchcoat.backup`, Sun 05:00 → `ops/backup.sh`), writes
 `runtime/deployment.json` after staging + `config validate`, and bootstraps job
-cadences below. Re-run after CLI changes. Flags: `--dry-run`, `--no-load`,
-`--with-harness`, `--jobs-only`, `--sync-env`, `--allow-dirty`. The wipe matters:
-plain `tsc` leaves deleted modules in `dist/`, which would otherwise ship into
-the runtime.
+cadences below (including weekly `harness-improve` unless opted out). Re-run
+after CLI changes. Flags: `--dry-run`, `--no-load`, `--without-harness`,
+`--jobs-only`, `--sync-env`, `--allow-dirty`. The wipe matters: plain `tsc`
+leaves deleted modules in `dist/`, which would otherwise ship into the runtime.
 
 `--sync-env` atomically copies repo `.env` → `~/.trenchcoat/env` (mode 600) after
 validating required key **names** (values never read); used alone it syncs and
@@ -109,11 +113,10 @@ warns when the active runtime was built dirty.
 
 Staging safety: the installer builds into a staging dir, validates config with
 the staged binary, then atomically swaps `runtime/` (previous kept as
-`runtime.previous`). A missing or stale-schema `deployment.json` is flagged by
+`runtime.prev`). A missing or stale-schema `deployment.json` is flagged by
 `tc status`.
 
-For harness improvement only: `./ops/install-launchd.sh --with-harness`
-(requires `harness_improvement.enabled` + `schedule_enabled`, `gh` auth).
+To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
 
 ## Health checks
 
@@ -155,8 +158,9 @@ For harness improvement only: `./ops/install-launchd.sh --with-harness`
   (deploys `~/.trenchcoat/runtime`) and kick the listener:
   `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.listener`.
   `install-launchd.sh` does **not** sync `agent/skills/` — copy changed skills
-  from the repo into `~/.trenchcoat/agent/skills/` or the ask-mode chat agent
-  will keep old deferral text. Stale runtime is the usual cause of research
+  from the repo into `~/.trenchcoat/agent/skills/` **and** (when Discord research
+  is enabled) `~/.trenchcoat/discord/agent/skills/`, or agents keep stale
+  chat-summary / deferral text. Stale runtime is the usual cause of research
   asks falling through to a long ask-mode lecture instead of
   `Research <subject>? Reply confirm or cancel.` Session id lives in
   `~/.trenchcoat/chat-session.json`. Research asks are confirmation-gated on the
@@ -166,7 +170,10 @@ For harness improvement only: `./ops/install-launchd.sh --with-harness`
   Same `com.trenchcoat.listener` supervises `tc listen discord` as a child process.
   Requires `DISCORD_RESEARCH_BOT_TOKEN` (separate from `DISCORD_WEBHOOK_URL`).
   State under `~/.trenchcoat/discord/`. Watch monitor:
-  `com.trenchcoat.job.discord-watchlist-scan` (0/6/12/18 local). See
+  `com.trenchcoat.job.discord-watchlist-scan` (0/6/12/18 local). After install,
+  `launchctl bootstrap` often fails with `Bootstrap failed: 5` — recover with
+  bootout → sleep → bootstrap → `kickstart -k`. Cold start may take 10–20s
+  before the Discord child logs ready. See
   docs/architecture/discord-research.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that
@@ -176,7 +183,10 @@ For harness improvement only: `./ops/install-launchd.sh --with-harness`
 ## Deploy canary and rollback (operator)
 
 Do **not** install from a dirty tree unless you pass `--allow-dirty` and accept
-the `tc status` dirty warning. Preferred sequence after a reviewed clean commit:
+the `tc status` dirty warning. Never let a dirty deploy overwrite live
+`~/.trenchcoat/config.json` from seed (e.g. wiping `farcaster.enabled` /
+`bot_fid`) — backup first and restore from `~/.trenchcoat/backups/config-*.json`
+if flags disappear. Preferred sequence after a reviewed clean commit:
 
 1. Backup host state/archive (`ops/backup.sh` / `tc backup`).
 2. `pnpm typecheck && pnpm lint && pnpm test:all` (plus FOMO shadow suites when

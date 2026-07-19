@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import {
   HarnessEvaluationSchema,
+  PROTECTED_QUALITY_METRICS,
   type HarnessEvaluation,
   type Scorecard,
 } from "../contracts/schemas.js"
@@ -15,6 +16,8 @@ import { wilsonLowerBound } from "../orchestrator/audit-math.js"
 import { loadPolicy } from "./policy.js"
 import { replayHoldoutThroughPolicy, type ReplaySubject } from "./replay.js"
 import { isHoldoutConsumed, recordHoldoutConsumption } from "./holdout-registry.js"
+import { loadHoldoutSubjectsWithSignalsOrThrow } from "./signals.js"
+import { protectedMetricsUnchangedOrImproved } from "./quality.js"
 
 const DEFAULT_POLICY_REL_PATH = "agent/skills/decision-policy/policy.json"
 
@@ -30,20 +33,6 @@ function defaultGitRevParse(worktreePath: string): string {
     throw new Error(`git rev-parse HEAD failed in ${worktreePath}`)
   }
   return sha
-}
-
-// Sealed subjects carry no stored decision-time features, so the default
-// replay feeds empty signals; callers with real evidence inject their own
-function defaultLoadHoldoutSubjects(
-  _layout: ArchiveLayout,
-  holdout: SealedEpoch,
-): readonly ReplaySubject[] {
-  return holdout.manifest.subjects.map((s) => ({
-    subjectId: s.id,
-    subjectType: s.type,
-    horizonHours: s.horizonHours,
-    signals: {},
-  }))
 }
 
 function metricValue(scorecard: Scorecard, key: string): number {
@@ -120,6 +109,20 @@ export function primaryImproved(
   return true
 }
 
+function protectedMetricEntries(
+  baseline: Scorecard,
+  candidate: Scorecard,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const key of PROTECTED_QUALITY_METRICS) {
+    const base = metricValue(baseline, key)
+    const cand = metricValue(candidate, key)
+    if (Number.isFinite(base)) out[`protectedBaseline_${key}`] = base
+    if (Number.isFinite(cand)) out[`protectedCandidate_${key}`] = cand
+  }
+  return out
+}
+
 export type EvaluateOptions = Readonly<{
   archiveRoot: string
   hypothesisId: string
@@ -133,7 +136,7 @@ export type EvaluateOptions = Readonly<{
   policyRelPath?: string
   // injectable so tests need no real git; defaults to git rev-parse HEAD
   gitRevParse?: (worktreePath: string) => string
-  // injectable holdout evidence; defaults to sealed manifest subjects
+  // injectable holdout evidence; defaults to archived decision-time signals
   loadHoldoutSubjects?: (
     layout: ArchiveLayout,
     holdout: SealedEpoch,
@@ -205,7 +208,7 @@ export async function evaluateHypothesis(
   }
 
   const holdout = loadSealedEpoch(layout, opts.holdoutEpochId)
-  const loadSubjects = opts.loadHoldoutSubjects ?? defaultLoadHoldoutSubjects
+  const loadSubjects = opts.loadHoldoutSubjects ?? loadHoldoutSubjectsWithSignalsOrThrow
   const subjects = loadSubjects(layout, holdout)
 
   // Candidate metric comes from replaying the sealed holdout through the
@@ -221,6 +224,15 @@ export async function evaluateHypothesis(
   const candidateMetric = metricValue(candidateScorecard, hypothesis.primaryMetric)
   const safety = checkSafetyFloors(candidateScorecard, hypothesis.safetyFloors)
   const holdoutN = candidateScorecard.outcomeCoverage.denominator
+  const protectedCheck = protectedMetricsUnchangedOrImproved(
+    development.scorecard,
+    candidateScorecard,
+    hypothesis.primaryMetric,
+  )
+  const protectedMetrics = protectedMetricEntries(
+    development.scorecard,
+    candidateScorecard,
+  )
 
   if (holdoutN < hypothesis.sampleRequirements.minHoldoutEvents) {
     await recordHoldoutConsumption({
@@ -246,7 +258,12 @@ export async function evaluateHypothesis(
       primaryImproved: false,
       safetyFloorsPassed: false,
       holdoutConsumed: true,
-      metrics: { baseline: baselineMetric, candidate: candidateMetric, holdoutN },
+      metrics: {
+        baseline: baselineMetric,
+        candidate: candidateMetric,
+        holdoutN,
+        ...protectedMetrics,
+      },
       rejectReason: "insufficient holdout sample",
     })
     await persistEvaluation(opts.archiveRoot, evaluation, "rejected")
@@ -273,7 +290,11 @@ export async function evaluateHypothesis(
     },
   })
 
-  const ok = testsPassed && confinement.ok && improved && safety.ok
+  const ok = testsPassed
+    && confinement.ok
+    && improved
+    && safety.ok
+    && protectedCheck.ok
   const evaluation = HarnessEvaluationSchema.parse({
     schema: 1,
     hypothesisId: opts.hypothesisId,
@@ -291,6 +312,7 @@ export async function evaluateHypothesis(
       baseline: baselineMetric,
       candidate: candidateMetric,
       holdoutN,
+      ...protectedMetrics,
     },
     ...(ok ? {} : {
       rejectReason: [
@@ -298,18 +320,25 @@ export async function evaluateHypothesis(
         !confinement.ok ? `confinement:${confinement.violations.join(",")}` : "",
         !improved ? "primary-not-improved" : "",
         !safety.ok ? `safety:${safety.breaches.join(",")}` : "",
+        !protectedCheck.ok
+          ? `protected:${protectedCheck.regressions.join(",")}`
+          : "",
       ].filter(Boolean).join("; "),
     }),
   })
 
-  await persistEvaluation(opts.archiveRoot, evaluation, ok ? "evaluated" : "rejected")
+  await persistEvaluation(
+    opts.archiveRoot,
+    evaluation,
+    ok ? "holdout_evaluated" : "rejected",
+  )
   return evaluation
 }
 
 async function persistEvaluation(
   archiveRoot: string,
   evaluation: HarnessEvaluation,
-  status: "evaluated" | "rejected",
+  status: "holdout_evaluated" | "rejected",
 ): Promise<void> {
   const dir = hypothesisDir(archiveRoot, evaluation.hypothesisId)
   await writeAtomicFile(

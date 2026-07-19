@@ -48,10 +48,12 @@ Commands:
   x-engagement status
   fc-engagement dry-run <run-id>
   fc-engagement status
-  harness run [--dry-run]
+  harness run [--dry-run] [--skip-tests] [--skip-deploy]
   harness propose --epoch <id>
   harness prepare <hypothesis-id>
   harness evaluate <hypothesis-id> --dev-epoch <id> --holdout-epoch <id>
+  harness activate <hypothesis-id>
+  harness drain
   harness canary start <hypothesis-id>
   harness canary stop --reason <text>
   harness status
@@ -1058,7 +1060,7 @@ async function main(): Promise<void> {
 async function cmdHarness(args: string[]): Promise<void> {
   const sub = args[0]
   if (!sub) usage()
-  const { archiveRoot } = resolveHomes()
+  const { archiveRoot, agentRoot } = resolveHomes()
   const { loadConfig } = await import("./lib/config.js")
   const { systemClock } = await import("./lib/clock.js")
   const cfg = (() => {
@@ -1077,9 +1079,10 @@ async function cmdHarness(args: string[]): Promise<void> {
       nowIso: systemClock.nowIso(),
       dryRun: args.includes("--dry-run"),
       runTests: !args.includes("--skip-tests"),
+      skipDeploy: args.includes("--skip-deploy"),
     })
     console.log(JSON.stringify(report, null, 2))
-    if (report.status === "failed") process.exit(2)
+    if (report.status === "failed" || report.status === "rejected") process.exit(2)
     return
   }
 
@@ -1088,8 +1091,6 @@ async function cmdHarness(args: string[]): Promise<void> {
     const epochId = epochIdx >= 0 ? args[epochIdx + 1] : undefined
     if (!epochId) usage()
     const { proposeFromSealedEpoch } = await import("./harness/propose.js")
-    const { advanceHarnessJournal } = await import("./harness/lifecycle.js")
-    const { sha256Json } = await import("./lib/canonical-json.js")
     const hyp = await proposeFromSealedEpoch({
       archiveRoot,
       epochId: epochId!,
@@ -1101,7 +1102,7 @@ async function cmdHarness(args: string[]): Promise<void> {
         ? { minHoldoutEvents: cfg.harness_improvement.min_holdout_events }
         : {}),
     })
-    await advanceHarnessJournal(archiveRoot, hyp.hypothesisId, "proposed", sha256Json(hyp as never))
+    // Journal starts at created; first advance is planned (via schedule/planner)
     console.log(JSON.stringify(hyp, null, 2))
     return
   }
@@ -1147,16 +1148,80 @@ async function cmdHarness(args: string[]): Promise<void> {
       nowIso: systemClock.nowIso(),
       runTests: !args.includes("--skip-tests"),
     })
-    if (evaluation.primaryImproved && evaluation.safetyFloorsPassed && evaluation.testsPassed) {
+    if (
+      evaluation.primaryImproved
+      && evaluation.safetyFloorsPassed
+      && evaluation.testsPassed
+      && !evaluation.rejectReason
+    ) {
       await advanceHarnessJournal(
         archiveRoot,
         hypothesisId,
-        "evaluated",
+        "holdout_evaluated",
         sha256Json(evaluation as never),
       )
     }
     console.log(JSON.stringify(evaluation, null, 2))
     if (evaluation.rejectReason) process.exit(2)
+    return
+  }
+
+  if (sub === "activate") {
+    const hypothesisId = args[1]
+    if (!hypothesisId) usage()
+    if (cfg && !cfg.harness_improvement.enabled) {
+      throw new Error("harness_improvement.enabled is false")
+    }
+    const { activateAgentWorkspace, buildDrainSnapshot, isDrainClear } =
+      await import("./harness/drain.js")
+    const { startCanary, advanceHarnessJournal } = await import("./harness/lifecycle.js")
+    const { sha256Json } = await import("./lib/canonical-json.js")
+    const { spawnSync } = await import("node:child_process")
+    const drain = await buildDrainSnapshot({ agentRoot, archiveRoot })
+    if (!isDrainClear(drain)) {
+      console.log(JSON.stringify({ ok: false, reason: "drain not clear", drain }, null, 2))
+      process.exit(2)
+    }
+    const head = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    })
+    const sourceCommit = (head.stdout ?? "").trim()
+    if (head.status !== 0 || sourceCommit.length < 7) {
+      throw new Error("git rev-parse HEAD failed")
+    }
+    const activated = await activateAgentWorkspace({
+      archiveRoot,
+      hypothesisId,
+      repoRoot: process.cwd(),
+      agentRoot,
+      sourceCommit,
+      nowIso: systemClock.nowIso(),
+    })
+    if (!activated.ok) {
+      console.log(JSON.stringify(activated, null, 2))
+      process.exit(2)
+    }
+    const state = await startCanary({
+      archiveRoot,
+      hypothesisId,
+      allocationBps: cfg?.harness_improvement.allocation_bps ?? 1_000,
+      policyVersion: `candidate:${hypothesisId}`,
+    })
+    await advanceHarnessJournal(
+      archiveRoot,
+      hypothesisId,
+      "canary",
+      sha256Json(state as never),
+    )
+    console.log(JSON.stringify({ activated: activated.manifest, canary: state }, null, 2))
+    return
+  }
+
+  if (sub === "drain") {
+    const { buildDrainSnapshot, isDrainClear } = await import("./harness/drain.js")
+    const snapshot = await buildDrainSnapshot({ agentRoot, archiveRoot })
+    console.log(JSON.stringify({ clear: isDrainClear(snapshot), snapshot }, null, 2))
     return
   }
 

@@ -2,8 +2,9 @@
 # Materialize ops/launchd templates into ~/Library/LaunchAgents and bootstrap them.
 # Deploys a runtime copy under ~/.trenchcoat/runtime so launchd is not blocked by
 # macOS TCC on ~/Documents.
-# Usage: ops/install-launchd.sh [--dry-run] [--with-harness] [--jobs-only]
+# Usage: ops/install-launchd.sh [--dry-run] [--without-harness] [--jobs-only]
 #                               [--no-load] [--sync-env] [--allow-dirty]
+#   --without-harness  skip installing the weekly harness-improve job (on by default)
 #   --sync-env  atomically copy repo .env → ~/.trenchcoat/env (mode 600) after
 #               validating required key NAMES are present. If it is the only
 #               argument, sync and exit 0 without redeploying; otherwise sync
@@ -25,7 +26,7 @@ TC="$BIN_DIR/trenchcoat"
 UID_NUM="$(id -u)"
 DOMAIN="gui/$UID_NUM"
 DRY_RUN=0
-WITH_HARNESS=0
+WITH_HARNESS=1
 JOBS_ONLY=0
 NO_LOAD=0
 SYNC_ENV=0
@@ -42,6 +43,7 @@ for arg in "$@"; do
   case "$arg" in
     --sync-env) SYNC_ENV=1 ;;
     --dry-run) DRY_RUN=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
+    --without-harness) WITH_HARNESS=0; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --with-harness) WITH_HARNESS=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --jobs-only) JOBS_ONLY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --no-load) NO_LOAD=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;

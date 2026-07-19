@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "policyVersion": "baseline",
+  "kind": "baseline",
+  "createdAt": "2026-07-19T00:00:00.000Z",
+  "weights": {},
+  "thresholds": {
+    "track": 0.5,
+    "ignore": 0,
+    "drop": -0.5
+  },
+  "rules": [],
+  "allowlistPaths": [
+    "agent/skills/decision-policy/policy.json"
+  ]
+}
