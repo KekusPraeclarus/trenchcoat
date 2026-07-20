@@ -3,7 +3,7 @@
  * (settlement math stays 24/72/168). Never agent-authored.
  */
 
-import type { AuditClaim, BroadcastClaimType } from "../contracts/schemas.js"
+import type { AuditClaim } from "../contracts/schemas.js"
 
 export const WATCH_WINDOWS = [
   "today",
@@ -17,7 +17,9 @@ export const WATCH_WINDOWS = [
 
 export type WatchWindow = (typeof WATCH_WINDOWS)[number]
 
-const NARRATIVE_LIKE = new Set<BroadcastClaimType>([
+type ClaimType = AuditClaim["type"]
+
+const NARRATIVE_LIKE = new Set<ClaimType>([
   "narrative-emergence",
   "narrative-fade",
   "rotation",
@@ -35,7 +37,7 @@ export function watchWindowForHours(hours: number): WatchWindow {
  * Narrative/rotation sit one bucket longer than raw hours (stickier heat).
  */
 export function deriveWatchWindow(
-  claim: Readonly<{ type: BroadcastClaimType; horizonHours: number }>,
+  claim: Readonly<{ type: ClaimType; horizonHours: number }>,
 ): WatchWindow {
   const hours = claim.horizonHours
   const narrative = NARRATIVE_LIKE.has(claim.type)
