@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
+  deslugNarrativeLabel,
+  deslugNarrativeLabelsInText,
+} from "../../src/lib/narrative-label.js"
+import {
   formatTelegramOperatorText,
   markdownToTelegramHtml,
   stripLocalWorkspaceRefs,
@@ -32,6 +36,22 @@ describe("stripLocalWorkspaceRefs", () => {
   })
 })
 
+describe("deslugNarrativeLabel", () => {
+  it("title-cases kebab slugs and uppercases known acronyms", () => {
+    expect(deslugNarrativeLabel("rh-chain-meme-rotation")).toBe("RH Chain Meme Rotation")
+    expect(deslugNarrativeLabel("ansem-meme-surge")).toBe("Ansem Meme Surge")
+    expect(deslugNarrativeLabel("brian-pfp-meta-collapse")).toBe("Brian PFP Meta Collapse")
+  })
+})
+
+describe("deslugNarrativeLabelsInText", () => {
+  it("replaces slugs but leaves urls intact", () => {
+    expect(deslugNarrativeLabelsInText(
+      "- **rh-chain-meme-rotation — peaking**\nsee https://example.com/foo-bar",
+    )).toBe("- **RH Chain Meme Rotation — peaking**\nsee https://example.com/foo-bar")
+  })
+})
+
 describe("markdownToTelegramHtml", () => {
   it("converts bold and headers and escapes raw html", () => {
     expect(markdownToTelegramHtml("**Market**")).toBe("<b>Market</b>")
@@ -54,5 +74,19 @@ describe("formatTelegramOperatorText", () => {
     expect(html).toContain("Worth monitoring.")
     expect(html).not.toContain("reports/")
     expect(html).not.toContain("Source:")
+  })
+
+  it("deslugs narrative labels and scrubs leaked hour tokens", () => {
+    const html = formatTelegramOperatorText(
+      "- **rh-chain-meme-rotation — peaking** over the next 72h",
+    )
+    expect(html).toBe(
+      "- <b>RH Chain Meme Rotation — peaking</b> the next few days",
+    )
+  })
+
+  it("does not rewrite natural watch prose", () => {
+    const html = formatTelegramOperatorText("Watch this month for follow through.")
+    expect(html).toBe("Watch this month for follow through.")
   })
 })

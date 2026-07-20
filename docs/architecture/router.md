@@ -89,6 +89,13 @@ run.
 - Bounded concurrency per destination
 - Honour `Retry-After`, jittered backoff, dead-letter after N attempts
 - Telegram: markdown → HTML (`parse_mode: HTML`) with plain fallback on reject.
+  Before conversion, host deslugs kebab narrative labels
+  (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`) and scrubs leaked hour
+  tokens only (`72h` → `the next few days`; natural phrases like `this week` /
+  `this month` are left alone) via `narrative-label.ts` / `watch-window.ts`.
+  Channel distill injects a host-derived `watchWindow` (decoupled from audit
+  `horizonHours`) so copy can use day/week/month phrasing without echoing `Nh`
+  ([ADR 013](../adr/013-watch-window-decoupled.md)).
   Host never truncates — `telegramSendFormattedChunks` in `src/lib/telegram-bot.ts`
   chunks at ~3400 chars of markdown on paragraph boundaries (numbered `1/n` …),
   used by router fanout (`src/router/deliver.ts`) and the operator chat listener.

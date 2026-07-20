@@ -16,6 +16,13 @@ last_verified: 2026-07-20
 - Market fanout Telegram text is a fail-closed landscape overview (`telegram_overview`),
   not the host chat-recall dump; Discord stays a run-scoped **own** bottom-line
   distill (at most one Discord payload per run — never a reuse of the TG closer)
+- Fanout + operator sends convert markdown → HTML, deslug kebab narrative
+  labels (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`), and scrub leaked
+  hour tokens (`72h` → `the next few days`) — natural watch prose (`this week`,
+  `this month`) is left alone. Distill injects host-derived `watchWindow` from
+  claim type + `horizonHours` (audit settlement stays 24/72/168) — ADR 013
+- See [ADR 013](../adr/013-watch-window-decoupled.md) for the watchWindow vs
+  horizonHours split
 
 ## Alpha ingestion vs operator chat
 

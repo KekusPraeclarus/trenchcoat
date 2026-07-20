@@ -1,7 +1,10 @@
 /**
- * Telegram outbound: strip workspace paths, then map a safe markdown subset to
- * Telegram HTML. Used for operator DMs and router channel fanout.
+ * Telegram outbound: strip workspace paths, deslug narrative labels, then map a
+ * safe markdown subset to Telegram HTML. Used for operator DMs and router fanout.
  */
+
+import { deslugNarrativeLabelsInText } from "./narrative-label.js"
+import { scrubLeakedHourHorizons } from "./watch-window.js"
 
 const WORKSPACE_PATH_RE =
   /\b(?:reports|inbox|state|archive|agent|outbox)\/[A-Za-z0-9][A-Za-z0-9._/-]*/gu
@@ -70,7 +73,11 @@ export function markdownToTelegramHtml(text: string): string {
   }).join("\n")
 }
 
-/** Strip local refs then convert markdown → Telegram HTML */
+/** Strip refs, scrub leaked hour tokens, deslug narrative labels, markdown → HTML */
 export function formatTelegramOperatorText(text: string): string {
-  return markdownToTelegramHtml(stripLocalWorkspaceRefs(text))
+  return markdownToTelegramHtml(
+    deslugNarrativeLabelsInText(
+      scrubLeakedHourHorizons(stripLocalWorkspaceRefs(text)),
+    ),
+  )
 }

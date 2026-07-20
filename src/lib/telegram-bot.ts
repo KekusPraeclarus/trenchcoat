@@ -1,6 +1,8 @@
 /** Thin Bot API client for the operator chat listener (not market collectors). */
 
 import { formatTelegramOperatorText, stripLocalWorkspaceRefs } from "./telegram-format.js"
+import { deslugNarrativeLabelsInText } from "./narrative-label.js"
+import { scrubLeakedHourHorizons } from "./watch-window.js"
 
 export type TelegramBotFetcher = (
   url: string,
@@ -68,7 +70,14 @@ export async function telegramSendOperatorMessage(
   try {
     await telegramSendMessage(fetcher, token, chatId, html, { parseMode: "HTML" })
   } catch {
-    await telegramSendMessage(fetcher, token, chatId, stripLocalWorkspaceRefs(text))
+    await telegramSendMessage(
+      fetcher,
+      token,
+      chatId,
+      deslugNarrativeLabelsInText(
+        scrubLeakedHourHorizons(stripLocalWorkspaceRefs(text)),
+      ),
+    )
   }
 }
 

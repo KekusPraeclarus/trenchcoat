@@ -126,6 +126,7 @@ describe("runDiscordDistiller", () => {
       runSession: async ({ message }) => {
         expect(message).toContain("<untrusted-report>")
         expect(message).toContain("subject=rh-chain-meme-rotation")
+        expect(message).toContain("watchWindow=this week")
         return "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip"
       },
     })
@@ -185,7 +186,8 @@ describe("runDiscordDistiller", () => {
     })
     expect(msg).toContain("Discord bottom-line")
     expect(msg).toContain("type=rotation")
-    expect(msg).toContain("unchangedStages: rh-chain-meme-rotation=peaking")
+    expect(msg).toContain("watchWindow=this week")
+    expect(msg).toContain("unchangedStages: RH Chain Meme Rotation=peaking")
     expect(msg).toContain("<untrusted-report>\nbody\n</untrusted-report>")
   })
 })
@@ -217,6 +219,13 @@ describe("validateTelegramOverviewOutput", () => {
   it("rejects overlong and control chars", () => {
     expect(validateTelegramOverviewOutput("x".repeat(TELEGRAM_TEXT_MAX + 1)).ok).toBe(false)
     expect(validateTelegramOverviewOutput("bad\u0000text").ok).toBe(false)
+  })
+
+  it("scrubs leaked hour tokens but keeps natural watch prose", () => {
+    const scrubbed = validateTelegramOverviewOutput("Watch over the next 72h")
+    expect(scrubbed).toEqual({ ok: true, text: "Watch the next few days" })
+    const natural = validateTelegramOverviewOutput("Watch this month")
+    expect(natural).toEqual({ ok: true, text: "Watch this month" })
   })
 })
 
@@ -257,7 +266,7 @@ describe("runTelegramOverviewDistiller", () => {
       usedToday: 1,
       enabled: true,
       runSession: async ({ message }) => {
-        expect(message).toContain("knownStages: rh-chain-meme-rotation=peaking")
+        expect(message).toContain("knownStages: RH Chain Meme Rotation=peaking")
         expect(message).toContain("<untrusted-report>")
         return overview
       },
@@ -298,6 +307,7 @@ describe("runTelegramOverviewDistiller", () => {
       }],
     })
     expect(msg).toContain("Telegram landscape overview")
-    expect(msg).toContain("knownStages: rh-chain-meme-rotation=peaking")
+    expect(msg).toContain("watchWindow=this week")
+    expect(msg).toContain("knownStages: RH Chain Meme Rotation=peaking")
   })
 })

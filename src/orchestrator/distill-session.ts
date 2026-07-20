@@ -8,7 +8,9 @@
  */
 
 import type { AuditClaim } from "../contracts/schemas.js"
+import { deslugNarrativeLabel } from "../lib/narrative-label.js"
 import { hasLocalWorkspaceRefs } from "../lib/telegram-format.js"
+import { scrubLeakedHourHorizons, watchWindowClaimFragment } from "../lib/watch-window.js"
 import {
   DISCORD_DISTILLER_PROMPT,
   TELEGRAM_OVERVIEW_PROMPT,
@@ -67,14 +69,14 @@ export type DistillResult = Readonly<{
 
 function claimLine(auditClaim?: AuditClaim): string {
   return auditClaim
-    ? `type=${auditClaim.type} subject=${auditClaim.subject} direction=${auditClaim.direction} horizonHours=${auditClaim.horizonHours}`
+    ? `type=${auditClaim.type} subject=${auditClaim.subject} direction=${auditClaim.direction} ${watchWindowClaimFragment(auditClaim)}`
     : "type=unknown subject=unknown direction=unknown"
 }
 
 function stageList(stages: readonly StageKnown[] | undefined): string {
   const mapped = (stages ?? [])
     .slice(0, 24)
-    .map((entry) => `${entry.slug}=${entry.stage}`)
+    .map((entry) => `${deslugNarrativeLabel(entry.slug)}=${entry.stage}`)
     .join(", ")
   return mapped.length > 0 ? mapped : "(none)"
 }
@@ -137,7 +139,7 @@ export function validateDiscordDistillOutput(
   ) {
     return { ok: false, reason: "unchanged-stage-restatement" }
   }
-  return { ok: true, text }
+  return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
 
 /** Mechanical Telegram overview post-check. Restating known stages is allowed. */
@@ -151,7 +153,7 @@ export function validateTelegramOverviewOutput(
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
-  return { ok: true, text }
+  return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
 
 /**
