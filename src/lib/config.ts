@@ -167,6 +167,11 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(50).default(10),
     }).default({ enabled: false, daily_cap: 10 }),
+    // Host LLM gate: approve/reject agent market broadcasts before stage (INV-B2)
+    worthiness: z.object({
+      enabled: z.boolean().default(true),
+      model: z.string().min(1).max(64).default("composer-2.5-fast"),
+    }).default({ enabled: true, model: "composer-2.5-fast" }),
   }),
   narratives: z.object({
     retention_days: z.number().int().min(1).max(90).default(14),

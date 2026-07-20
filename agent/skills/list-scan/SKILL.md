@@ -28,6 +28,8 @@ Scan FYP + operator discovery lists and curate the feed with likes/follows.
    Read `state/narratives/log.jsonl` first: do **not** restate a narrative's known
    stage (e.g. omit "RH still peaking" when it is already peaking). Mention heat
    only when it drops or increases; host rejects status-quo stage restatements.
+   Prefer proposing only when clearly actionable — the host runs a separate
+   worthiness review before staging; empty outbox is fine.
 4. Optional `reports/<run-id>/research-candidates.json` — at most three host-enqueued
    research nominations when a canonical `chain` + `tokenAddress` appears verbatim
    in sealed same-run inbox evidence and ≥2 independent authors/clusters support it.

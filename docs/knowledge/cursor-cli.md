@@ -23,6 +23,10 @@ Binding decision: [ADR 003](../adr/003-cursor-cli-auth.md).
 - Binary: `agent` (symlink also appears as `cursor-agent`) under `~/.local/bin`
 - Override: `TRENCHCOAT_CURSOR_BIN`
 - Headless jobs: `agent -p --trust --sandbox enabled --workspace <abs agent/> --model composer-2.5 --output-format text`
+- Host sub-steps that pin a **fast** model today: Discord initial research
+  (`chat.discord.model`, default `composer-2.5-fast`) and broadcast worthiness
+  (`broadcast.worthiness.model`, default `composer-2.5-fast`, ADR 014). Channel
+  distillers omit `--model` and fall through to the job default (`composer-2.5`)
 - Operator Telegram chat: same, plus `--mode ask --output-format stream-json --stream-partial-output` (assistant text deltas → Telegram `sendMessageDraft`)
 - Auth: operator CLI login — **not** `CURSOR_API_KEY` (production paths never pass `--api-key`)
 - Chat follow-ups: `--resume <chatId>` / `--continue`

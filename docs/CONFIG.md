@@ -133,10 +133,12 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "daily_budget": 5,
     "urgent_ceiling": 10,
     "discord_distiller": { "enabled": false, "daily_cap": 10 },
-    "telegram_overview": { "enabled": false, "daily_cap": 10 }
+    "telegram_overview": { "enabled": false, "daily_cap": 10 },
+    "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
   },
   // daily_budget / urgent_ceiling = Discord message caps only (Telegram uncapped after validation)
   // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
+  // worthiness = host approve/reject gate before stage (fail-closed; default composer-2.5-fast; ADR 014)
   "narratives": { "retention_days": 14 },
   "source_safety": { "intent_classifier_daily_cap": 20 },
   "farcaster": {

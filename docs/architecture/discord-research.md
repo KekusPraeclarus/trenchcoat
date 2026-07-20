@@ -75,7 +75,8 @@ Malformed state files are quarantined and the process stops (fail closed).
    Daily caps charge queued/running/completed only (failures do not consume).
 3. `processNextDiscordRequest` — oldest queued → running under worker lock; ✅
 4. `runDiscordResearch` — resolve + collect + `runResearchPasses` (Discord model)
-   under `discord/agent/`; **no** main queue, proposals, INDEX, or outbox.
+   under `discord/agent/`; **no** main queue, INDEX, or outbox from the agent.
+   Host may later promote a validated `track` onto main watchlist (silent).
    Chat summary aims for one Discord message: `<TICKER> research` then TL;DR /
    X / Web / Read (Market/Security should be included in either tl;dr or read, only when material). Summarative X
    and prose Web (no post lists, engagement tables, sample disclaimers, or
@@ -83,18 +84,22 @@ Malformed state files are quarantined and the process stops (fail closed).
    Dossier collection reuses resolve
    DexScreener pairs and runs market/security, FOMO context, and X concurrently;
    optional Tavily queries run concurrently before pass 2. Stage timings
-   (resolve/dossier/passes/promotion/reply/subscription) are logged without
+   (resolve/dossier/passes/promotion/reply/subscription/main-promote) are logged without
    user content.
 5. `deliverResearchReply` — sanitized chat body, chunked without `1/n` labels;
    request completion is persisted under `.lock` so concurrent accepts cannot
    overwrite delivery. Watch baseline is built from the research dossier
    (same market/security/X evidence) — no second DexScreener/security/X collect.
 
-Security hard-fail still delivers the report but skips watch subscription.
-Otherwise subscription requires a host-validated `track` verdict from
-`decision-proposals.json` (`evaluateResearchSubscribe`): missing/malformed
-verdicts, `ignore`/`revisit`, mintable memecoins, and mint-without-classification
-all skip subscribe while still delivering the report.
+Security hard-fail still delivers the report but skips Discord watch
+subscription. Otherwise **every** completed research token is subscribed on the
+Discord watchlist (member updates) — no track-verdict gate. User-visible replies
+never mention watch subscribe, capacity, or main-agent tracking.
+
+Decent tokens (host-validated `track` via `evaluateResearchSubscribe`: matching
+proposal, non-hard-fail gate, contextual mint rule) are promoted onto the **main**
+agent watchlist/ledger by host-only `promoteDiscordTrackToMain` (INV-D1 exception).
+Promotion is silent, non-blocking on main `.lock`, and never stages broadcasts.
 
 ## Watchlist and monitor
 
@@ -143,7 +148,8 @@ used to force fallback and fight natural prose).
 
 - `src/discord/listener.ts` — Gateway intake + pump
 - `src/discord/pump.ts` — accept + FIFO processor
-- `src/discord/research-run.ts` — isolated research (`evaluateResearchSubscribe`)
+- `src/discord/research-run.ts` — isolated research; Discord watch vs main-track gates
+- `src/discord/promote-to-main.ts` — host bridge: validated `track` → main watchlist
 - `src/discord/research-brief.ts` — bounded TL;DR extract for watch context
 - `src/discord/materiality.ts` — material thresholds + metric glosses + soft fallback prose
 - `src/discord/watch-update-session.ts` — host watch-update writer session

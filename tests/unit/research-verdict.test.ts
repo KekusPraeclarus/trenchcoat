@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { evaluateResearchSubscribe } from "../../src/orchestrator/research-verdict.js"
+import {
+  evaluateDiscordWatchSubscribe,
+  evaluateResearchSubscribe,
+} from "../../src/orchestrator/research-verdict.js"
 import type { DecisionProposalFile } from "../../src/contracts/schemas.js"
 
 const identity = {
@@ -55,6 +58,26 @@ function writeProposal(
     `${JSON.stringify(file, null, 2)}\n`,
   )
 }
+
+describe("evaluateDiscordWatchSubscribe", () => {
+  it("allows watch unless scanner hard-failed", () => {
+    expect(evaluateDiscordWatchSubscribe({
+      status: "pass",
+      hardFail: false,
+      flags: [],
+    }).subscribe).toBe(true)
+    expect(evaluateDiscordWatchSubscribe({
+      status: "pass",
+      hardFail: false,
+      flags: ["mintable"],
+    }).subscribe).toBe(true)
+    expect(evaluateDiscordWatchSubscribe({
+      status: "hard-fail",
+      hardFail: true,
+      flags: ["honeypot"],
+    })).toMatchObject({ subscribe: false, reason: "security-hard-fail" })
+  })
+})
 
 describe("evaluateResearchSubscribe", () => {
   it("fails closed without a verdict artifact", () => {

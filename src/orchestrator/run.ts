@@ -74,6 +74,11 @@ import {
   validateAndPromoteChatReport,
 } from "./chat-report.js"
 import { ingestOutbox } from "./outbox-ingest.js"
+import {
+  AGENT_NOTES_MAX,
+  DEFAULT_WORTHINESS_MODEL,
+  WORTHINESS_TIMEOUT_MS,
+} from "./broadcast-worthiness.js"
 import { deliverStagedOutbox } from "./delivery.js"
 import { renderChannelPayloads } from "./channel-render.js"
 import { dayKey } from "./broadcast.js"
@@ -1364,11 +1369,39 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           urgent_ceiling: 10,
           discord_distiller: { enabled: false, daily_cap: 10 },
           telegram_overview: { enabled: false, daily_cap: 10 },
+          worthiness: { enabled: true, model: DEFAULT_WORTHINESS_MODEL },
         }
       }
     })()
     const ingestNowIso = systemClock.nowIso()
     const unchangedStages = statusQuoNarratives(narrativeLogBefore, narrativeLogAfter)
+    const worthinessCfg = broadcast.worthiness
+    const worthinessRunSession = worthinessCfg.enabled
+      ? async (sessionArgs: Readonly<{ prompt: string; message: string }>) => {
+        const session = await runOneShotSession({
+          prompt: `${sessionArgs.prompt}\n\n${sessionArgs.message}`,
+          cwd: opts.paths.agentRoot,
+          model: worthinessCfg.model,
+          mode: "ask",
+          sandbox: true,
+          timeoutMs: WORTHINESS_TIMEOUT_MS,
+        })
+        if (session.status !== "finished" || !session.text) {
+          throw new Error(session.error ?? "worthiness session failed")
+        }
+        return session.text
+      }
+      : undefined
+    const agentNotes = (() => {
+      const path = join(opts.paths.agentRoot, "reports", runId, "agent.md")
+      if (!existsSync(path)) return undefined
+      try {
+        const text = readFileSync(path, "utf8").trim()
+        return text.length > 0 ? text.slice(0, AGENT_NOTES_MAX) : undefined
+      } catch {
+        return undefined
+      }
+    })()
     const ingest = journal.phase === "events-staged" || canary.blockExternalEffects
       ? { staged: 0, rejected: 0, rejects: [] as const, items: [] as const }
       : await ingestOutbox({
@@ -1379,6 +1412,19 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         ...(collection.marketBlind ? { marketBlind: true } : {}),
         ...(narrativeLogBefore.length > 0 ? { narrativeLogBefore } : {}),
         ...(narrativeLogAfter ? { narrativeLogAfter } : {}),
+        worthiness: {
+          enabled: worthinessCfg.enabled,
+          ...(worthinessRunSession ? { runSession: worthinessRunSession } : {}),
+          context: {
+            job: job.name,
+            ...(typeof collection.collectionStatus === "string"
+              ? { collectionStatus: collection.collectionStatus }
+              : {}),
+            ...(collection.marketBlind ? { marketBlind: true } : {}),
+            ...(unchangedStages.length > 0 ? { statusQuoStages: unchangedStages } : {}),
+            ...(agentNotes ? { agentNotes } : {}),
+          },
+        },
       })
     const chatSummary = journal.phase === "alpha-purged" && CHAT_SUMMARY_JOBS.has(job.name)
       ? await validateAndPromoteChatReport({

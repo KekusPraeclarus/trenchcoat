@@ -38,6 +38,8 @@ export type ApplyProposalsOptions = Readonly<{
   allowTrackingWithoutIdentity?: boolean
   /** Snapshot provenance ids collected for this run (archive inbox) */
   allowedProvenanceIds?: ReadonlySet<string>
+  /** When set, only these proposalIds are considered (others skipped silently) */
+  proposalIds?: ReadonlySet<string>
   /**
    * Host gate resolver — required for track when identity present.
    * Omitting it rejects the proposal (INV-S9 fail-closed).
@@ -236,6 +238,9 @@ export async function applyDecisionProposals(
   const decisionChunks: string[] = []
 
   for (const proposal of file.proposals) {
+    if (opts.proposalIds && !opts.proposalIds.has(proposal.proposalId)) {
+      continue
+    }
     if (proposal.runId !== opts.runId) {
       receipts.push(reject(proposal, opts, "proposal runId mismatch"))
       rejected += 1

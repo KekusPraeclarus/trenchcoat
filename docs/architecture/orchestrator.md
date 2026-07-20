@@ -381,7 +381,7 @@ Two different “outbox” surfaces — do not conflate them:
 
 | Path | Contents | Module |
 |---|---|---|
-| `agent/outbox/<run-id>.json` | Agent **BroadcastItem** proposals (schema: `BroadcastItemSchema` in `src/contracts/schemas.ts`) | Validated by `ingestOutbox` → `validateBroadcastItem` (no Telegram count limit). Wrong envelopes (`broadcasts`, bare `text`) are rejected with an auditable receipt, never silently dropped. Wired in the run loop after seal (`events-staged`) |
+| `agent/outbox/<run-id>.json` | Agent **BroadcastItem** proposals (schema: `BroadcastItemSchema` in `src/contracts/schemas.ts`) | Validated by `ingestOutbox` → `validateBroadcastItem` + narrative/ref/platform gates, then host **worthiness** review (`broadcast-worthiness.ts`, default model `composer-2.5-fast`) must approve before stage (fail-closed; no Telegram count limit). Wrong envelopes (`broadcasts`, bare `text`) are rejected with an auditable receipt, never silently dropped. Wired in the run loop after seal (`events-staged`) |
 | `agent/reports/<run-id>/chat-summary.json` | Optional agent chat-recall context (`ChatSummaryFileSchema`; `itemIds` may be empty) | `validateAndPromoteChatReport` after `ingestOutbox` for list/narrative/fc/review/research: host always renders `reports/chat/<run-id>.md` from trusted facts; appends accepted context when present. Missing/invalid proposals are non-fatal (`proposalReason`); canary still blocks promotion |
 | `~/.trenchcoat/archive/router-outbox/<runId>/` | Durable **RouterEvent** files staged for HMAC POST | `src/lib/outbox.ts` (`Outbox.stage`). Used today by wallet-review / wallet-seed |
 
@@ -391,6 +391,12 @@ staged router events.
 - Validator resolves the subject against host state and accepts only known
   host-owned rules compatible with the claim type/direction (`isKnownVerificationRule`).
   Unauditable claims do not leave the machine
+- Worthiness gate (`broadcast.worthiness`, default enabled + `composer-2.5-fast`;
+  [ADR 014](../adr/014-broadcast-worthiness.md)):
+  after mechanical validation, a host ask-mode session decides `{worth, reason}`
+  per item. `worth:false`, session errors, and malformed JSON reject with
+  `worthiness:…` receipts in `broadcast-rejects.json` — never stage. Agent still
+  authors `text`; the host never invents market broadcast copy
 - Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5)
   when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
   that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
@@ -453,7 +459,8 @@ staged router events.
 - `src/orchestrator/chart-collect.ts` / `narrative-collect.ts` — collector jobs
 - `src/lib/deployment.ts` — runtime `deployment.json` manifest
 - `src/orchestrator/broadcast.ts` — Discord-only daily/urgent budget maths + known verification rules
-- `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals and stage (no count limit)
+- `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals, worthiness gate, and stage (no count limit)
+- `src/orchestrator/broadcast-worthiness.ts` — host approve/reject session before stage (INV-B2)
 - `src/orchestrator/channel-render.ts` — attach Telegram/Discord payloads; Discord budget reserve
 - `src/orchestrator/chat-report.ts` — host-render `reports/chat/<run-id>.md` from trusted run facts after `ingestOutbox` (`list-scan`, `narrative-scan`, `farcaster-scan`, `review`, `research`); optional `chat-summary.json`/`.md` context appended when valid
 - `src/orchestrator/narrative-log.ts` — `pruneNarrativeLog`: drop malformed lines + purge `lastSeen` older than `narratives.retention_days` (default 14)

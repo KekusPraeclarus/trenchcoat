@@ -1,6 +1,6 @@
 /**
- * Shared host validation for research track/subscribe decisions.
- * Used by operator research proposals and Discord watch subscription.
+ * Shared host validation for research track / Discord watch decisions.
+ * Discord member-watch is permissive; main-agent track stays fail-closed.
  */
 
 import { loadDecisionProposals } from "./proposals.js"
@@ -31,7 +31,20 @@ function identityMatches(
 }
 
 /**
- * Fail-closed subscribe gate: requires a schema-valid track proposal for the
+ * Discord watchlist gate: every completed research token is watched for member
+ * updates unless the scanner hard-failed.
+ */
+export function evaluateDiscordWatchSubscribe(
+  security: SecuritySnapshot,
+): ResearchSubscribeDecision {
+  if (security.hardFail || security.status === "hard-fail") {
+    return { subscribe: false, reason: "security-hard-fail" }
+  }
+  return { subscribe: true }
+}
+
+/**
+ * Main-agent track gate: requires a schema-valid track proposal for the
  * resolved identity, a non-hard-fail scanner status, and the contextual mint rule.
  */
 export function evaluateResearchSubscribe(args: Readonly<{

@@ -12,7 +12,9 @@ last_verified: 2026-07-20
 - Router-only webhook delivery with `wait=true`
 - `allowed_mentions.parse=[]` always
 - At-least-once; ambiguous timeouts may duplicate
-- Consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render (Telegram uncapped)
+- Consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render (Telegram
+  uncapped by count; market proposals still need host worthiness approval —
+  ADR 014)
 - Env: `DISCORD_WEBHOOK_URL`
 
 ## Research bot (Gateway)
@@ -35,7 +37,9 @@ last_verified: 2026-07-20
 - Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
   (~≤1800 chars); multipart has no `1/n` labels
 - Watch baseline = dossier evidence (no post-reply Dex/security/X re-collect);
-  subscribe stores `researchBrief` from the reply for update narration
+  every non-hard-fail research token is subscribed (silent); `researchBrief`
+  stored for update narration; validated `track` may promote to main watchlist
+  (host-only, also silent in Discord replies)
 - Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy
 - Stuck queue: hung scrape holding `.worker.lock` — see discord-research.md ops
 - See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010, ADR 012

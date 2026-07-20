@@ -4,11 +4,17 @@ import { Outbox } from "../lib/outbox.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
 import { sha256Json } from "../lib/canonical-json.js"
 import { canonicalizeBroadcastRefs } from "./broadcast-refs.js"
+import {
+  runBroadcastWorthiness,
+  type WorthinessContext,
+  type WorthinessSessionRunner,
+} from "./broadcast-worthiness.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
 import {
   assertNarrativeBroadcastAllowed,
   restatesUnchangedNarrativeStage,
   statusQuoNarratives,
+  type StageKnown,
 } from "./narrative-stage-dedupe.js"
 import {
   capSeverityForPlatformCoverage,
@@ -68,8 +74,10 @@ export type OutboxIngestReport = Readonly<{
 
 /**
  * Validate the agent's broadcast proposals and stage survivors as durable
- * RouterEvents. Telegram is uncapped at ingest; Discord daily budget is applied
- * later in `renderChannelPayloads`. Rejections are archived with a receipt.
+ * RouterEvents. After mechanical gates, an optional host worthiness session
+ * (fail-closed) must approve before stage. Telegram is uncapped at ingest;
+ * Discord daily budget is applied later in `renderChannelPayloads`.
+ * Rejections are archived with a receipt.
  */
 export async function ingestOutbox(args: Readonly<{
   agentRoot: string
@@ -81,6 +89,12 @@ export async function ingestOutbox(args: Readonly<{
   narrativeLogBefore?: readonly NarrativeLogEntry[]
   /** Post-merge narrative log — stage deltas unlock heat-change broadcasts */
   narrativeLogAfter?: readonly NarrativeLogEntry[]
+  /** Host worthiness gate — omitted/disabled skips the LLM review */
+  worthiness?: Readonly<{
+    enabled: boolean
+    runSession?: WorthinessSessionRunner
+    context: WorthinessContext
+  }>
 }>): Promise<OutboxIngestReport> {
   const proposed = readProposedItems(args.agentRoot, args.runId)
   const outbox = new Outbox(join(args.layout.routerOutbox, args.runId))
@@ -91,6 +105,9 @@ export async function ingestOutbox(args: Readonly<{
   const logBefore = args.narrativeLogBefore ?? []
   const logAfter = args.narrativeLogAfter
   const statusQuo = statusQuoNarratives(logBefore, logAfter)
+  const worthinessEnabled = args.worthiness?.enabled === true
+  const worthinessStatusQuo: readonly StageKnown[] =
+    args.worthiness?.context.statusQuoStages ?? statusQuo
 
   const reject = (reason: string, itemHash?: `sha256:${string}`): void => {
     rejects.push(itemHash ? { reason, itemHash } : { reason })
@@ -165,6 +182,31 @@ export async function ingestOutbox(args: Readonly<{
 
     const platforms = resolveSocialPlatformsForClaim(args.agentRoot, withDurableRefs)
     const capped = capSeverityForPlatformCoverage(withDurableRefs, platforms)
+
+    if (worthinessEnabled && args.worthiness) {
+      const review = await runBroadcastWorthiness({
+        item: capped,
+        enabled: true,
+        ...(args.worthiness.runSession
+          ? { runSession: args.worthiness.runSession }
+          : {}),
+        context: {
+          ...args.worthiness.context,
+          ...(worthinessStatusQuo.length > 0
+            ? { statusQuoStages: worthinessStatusQuo }
+            : {}),
+          ...(args.marketBlind ? { marketBlind: true } : {}),
+        },
+      })
+      if (!review.ok) {
+        reject(`worthiness:${review.reason}`, rawHash)
+        continue
+      }
+      if (!review.worth) {
+        reject(`worthiness:not-worth:${review.reason}`, rawHash)
+        continue
+      }
+    }
 
     // eventId is derived from run id + content only, so it is a stable idempotency
     // key across retries even though occurredAt varies.

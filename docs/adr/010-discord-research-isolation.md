@@ -25,9 +25,14 @@ Message Content intent.
   `.lock`, separate from `agent/.lock`.
 - Reuse shared collectors, chain resolution, deep-research passes, and chat-report
   promotion, but run them against `~/.trenchcoat/discord/agent/` and skip main
-  queue, proposals, INDEX, outbox, and Telegram paths.
+  queue, INDEX, outbox, and Telegram paths.
+- Discord watchlist: subscribe every completed research token (except scanner
+  hard-fail) for member updates — independent of model verdict.
+- Main watchlist: host-only `promoteDiscordTrackToMain` may apply a validated
+  `track` proposal onto `~/.trenchcoat/agent` (INV-S9/S23). Replies never mention
+  either list.
 - Config schema **10**: `chat.discord.*` caps and channel allowlist.
-- Isolation invariant: **INV-D1**.
+- Isolation invariant: **INV-D1** (with the bounded host-promote exception).
 
 ## Consequences
 
@@ -40,6 +45,8 @@ Message Content intent.
   skills).
 - Live canaries require explicit `TRENCHCOAT_LIVE_DISCORD=1` (see plan §14).
 - Watch update voice and fallback contract: ADR 012.
+- Main promote is best-effort: if main `.lock` is busy, Discord subscribe still
+  succeeds and promote is skipped (logged).
 
 ## References
 

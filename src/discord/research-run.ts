@@ -9,9 +9,13 @@ import {
   resolveResearchSubject,
 } from "../orchestrator/research-collect.js"
 import { runResearchPasses } from "../orchestrator/research.js"
-import { evaluateResearchSubscribe } from "../orchestrator/research-verdict.js"
+import {
+  evaluateDiscordWatchSubscribe,
+  evaluateResearchSubscribe,
+} from "../orchestrator/research-verdict.js"
 import { captureIntegritySnapshot, assertAgentIntegrity } from "../orchestrator/integrity.js"
 import { buildHostChatFacts, promoteResearchChatReport } from "../orchestrator/chat-report.js"
+import { preArchiveRun } from "../orchestrator/pre-archive.js"
 import { ensureDiscordAgentWorkspace, readDiscordChatReport } from "./agent-setup.js"
 import { observationFromDossier } from "./observation.js"
 import { discordLayout } from "./paths.js"
@@ -24,13 +28,21 @@ export type DiscordResearchOutcome = Readonly<{
   reportText?: string
   identity?: CanonicalIdentity
   securityHardFail?: boolean
-  /** Host-validated subscribe decision from structured research verdict */
+  /** Discord member-watch: true unless scanner hard-fail */
   subscribeAllowed?: boolean
   subscribeSkipReason?: string
+  /** Main-agent track eligibility (validated track verdict) */
+  mainTrackEligible?: boolean
+  mainTrackSkipReason?: string
   error?: string
   shortlist?: CanonicalIdentity[]
   /** Watch baseline from the research dossier — no second collect */
   baseline?: DiscordObservation
+  security?: Readonly<{
+    status: string
+    hardFail: boolean
+    flags: readonly string[]
+  }>
 }>
 
 function createResearchRunId(nowIso: string): string {
@@ -107,6 +119,12 @@ export async function runDiscordResearch(args: Readonly<{
       securityHardFail = true
     }
 
+    const security = {
+      status: dossier.security.status,
+      hardFail: dossier.security.hardFail,
+      flags: dossier.security.flags,
+    }
+
     const baseline = observationFromDossier({
       ...(dossier.market ? { market: dossier.market } : {}),
       security: dossier.security,
@@ -133,6 +151,13 @@ export async function runDiscordResearch(args: Readonly<{
 
       const promoteStarted = Date.now()
       const archive = await ensureArchive(archiveRoot)
+      await preArchiveRun({
+        layout: archive,
+        agentRoot,
+        runId,
+        job: "research",
+        nowIso: systemClock.nowIso(),
+      })
       const chat = await promoteResearchChatReport({
         agentRoot,
         layout: archive,
@@ -157,15 +182,12 @@ export async function runDiscordResearch(args: Readonly<{
       }
     }
 
-    const subscribe = evaluateResearchSubscribe({
+    const discordWatch = evaluateDiscordWatchSubscribe(security)
+    const mainTrack = evaluateResearchSubscribe({
       agentRoot,
       runId,
       identity,
-      security: {
-        status: dossier.security.status,
-        hardFail: dossier.security.hardFail,
-        flags: dossier.security.flags,
-      },
+      security,
     })
 
     const reportText = readDiscordChatReport(agentRoot, runId)
@@ -175,8 +197,10 @@ export async function runDiscordResearch(args: Readonly<{
       runId,
       ms: stageMs(totalStarted),
       status: "completed",
-      subscribe: subscribe.subscribe,
-      ...(subscribe.reason ? { subscribeReason: subscribe.reason } : {}),
+      discordSubscribe: discordWatch.subscribe,
+      ...(discordWatch.reason ? { discordSubscribeReason: discordWatch.reason } : {}),
+      mainTrack: mainTrack.subscribe,
+      ...(mainTrack.reason ? { mainTrackReason: mainTrack.reason } : {}),
     })
     return {
       status: "completed",
@@ -184,9 +208,12 @@ export async function runDiscordResearch(args: Readonly<{
       reportText,
       identity,
       securityHardFail,
-      subscribeAllowed: subscribe.subscribe,
-      ...(subscribe.reason ? { subscribeSkipReason: subscribe.reason } : {}),
+      subscribeAllowed: discordWatch.subscribe,
+      ...(discordWatch.reason ? { subscribeSkipReason: discordWatch.reason } : {}),
+      mainTrackEligible: mainTrack.subscribe,
+      ...(mainTrack.reason ? { mainTrackSkipReason: mainTrack.reason } : {}),
       baseline,
+      security,
     }
   } catch (error) {
     log.info("discord research stage", {

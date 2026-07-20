@@ -209,6 +209,10 @@
     "telegram_overview": {
       "enabled": true,
       "daily_cap": 50
+    },
+    "worthiness": {
+      "enabled": true,
+      "model": "composer-2.5-fast"
     }
   },
   "narratives": {

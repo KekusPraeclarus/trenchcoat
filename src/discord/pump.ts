@@ -21,6 +21,7 @@ import {
   mapResearchError,
 } from "./delivery.js"
 import { subscribeAfterResearch } from "./watchlist.js"
+import { promoteDiscordTrackToMain } from "./promote-to-main.js"
 import { tokenKey } from "./schemas.js"
 import { loadConfig } from "../lib/config.js"
 import { extractResearchBrief } from "./research-brief.js"
@@ -211,22 +212,8 @@ export async function processNextDiscordRequest(args: Readonly<{
       return "processed"
     }
 
-    let reportText = result.reportText ?? ""
-    if (result.securityHardFail) {
-      reportText = `${reportText}\n\n**Security hard-fail detected.** No watch subscription was created.`
-    } else if (!result.subscribeAllowed) {
-      const reason = result.subscribeSkipReason
-      const note = reason === "mintable-memecoin"
-        ? "**Mintable memecoin — watch subscription skipped.**"
-        : reason === "mintable-missing-classification"
-          ? "**Mint risk present without project classification — watch subscription skipped.**"
-          : reason === "verdict-missing" || reason === "verdict-identity-mismatch"
-            ? "**No validated track verdict — watch subscription skipped.**"
-            : reason?.startsWith("verdict-")
-              ? `**Model verdict was ${reason.slice("verdict-".length)} — watch subscription skipped.**`
-              : "**Watch subscription skipped.**"
-      reportText = `${reportText}\n\n${note}`
-    }
+    // Deliver research only — watch subscribe / main promote stay host-side silent
+    const reportText = result.reportText ?? ""
 
     const replyStarted = Date.now()
     const delivered = await deliverResearchReply({
@@ -264,7 +251,7 @@ export async function processNextDiscordRequest(args: Readonly<{
             nowIso: systemClock.nowIso(),
             baseline,
             ...(researchBrief ? { researchBrief } : {}),
-            securityHardFail: false,
+            securityHardFail: Boolean(result.securityHardFail),
           })
           watch = sub.file
           if (!sub.subscribed && sub.capacityReason) {
@@ -282,19 +269,43 @@ export async function processNextDiscordRequest(args: Readonly<{
           stage: "subscription",
           requestId: request.requestId,
           ms: Date.now() - subscribeStarted,
-          status: subLock.ok ? (subLock.value.capacity ? "capacity" : "ok") : "lock-busy",
+          status: subLock.ok
+            ? (subLock.value.capacity ? "capacity" : "ok")
+            : "lock-busy",
         })
-        if (subLock.ok && subLock.value.capacity) {
-          await deliverResearchReply({
-            client,
-            store,
-            request: { ...request, status: "completed" },
-            text: "",
-            extraParagraph: DISCORD_ERRORS.WATCH_CAPACITY,
-          })
-        }
       } catch (error) {
         log.warn("discord watch baseline failed", {
+          requestId: request.requestId,
+          error: error instanceof Error ? error.message : "unknown",
+        })
+      }
+    }
+
+    if (
+      result.mainTrackEligible
+      && result.identity
+      && result.runId
+      && result.security
+      && !result.securityHardFail
+    ) {
+      const promoteStarted = Date.now()
+      try {
+        const promoted = await promoteDiscordTrackToMain({
+          discordAgentRoot: layout.agent,
+          discordArchiveRoot: layout.archive,
+          runId: result.runId,
+          identity: result.identity,
+          security: result.security,
+        })
+        log.info("discord research stage", {
+          stage: "main-promote",
+          requestId: request.requestId,
+          ms: Date.now() - promoteStarted,
+          status: promoted.promoted ? "ok" : "skipped",
+          ...(promoted.reason ? { reason: promoted.reason } : {}),
+        })
+      } catch (error) {
+        log.warn("discord main promote failed", {
           requestId: request.requestId,
           error: error instanceof Error ? error.message : "unknown",
         })

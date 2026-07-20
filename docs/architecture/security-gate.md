@@ -125,8 +125,9 @@ early pools can mature.
   `archive/runs/<run-id>/gate-receipts/` (failures stay pending — never invent
   a pass). After a scanner `pass`, `applyDecisionProposals` applies
   `mintTrackBlockReason` for active mint + memecoin / missing classification
-- **Discord subscribe** — same structured verdict + mint rule via
-  `evaluateResearchSubscribe` (discord-research.md)
+- **Discord member-watch** — `evaluateDiscordWatchSubscribe` (hard-fail only);
+  main-agent promote still uses `evaluateResearchSubscribe` + mint rule
+  (discord-research.md)
 
 ## Audit metrics
 

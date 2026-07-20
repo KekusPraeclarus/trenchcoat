@@ -36,7 +36,10 @@ Working alpha: `mode: "preview"`, poller logs `preview:N` / `telegram preview po
 (on a ~60s cycle per channel batch), queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.
 Each newly written message enqueues an immediate `telegram-alpha` agent pass
 (serial pump under the workspace lock; exit 3 retries). Broadcasts go through
-the normal host outbox/router path when the agent proposes them.
+the normal host outbox/router path when the agent proposes them: mechanical
+validation, then a fail-closed **worthiness** review (`broadcast.worthiness`,
+default `composer-2.5-fast`) before stage — ADR 014. Telegram remains uncapped
+by daily count after approval; Discord still hits `daily_budget` / run-dedupe.
 `list-scan` / `review` may still write path-only alpha manifests for backlog
 drain; primary live digestion is `telegram-alpha`.
 List-scan writes `list-scan-alpha-manifest`; review writes `review-alpha-manifest`.

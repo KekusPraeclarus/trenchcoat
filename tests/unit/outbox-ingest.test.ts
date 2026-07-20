@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -310,5 +310,84 @@ describe("outbox ingest", () => {
     })
     expect(report.staged).toBe(1)
     expect(report.items[0]?.severity).toBe("urgent")
+  })
+
+  it("stages when worthiness approves", async () => {
+    const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
+    const runSession = vi.fn(async () => '{"worth":true,"reason":"actionable"}')
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession,
+        context: { job: "list-scan" },
+      },
+    })
+    expect(report.staged).toBe(1)
+    expect(report.rejected).toBe(0)
+    expect(runSession).toHaveBeenCalledOnce()
+  })
+
+  it("rejects when worthiness denies", async () => {
+    const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession: async () => '{"worth":false,"reason":"thin FYI"}',
+        context: { job: "telegram-alpha" },
+      },
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejected).toBe(1)
+    expect(report.rejects[0]?.reason).toBe("worthiness:not-worth:thin FYI")
+    expect(new Outbox(join(s.layout.routerOutbox, RUN_ID)).list()).toHaveLength(0)
+  })
+
+  it("fail-closes when worthiness session errors", async () => {
+    const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession: async () => {
+          throw new Error("cli down")
+        },
+        context: { job: "list-scan" },
+      },
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejects[0]?.reason).toBe("worthiness:session-error")
+  })
+
+  it("skips worthiness when mechanical validation already failed", async () => {
+    const runSession = vi.fn(async () => '{"worth":true,"reason":"should not run"}')
+    const s = await scaffold({
+      schema: 1,
+      items: [{ ...VALID_ITEM, refs: ["state/narratives/missing.md"] }],
+    })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession,
+        context: { job: "list-scan" },
+      },
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejects[0]?.reason).toMatch(/ref-missing/)
+    expect(runSession).not.toHaveBeenCalled()
   })
 })

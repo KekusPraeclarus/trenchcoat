@@ -22,13 +22,14 @@ mintable **memecoins** blocked automatically.
   `projectClassification` (`memecoin` | `utility` | `infrastructure` | `unknown`)
   and, when mint is active, `mintAssessment { active, justified, rationale }`.
 - Host validation (`mintTrackBlockReason` in proposals; `evaluateResearchSubscribe`
-  for Discord) rejects `track` / subscribe when mint is active **and**
-  classification is `memecoin`, or when classification is missing. Justified
+  for main-agent track / Discord→main promote) rejects `track` when mint is active
+  **and** classification is `memecoin`, or when classification is missing. Justified
   non-meme mints may track.
 - Contextual rejection does **not** trigger rug-dock — INV-S12 stays tied to
   typed scanner hard-fails only.
-- Discord no longer auto-subscribes on “not hard-fail”; subscribe requires an
-  accepted `track` verdict (fail closed on missing/malformed proposals).
+- Discord member-watch (`evaluateDiscordWatchSubscribe`) is independent: every
+  completed research token is subscribed unless scanner hard-fail. Main promote
+  still requires an accepted `track` verdict.
 
 ## Consequences
 
@@ -38,6 +39,8 @@ mintable **memecoins** blocked automatically.
   loss lift for mint tracks.
 - Runtime skill copies under `~/.trenchcoat/agent` and
   `~/.trenchcoat/discord/agent` still need manual sync after skill edits.
+- Discord members can receive watch updates on tokens the model rated
+  `ignore`/`revisit`; only `track` enters the main agent watchlist.
 
 ## References
 
