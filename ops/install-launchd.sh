@@ -757,11 +757,33 @@ bootstrap_label() {
     return
   fi
   launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
-  # brief settle avoids "Bootstrap failed: 5" when the prior process is still dying
-  sleep 0.3
+  # Wait until launchd drops the label. Immediate bootstrap races the dying
+  # KeepAlive process and returns "Bootstrap failed: 5: Input/output error".
+  gone=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if ! launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+      gone=1
+      break
+    fi
+    sleep 0.5
+  done
+  if [ "$gone" -eq 0 ]; then
+    echo "warning: $label still registered after bootout — retrying bootstrap anyway" >&2
+  else
+    sleep 0.3
+  fi
   if ! launchctl bootstrap "$DOMAIN" "$plist" 2>/dev/null; then
-    launchctl kickstart -k "$DOMAIN/$label" 2>/dev/null \
-      || launchctl bootstrap "$DOMAIN" "$plist"
+    # Already registered (partial race) — force a fresh start instead of failing the install.
+    if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+      launchctl kickstart -k "$DOMAIN/$label" 2>/dev/null || true
+    else
+      sleep 1
+      launchctl bootstrap "$DOMAIN" "$plist"
+    fi
+  fi
+  if ! launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+    echo "failed to bootstrap $label" >&2
+    return 1
   fi
   launchctl enable "$DOMAIN/$label" 2>/dev/null || true
   echo "loaded $label"
