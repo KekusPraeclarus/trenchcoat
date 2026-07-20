@@ -10,6 +10,7 @@ agent/inbox/
 agent/alpha-queue/
 agent/outbox/
 agent/reports/
+agent/state/x-bot-health.json
 agent/.lock
 *.sqlite3
 *.sqlite3-*
