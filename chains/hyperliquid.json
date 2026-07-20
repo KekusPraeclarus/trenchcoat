@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "slug": "hyperliquid",
+  "display": "Hyperliquid",
+  "family": "evm",
+  "aliases": ["hyperevm", "hl"],
+  "geckoterminalNetwork": "hyperevm",
+  "dexscreenerChainId": "hyperevm",
+  "nativeBenchmark": "hyperevm:hype",
+  "addressFormat": "evm",
+  "walletTracking": "unsupported",
+  "evmChainId": 999,
+  "capabilities": {
+    "research": true,
+    "discordWatch": true,
+    "mainTrack": false,
+    "geckoBars": true,
+    "narrativeDiscovery": false,
+    "walletTracking": false
+  }
+}

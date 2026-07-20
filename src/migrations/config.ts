@@ -341,7 +341,7 @@ export function migrateConfigToV9(raw: unknown): unknown {
 
 export function migrateConfigToV10(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 10 || record?.["schema"] === 11) return raw
+  if (record?.["schema"] === 10 || record?.["schema"] === 11 || record?.["schema"] === 12) return raw
   const v9 = migrateConfigToV9(raw) as Record<string, unknown>
   const chat = (v9["chat"] as Record<string, unknown> | undefined) ?? {}
   return {
@@ -395,7 +395,7 @@ const HARNESS_V11_DEFAULTS = {
  */
 export function migrateConfigToV11(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 11) return raw
+  if (record?.["schema"] === 11 || record?.["schema"] === 12) return raw
   const v10 = migrateConfigToV10(raw) as Record<string, unknown>
   const prev = v10["harness_improvement"]
   if (prev === undefined || prev === null || typeof prev !== "object") {
@@ -418,6 +418,52 @@ export function migrateConfigToV11(raw: unknown): unknown {
         ? false
         : (old["schedule_enabled"] ?? true),
       auto_open_pr: old["auto_open_pr"] === true ? true : false,
+    },
+  }
+}
+
+const CHAIN_INTEGRATION_V12_DEFAULTS = {
+  enabled: true,
+  max_attempts_per_utc_day: 3,
+  max_concurrent: 1,
+  research_model: "composer-2.5",
+  build_model: "cursor-grok-4.5-high",
+  finalize_model: "composer-2.5-fast",
+  provider_max_attempts: 5,
+  repair_max_rounds: 2,
+  deploy_max_attempts: 2,
+  phase_timeout_ms: 1_800_000,
+} as const
+
+/**
+ * Schema 12: Discord chain-integration lane defaults under chat.discord.
+ * Preserves explicit enabled:false and numeric overrides from prior configs.
+ */
+export function migrateConfigToV12(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 12) return raw
+  const v11 = migrateConfigToV11(raw) as Record<string, unknown>
+  const chat = (v11["chat"] ?? {}) as Record<string, unknown>
+  const discord = (chat["discord"] ?? {}) as Record<string, unknown>
+  const prev = discord["chain_integration"]
+  const merged = prev !== undefined && prev !== null && typeof prev === "object"
+    ? {
+      ...CHAIN_INTEGRATION_V12_DEFAULTS,
+      ...(prev as Record<string, unknown>),
+      enabled: (prev as Record<string, unknown>)["enabled"] === false
+        ? false
+        : ((prev as Record<string, unknown>)["enabled"] ?? true),
+    }
+    : { ...CHAIN_INTEGRATION_V12_DEFAULTS }
+  return {
+    ...v11,
+    schema: 12,
+    chat: {
+      ...chat,
+      discord: {
+        ...discord,
+        chain_integration: merged,
+      },
     },
   }
 }

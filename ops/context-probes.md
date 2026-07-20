@@ -8,7 +8,8 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 |----|------|----------|--------------------------|-------------|------|
 | P1 | recall | Which broadcast severity bypasses the Discord daily budget, and what still constrains Discord sends? | Discord `urgent` bypasses `daily_budget`; schema check + Discord `urgent_ceiling` (default 10/day). Telegram has no daily count limit after validation. Over Discord budget omits `channels.discord` (router `skipped-discord-budget`) → orchestrator.md "Outbox → router", INV-B2/B4 | pass | 2026-07-20 |
 | P2 | recall | Who is allowed to write `state/sources.json`, and why is that restricted? | Only deterministic host code: audit scoring maths, rug-shill dock, operator undock/confirm, neutral auto-registration; never a model session, so shilled content can't vouch for its own source → INV-S7/S12, agent-workspace.md | pass | 2026-07-20 |
-| P5 | recall | A candidate surfaces on a chain we don't support — what happens, and how do we add the chain? | Fail-closed: no registry entry or no scanner → never `tracking`, rejection logged for audit; adding = registry entry + provider id verification, no RPC (docs/architecture/chains.md) | pass | 2026-07-20 |
+| P5 | recall | A candidate surfaces on a chain we don't support — what happens, and how do we add the chain? | Fail-closed for tracking without registry/scanner (INV-S9). Manual add = `chains/<slug>.json` + `pnpm generate:chains` + provider verification. Discord exact unknown `slug:address` may enqueue host chain-integration (ADR 016) — research-only OK without scanner; never auto-enables wallet/Fomo → chains.md, discord-chain-integration.md | pass | 2026-07-20 |
+| P43 | recall | After Discord chain-integration deploys, why must announce/research handoff not stay in the pre-deploy worker, and how is research quota reserved meanwhile? | New slug is only in the **newly deployed** registry — worker runs `tc discord chains continue <id>` from `~/.trenchcoat/runtime`. Reservation uses Discord status `awaiting-chain` so FIFO pump skips it until promote. Deploying phase is drain idle-safe; chain-integration launchd job is not bootout on deploy pause → discord-chain-integration.md, ADR 016, INV-D2/S26 | pass | 2026-07-20 |
 | P6 | recall | Why can't the audit accidentally grade a decision with hindsight? | The as-of bundle freezes evidence; execution/outcomes use immutable post-event observations; a sealed epoch freezes cohort/versions; source scores lag one cycle → INV-S14/S18, snapshot-archive.md | pass | 2026-07-20 |
 | P3 | artifact | Where does Farcaster (Neynar) live, and what does ops enablement still need? | Implemented under `src/collectors/farcaster/` with `farcaster-scan` / `fc-source-review` (ADR 007); enable via `farcaster.enabled` + Neynar/signer auth → collectors.md, TECHNICAL-SPEC, knowledge/neynar.md | pass | 2026-07-20 |
 | P4 | continuation | What is the offline vs live acceptance status of the implementation? | Offline suites green; Phase 0–3 DONE (2026-07-18 audit response, `ops/NOTES.md` § Phase status); managed list + `--sync-env` + reversible X + TG **preview-first alpha** (33 channels live 2026-07-19) + live isolation write/network/injection operator-verified; residual = GramJS auth/CLI injection for preview-disabled channels + INV-I1 outside-read PARTIAL + INV-I5 container reference-only → `ops/LIVE-E2E-BLOCKERS.md` | pass | 2026-07-20 |
@@ -219,8 +220,8 @@ patterns become visible.
   001–011; market-risk stamp; NOTES/LIVE-E2E redeploy-pending; ENFORCED rows
   P1/S6/B5/R3/D1 sites present. Probe suite 40/40 pass via clean-context
   sub-agents. Always-on unchanged (~306 tokens).
-- 2026-07-20 session-learning (TG formatting + watchWindow): router fanout was
-  plain text (raw `**`); now HTML via `telegramSendFormattedChunks` + narrative
-  deslug. ADR 013 decouples host `watchWindow` from audit `horizonHours`; thin
-  hour-token scrub only. Updated INV-B2, P20, added P42; router.md / telegram.md
-  already carried the delivery notes. Gotchas empty.
+- 2026-07-20 session-learning (Discord chain integration): Host lane ADR 016 /
+  INV-D2/S26; manifests under `chains/`; schema 12; post-deploy **must**
+  `tc discord chains continue` from new runtime; reservation status
+  `awaiting-chain`; build model `cursor-grok-4.5-high`; deploying idle-safe.
+  Updated knowledge/discord, chains.md, P5, added P43. Gotchas empty.

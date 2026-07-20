@@ -217,6 +217,12 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   bootout → sleep → bootstrap → `kickstart -k`. Cold start may take 10–20s
   before the Discord child logs ready. See
   docs/architecture/discord-research.md.
+- **Discord chain integration** (schema 12): exact unknown `slug:address` in an
+  allowed channel enqueues `~/.trenchcoat/discord/chain-integrations/` and
+  kickstarts `com.trenchcoat.job.discord-chain-integration`
+  (`tc discord chains run`). Recovery: `tc discord chains status|retry|fail`.
+  During self-deploy the worker stays registered (not bootout) and drain treats
+  `deploying` as idle-safe. See docs/architecture/discord-chain-integration.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that
   predate `scripts/scaffold-agent.ts` creating the file need a one-time copy

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "slug": "bsc",
+  "display": "BNB Smart Chain",
+  "family": "evm",
+  "aliases": ["bnb"],
+  "geckoterminalNetwork": "bsc",
+  "dexscreenerChainId": "bsc",
+  "securityScanner": { "kind": "goplus", "chainId": "56" },
+  "nativeBenchmark": "bsc:bnb",
+  "addressFormat": "evm",
+  "walletTracking": "unsupported",
+  "evmChainId": 56,
+  "capabilities": {
+    "research": true,
+    "discordWatch": true,
+    "mainTrack": true,
+    "geckoBars": true,
+    "narrativeDiscovery": false,
+    "walletTracking": false
+  }
+}

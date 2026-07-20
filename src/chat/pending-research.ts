@@ -1,19 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { z } from "zod"
-import { IsoTimestampSchema, SafeIdSchema, type CanonicalIdentity } from "../contracts/schemas.js"
-import { normalizeChainSlug } from "../lib/chains.js"
+import { ChainSlugSchema, IsoTimestampSchema, SafeIdSchema, type CanonicalIdentity } from "../contracts/schemas.js"
+import { normalizeChainSlug, parseChainCa } from "../lib/chains.js"
 import type { ResearchIntent } from "./research-intent.js"
 
-const ChainHintSchema = z.enum([
-  "solana",
-  "ethereum",
-  "base",
-  "bsc",
-  "robinhood",
-  "plasma",
-  "hyperliquid",
-])
+const ChainHintSchema = ChainSlugSchema
 
 export const ResearchChoiceOptionSchema = z.object({
   index: z.number().int().min(1).max(5),
@@ -316,15 +308,13 @@ export function selectResearchChoice(args: Readonly<{
 
   const trimmed = args.selection.trim()
   const byIndex = /^([1-5])\s*$/u.exec(trimmed)
-  const byCa =
-    /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu
-      .exec(trimmed)
+  const byCa = parseChainCa(trimmed)
   let option: ResearchChoiceOption | undefined
   if (byIndex?.[1]) {
     option = choice.options.find((o) => o.index === Number(byIndex[1]))
-  } else if (byCa?.[1] && byCa[2]) {
-    const chain = normalizeChainSlug(byCa[1])
-    const token = byCa[2]
+  } else if (byCa) {
+    const chain = normalizeChainSlug(byCa.chainRaw)
+    const token = byCa.token
     option = choice.options.find(
       (o) => chain != null
         && o.chain === chain
@@ -362,8 +352,10 @@ export function selectResearchChoice(args: Readonly<{
 
 export function isResearchChoiceText(text: string): boolean {
   const trimmed = text.trim()
-  return /^[1-5]\s*$/u.test(trimmed)
-    || /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):[A-Za-z0-9]{32,128}$/iu.test(trimmed)
+  if (/^[1-5]\s*$/u.test(trimmed)) return true
+  const ca = parseChainCa(trimmed)
+  if (!ca) return false
+  return Boolean(normalizeChainSlug(ca.chainRaw))
 }
 
 export function patchConfirmed(

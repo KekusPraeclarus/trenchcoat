@@ -32,8 +32,10 @@ last_verified: 2026-07-20
   one retry then soft prose fallback if the session fails
 - State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
 - Does not use main `agent/.lock` or research queue
-- Config: schema 10 `chat.discord.*` (disabled by default)
-- CLI: `tc listen discord`, `tc discord watchlist scan`
+- Config: schema 10+ `chat.discord.*` (disabled by default); schema 12 adds
+  `chain_integration` for exact unknown `slug:address` host automation
+- CLI: `tc listen discord`, `tc discord watchlist scan`,
+  `tc discord chains run|status|retry|fail|continue`
 - Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
   (~≤1800 chars); multipart has no `1/n` labels
 - Watch baseline = dossier evidence (no post-reply Dex/security/X re-collect);
@@ -42,4 +44,11 @@ last_verified: 2026-07-20
   (host-only, also silent in Discord replies)
 - Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy
 - Stuck queue: hung scrape holding `.worker.lock` — see discord-research.md ops
+- **Chain integration** (host lane, not the Discord agent): exact unknown
+  `slug:address` → `~/.trenchcoat/discord/chain-integrations/` → kickstart
+  worker → after deploy, **new** runtime CLI `continue` announces then FIFO
+  research. Research reservation uses status `awaiting-chain`. Build model
+  `cursor-grok-4.5-high`. See
+  [discord-chain-integration.md](../architecture/discord-chain-integration.md),
+  ADR 016, INV-D2/S26
 - See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010, ADR 012

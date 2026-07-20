@@ -19,6 +19,8 @@ import { snapshotBroadcastPipeline } from "../orchestrator/delivery.js"
 import { filePendingResearchStore } from "../chat/pending-research.js"
 import { discordLayout } from "../discord/paths.js"
 import { createDiscordStore } from "../discord/store.js"
+import { chainIntegrationLayout } from "../chain-integration/paths.js"
+import { createChainIntegrationStore } from "../chain-integration/store.js"
 import {
   AgentDeploymentManifestSchema,
   type AgentDeploymentManifest,
@@ -45,6 +47,8 @@ export type DrainSnapshot = Readonly<{
   discordQueued: number
   discordRunning: number
   discordUndeliveredCompleted: number
+  chainIntegrationBusy: boolean
+  chainIntegrationDeploying: boolean
   xPendingActions: number
   routerIngressPending: number
 }>
@@ -87,10 +91,40 @@ function discordBusy(home: string): Readonly<{
   queued: number
   running: number
   undeliveredCompleted: number
+  chainIntegrationBusy: boolean
+  chainIntegrationDeploying: boolean
 }> {
   const layout = discordLayout(home)
   const lockHeld = existsSync(layout.lock) || existsSync(`${layout.lock}.owner`)
   const workerLockHeld = existsSync(layout.workerLock) || existsSync(`${layout.workerLock}.owner`)
+
+  const ciLayout = chainIntegrationLayout(home)
+  const ciWorkerHeld = existsSync(ciLayout.workerLock)
+    || existsSync(`${ciLayout.workerLock}.owner`)
+  let chainIntegrationDeploying = false
+  let chainIntegrationBusy = ciWorkerHeld
+  if (existsSync(ciLayout.index)) {
+    try {
+      const store = createChainIntegrationStore(ciLayout)
+      const file = store.load()
+      const active = file.activeIntegrationId
+        ? file.integrations.find((i) => i.integrationId === file.activeIntegrationId)
+        : undefined
+      chainIntegrationDeploying = active?.phase === "deploying"
+      // deploying is safe for installer's idle gate (self-deploy)
+      chainIntegrationBusy = (ciWorkerHeld && !chainIntegrationDeploying)
+        || Boolean(
+          active
+          && active.phase !== "deploying"
+          && active.phase !== "completed"
+          && active.phase !== "failed"
+          && active.phase !== "queued",
+        )
+    } catch {
+      chainIntegrationBusy = ciWorkerHeld
+    }
+  }
+
   if (!existsSync(layout.root)) {
     return {
       lockHeld: false,
@@ -98,6 +132,8 @@ function discordBusy(home: string): Readonly<{
       queued: 0,
       running: 0,
       undeliveredCompleted: 0,
+      chainIntegrationBusy,
+      chainIntegrationDeploying,
     }
   }
   const store = createDiscordStore(layout)
@@ -112,7 +148,15 @@ function discordBusy(home: string): Readonly<{
       undeliveredCompleted += 1
     }
   }
-  return { lockHeld, workerLockHeld, queued, running, undeliveredCompleted }
+  return {
+    lockHeld,
+    workerLockHeld,
+    queued,
+    running,
+    undeliveredCompleted,
+    chainIntegrationBusy,
+    chainIntegrationDeploying,
+  }
 }
 
 export async function buildDrainSnapshot(opts: Readonly<{
@@ -154,6 +198,8 @@ export async function buildDrainSnapshot(opts: Readonly<{
     discordQueued: discord.queued,
     discordRunning: discord.running,
     discordUndeliveredCompleted: discord.undeliveredCompleted,
+    chainIntegrationBusy: discord.chainIntegrationBusy,
+    chainIntegrationDeploying: discord.chainIntegrationDeploying,
     xPendingActions: health.x.pendingActions,
     routerIngressPending: router.ingress.ingressPending,
   }
@@ -170,6 +216,7 @@ export function isAgentIdle(snapshot: DrainSnapshot): boolean {
   if (snapshot.telegramResearchRunning) return false
   if (snapshot.discordLockHeld || snapshot.discordWorkerLockHeld) return false
   if (snapshot.discordRunning > 0) return false
+  if (snapshot.chainIntegrationBusy) return false
   return true
 }
 

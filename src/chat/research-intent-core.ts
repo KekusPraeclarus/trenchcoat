@@ -1,48 +1,47 @@
-import { validateAddress } from "../lib/chains.js"
+import {
+  getChain,
+  normalizeChainSlug,
+  parseChainCa,
+  validateAddress,
+  knownChainSlugsAlternation,
+  CHAIN_REGISTRY,
+  type ChainSlug,
+} from "../lib/chains.js"
 
-export const CHAIN_HINT_VALUES = [
-  "solana",
-  "ethereum",
-  "base",
-  "bsc",
-  "robinhood",
-  "plasma",
-  "hyperliquid",
-] as const
-export type ChainHint = typeof CHAIN_HINT_VALUES[number]
+export type ChainHint = ChainSlug
 
-export const CHAIN_ALIASES: ReadonlyArray<[RegExp, ChainHint]> = [
-  [/\b(solana|sol)\b/iu, "solana"],
-  [/\b(ethereum|eth)\b/iu, "ethereum"],
-  [/\b(base)\b/iu, "base"],
-  [/\b(bsc|bnb)\b/iu, "bsc"],
-  [/\b(robinhood|hood)\b/iu, "robinhood"],
-  [/\b(plasma)\b/iu, "plasma"],
-  [/\b(hyperliquid|hyperevm|hl)\b/iu, "hyperliquid"],
-]
+export const CHAIN_HINT_VALUES: readonly ChainHint[] = CHAIN_REGISTRY.map((c) => c.slug as ChainHint)
 
-export const ON_CHAIN_RE =
-  /\bon\s+(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/iu
-export const ALL_CHAIN_WORDS_RE =
-  /\b(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/giu
+function buildAliasPairs(): ReadonlyArray<[RegExp, ChainHint]> {
+  const pairs: Array<[RegExp, ChainHint]> = []
+  for (const entry of CHAIN_REGISTRY) {
+    const words = [entry.slug, ...entry.aliases]
+    const alt = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")
+    pairs.push([new RegExp(`\\b(${alt})\\b`, "iu"), entry.slug as ChainHint])
+  }
+  return pairs
+}
+
+export const CHAIN_ALIASES: ReadonlyArray<[RegExp, ChainHint]> = buildAliasPairs()
+
+const ALT = knownChainSlugsAlternation()
+export const ON_CHAIN_RE = new RegExp(`\\bon\\s+(${ALT})\\b`, "iu")
+export const ALL_CHAIN_WORDS_RE = new RegExp(`\\b(${ALT})\\b`, "giu")
 export const RESEARCH_VERBS =
   /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into|check\s+out|analyse|analyze)\b/iu
-/** Exact chain:CA, optional bot mention / code ticks / leading research verb */
-export const CHAIN_CA =
-  /^(?:<@!?&?\d+>\s*)?(?:(?:research|deep\s+research|look\s*into|investigate|analyse|analyze|check\s+out|deep[\s-]?dive)\s+)?(?:`)?(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})(?:`)?$/iu
+
+/** Known-chain:CA (registry-derived). Unknown slugs use parseChainCa / CHAIN_CA_GENERIC_RE. */
+export const CHAIN_CA = new RegExp(
+  `^(?:<@!?&?\\d+>\\s*)?(?:(?:research|deep\\s+research|look\\s*into|investigate|analyse|analyze|check\\s+out|deep[\\s-]?dive)\\s+)?(?:\`)?(${ALT}):([A-Za-z0-9]{32,128})(?:\`)?$`,
+  "iu",
+)
+
 export const EVM_CA = /\b(0x[a-fA-F0-9]{40})\b/gu
 export const SOLANA_CA = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/gu
 
 export function normalizeChainWord(word: string): ChainHint | undefined {
-  const lower = word.toLowerCase()
-  if (lower === "sol" || lower === "solana") return "solana"
-  if (lower === "eth" || lower === "ethereum") return "ethereum"
-  if (lower === "base") return "base"
-  if (lower === "bsc" || lower === "bnb") return "bsc"
-  if (lower === "hood" || lower === "robinhood") return "robinhood"
-  if (lower === "plasma") return "plasma"
-  if (lower === "hyperliquid" || lower === "hyperevm" || lower === "hl") return "hyperliquid"
-  return undefined
+  const slug = normalizeChainSlug(word)
+  return slug && getChain(slug) ? (slug as ChainHint) : undefined
 }
 
 export function chainHintFrom(text: string): ChainHint | undefined {
@@ -103,3 +102,5 @@ export function stripDiscordFormatting(text: string): string {
     .replace(/\s+/gu, " ")
     .trim()
 }
+
+export { parseChainCa }

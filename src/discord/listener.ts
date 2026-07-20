@@ -20,6 +20,9 @@ import {
 import { createDiscordRestClient } from "./bot-client.js"
 import { deliverRenewalAck } from "./delivery.js"
 import { renewSubscription } from "./watchlist.js"
+import { acceptChainIntegration } from "../chain-integration/intake.js"
+import { kickChainIntegrationWorker } from "../chain-integration/kick.js"
+import { reactAcceptedSources } from "../chain-integration/continue.js"
 
 export type DiscordListenerOpts = Readonly<{
   token: string
@@ -74,6 +77,29 @@ async function handleRenewal(message: Message, token: string): Promise<void> {
 
 async function handleResearchMessage(message: Message, repoRoot: string, token: string): Promise<void> {
   const intent = extractDiscordResearchIntent(message.content)
+  if (intent.kind === "chain-integration") {
+    const accepted = await acceptChainIntegration({
+      guildId: message.guildId!,
+      channelId: message.channelId,
+      messageId: message.id,
+      userId: message.author.id,
+      slug: intent.slug,
+      tokenAddress: intent.tokenAddress,
+      subject: intent.subject,
+    })
+    if (!accepted.accepted) {
+      const client = createDiscordRestClient(token)
+      await client.sendReply({
+        channelId: message.channelId,
+        content: accepted.terminal.slice(0, 280),
+        replyToMessageId: message.id,
+      })
+      return
+    }
+    await reactAcceptedSources(accepted.integration, token)
+    kickChainIntegrationWorker()
+    return
+  }
   if (intent.kind !== "research") return
 
   const accepted = await acceptDiscordRequest({

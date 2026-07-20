@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "slug": "ethereum",
+  "display": "Ethereum",
+  "family": "evm",
+  "aliases": ["eth"],
+  "geckoterminalNetwork": "eth",
+  "dexscreenerChainId": "ethereum",
+  "securityScanner": { "kind": "goplus", "chainId": "1" },
+  "nativeBenchmark": "ethereum:eth",
+  "addressFormat": "evm",
+  "walletTracking": "infura",
+  "evmChainId": 1,
+  "capabilities": {
+    "research": true,
+    "discordWatch": true,
+    "mainTrack": true,
+    "geckoBars": true,
+    "narrativeDiscovery": true,
+    "walletTracking": true
+  }
+}

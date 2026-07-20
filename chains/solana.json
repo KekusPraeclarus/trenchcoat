@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "slug": "solana",
+  "display": "Solana",
+  "family": "solana",
+  "aliases": ["sol"],
+  "geckoterminalNetwork": "solana",
+  "dexscreenerChainId": "solana",
+  "securityScanner": { "kind": "rugcheck" },
+  "nativeBenchmark": "solana:sol",
+  "addressFormat": "base58-32",
+  "walletTracking": "helius",
+  "capabilities": {
+    "research": true,
+    "discordWatch": true,
+    "mainTrack": true,
+    "geckoBars": true,
+    "narrativeDiscovery": true,
+    "walletTracking": true
+  }
+}

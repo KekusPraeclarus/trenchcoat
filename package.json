@@ -27,6 +27,7 @@
     "test:all": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:property && pnpm test:contract && pnpm test:integration && pnpm test:crash && pnpm test:redteam && pnpm test:sandbox",
     "typecheck": "tsc --noEmit",
     "lint": "tsx scripts/lint-static.ts",
+    "generate:chains": "tsx scripts/generate-chains.ts",
     "probe:gecko": "tsx scripts/probe-geckoterminal.ts",
     "probe:fomo": "tsx scripts/probe-fomo.ts",
     "fomo:install-gates": "tsx scripts/install-fomo-gates.ts",

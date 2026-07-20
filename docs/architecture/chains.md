@@ -5,6 +5,7 @@ status: active
 last_verified: 2026-07-20
 read_when:
   - Adding or modifying chain support, or editing any code that passes a chain identifier to an upstream API.
+  - Understanding Discord automated chain integration vs manual registry edits.
 ---
 
 # Chain registry
@@ -13,9 +14,14 @@ read_when:
 
 Every upstream provider names chains differently (GeckoTerminal `network`,
 DexScreener `chainId`, GoPlus numeric `chain_id`) and token addresses have
-chain-specific formats. The registry is the one typed table (`src/lib/chains.ts`)
-that maps our canonical chain slug to every provider's identifier, so no client
-ever hardcodes a chain string.
+chain-specific formats. The registry is the one typed table generated from
+strict additive manifests under `chains/<slug>.json` via
+`pnpm generate:chains` → `src/lib/chains.generated.ts`, loaded by
+`src/lib/chains.ts`. No client should hardcode a chain string.
+
+Automated Discord additions use the host chain-integration lane
+([discord-chain-integration.md](discord-chain-integration.md)); they never enable
+wallet tracking.
 
 All chain interaction for **token** market data is **API-driven** (GeckoTerminal /
 DexScreener / scanners). Wallet tracking is the exception: it uses finalized
@@ -79,28 +85,38 @@ Discord member-watch still resolve, but main-agent `tracking` stays blocked
 ## Fail-closed rule
 
 A candidate whose chain has no registry entry **can never enter
-`watchlist.json` as `tracking`** and is never sent to a research agent session.
-A registry entry **without** a security scanner may still be researched
-(Discord / operator) and Discord-watched, but `isTrackableChain` is false so
-main-agent track / promote stays blocked. The resolver marks unknown slugs
+`watchlist.json` as `tracking`** and is never sent to a **main** research agent
+session as a supported chain. Discord exact unknown `slug:address` may enqueue
+the host chain-integration lane (ADR 016) instead of silent ignore. A registry
+entry **without** a security scanner may still be researched (Discord / operator)
+and Discord-watched, but `isTrackableChain` is false so main-agent track /
+promote stays blocked. The resolver marks unknown slugs
 `rejected: unsupported-chain` in the research queue, and the decision log records
 the rejection so audits can measure what unsupported chains are costing us
 (the trigger to add them). Covered by INV-S9.
 
 ## Adding a new chain
 
-Purely additive, no blockchain access required:
+Prefer additive manifests under `chains/<slug>.json`, then
+`pnpm generate:chains` (lint `--check` fails if stale). No blockchain RPC
+required for token tracking:
 
-1. Add the registry entry; verify each provider id against live API responses
+1. Add `chains/<slug>.json`; verify each provider id against live API responses
    (GeckoTerminal networks list, a known DexScreener pair, a known-good scanner
    call for a major token on that chain)
 2. Confirm scanner coverage: run the scanner against one known-good and one
-   known-rugged token on the chain; if no scanner covers the chain, stop —
-   the entry ships without `security_scanner` and stays untrackable
-3. Add the address-format validator if the family is new
-4. Unit tests: registry completeness (every entry has scanner or is flagged),
-   address validation accept/reject vectors
+   known-rugged token on the chain; if no scanner covers the chain, the entry
+   may still ship **without** `security_scanner` (research/Discord only;
+   INV-S9 blocks main track)
+3. Address family must already be `evm` or `base58-32` for automated Discord
+   integration; a new address family is manual-only and fails closed
+4. Unit tests under `tests/unit/chains/<slug>.test.ts`
 5. Update the table above and `security-gate.md` in the same change
+
+**Discord automation:** exact unknown `slug:address` in an allowed channel may
+run the host lane end-to-end (ADR 016 /
+[discord-chain-integration.md](discord-chain-integration.md)). Automated
+manifests force `walletTracking: unsupported`.
 
 ## Consumers
 

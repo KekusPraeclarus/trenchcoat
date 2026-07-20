@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { spawn } from "node:child_process"
 import { loadDotEnv } from "./lib/dotenv.js"
 import { ConfigSchema } from "./lib/config.js"
-import { migrateConfigToV7 } from "./migrations/config.js"
+import { migrateConfigToV12 } from "./migrations/config.js"
 import { runJob } from "./orchestrator/run.js"
 import { getJob, JOBS } from "./orchestrator/jobs.js"
 import { runPreflight } from "./lib/preflight.js"
@@ -64,6 +64,7 @@ Commands:
   router serve
   listen [telegram|discord|channels|x-scan]
   discord watchlist scan
+  discord chains run|status|retry|fail|continue
   backup
   research <subject>
   auth twitter [--create-managed-list] [--headed]
@@ -92,7 +93,7 @@ async function cmdInit(seedPath?: string, operatorSeedPath?: string): Promise<vo
   mkdirSync(destDir, { recursive: true, mode: 0o700 })
   const seed = seedPath ?? join(process.cwd(), "config/seed.example.json")
   const raw = JSON.parse(readFileSync(seed, "utf8")) as unknown
-  const cfg = ConfigSchema.parse(migrateConfigToV7(raw))
+  const cfg = ConfigSchema.parse(migrateConfigToV12(raw))
   writeFileSync(join(destDir, "config.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 })
   const agentSrc = join(process.cwd(), "agent")
   const agentDest = join(destDir, "agent")
@@ -341,6 +342,112 @@ async function cmdDiscordWatchlistScan(): Promise<void> {
   await runDiscordWatchlistScan({ token })
 }
 
+async function cmdDiscordChains(rest: string[]): Promise<void> {
+  const repoRoot = process.env["TRENCHCOAT_REPO_ROOT"]
+    ?? join(homedir(), "Documents", "trench-bot")
+  const root = existsSync(join(process.cwd(), "ops", "install-launchd.sh"))
+    ? process.cwd()
+    : (existsSync(join(repoRoot, "ops", "install-launchd.sh")) ? repoRoot : process.cwd())
+
+  const {
+    runChainIntegrationWorker,
+    loadChainIntegrationStatus,
+  } = await import("./chain-integration/orchestrate.js")
+  const {
+    createChainIntegrationStore,
+  } = await import("./chain-integration/store.js")
+  const { chainIntegrationLayout } = await import("./chain-integration/paths.js")
+  const { systemClock } = await import("./lib/clock.js")
+
+  const sub = rest[0]
+  if (sub === "status") {
+    const status = loadChainIntegrationStatus()
+    console.log(JSON.stringify(status, null, 2))
+    return
+  }
+  if (sub === "run") {
+    const result = await runChainIntegrationWorker({ repoRoot: root })
+    console.log(JSON.stringify(result, null, 2))
+    if (!result.ok && result.detail !== "idle" && result.detail !== "worker busy") {
+      process.exit(1)
+    }
+    return
+  }
+  if (sub === "retry") {
+    const id = rest[1]
+    const store = createChainIntegrationStore(chainIntegrationLayout())
+    const file = store.load()
+    const target = id
+      ? file.integrations.find((i) => i.integrationId === id)
+      : [...file.integrations].reverse().find((i) => i.phase === "failed")
+    if (!target) {
+      console.error("no failed integration to retry")
+      process.exit(2)
+    }
+    const idx = file.integrations.findIndex((i) => i.integrationId === target.integrationId)
+    file.integrations[idx] = {
+      ...target,
+      phase: "queued",
+      terminalError: undefined,
+      updatedAt: systemClock.nowIso(),
+      repairRound: 0,
+      providerAttempts: 0,
+      deployAttempts: 0,
+    }
+    if (!file.activeIntegrationId) file.activeIntegrationId = target.integrationId
+    await store.save(file)
+    const result = await runChainIntegrationWorker({
+      repoRoot: root,
+      integrationId: target.integrationId,
+    })
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+  if (sub === "continue") {
+    const id = rest[1]
+    if (!id) usage()
+    const {
+      continueAfterDeploy,
+    } = await import("./chain-integration/orchestrate.js")
+    const result = await continueAfterDeploy({
+      integrationId: id,
+      repoRoot: root,
+    })
+    console.log(JSON.stringify(result, null, 2))
+    if (!result.ok) process.exit(1)
+    return
+  }
+  if (sub === "fail") {
+    const id = rest[1]
+    if (!id) usage()
+    const reason = rest.slice(2).join(" ").slice(0, 280) || "operator fail"
+    const store = createChainIntegrationStore(chainIntegrationLayout())
+    const file = store.load()
+    const idx = file.integrations.findIndex((i) => i.integrationId === id)
+    if (idx < 0) {
+      console.error("integration not found")
+      process.exit(2)
+    }
+    const record = file.integrations[idx]!
+    file.integrations[idx] = {
+      ...record,
+      phase: "failed",
+      terminalError: reason,
+      updatedAt: systemClock.nowIso(),
+    }
+    if (file.activeIntegrationId === id) file.activeIntegrationId = null
+    await store.save(file)
+    const {
+      failIntegrationSources,
+      resolveDiscordBotToken,
+    } = await import("./chain-integration/continue.js")
+    await failIntegrationSources(record, resolveDiscordBotToken())
+    console.log(JSON.stringify({ ok: true, integrationId: id, phase: "failed" }))
+    return
+  }
+  usage()
+}
+
 async function cmdListenTelegram(): Promise<void> {
   const token = process.env["TELEGRAM_BOT_TOKEN"]
   const operatorId = process.env["TELEGRAM_OPERATOR_ID"]
@@ -352,7 +459,8 @@ async function cmdListenTelegram(): Promise<void> {
   let researchConfirmTtlMinutes = 15
   const configPath = join(home, "config.json")
   if (existsSync(configPath)) {
-    const cfg = ConfigSchema.parse(JSON.parse(readFileSync(configPath, "utf8")))
+    const { loadConfig } = await import("./lib/config.js")
+    const cfg = loadConfig(configPath)
     idleTimeoutMinutes = cfg.chat.idle_timeout_minutes
     researchConfirmTtlMinutes = cfg.chat.research_confirm_ttl_minutes
   }
@@ -503,6 +611,7 @@ async function cmdListenTelegram(): Promise<void> {
         || /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into)\b/iu.test(trimmed)
         || /^\/research\b/iu.test(trimmed)
         || /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):[A-Za-z0-9]{32,128}$/iu.test(trimmed)
+        || /^[a-z][a-z0-9-]{1,31}:[A-Za-z0-9]{32,128}$/iu.test(trimmed)
       const needsAgent = !hostHandled
       if (needsAgent) {
         await telegramSendChatAction(fetch, token, operatorId).catch(() => undefined)
@@ -561,11 +670,9 @@ async function cmdResearch(subject: string, args: string[]): Promise<void> {
   const { runOperatorResearchNow } = await import("./orchestrator/research.js")
   const { extractResearchIntent } = await import("./chat/research-intent.js")
   const intent = extractResearchIntent(`research ${subject}`)
-  const chained = subject.match(
-    /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu,
-  )
-  const { normalizeChainSlug } = await import("./lib/chains.js")
-  const chainedSlug = chained?.[1] ? normalizeChainSlug(chained[1]) : undefined
+  const { normalizeChainSlug, parseChainCa } = await import("./lib/chains.js")
+  const chained = parseChainCa(subject)
+  const chainedSlug = chained ? normalizeChainSlug(chained.chainRaw) : undefined
   const result = await runOperatorResearchNow({
     paths: { agentRoot, archiveRoot },
     input: {
@@ -573,21 +680,12 @@ async function cmdResearch(subject: string, args: string[]): Promise<void> {
       provenance: ["operator:cli"],
       reason: "cli research",
       ...(chainedSlug
-        ? {
-          chainHint: chainedSlug as
-            | "solana"
-            | "ethereum"
-            | "base"
-            | "bsc"
-            | "robinhood"
-            | "plasma"
-            | "hyperliquid",
-        }
+        ? { chainHint: chainedSlug as never }
         : intent.chainHint
           ? { chainHint: intent.chainHint }
           : {}),
-      ...(chained?.[2]
-        ? { tokenHint: chained[2] }
+      ...(chained?.token
+        ? { tokenHint: chained.token }
         : intent.tokenHint
           ? { tokenHint: intent.tokenHint }
           : {}),
@@ -843,6 +941,26 @@ async function main(): Promise<void> {
             console.log(`  listener error: ${discordStatus.lastListenerError}`)
           }
         }
+        try {
+          const { loadConfig } = await import("./lib/config.js")
+          const cfg = loadConfig()
+          if (cfg.chat.discord.enabled && cfg.chat.discord.chain_integration.enabled) {
+            const { loadChainIntegrationStatus } = await import("./chain-integration/orchestrate.js")
+            const ci = loadChainIntegrationStatus()
+            console.log("")
+            console.log("Discord chain integration:")
+            console.log(`  attemptsToday=${ci.attemptsToday}/${ci.maxAttempts} queued=${ci.queued}`)
+            if (ci.activeIntegrationId) {
+              console.log(`  active=${ci.activeIntegrationId} phase=${ci.phase ?? "?"} slug=${ci.slug ?? "?"}`)
+              if (ci.baseCommit) console.log(`  base=${ci.baseCommit.slice(0, 12)}`)
+              if (ci.candidateCommit) console.log(`  candidate=${ci.candidateCommit.slice(0, 12)}`)
+            }
+            if (ci.lastFailure) console.log(`  lastFailure: ${ci.lastFailure}`)
+            console.log("  recovery: tc discord chains status|retry|fail")
+          }
+        } catch {
+          // best-effort
+        }
       }
 
       if (rest.includes("--heal") || rest.includes("--heal-apply")) {
@@ -918,6 +1036,8 @@ async function main(): Promise<void> {
     case "discord":
       if (rest[0] === "watchlist" && rest[1] === "scan") {
         await cmdDiscordWatchlistScan()
+      } else if (rest[0] === "chains") {
+        await cmdDiscordChains(rest.slice(1))
       } else {
         usage()
       }

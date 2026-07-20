@@ -13,7 +13,7 @@ import {
 } from "../collectors/farcaster/popularity.js"
 import type { FarcasterCast } from "../collectors/farcaster/neynar.js"
 import type { CanonicalIdentity } from "../contracts/schemas.js"
-import { getChain, chainSlugFromProviderId, normalizeChainSlug } from "../lib/chains.js"
+import { getChain, chainSlugFromProviderId, normalizeChainSlug, parseChainCa } from "../lib/chains.js"
 import {
   liveTokenContext,
   loadObservationCache,
@@ -171,18 +171,16 @@ export function parseSubjectHints(input: ResearchSubjectInput): {
   token?: string
   query: string
 } {
-  const chained = input.subject.match(
-    /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu,
-  )
-  if (chained?.[1] && chained[2]) {
-    const chain = normalizeChainSlug(chained[1]) as CanonicalIdentity["chain"] | undefined
+  const chained = parseChainCa(input.subject)
+  if (chained) {
+    const chain = normalizeChainSlug(chained.chainRaw) as CanonicalIdentity["chain"] | undefined
     if (!chain) {
-      return { query: chained[2] }
+      return { query: chained.token }
     }
     return {
       chain,
-      token: chained[2],
-      query: chained[2],
+      token: chained.token,
+      query: chained.token,
     }
   }
   return {

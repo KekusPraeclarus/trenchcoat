@@ -71,8 +71,8 @@ describe("decision-bundle signals", () => {
     }, null, 2)}\n`)
 
     const signals = buildDecisionSignals(proposal(), layout, "research-run-1")
-    expect(signals.confidence).toBe(60)
-    expect(signals.clusters).toBe(2)
+    expect(signals["confidence"]).toBe(60)
+    expect(signals["clusters"]).toBe(2)
     expect(signals["role:rsi"]).toBe(1)
     expect(signals["role:attention"]).toBe(0.5)
     expect(signals["dex:priceUsd"]).toBe(1.5)

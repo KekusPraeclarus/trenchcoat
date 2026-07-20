@@ -120,6 +120,8 @@ describe("harness drain predicate", () => {
     discordQueued: 0,
     discordRunning: 0,
     discordUndeliveredCompleted: 0,
+    chainIntegrationBusy: false,
+    chainIntegrationDeploying: false,
     xPendingActions: 0,
     routerIngressPending: 0,
   }
@@ -142,6 +144,8 @@ describe("harness drain predicate", () => {
     expect(isAgentIdle({ ...clear, telegramResearchRunning: true })).toBe(false)
     expect(isAgentIdle({ ...clear, discordRunning: 1 })).toBe(false)
     expect(isAgentIdle({ ...clear, discordLockHeld: true })).toBe(false)
+    expect(isAgentIdle({ ...clear, chainIntegrationBusy: true })).toBe(false)
+    expect(isAgentIdle({ ...clear, chainIntegrationDeploying: true })).toBe(true)
     expect(isAgentIdle({
       ...clear,
       abandonedIncompleteRuns: 10,

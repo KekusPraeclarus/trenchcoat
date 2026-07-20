@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 
@@ -63,6 +64,16 @@ for (const file of files) {
 if (failures.length > 0) {
   console.error("Static lint failures:")
   for (const failure of failures) console.error(`- ${failure}`)
+  process.exit(1)
+}
+
+const gen = spawnSync("pnpm", ["exec", "tsx", "scripts/generate-chains.ts", "--check"], {
+  encoding: "utf8",
+  cwd: root,
+})
+if ((gen.status ?? 1) !== 0) {
+  console.error("Static lint failures:")
+  console.error(`- chains.generated.ts stale: ${(gen.stderr || gen.stdout).trim()}`)
   process.exit(1)
 }
 

@@ -250,7 +250,7 @@ deploy_runtime() {
   fi
   # Diff vs HEAD (staged + unstaged). Untracked paths appear in porcelain only.
   SOURCE_DIFF="$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null || true)"
-  # configSchema must match DEPLOYMENT_CONFIG_SCHEMA / live config schema (11)
+  # configSchema must match DEPLOYMENT_CONFIG_SCHEMA / live config schema (12)
   # Temp files avoid shell/env quoting limits for large dirty diffs
   PROV_DIR="$RUNTIME_STAGING/.provenance"
   mkdir -p "$PROV_DIR"
@@ -279,7 +279,7 @@ const manifest = {
   schema: 2,
   builtAt: "$BUILT_AT",
   packageVersion: "$PKG_VERSION",
-  configSchema: 11,
+  configSchema: 12,
   sourceCommit,
   sourceDirty,
   sourceHash,
@@ -292,7 +292,7 @@ console.log(
   "deployment provenance commit=" + (sourceCommit ? sourceCommit.slice(0, 12) : "none")
     + " dirty=" + sourceDirty
     + " sourceHash=" + sourceHash.slice(0, 19)
-    + " configSchema=11",
+    + " configSchema=12",
 )
 EOF
 
@@ -671,6 +671,42 @@ EOF
   echo "wrote $out"
 }
 
+# On-demand one-shot: listener kickstarts this; never bootout during self-deploy
+write_discord_chain_integration_plist() {
+  out="$DEST/com.trenchcoat.job.discord-chain-integration.plist"
+  body=$(cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trenchcoat.job.discord-chain-integration</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>$WRAPPER_PREFIX; exec $TC discord chains run</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>/tmp/trenchcoat.discord-chain-integration.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/trenchcoat.discord-chain-integration.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>AbandonProcessGroup</key>
+  <true/>
+</dict>
+</plist>
+EOF
+)
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "would write $out (discord chain-integration on-demand)"
+    return
+  fi
+  printf '%s\n' "$body" >"$out"
+  echo "wrote $out"
+}
+
 write_router_plist() {
   out="$DEST/com.trenchcoat.router.plist"
   body=$(cat <<EOF
@@ -883,6 +919,7 @@ job_to_label() {
     narrative-source-review) echo com.trenchcoat.job.narrative-source-review ;;
     delivery-retry) echo com.trenchcoat.job.delivery-retry ;;
     discord-watchlist-scan) echo com.trenchcoat.job.discord-watchlist-scan ;;
+    discord-chain-integration) echo com.trenchcoat.job.discord-chain-integration ;;
     telegram-alpha) echo com.trenchcoat.channels ;;
     harness-improve) echo com.trenchcoat.job.harness-improve ;;
     *) echo "" ;;
@@ -988,6 +1025,7 @@ write_interval_plist com.trenchcoat.job.fomo-narrative-source-scan fomo-narrativ
 write_interval_plist com.trenchcoat.job.narrative-source-review narrative-source-review 86400 1
 write_interval_plist com.trenchcoat.job.delivery-retry delivery-retry 900 1
 write_discord_watchlist_scan_plist
+write_discord_chain_integration_plist
 # Always retire the old list-scan StartInterval job (even with --jobs-only)
 retire_list_scan_cron_plist
 
@@ -1028,7 +1066,8 @@ for label in \
   com.trenchcoat.job.fomo-narrative-source-scan \
   com.trenchcoat.job.narrative-source-review \
   com.trenchcoat.job.delivery-retry \
-  com.trenchcoat.job.discord-watchlist-scan
+  com.trenchcoat.job.discord-watchlist-scan \
+  com.trenchcoat.job.discord-chain-integration
 do
   bootstrap_label "$label"
 done

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "slug": "robinhood",
+  "display": "Robinhood Chain",
+  "family": "evm",
+  "aliases": ["hood"],
+  "geckoterminalNetwork": "robinhood",
+  "dexscreenerChainId": "robinhood",
+  "securityScanner": { "kind": "goplus", "chainId": "4663" },
+  "nativeBenchmark": "ethereum:eth",
+  "addressFormat": "evm",
+  "walletTracking": "robinhood-public",
+  "evmChainId": 4663,
+  "capabilities": {
+    "research": true,
+    "discordWatch": true,
+    "mainTrack": true,
+    "geckoBars": true,
+    "narrativeDiscovery": false,
+    "walletTracking": true
+  }
+}

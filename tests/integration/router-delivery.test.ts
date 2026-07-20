@@ -273,7 +273,7 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
           seen.push({
             kind: "telegram",
             text: body.text ?? "",
-            parseMode: body.parse_mode,
+            ...(body.parse_mode !== undefined ? { parseMode: body.parse_mode } : {}),
           })
         } else if (url.includes("discord.example")) {
           seen.push({ kind: "discord", text: body.content ?? "" })

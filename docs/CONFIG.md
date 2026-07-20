@@ -42,13 +42,14 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **11** (agent-gated harness defaults on, local integrate /
+Current schema is **12** (Discord `chat.discord.chain_integration` host lane;
+prior schema **11** agent-gated harness defaults on, local integrate /
 deferred activation; prior schema **10** `chat.discord` private-guild research
 bot section, plus prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v10 shapes via `migrateConfigToV11`.
+`loadConfig` migrates v1–v11 shapes via `migrateConfigToV12`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -57,7 +58,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 11,
+  "schema": 12,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -357,25 +358,36 @@ application is not wired yet — only wallets are applied today.
 | `tc listen` | KeepAlive operator listeners (Telegram + Discord research when enabled) |
 | `tc listen discord` | Discord Gateway research only (debug) |
 | `tc discord watchlist scan` | six-hour material-change monitor for Discord watch subscriptions |
+| `tc discord chains run\|status\|retry\|fail\|continue` | host chain-integration worker / recovery / post-deploy handoff |
 | `tc listen channels` | Telegram alpha-channel poller (~60s) + immediate `telegram-alpha` agent per new message; cursors under `~/.trenchcoat/telegram-channels/` |
 | `tc listen x-scan` | Persistent X round-robin (FYP → lists, cursor stop, 5–30m between rounds); cursors under `~/.trenchcoat/x-scan/` |
 | `tc auth telegram-channels` | Scaffold GramJS session path under `~/.trenchcoat/telegram-session/` |
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
 | `tc status` | shared health snapshot (lock/runs/jobs/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
 
-### `chat.discord` (schema 10)
+### `chat.discord` (schema 10+)
 
 Private-guild research bot. Disabled by default. When enabled requires
 `guild_id` and 1–20 unique `channel_ids`. Caps: `per_user_daily_cap` (default 5),
-`server_daily_cap` (20), `max_active_per_user` (default 5 — max queued+running per
-user; global FIFO, one research at a time). Daily caps charge `queued` /
-`running` / `completed` only — terminal `failed` requests do not consume quota.
+`server_daily_cap` (20), `max_active_per_user` (default 5 — max queued+running+
+awaiting-chain per user; global FIFO, one research at a time). Daily caps charge
+`queued` / `running` / `awaiting-chain` / `completed` only — terminal `failed`
+requests do not consume quota.
 `model` (default `composer-2.5-fast`, initial Discord research reply only;
 material watch updates use host `composer-2.5` writer),
 `max_watched_tokens` (500), `max_subscribers_per_token` (100). Watch
 subscriptions last `watch_days` (30); monitor cadence `watch_scan_hours` (6).
 State lives under `~/.trenchcoat/discord/` — see
 [architecture/discord-research.md](architecture/discord-research.md).
+
+### `chat.discord.chain_integration` (schema 12)
+
+Host lane for exact unknown `slug:address` (ADR 016). Defaults: `enabled` true,
+`max_attempts_per_utc_day` 3, `max_concurrent` 1, models
+`composer-2.5` / `cursor-grok-4.5-high` / `composer-2.5-fast`,
+`provider_max_attempts` 5, `repair_max_rounds` 2, `deploy_max_attempts` 2,
+`phase_timeout_ms` 1800000. See
+[architecture/discord-chain-integration.md](architecture/discord-chain-integration.md).
 
 Exit codes: `0` success, `1` run never started (env/config problem,
 `CursorAgentError`), `2` run failed mid-flight (inspect transcript), `3` lock

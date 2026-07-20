@@ -1,17 +1,12 @@
 import { z } from "zod"
+import { GENERATED_CHAIN_SLUGS } from "../lib/chains.generated.js"
 
 export const Sha256Schema = z.string().regex(/^sha256:[a-f0-9]{64}$/u)
 export const SafeIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u)
 export const IsoTimestampSchema = z.string().datetime({ offset: true })
-export const ChainSlugSchema = z.enum([
-  "solana",
-  "ethereum",
-  "base",
-  "bsc",
-  "robinhood",
-  "plasma",
-  "hyperliquid",
-])
+export const ChainSlugSchema = z.enum(
+  GENERATED_CHAIN_SLUGS as unknown as [string, ...string[]],
+)
 export const AddressSchema = z.string().min(32).max(128)
 
 export const CanonicalIdentitySchema = z.object({

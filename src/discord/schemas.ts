@@ -1,20 +1,16 @@
 import { z } from "zod"
 import { IsoTimestampSchema } from "../contracts/schemas.js"
+import { GENERATED_CHAIN_SLUGS } from "../lib/chains.generated.js"
 
 export const DiscordSnowflakeSchema = z.string().regex(/^\d{17,20}$/u)
-export const DiscordChainSchema = z.enum([
-  "solana",
-  "ethereum",
-  "base",
-  "bsc",
-  "robinhood",
-  "plasma",
-  "hyperliquid",
-])
+export const DiscordChainSchema = z.enum(
+  GENERATED_CHAIN_SLUGS as unknown as [string, ...string[]],
+)
 
 export const DiscordRequestStatusSchema = z.enum([
   "queued",
   "running",
+  "awaiting-chain",
   "completed",
   "failed",
   "rejected",
@@ -36,6 +32,8 @@ export const DiscordRequestRecordSchema = z.object({
   terminalError: z.string().max(280).optional(),
   deliveredPartKeys: z.array(z.string().max(128)).max(32).default([]),
   quotaDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  /** Reserved while a chain-integration runs; released on fail or consumed on research handoff */
+  chainIntegrationId: z.string().max(128).optional(),
 })
 export type DiscordRequestRecord = z.infer<typeof DiscordRequestRecordSchema>
 
@@ -111,10 +109,10 @@ export const DiscordDeliveryStatusSchema = z.enum([
 
 export const DiscordDeliveryRecordSchema = z.object({
   deliveryId: z.string().min(8).max(128),
-  kind: z.enum(["research", "watch-update"]),
+  kind: z.enum(["research", "watch-update", "chain-integration"]),
   requestId: DiscordSnowflakeSchema.optional(),
-  chain: DiscordChainSchema,
-  tokenAddress: z.string().min(32).max(128),
+  chain: z.string().min(1).max(64).optional(),
+  tokenAddress: z.string().min(32).max(128).optional(),
   channelId: DiscordSnowflakeSchema,
   anchorMessageId: DiscordSnowflakeSchema,
   mentionUserIds: z.array(DiscordSnowflakeSchema).max(99).default([]),

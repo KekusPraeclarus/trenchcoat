@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV11 } from "../migrations/config.js"
+import { migrateConfigToV12 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(11),
+  schema: z.literal(12),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -372,6 +372,18 @@ export const ConfigSchema = z.object({
       watch_scan_hours: z.literal(6).default(6),
       max_watched_tokens: z.number().int().min(1).max(2_000).default(500),
       max_subscribers_per_token: z.number().int().min(1).max(500).default(100),
+      chain_integration: z.object({
+        enabled: z.boolean().default(true),
+        max_attempts_per_utc_day: z.number().int().min(1).max(20).default(3),
+        max_concurrent: z.literal(1).default(1),
+        research_model: z.string().min(1).max(64).default("composer-2.5"),
+        build_model: z.string().min(1).max(64).default("cursor-grok-4.5-high"),
+        finalize_model: z.string().min(1).max(64).default("composer-2.5-fast"),
+        provider_max_attempts: z.number().int().min(1).max(10).default(5),
+        repair_max_rounds: z.number().int().min(0).max(4).default(2),
+        deploy_max_attempts: z.number().int().min(1).max(3).default(2),
+        phase_timeout_ms: z.number().int().min(60_000).max(3_600_000).default(1_800_000),
+      }).default({}),
     }).default({}),
   }),
   router: z.object({
@@ -534,7 +546,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV11(raw))
+  return ConfigSchema.parse(migrateConfigToV12(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

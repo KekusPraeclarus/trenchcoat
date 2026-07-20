@@ -33,6 +33,8 @@ Message Content intent.
   either list.
 - Config schema **10**: `chat.discord.*` caps and channel allowlist.
 - Isolation invariant: **INV-D1** (with the bounded host-promote exception).
+- Unknown exact `slug:address` may enqueue host chain integration (ADR 016 /
+  INV-D2) — still not a Discord agent mutation path.
 
 ## Consequences
 

@@ -15,7 +15,10 @@ export const DISCORD_ERRORS = {
 
 /** Terminal failures do not consume daily quota */
 export function chargesDailyQuota(status: DiscordRequestRecord["status"]): boolean {
-  return status === "queued" || status === "running" || status === "completed"
+  return status === "queued"
+    || status === "running"
+    || status === "awaiting-chain"
+    || status === "completed"
 }
 
 /** Recompute UTC-day counters from non-failed requests (source of truth) */
@@ -40,17 +43,19 @@ export function activeRequestForUser(
   userId: string,
 ): DiscordRequestsFile["requests"][number] | undefined {
   return file.requests.find((r) => (
-    r.userId === userId && (r.status === "queued" || r.status === "running")
+    r.userId === userId
+    && (r.status === "queued" || r.status === "running" || r.status === "awaiting-chain")
   ))
 }
 
-/** queued + running count for per-user queue depth */
+/** queued + running + awaiting-chain count for per-user queue depth */
 export function countActiveForUser(
   file: DiscordRequestsFile,
   userId: string,
 ): number {
   return file.requests.filter((r) => (
-    r.userId === userId && (r.status === "queued" || r.status === "running")
+    r.userId === userId
+    && (r.status === "queued" || r.status === "running" || r.status === "awaiting-chain")
   )).length
 }
 

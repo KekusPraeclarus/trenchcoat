@@ -48,8 +48,15 @@ webhook broadcasts (ADR 010). Watch update narration: ADR 012.
 - `tc listen discord` — Discord only (debug)
 - `tc discord watchlist scan` — material monitor; launchd calendar 0/6/12/18 local
   (`com.trenchcoat.job.discord-watchlist-scan`)
+- `tc discord chains run|status|retry|fail|continue` — host chain-integration worker
+  (`com.trenchcoat.job.discord-chain-integration`, kickstarted on demand;
+  `continue` is post-deploy announce + research FIFO handoff via the new runtime)
 - `tc status` — Discord section when `chat.discord.enabled` (heartbeat, queue,
-  watched tokens/subscribers; never posted into Discord)
+  watched tokens/subscribers, chain-integration phase; never posted into Discord)
+
+Exact unknown `slug:address` → chain-integration lane (see
+[discord-chain-integration.md](discord-chain-integration.md), ADR 016). Known
+chains and bare CAs use the research path below.
 
 ## State layout (`~/.trenchcoat/discord/`)
 

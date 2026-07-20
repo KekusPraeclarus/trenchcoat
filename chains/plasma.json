@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "slug": "plasma",
+  "display": "Plasma",
+  "family": "evm",
+  "aliases": [],
+  "geckoterminalNetwork": "plasma",
+  "dexscreenerChainId": "plasma",
+  "securityScanner": { "kind": "goplus", "chainId": "9745" },
+  "nativeBenchmark": "plasma:xpl",
+  "addressFormat": "evm",
+  "walletTracking": "unsupported",
+  "evmChainId": 9745,
+  "capabilities": {
+    "research": true,
+    "discordWatch": true,
+    "mainTrack": true,
+    "geckoBars": true,
+    "narrativeDiscovery": false,
+    "walletTracking": false
+  }
+}

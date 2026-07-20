@@ -25,6 +25,8 @@ Binding decision for mint caution + memecoin block: [ADR 011](../adr/011-context
 The chain registry (chains.md) selects the scanner. No registry entry →
 fail-closed as `unsupported-chain`. Registry entry without a scanner → security
 status `unsupported-chain` (research may still run; main track blocked).
+Automated Discord chain integration may deploy research-only manifests when
+scanner coverage is absent (ADR 016); wallet tracking stays off.
 
 ## Thresholds from config
 

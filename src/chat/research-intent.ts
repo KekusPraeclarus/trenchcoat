@@ -1,6 +1,17 @@
 import { z } from "zod"
-import { validateAddress } from "../lib/chains.js"
+import { GENERATED_CHAIN_SLUGS } from "../lib/chains.generated.js"
+import { normalizeChainSlug, validateAddress } from "../lib/chains.js"
 import { sanitizeOperatorText } from "./prompt.js"
+import {
+  ALL_CHAIN_WORDS_RE,
+  CHAIN_ALIASES,
+  CHAIN_CA,
+  ON_CHAIN_RE,
+  RESEARCH_VERBS,
+  normalizeChainWord,
+  solanaCaFrom,
+  type ChainHint,
+} from "./research-intent-core.js"
 
 export const ResearchIntentKindSchema = z.enum(["chat", "research"])
 export type ResearchIntentKind = z.infer<typeof ResearchIntentKindSchema>
@@ -9,58 +20,17 @@ export const ResearchIntentSchema = z.object({
   schema: z.literal(1),
   kind: ResearchIntentKindSchema,
   subject: z.string().min(1).max(256).optional(),
-  chainHint: z.enum([
-    "solana",
-    "ethereum",
-    "base",
-    "bsc",
-    "robinhood",
-    "plasma",
-    "hyperliquid",
-  ]).optional(),
+  chainHint: z.enum(GENERATED_CHAIN_SLUGS as unknown as [string, ...string[]]).optional(),
   tokenHint: z.string().min(32).max(128).optional(),
   confidence: z.number().int().min(0).max(100).default(0),
 })
 export type ResearchIntent = z.infer<typeof ResearchIntentSchema>
 
-const CHAIN_ALIASES: ReadonlyArray<[RegExp, NonNullable<ResearchIntent["chainHint"]>]> = [
-  [/\b(solana|sol)\b/iu, "solana"],
-  [/\b(ethereum|eth)\b/iu, "ethereum"],
-  [/\b(base)\b/iu, "base"],
-  [/\b(bsc|bnb)\b/iu, "bsc"],
-  [/\b(robinhood|hood)\b/iu, "robinhood"],
-  [/\b(plasma)\b/iu, "plasma"],
-  [/\b(hyperliquid|hyperevm|hl)\b/iu, "hyperliquid"],
-]
-
-/** Prefer explicit "on <chain>" so "eth on base" resolves to base */
-const ON_CHAIN_RE =
-  /\bon\s+(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/iu
-const ALL_CHAIN_WORDS_RE =
-  /\b(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/giu
-
-const RESEARCH_VERBS = /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into|check\s+out|analyse|analyze)\b/iu
 const CONFIRM_RE = /^(confirm|yes|y|do\s+it|go\s+ahead|approved?)\s*[!.]*$/iu
 const CANCEL_RE = /^(cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu
-const CHAIN_CA =
-  /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu
 const EVM_CA = /\b(0x[a-fA-F0-9]{40})\b/u
-/** Base58 mint/pool ids; validated with chains.validateAddress before use */
-const SOLANA_CA = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/gu
 const TICKER_RE = /\$([A-Za-z][A-Za-z0-9]{1,15})\b/u
 const FILLER = /\b(perform|run|please|pls|for\s+me|can\s+you|could\s+you|would\s+you|the\s+token|deep|on|about|into|for|a|an|the)\b/giu
-
-function normalizeChainWord(word: string): NonNullable<ResearchIntent["chainHint"]> | undefined {
-  const lower = word.toLowerCase()
-  if (lower === "sol" || lower === "solana") return "solana"
-  if (lower === "eth" || lower === "ethereum") return "ethereum"
-  if (lower === "base") return "base"
-  if (lower === "bsc" || lower === "bnb") return "bsc"
-  if (lower === "hood" || lower === "robinhood") return "robinhood"
-  if (lower === "plasma") return "plasma"
-  if (lower === "hyperliquid" || lower === "hyperevm" || lower === "hl") return "hyperliquid"
-  return undefined
-}
 
 /** Fail-closed: anything not a strict research intent becomes chat */
 export function parseResearchIntent(raw: string): ResearchIntent {
@@ -102,14 +72,6 @@ export function chainHintFrom(text: string): ResearchIntent["chainHint"] | undef
   return undefined
 }
 
-function solanaCaFrom(text: string): string | undefined {
-  for (const match of text.matchAll(SOLANA_CA)) {
-    const candidate = match[1]
-    if (candidate && validateAddress("base58-32", candidate)) return candidate
-  }
-  return undefined
-}
-
 function tokenHintFrom(text: string): string | undefined {
   const chained = text.match(CHAIN_CA)
   if (chained?.[2]) return chained[2]
@@ -147,12 +109,13 @@ export function extractResearchIntent(operatorText: string): ResearchIntent {
 
   const chainCa = text.match(CHAIN_CA)
   if (chainCa?.[1] && chainCa[2]) {
-    const chain = chainCa[1].toLowerCase() as NonNullable<ResearchIntent["chainHint"]>
+    const normalized = normalizeChainSlug(chainCa[1]) as ChainHint | undefined
+    if (!normalized) return { schema: 1, kind: "chat", confidence: 0 }
     return {
       schema: 1,
       kind: "research",
-      subject: `${chain}:${chainCa[2]}`,
-      chainHint: chain,
+      subject: `${normalized}:${chainCa[2]}`,
+      chainHint: normalized,
       tokenHint: chainCa[2],
       confidence: 95,
     }
@@ -168,7 +131,6 @@ export function extractResearchIntent(operatorText: string): ResearchIntent {
     return { schema: 1, kind: "chat", confidence: 0 }
   }
 
-  // Bare ticker without a research verb stays chat — too ambiguous
   if (!RESEARCH_VERBS.test(text) && !tokenHint && !/^\/research\b/iu.test(text)) {
     return { schema: 1, kind: "chat", confidence: 0 }
   }
@@ -197,3 +159,6 @@ export function researchConfirmPrompt(intent: ResearchIntent): string {
   bits.push("Reply confirm or cancel.")
   return bits.join(" ")
 }
+
+// silence unused import warning for validateAddress re-export consumers
+void validateAddress

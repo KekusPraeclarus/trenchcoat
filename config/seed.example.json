@@ -1,5 +1,5 @@
 {
-  "schema": 11,
+  "schema": 12,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -395,7 +395,19 @@
       "watch_days": 30,
       "watch_scan_hours": 6,
       "max_watched_tokens": 250,
-      "max_subscribers_per_token": 100
+      "max_subscribers_per_token": 100,
+      "chain_integration": {
+        "enabled": true,
+        "max_attempts_per_utc_day": 3,
+        "max_concurrent": 1,
+        "research_model": "composer-2.5",
+        "build_model": "cursor-grok-4.5-high",
+        "finalize_model": "composer-2.5-fast",
+        "provider_max_attempts": 5,
+        "repair_max_rounds": 2,
+        "deploy_max_attempts": 2,
+        "phase_timeout_ms": 1800000
+      }
     }
   },
   "router": {

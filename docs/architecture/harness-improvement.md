@@ -124,4 +124,6 @@ state/inbox/outbox/reports/alpha-queue), then starts the bounded canary.
 
 - Audit spine: [audit-metrics.md](audit-metrics.md), [orchestrator.md](orchestrator.md)
 - Invariants: INV-S23, INV-S24, INV-S25
+- Discord chain-registry automation is a **separate** lane (INV-S26 / ADR 016);
+  it must not widen harness POLICY_ALLOWLIST or origin-push rules here.
 - Agent workspace sync boundary: [agent-workspace.md](agent-workspace.md)
