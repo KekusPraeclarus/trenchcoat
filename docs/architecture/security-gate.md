@@ -2,7 +2,7 @@
 description: Token security gate - exact GoPlus/RugCheck field-to-flag mapping per chain family, hard-fail vs caution semantics, the market-quality preflight, and fail-closed behaviour for scanner outages and unsupported chains.
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/collectors/market/security.ts, src/orchestrator/gate-evidence.ts, or market-quality checks, or changing what blocks a track verdict.
 ---
@@ -22,8 +22,9 @@ Binding decision for mint caution + memecoin block: [ADR 011](../adr/011-context
 
 ## Scanner routing
 
-The chain registry (chains.md) selects the scanner. No registry entry or no
-scanner → fail-closed, candidate rejected as `unsupported-chain`.
+The chain registry (chains.md) selects the scanner. No registry entry →
+fail-closed as `unsupported-chain`. Registry entry without a scanner → security
+status `unsupported-chain` (research may still run; main track blocked).
 
 ## Thresholds from config
 

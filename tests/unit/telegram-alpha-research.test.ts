@@ -69,6 +69,11 @@ describe("telegram-alpha extract helpers", () => {
     expect(extractChainHint("launching on base today")).toBe("base")
     expect(extractChainHint("no chain mentioned")).toBeUndefined()
   })
+
+  it("extracts plasma and hyperliquid chain hints", () => {
+    expect(extractChainHint("fresh XPL meme on plasma chain")).toBe("plasma")
+    expect(extractChainHint("launching on hyperevm today")).toBe("hyperliquid")
+  })
 })
 
 describe("disambiguation parse/filter", () => {

@@ -115,6 +115,12 @@ export function extractChainHint(text: string): CanonicalIdentity["chain"] | und
     if (chain.slug === "bsc") {
       needles.push("bnb chain", "binance smart chain")
     }
+    if (chain.slug === "hyperliquid") {
+      needles.push("hyperevm", "hl chain", "hyperliquid chain", "hyper evm")
+    }
+    if (chain.slug === "plasma") {
+      needles.push("plasma chain", "xpl chain")
+    }
     if (needles.some((n) => lower.includes(n))) hits.push(chain)
   }
   if (hits.length === 1) return hits[0]!.slug as CanonicalIdentity["chain"]

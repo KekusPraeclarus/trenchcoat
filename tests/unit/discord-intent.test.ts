@@ -17,6 +17,37 @@ describe("discord intent", () => {
     expect(intent.kind).toBe("research")
   })
 
+  it("accepts plasma and hyperliquid chain:CA", () => {
+    const ca = "0x1234567890123456789012345678901234567890"
+    for (const chain of ["plasma", "hyperliquid"] as const) {
+      const intent = extractDiscordResearchIntent(`${chain}:${ca}`)
+      expect(intent.kind).toBe("research")
+      if (intent.kind === "research") {
+        expect(intent.subject).toBe(`${chain}:${ca}`)
+        expect(intent.chainHint).toBe(chain)
+      }
+    }
+  })
+
+  it("accepts hyperevm:CA as hyperliquid", () => {
+    const ca = "0x1234567890123456789012345678901234567890"
+    const intent = extractDiscordResearchIntent(`hyperevm:${ca}`)
+    expect(intent.kind).toBe("research")
+    if (intent.kind === "research") {
+      expect(intent.subject).toBe(`hyperliquid:${ca}`)
+      expect(intent.chainHint).toBe("hyperliquid")
+    }
+  })
+
+  it("accepts hyperevm alias as hyperliquid", () => {
+    const ca = "0x1234567890123456789012345678901234567890"
+    const intent = extractDiscordResearchIntent(`Research ${ca} on hyperevm`)
+    expect(intent.kind).toBe("research")
+    if (intent.kind === "research") {
+      expect(intent.chainHint).toBe("hyperliquid")
+    }
+  })
+
   it("ignores ticker-only chatter", () => {
     expect(extractDiscordResearchIntent("$PEPE").kind).toBe("ignore")
   })

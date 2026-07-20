@@ -8,7 +8,7 @@ import { aggregateWalletPerformance } from "../../src/wallets/outcomes.js"
 import { reviewWalletLifecycle, shouldDropWallet } from "../../src/wallets/review.js"
 import { extractSolanaBuyersFromTransaction } from "../../src/collectors/wallets/helius-provider.js"
 import { decodeErc20Transfer } from "../../src/collectors/wallets/infura.js"
-import { getChain } from "../../src/lib/chains.js"
+import { getChain, isTrackableChain, chainSlugFromProviderId } from "../../src/lib/chains.js"
 import { StateStore } from "../../src/lib/state.js"
 import type { WalletBuyOutcome, WalletRecord, WalletsFile } from "../../src/contracts/schemas.js"
 
@@ -388,6 +388,28 @@ describe("robinhood chain registry", () => {
     expect(chain?.walletTracking).toBe("robinhood-public")
     expect(chain?.securityScanner).toEqual({ kind: "goplus", chainId: "4663" })
     expect(chain?.evmChainId).toBe(4663)
+  })
+})
+
+describe("plasma and hyperliquid chain registry", () => {
+  it("marks plasma trackable via GoPlus 9745", () => {
+    const chain = getChain("plasma")
+    expect(chain?.dexscreenerChainId).toBe("plasma")
+    expect(chain?.geckoterminalNetwork).toBe("plasma")
+    expect(chain?.securityScanner).toEqual({ kind: "goplus", chainId: "9745" })
+    expect(chain?.evmChainId).toBe(9745)
+    expect(chain?.walletTracking).toBe("unsupported")
+    expect(isTrackableChain("plasma")).toBe(true)
+  })
+
+  it("maps hyperliquid onto hyperevm without a scanner", () => {
+    const chain = getChain("hyperliquid")
+    expect(chain?.dexscreenerChainId).toBe("hyperevm")
+    expect(chain?.geckoterminalNetwork).toBe("hyperevm")
+    expect(chain?.securityScanner).toBeUndefined()
+    expect(chain?.evmChainId).toBe(999)
+    expect(isTrackableChain("hyperliquid")).toBe(false)
+    expect(chainSlugFromProviderId("hyperevm")).toBe("hyperliquid")
   })
 })
 

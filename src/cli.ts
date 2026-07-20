@@ -502,7 +502,7 @@ async function cmdListenTelegram(): Promise<void> {
         || /^[1-5]\s*$/u.test(trimmed)
         || /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into)\b/iu.test(trimmed)
         || /^\/research\b/iu.test(trimmed)
-        || /^(solana|ethereum|base|bsc|robinhood):[A-Za-z0-9]{32,128}$/iu.test(trimmed)
+        || /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):[A-Za-z0-9]{32,128}$/iu.test(trimmed)
       const needsAgent = !hostHandled
       if (needsAgent) {
         await telegramSendChatAction(fetch, token, operatorId).catch(() => undefined)
@@ -562,16 +562,27 @@ async function cmdResearch(subject: string, args: string[]): Promise<void> {
   const { extractResearchIntent } = await import("./chat/research-intent.js")
   const intent = extractResearchIntent(`research ${subject}`)
   const chained = subject.match(
-    /^(solana|ethereum|base|bsc|robinhood):([A-Za-z0-9]{32,128})$/iu,
+    /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu,
   )
+  const { normalizeChainSlug } = await import("./lib/chains.js")
+  const chainedSlug = chained?.[1] ? normalizeChainSlug(chained[1]) : undefined
   const result = await runOperatorResearchNow({
     paths: { agentRoot, archiveRoot },
     input: {
       subject: intent.subject ?? subject,
       provenance: ["operator:cli"],
       reason: "cli research",
-      ...(chained?.[1]
-        ? { chainHint: chained[1].toLowerCase() as "solana" | "ethereum" | "base" | "bsc" | "robinhood" }
+      ...(chainedSlug
+        ? {
+          chainHint: chainedSlug as
+            | "solana"
+            | "ethereum"
+            | "base"
+            | "bsc"
+            | "robinhood"
+            | "plasma"
+            | "hyperliquid",
+        }
         : intent.chainHint
           ? { chainHint: intent.chainHint }
           : {}),

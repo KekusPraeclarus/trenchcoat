@@ -6,6 +6,8 @@ export const CHAIN_HINT_VALUES = [
   "base",
   "bsc",
   "robinhood",
+  "plasma",
+  "hyperliquid",
 ] as const
 export type ChainHint = typeof CHAIN_HINT_VALUES[number]
 
@@ -15,15 +17,19 @@ export const CHAIN_ALIASES: ReadonlyArray<[RegExp, ChainHint]> = [
   [/\b(base)\b/iu, "base"],
   [/\b(bsc|bnb)\b/iu, "bsc"],
   [/\b(robinhood|hood)\b/iu, "robinhood"],
+  [/\b(plasma)\b/iu, "plasma"],
+  [/\b(hyperliquid|hyperevm|hl)\b/iu, "hyperliquid"],
 ]
 
-export const ON_CHAIN_RE = /\bon\s+(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood)\b/iu
-export const ALL_CHAIN_WORDS_RE = /\b(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood)\b/giu
+export const ON_CHAIN_RE =
+  /\bon\s+(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/iu
+export const ALL_CHAIN_WORDS_RE =
+  /\b(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/giu
 export const RESEARCH_VERBS =
   /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into|check\s+out|analyse|analyze)\b/iu
 /** Exact chain:CA, optional bot mention / code ticks / leading research verb */
 export const CHAIN_CA =
-  /^(?:<@!?&?\d+>\s*)?(?:(?:research|deep\s+research|look\s*into|investigate|analyse|analyze|check\s+out|deep[\s-]?dive)\s+)?(?:`)?(solana|ethereum|base|bsc|robinhood):([A-Za-z0-9]{32,128})(?:`)?$/iu
+  /^(?:<@!?&?\d+>\s*)?(?:(?:research|deep\s+research|look\s*into|investigate|analyse|analyze|check\s+out|deep[\s-]?dive)\s+)?(?:`)?(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})(?:`)?$/iu
 export const EVM_CA = /\b(0x[a-fA-F0-9]{40})\b/gu
 export const SOLANA_CA = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/gu
 
@@ -34,6 +40,8 @@ export function normalizeChainWord(word: string): ChainHint | undefined {
   if (lower === "base") return "base"
   if (lower === "bsc" || lower === "bnb") return "bsc"
   if (lower === "hood" || lower === "robinhood") return "robinhood"
+  if (lower === "plasma") return "plasma"
+  if (lower === "hyperliquid" || lower === "hyperevm" || lower === "hl") return "hyperliquid"
   return undefined
 }
 

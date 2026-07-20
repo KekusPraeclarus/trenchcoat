@@ -13,7 +13,7 @@ import {
 } from "../collectors/farcaster/popularity.js"
 import type { FarcasterCast } from "../collectors/farcaster/neynar.js"
 import type { CanonicalIdentity } from "../contracts/schemas.js"
-import { getChain } from "../lib/chains.js"
+import { getChain, chainSlugFromProviderId, normalizeChainSlug } from "../lib/chains.js"
 import {
   liveTokenContext,
   loadObservationCache,
@@ -172,11 +172,15 @@ export function parseSubjectHints(input: ResearchSubjectInput): {
   query: string
 } {
   const chained = input.subject.match(
-    /^(solana|ethereum|base|bsc|robinhood):([A-Za-z0-9]{32,128})$/iu,
+    /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu,
   )
   if (chained?.[1] && chained[2]) {
+    const chain = normalizeChainSlug(chained[1]) as CanonicalIdentity["chain"] | undefined
+    if (!chain) {
+      return { query: chained[2] }
+    }
     return {
-      chain: chained[1].toLowerCase() as CanonicalIdentity["chain"],
+      chain,
       token: chained[2],
       query: chained[2],
     }
@@ -213,9 +217,7 @@ export async function resolveResearchSubject(
       return true
     })
     .map((pair) => ({
-      chain: (
-        pair.chainId === "eth" ? "ethereum" : pair.chainId
-      ) as string,
+      chain: chainSlugFromProviderId(pair.chainId) ?? pair.chainId,
       tokenAddress: pair.baseToken.address,
       pairAddress: pair.pairAddress,
       symbolDisplay: pair.baseToken.symbol,

@@ -1,4 +1,4 @@
-import { getChain, isTrackableChain, type ChainEntry } from "./chains.js"
+import { getChain, type ChainEntry } from "./chains.js"
 import {
   assertChainAddress,
   normalizeEvmAddress,
@@ -153,8 +153,10 @@ export function resolveFromCandidates(
   const usable = filterValidAddressCandidates(candidates)
   if (usable.length === 0) return { status: "empty" }
 
+  // Registry membership is required (address filter). Missing scanners stay
+  // resolvable for research / Discord watch; main track still needs isTrackableChain.
   for (const c of usable) {
-    if (!isTrackableChain(c.chain)) {
+    if (!getChain(c.chain)) {
       return { status: "unsupported-chain", chain: c.chain }
     }
   }

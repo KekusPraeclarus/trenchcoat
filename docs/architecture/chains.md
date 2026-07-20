@@ -1,8 +1,8 @@
 ---
 description: Chain registry - the single source of truth for supported chains, per-provider id mappings, address validation, and the flow for adding a new chain. Fail-closed for unsupported chains.
 scope: module
-status: draft
-last_verified: 2026-07-19
+status: active
+last_verified: 2026-07-20
 read_when:
   - Adding or modifying chain support, or editing any code that passes a chain identifier to an upstream API.
 ---
@@ -58,17 +58,31 @@ wallet tracking additionally requires a provider kickoff and cursored scan path.
 | `base` | evm | GoPlus (8453) | ETH |
 | `bsc` | evm | GoPlus (56) | BNB |
 | `robinhood` | evm | GoPlus (4663) | ETH |
+| `plasma` | evm | GoPlus (9745) | XPL |
+| `hyperliquid` | evm | *(none — GoPlus gap)* | HYPE |
 
 RobinHood Chain (Arbitrum Orbit L2, mainnet chain id 4663, ETH gas) is
 confirmed supported by DexScreener and GeckoTerminal. Wallet tracking uses the
 throttled official public RPC; GoPlus id 4663 is registered — verify live
 coverage at preflight and fail closed if absent.
 
+Plasma (mainnet chain id 9745, XPL gas) is on DexScreener/Gecko as `plasma` and
+GoPlus as `9745` — fully trackable.
+
+Hyperliquid maps our slug `hyperliquid` onto DexScreener/Gecko **`hyperevm`**
+(HyperEVM AMM pools; HyperCore spot uses a separate `hyperliquid` provider id
+with non-EVM address shapes and is out of scope). GoPlus does not cover chain
+999 yet, so the entry ships **without** `security_scanner`: research and
+Discord member-watch still resolve, but main-agent `tracking` stays blocked
+(INV-S9 / `isTrackableChain`).
+
 ## Fail-closed rule
 
-A candidate whose chain has no registry entry, or whose registry entry has no
-security scanner, **can never enter `watchlist.json` as `tracking`** and is never
-sent to a research agent session. The resolver marks it
+A candidate whose chain has no registry entry **can never enter
+`watchlist.json` as `tracking`** and is never sent to a research agent session.
+A registry entry **without** a security scanner may still be researched
+(Discord / operator) and Discord-watched, but `isTrackableChain` is false so
+main-agent track / promote stays blocked. The resolver marks unknown slugs
 `rejected: unsupported-chain` in the research queue, and the decision log records
 the rejection so audits can measure what unsupported chains are costing us
 (the trigger to add them). Covered by INV-S9.

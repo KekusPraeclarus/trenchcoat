@@ -2,7 +2,15 @@ import { z } from "zod"
 import { IsoTimestampSchema } from "../contracts/schemas.js"
 
 export const DiscordSnowflakeSchema = z.string().regex(/^\d{17,20}$/u)
-export const DiscordChainSchema = z.enum(["solana", "ethereum", "base", "bsc", "robinhood"])
+export const DiscordChainSchema = z.enum([
+  "solana",
+  "ethereum",
+  "base",
+  "bsc",
+  "robinhood",
+  "plasma",
+  "hyperliquid",
+])
 
 export const DiscordRequestStatusSchema = z.enum([
   "queued",

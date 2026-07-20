@@ -265,9 +265,11 @@ Minimising burn without harming results, enforced by design rather than hope:
   Signal-quality roadmap)
 - Multi-chain support via a **typed chain registry** mapping our chain slug to
   every provider's id, with per-chain scanner routing; chains without a
-  registry entry or scanner are **fail-closed untrackable**. All chain access
-  is API-driven — no RPC/node infrastructure; adding a chain is a registry
-  entry + provider verification (2026-07-16, docs/architecture/chains.md)
+  registry entry are rejected; entries without a scanner are **untrackable** on
+  the main watchlist (research / Discord watch may still run). All token-market
+  chain access is API-driven — no RPC/node infrastructure required to add a
+  chain for research (2026-07-16, docs/architecture/chains.md; Plasma +
+  Hyperliquid 2026-07-20)
 - Canonical candidate identity: every candidate resolves to
   `(chain, token_address, pair_address)` before it is counted, researched, or
   tracked. Resolution is deterministic-first; when ticker matches are

@@ -9,7 +9,15 @@ export const ResearchIntentSchema = z.object({
   schema: z.literal(1),
   kind: ResearchIntentKindSchema,
   subject: z.string().min(1).max(256).optional(),
-  chainHint: z.enum(["solana", "ethereum", "base", "bsc", "robinhood"]).optional(),
+  chainHint: z.enum([
+    "solana",
+    "ethereum",
+    "base",
+    "bsc",
+    "robinhood",
+    "plasma",
+    "hyperliquid",
+  ]).optional(),
   tokenHint: z.string().min(32).max(128).optional(),
   confidence: z.number().int().min(0).max(100).default(0),
 })
@@ -21,16 +29,21 @@ const CHAIN_ALIASES: ReadonlyArray<[RegExp, NonNullable<ResearchIntent["chainHin
   [/\b(base)\b/iu, "base"],
   [/\b(bsc|bnb)\b/iu, "bsc"],
   [/\b(robinhood|hood)\b/iu, "robinhood"],
+  [/\b(plasma)\b/iu, "plasma"],
+  [/\b(hyperliquid|hyperevm|hl)\b/iu, "hyperliquid"],
 ]
 
 /** Prefer explicit "on <chain>" so "eth on base" resolves to base */
-const ON_CHAIN_RE = /\bon\s+(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood)\b/iu
-const ALL_CHAIN_WORDS_RE = /\b(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood)\b/giu
+const ON_CHAIN_RE =
+  /\bon\s+(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/iu
+const ALL_CHAIN_WORDS_RE =
+  /\b(solana|sol|ethereum|eth|base|bsc|bnb|robinhood|hood|plasma|hyperliquid|hyperevm|hl)\b/giu
 
 const RESEARCH_VERBS = /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into|check\s+out|analyse|analyze)\b/iu
 const CONFIRM_RE = /^(confirm|yes|y|do\s+it|go\s+ahead|approved?)\s*[!.]*$/iu
 const CANCEL_RE = /^(cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu
-const CHAIN_CA = /^(solana|ethereum|base|bsc|robinhood):([A-Za-z0-9]{32,128})$/iu
+const CHAIN_CA =
+  /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):([A-Za-z0-9]{32,128})$/iu
 const EVM_CA = /\b(0x[a-fA-F0-9]{40})\b/u
 /** Base58 mint/pool ids; validated with chains.validateAddress before use */
 const SOLANA_CA = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/gu
@@ -44,6 +57,8 @@ function normalizeChainWord(word: string): NonNullable<ResearchIntent["chainHint
   if (lower === "base") return "base"
   if (lower === "bsc" || lower === "bnb") return "bsc"
   if (lower === "hood" || lower === "robinhood") return "robinhood"
+  if (lower === "plasma") return "plasma"
+  if (lower === "hyperliquid" || lower === "hyperevm" || lower === "hl") return "hyperliquid"
   return undefined
 }
 

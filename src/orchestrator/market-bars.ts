@@ -17,7 +17,7 @@ const MAX_OHLCV_PAGES = 8
 const CANDLES_PER_PAGE = 200
 const POOL_CACHE = new Map<string, MarketPair | null>()
 
-const CHAIN_FALLBACK = ["solana", "ethereum", "base", "bsc", "robinhood"]
+const CHAIN_FALLBACK = ["solana", "ethereum", "base", "bsc", "robinhood", "plasma", "hyperliquid"]
   .map((slug) => getChain(slug))
   .filter((c): c is ChainEntry => c !== undefined)
 
@@ -27,7 +27,7 @@ function chainCandidatesForHint(hint: SourceCallEvent["chainHint"]): ChainEntry[
     return sol ? [sol] : []
   }
   if (hint === "evm") {
-    return ["ethereum", "base", "bsc", "robinhood"]
+    return ["ethereum", "base", "bsc", "robinhood", "plasma", "hyperliquid"]
       .map((slug) => getChain(slug))
       .filter((c): c is ChainEntry => c !== undefined)
   }
