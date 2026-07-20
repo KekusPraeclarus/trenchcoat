@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -80,9 +80,16 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
   Mid-scrape browser death relaunches the read-only session once and continues
   remaining targets (`scrapeTargetsWithRecovery`); collect fails only if zero
   targets complete.
-- `list-scan` also writes path-only `list-scan-alpha-manifest` (capped at 500 with
-  `truncated=N`) so alpha-queue digestion is not review-only; chat notes surface
-  `alphaPending` / `alphaTruncated` when the queue is deep. Twitter list/FYP
+- **Streaming X scan** — production uses KeepAlive `com.trenchcoat.x-scan`
+  (`tc listen x-scan`): one persistent Playwright session round-robins FYP then
+  configured lists, scrolling each target until the last-read post id
+  (`~/.trenchcoat/x-scan/cursors.json`), then runs `list-scan` per target with
+  injected scrape bundles. Random 5–30 minute delay between completed rounds.
+  Challenge/login fails the target and backs off. Cron `list-scan` is retired.
+- `list-scan` (legacy one-shot / streaming override) also writes path-only
+  `list-scan-alpha-manifest` when not in streaming mode (capped at 500 with
+  `truncated=N`) so alpha-queue digestion is not review-only; live Telegram
+  digestion is primarily `telegram-alpha`. Twitter list/FYP
   snapshots and `x-fyp-eligible` use the same `SNAPSHOT_MAX_ITEMS` cap with a
   trailing `truncated=N` marker so oversized scrapes cannot fail collect on Zod
   `too_big`; `collectionStatus` may include `posts-truncated=N` (twitter/fyp) or
@@ -166,14 +173,17 @@ exists. Two ingestion modes, chosen per channel at config time:
 
 Both modes append every new message to `agent/alpha-queue/<channel>/<msg-id>.json`
 with full provenance and deduplicate on message id; digestion and purge are the
-orchestrator's job (see orchestrator.md, INV-Q1).
+orchestrator's job (see orchestrator.md, INV-Q1). **Live path:** each newly
+written message triggers a serial `telegram-alpha` agent pass (workspace lock,
+full seal/purge/outbox). `list-scan`/`review` manifests remain for backlog.
 Each append writes a same-directory temporary file, fsyncs it, then atomically
 renames to the sanitised final path using create-if-absent semantics. A concurrent
 listener/job can observe the old file or the complete new file, never a partial
 message. Host service: `tc listen channels` (launchd `com.trenchcoat.channels`
-KeepAlive) polls allowlisted `config.telegram_channels`, checkpoints cursors to
-`~/.trenchcoat/telegram-channels/cursors.json` after every accepted message, and
-keeps GramJS sessions under `~/.trenchcoat/telegram-session/` (never `agent/`).
+KeepAlive) polls allowlisted `config.telegram_channels` (~60s default), checkpoints
+cursors to `~/.trenchcoat/telegram-channels/cursors.json` after every accepted
+message, and keeps GramJS sessions under `~/.trenchcoat/telegram-session/`
+(never `agent/`). X streaming is separate KeepAlive `tc listen x-scan`.
 
 ### Token security gate
 

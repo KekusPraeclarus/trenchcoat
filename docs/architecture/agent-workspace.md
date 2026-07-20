@@ -2,7 +2,7 @@
 description: The runtime agent's workspace - instructions, skills, knowledge store (index, research, narratives, sources), alpha queue, outbox, sandbox config. Everything under agent/ is edited as artifact, read as data.
 scope: module
 status: draft
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Authoring or editing anything under agent/ (bot instructions, skills, knowledge store schema, sandbox.json).
 do_not_read_when:
@@ -31,7 +31,8 @@ agent/
 ├── AGENTS.md              # bot's identity, priorities, trust rules, output contract
 ├── skills/
 │   ├── watchlist-scan/SKILL.md
-│   ├── list-scan/SKILL.md      # includes alpha-queue digestion
+│   ├── list-scan/SKILL.md      # X target scan (engagement + discovery)
+│   ├── telegram-alpha/SKILL.md # immediate alpha-queue message digestion
 │   ├── farcaster-scan/SKILL.md # Farcaster for-you likes only
 │   ├── narrative-scan/SKILL.md # proposes narrative updates + broadcast on new/heat-change
 │   ├── research/SKILL.md

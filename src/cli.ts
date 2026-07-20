@@ -61,7 +61,7 @@ Commands:
   harness promote <hypothesis-id>
   harness rollback --reason <text>
   router serve
-  listen [telegram|discord|channels]
+  listen [telegram|discord|channels|x-scan]
   discord watchlist scan
   backup
   research <subject>
@@ -219,15 +219,19 @@ async function cmdRouterServe(): Promise<void> {
 }
 
 async function cmdListenChannels(): Promise<void> {
-  const { agentRoot } = resolveHomes()
+  const { agentRoot, archiveRoot } = resolveHomes()
   const home = join(homedir(), ".trenchcoat")
   const { loadConfig } = await import("./lib/config.js")
   const { runTelegramChannelsListener } = await import("./collectors/telegram/channels.js")
+  const { createTelegramAlphaPump } = await import("./orchestrator/telegram-alpha.js")
   const cfg = loadConfig()
   const channels = cfg.telegram_channels.map((c) => ({
     channel: c.channel,
     mode: c.mode,
   }))
+  const pump = createTelegramAlphaPump({
+    paths: { agentRoot, archiveRoot },
+  })
   const ac = new AbortController()
   const stop = (): void => {
     ac.abort()
@@ -238,6 +242,31 @@ async function cmdListenChannels(): Promise<void> {
     await runTelegramChannelsListener({
       agentRoot,
       channels,
+      home,
+      signal: ac.signal,
+      onNewMessage: ({ queuePath }) => {
+        pump.enqueue(queuePath)
+      },
+    })
+  } catch (error) {
+    if (ac.signal.aborted) return
+    throw error
+  }
+}
+
+async function cmdListenXScan(): Promise<void> {
+  const { agentRoot, archiveRoot } = resolveHomes()
+  const home = join(homedir(), ".trenchcoat")
+  const { runXScanLoop } = await import("./orchestrator/x-scan-loop.js")
+  const ac = new AbortController()
+  const stop = (): void => {
+    ac.abort()
+  }
+  process.on("SIGINT", stop)
+  process.on("SIGTERM", stop)
+  try {
+    await runXScanLoop({
+      paths: { agentRoot, archiveRoot },
       home,
       signal: ac.signal,
     })
@@ -832,6 +861,8 @@ async function main(): Promise<void> {
         await cmdListenDiscord()
       } else if (rest[0] === "channels") {
         await cmdListenChannels()
+      } else if (rest[0] === "x-scan") {
+        await cmdListenXScan()
       } else if (rest[0] === undefined) {
         await cmdListenAll()
       } else {

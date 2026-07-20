@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -355,7 +355,8 @@ application is not wired yet — only wallets are applied today.
 | `tc listen` | KeepAlive operator listeners (Telegram + Discord research when enabled) |
 | `tc listen discord` | Discord Gateway research only (debug) |
 | `tc discord watchlist scan` | six-hour material-change monitor for Discord watch subscriptions |
-| `tc listen channels` | Telegram alpha-channel poller (preview + gramjs scaffold); cursors under `~/.trenchcoat/telegram-channels/` |
+| `tc listen channels` | Telegram alpha-channel poller (~60s) + immediate `telegram-alpha` agent per new message; cursors under `~/.trenchcoat/telegram-channels/` |
+| `tc listen x-scan` | Persistent X round-robin (FYP → lists, cursor stop, 5–30m between rounds); cursors under `~/.trenchcoat/x-scan/` |
 | `tc auth telegram-channels` | Scaffold GramJS session path under `~/.trenchcoat/telegram-session/` |
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
 | `tc status` | shared health snapshot (lock/runs/jobs/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |

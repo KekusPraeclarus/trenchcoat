@@ -67,8 +67,15 @@ export async function acceptChannelMessage(args: Readonly<{
   message: TelegramPreviewMessage
   cursorsFilePath: string
   nowIso?: string
-}>): Promise<Readonly<{ written: boolean; cursorAdvanced: boolean }>> {
+}>): Promise<Readonly<{
+  written: boolean
+  cursorAdvanced: boolean
+  /** Relative queue path when the message is durable under alpha-queue/ */
+  queuePath: string
+}>> {
   const channel = sanitizePathSegment(args.message.channel)
+  const id = sanitizePathSegment(args.message.id)
+  const queuePath = `alpha-queue/${channel}/${id}.json`
   const result = await writeTelegramQueueMessage(args.agentRoot, {
     ...args.message,
     channel,
@@ -85,7 +92,7 @@ export async function acceptChannelMessage(args: Readonly<{
     cursors.channels[channel] = { lastId: args.message.id, updatedAt: nowIso }
     await saveChannelCursors(args.cursorsFilePath, cursors)
   }
-  return { written: result.written, cursorAdvanced: shouldAdvance }
+  return { written: result.written, cursorAdvanced: shouldAdvance, queuePath }
 }
 
 export async function pollPreviewChannel(args: Readonly<{
@@ -94,6 +101,7 @@ export async function pollPreviewChannel(args: Readonly<{
   fetcher: FetchLike
   cursorsFilePath: string
   nowIso?: string
+  onAccepted?: (message: TelegramPreviewMessage) => Promise<void>
 }>): Promise<Readonly<{ accepted: number; newestId?: string }>> {
   const channel = sanitizePathSegment(args.channel)
   const cursors = loadChannelCursors(args.cursorsFilePath)
@@ -114,6 +122,9 @@ export async function pollPreviewChannel(args: Readonly<{
       if (result.written || result.cursorAdvanced) {
         accepted += 1
         newestId = message.id
+      }
+      if (result.written && args.onAccepted) {
+        await args.onAccepted(message)
       }
     } catch (error) {
       const wait = floodWaitMilliseconds(error)
@@ -136,12 +147,19 @@ export async function runTelegramChannelsListener(args: Readonly<{
   pollIntervalMs?: number
   signal?: AbortSignal
   gramJsListener?: GramJsListener
+  /** Called after a newly-written queue message (not on dedupe hits) */
+  onNewMessage?: (args: Readonly<{
+    channel: string
+    messageId: string
+    queuePath: string
+  }>) => void
 }>): Promise<void> {
   const home = args.home ?? join(homedir(), ".trenchcoat")
   const cursorFile = cursorsPath(home)
   mkdirSync(telegramChannelsHome(home), { recursive: true, mode: 0o700 })
   const fetcher = args.fetcher ?? fetch
-  const pollMs = args.pollIntervalMs ?? 30 * 60 * 1000
+  // Near-real-time preview poll; gramjs path is event-driven when injected
+  const pollMs = args.pollIntervalMs ?? 60 * 1_000
   const allowlist = new Map(
     args.channels.map((c) => [sanitizePathSegment(c.channel), c.mode] as const),
   )
@@ -155,6 +173,31 @@ export async function runTelegramChannelsListener(args: Readonly<{
   const gramjsChannels = [...allowlist.entries()]
     .filter(([, mode]) => mode === "gramjs")
     .map(([channel]) => channel)
+
+  const notifyNew = async (
+    channel: string,
+    message: TelegramPreviewMessage,
+    written: boolean,
+  ): Promise<void> => {
+    if (!written || !args.onNewMessage) return
+    const queuePath = [
+      "alpha-queue",
+      sanitizePathSegment(channel),
+      `${sanitizePathSegment(message.id)}.json`,
+    ].join("/")
+    try {
+      args.onNewMessage({
+        channel: sanitizePathSegment(channel),
+        messageId: sanitizePathSegment(message.id),
+        queuePath,
+      })
+    } catch (error) {
+      log.error("telegram onNewMessage handler failed", {
+        channel,
+        detail: error instanceof Error ? error.message : "unknown",
+      })
+    }
+  }
 
   if (gramjsChannels.length > 0) {
     const sessionFile = telegramSessionPath(home)
@@ -173,11 +216,12 @@ export async function runTelegramChannelsListener(args: Readonly<{
       void runGramJsListener(args.gramJsListener, async (message) => {
         const channel = sanitizePathSegment(message.channel)
         if (!allowed.has(channel)) return
-        await acceptChannelMessage({
+        const result = await acceptChannelMessage({
           agentRoot: args.agentRoot,
           message,
           cursorsFilePath: cursorFile,
         })
+        await notifyNew(channel, message, result.written)
       }).catch((error) => {
         log.error("gramjs channel listener failed", {
           detail: error instanceof Error ? error.message : "unknown",
@@ -213,6 +257,9 @@ export async function runTelegramChannelsListener(args: Readonly<{
           channel,
           fetcher,
           cursorsFilePath: cursorFile,
+          onAccepted: async (message) => {
+            await notifyNew(channel, message, true)
+          },
         })
         if (result.accepted > 0) {
           log.info("telegram preview polled", {

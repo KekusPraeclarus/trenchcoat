@@ -32,12 +32,12 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 |---|---|
 | `chart-sweep` | hourly |
 | `watchlist-scan` | every 2h |
-| `list-scan` | ~every 30–105m (jittered 30m–1h45m; FYP + operator lists) |
+| `x-scan` (KeepAlive) | always — round-robin FYP → lists with cursor stop; random 5–30m between rounds (`tc listen x-scan`) |
 | `farcaster-scan` | ~every 4h (jittered 3h15m–4h45m; requires `farcaster.enabled` + Neynar auth) |
 | `source-list-review` | daily and after a sealed audit |
 | `fc-source-review` | daily (Farcaster follow-graph sync) |
 | `narrative-scan` | every 6h |
-| `research` | scheduler dequeues from the research queue, cap in config |
+| `research` | Immediate drain when social/narrative/fomo enqueue; hourly cron remains as backstop |
 | `fomo-trader-sync` | daily (host-only; skips unless `fomo.enabled` + gates) |
 | `fomo-signal-scan` | every 30m (host-only; skips unless `fomo.enabled` + gates) |
 | `fomo-x-source-review` | every 6h (one nomination; requires `fomo.x_source_review.enabled`) |
@@ -52,7 +52,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 | `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, local main ff, runtime deploy; never activates agent or starts canary |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
 | `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |
-| `channels` (KeepAlive) | always — alpha-channel preview poller (~30m cycle; `tc listen channels`) |
+| `channels` (KeepAlive) | always — alpha-channel preview poller (~60s cycle) + immediate `telegram-alpha` agent per new message (`tc listen channels`) |
 
 ### Tuning social scan cadence
 
@@ -60,22 +60,25 @@ Cadence lives in code/ops scripts, not `config.json`:
 
 | Surface | Where to edit | Apply |
 |---|---|---|
-| X `list-scan` | `ops/run-job-jittered.sh` — `list-scan` branch (`MIN_SEC`/`MAX_SEC`) | Redeploy via `install-launchd.sh`; clears stale gate if you remove `~/.trenchcoat/var/list-scan.next` |
-| Farcaster `farcaster-scan` | Same script — separate `farcaster-scan` branch (still 3h15m–4h45m as of 2026-07-19) | Same; `~/.trenchcoat/var/farcaster-scan.next` |
-| TG alpha preview | `src/collectors/telegram/channels.ts` — default `pollIntervalMs` | Redeploy runtime + `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels` (not listener) |
+| X `x-scan` | `src/orchestrator/x-scan-cursors.ts` delay bounds (5–30m); cursors in `~/.trenchcoat/x-scan/cursors.json` | Redeploy + `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.x-scan` |
+| Farcaster `farcaster-scan` | `ops/run-job-jittered.sh` — `farcaster-scan` branch (3h15m–4h45m) | Same; `~/.trenchcoat/var/farcaster-scan.next` |
+| TG alpha preview | `src/collectors/telegram/channels.ts` — default `pollIntervalMs` (60s) | Redeploy runtime + `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels` (not listener) |
 
-Launchd polls jittered jobs every 15m; `run-job-jittered.sh` no-ops until
-`~/.trenchcoat/var/<job>.next` (written after each **successful** run). Changing
+Launchd polls jittered farcaster every 15m; `run-job-jittered.sh` no-ops until
+`~/.trenchcoat/var/farcaster-scan.next` (written after each **successful** run). Changing
 the script does not retroactively shorten an existing `.next` backoff — delete
 that file when you need the new range immediately.
 
+`list-scan` cron was retired — one-shot `tc run list-scan` still works for a
+full multi-target scrape. Streaming X uses KeepAlive `com.trenchcoat.x-scan`.
+
 Verify after deploy: channels startup log must show intended `pollMs` (e.g.
-`1800000` = 30m); `~/.trenchcoat/bin/run-job-jittered` contains the new
-`MIN_SEC`/`MAX_SEC` for each job branch.
+`60000` = 60s); x-scan log shows target labels and round delays; farcaster
+`~/.trenchcoat/bin/run-job-jittered` contains `MIN_SEC`/`MAX_SEC`.
 
 If `install-launchd.sh` exits non-zero mid-keepalive bootstrap (`Bootstrap
 failed: 5` on `com.trenchcoat.listener` is common when already running), later
-units (`com.trenchcoat.channels`, router) may never load — confirm with
+units (`com.trenchcoat.channels`, `com.trenchcoat.x-scan`, router) may never load — confirm with
 `launchctl print gui/$(id -u)/com.trenchcoat.channels` and bootstrap +
 `kickstart -k` if missing (same recovery as Discord listener notes below).
 

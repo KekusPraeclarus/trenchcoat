@@ -29,6 +29,7 @@ export const HEALTH_SNAPSHOT_SCHEMA = 1 as const
  * complete journals — never inferred from INDEX.md line dates. */
 export const KEY_HEALTH_JOBS: readonly JobName[] = Object.freeze([
   "list-scan",
+  "telegram-alpha",
   "farcaster-scan",
   "narrative-scan",
   "research",

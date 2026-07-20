@@ -34,7 +34,8 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
 | `watchlist-scan` | every 2h | active watchlist market + security snapshots, optional bounded X/Farcaster token search; **host-pre skip** when empty watchlist | watchlist evidence review |
-| `list-scan` | ~every 30–105m (uniform jitter 30m–1h45m via `ops/run-job-jittered.sh`) | FYP + two operator X lists + managed list *(live)*; host `list-scan-alpha-manifest` (pending `alpha-queue/` paths); coingecko / dexscreener / new-pool *(planned)* | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m); **digests alpha queue** via `alpha-digest.json` |
+| `list-scan` | KeepAlive `x-scan` drives per-target passes; one-shot `tc run list-scan` still supported | FYP + two operator X lists + managed list *(live)*; streaming skips alpha manifest; one-shot may include `list-scan-alpha-manifest` | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m) |
+| `telegram-alpha` | on each new channel message (`tc listen channels` pump) | path-only `telegram-alpha-manifest` for cited `alpha-queue/` files | `alpha-digest.json` + optional outbox broadcast |
 | `farcaster-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
 | `source-list-review` | daily + after sealed audit | lagged source-score epoch + managed-list membership | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
 | `fc-source-review` | daily | lagged `fc_*` source-score + follow-graph sync | **no agent** — promote/demote then Neynar follow/unfollow |
@@ -62,14 +63,13 @@ repo-dev and installed layouts work. `runJob` re-checks under lock and appends
 still apply under `--dry-collect`; missing `agent/state/` fails closed as
 `not-initialized`. When a collector runs but sets `skipAgent` (degraded /
 unusable evidence), the run is journaled and sealed as `collector-skip` without
-an `agent.md` stub. `list-scan` and
-`farcaster-scan` are special: launchd polls every 15m and
-`ops/run-job-jittered.sh` (deployed as `~/.trenchcoat/bin/run-<job>`) gates real
-runs after each success — list-scan uniform in [30m, 1h45m], farcaster-scan in
-[3h15m, 4h45m] — anti-patterning for the social burners. Cron is the only trigger — no daemon (the telegram
-operator listener and `tc listen channels` alpha poller excepted, see
-collectors.md), no human. The CLI also accepts on-demand
-runs (operator or chat service).
+an `agent.md` stub. X scanning is KeepAlive `tc listen x-scan`
+(`com.trenchcoat.x-scan`): persistent Playwright, FYP then lists with per-target
+agent passes and a random 5–30m delay between rounds. `farcaster-scan` remains
+jitter-gated via `ops/run-job-jittered.sh` (uniform [3h15m, 4h45m]). Telegram
+alpha is separate: `tc listen channels` polls ~60s and pumps `telegram-alpha`
+immediately on new messages. Cron is otherwise the only trigger — no human. The
+CLI also accepts on-demand runs (operator or chat service).
 
 Decision weighting is the bot's job, not ours: skills instruct it to blend
 technicals with attention/sentiment/narrative evidence, weighted by each source's

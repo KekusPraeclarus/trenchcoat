@@ -277,16 +277,16 @@ EOF
   cp "$REPO_ROOT/ops/run-with-lock-retry.sh" "$BIN_DIR/run-with-lock-retry"
   cp "$REPO_ROOT/ops/run-precheck.sh" "$BIN_DIR/run-precheck"
   chmod 755 "$BIN_DIR/run-job-jittered" "$BIN_DIR/run-with-lock-retry" "$BIN_DIR/run-precheck"
-  for job in list-scan farcaster-scan; do
-    cat >"$BIN_DIR/run-$job" <<EOF
+  # farcaster-scan remains jitter-gated; list-scan cron retired in favour of KeepAlive x-scan
+  cat >"$BIN_DIR/run-farcaster-scan" <<EOF
 #!/bin/sh
-exec "$BIN_DIR/run-job-jittered" $job
+exec "$BIN_DIR/run-job-jittered" farcaster-scan
 EOF
-    chmod 755 "$BIN_DIR/run-$job"
-  done
+  chmod 755 "$BIN_DIR/run-farcaster-scan"
+  rm -f "$BIN_DIR/run-list-scan" 2>/dev/null || true
   echo "deployed runtime → $RUNTIME_ROOT"
   echo "wrapper → $TC"
-  echo "jitter gates → $BIN_DIR/run-list-scan, $BIN_DIR/run-farcaster-scan"
+  echo "jitter gate → $BIN_DIR/run-farcaster-scan"
   echo "lock retry → $BIN_DIR/run-with-lock-retry"
   echo "precheck → $BIN_DIR/run-precheck"
 }
@@ -335,12 +335,12 @@ EOF
 }
 
 # Social scans: launchd polls; ops/run-job-jittered.sh gates inter-run delay
+# (farcaster-scan only — X list-scan is KeepAlive com.trenchcoat.x-scan)
 write_jittered_job_plist() {
   job="$1"
   label="com.trenchcoat.job.$job"
   poll_seconds=900
   case "$job" in
-    list-scan) jitter_desc="30m–1h45m" ;;
     farcaster-scan) jitter_desc="3h15m–4h45m" ;;
     *) jitter_desc="jittered" ;;
   esac
@@ -502,6 +502,59 @@ EOF
   fi
   printf '%s\n' "$body" >"$out"
   echo "wrote $out"
+}
+
+write_x_scan_plist() {
+  out="$DEST/com.trenchcoat.x-scan.plist"
+  body=$(cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trenchcoat.x-scan</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>$WRAPPER_PREFIX; exec $TC listen x-scan</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/trenchcoat.x-scan.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/trenchcoat.x-scan.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
+EOF
+)
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "would write $out (KeepAlive x-scan round-robin)"
+    return
+  fi
+  printf '%s\n' "$body" >"$out"
+  echo "wrote $out"
+}
+
+retire_list_scan_cron_plist() {
+  label="com.trenchcoat.job.list-scan"
+  out="$DEST/$label.plist"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "would bootout and remove legacy $label (replaced by com.trenchcoat.x-scan KeepAlive)"
+    return
+  fi
+  launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
+  if [ -f "$out" ]; then
+    rm -f "$out"
+    echo "removed legacy $out (x-scan is KeepAlive com.trenchcoat.x-scan)"
+  fi
+  # Stale jitter gate is harmless but confusing — clear on migrate
+  rm -f "${TRENCHCOAT_HOME:-$HOME/.trenchcoat}/var/list-scan.next" 2>/dev/null || true
 }
 
 retire_discord_listener_plist() {
@@ -724,7 +777,7 @@ fi
 # 4th arg 1 = host precondition precheck before lock (chart/watchlist/research/wallets)
 write_interval_plist com.trenchcoat.job.chart-sweep chart-sweep 3600 1
 write_interval_plist com.trenchcoat.job.watchlist-scan watchlist-scan 7200 1
-write_jittered_job_plist list-scan
+# list-scan cron retired — KeepAlive com.trenchcoat.x-scan round-robins FYP+lists
 write_jittered_job_plist farcaster-scan
 write_interval_plist com.trenchcoat.job.narrative-scan narrative-scan 21600
 write_interval_plist com.trenchcoat.job.research research 3600 1
@@ -743,10 +796,13 @@ write_interval_plist com.trenchcoat.job.fomo-narrative-source-scan fomo-narrativ
 write_interval_plist com.trenchcoat.job.narrative-source-review narrative-source-review 86400 1
 write_interval_plist com.trenchcoat.job.delivery-retry delivery-retry 900 1
 write_discord_watchlist_scan_plist
+# Always retire the old list-scan StartInterval job (even with --jobs-only)
+retire_list_scan_cron_plist
 
 if [ "$JOBS_ONLY" -eq 0 ]; then
   write_listener_plist
   write_channels_listener_plist
+  write_x_scan_plist
   retire_discord_listener_plist
   write_router_plist
   write_backup_plist
@@ -762,7 +818,6 @@ wait_for_agent_idle
 for label in \
   com.trenchcoat.job.chart-sweep \
   com.trenchcoat.job.watchlist-scan \
-  com.trenchcoat.job.list-scan \
   com.trenchcoat.job.farcaster-scan \
   com.trenchcoat.job.narrative-scan \
   com.trenchcoat.job.research \
@@ -788,6 +843,7 @@ done
 if [ "$JOBS_ONLY" -eq 0 ]; then
   bootstrap_label com.trenchcoat.listener
   bootstrap_label com.trenchcoat.channels
+  bootstrap_label com.trenchcoat.x-scan
   bootstrap_label com.trenchcoat.router
   bootstrap_label com.trenchcoat.backup
 fi
@@ -800,6 +856,7 @@ echo "done. trenchcoat=$TC (runtime under $RUNTIME_ROOT)"
 echo "logs: /tmp/trenchcoat.*.log"
 echo "listener keepalive: launchctl print $DOMAIN/com.trenchcoat.listener (telegram + discord when enabled)"
 echo "channels keepalive: launchctl print $DOMAIN/com.trenchcoat.channels"
+echo "x-scan keepalive: launchctl print $DOMAIN/com.trenchcoat.x-scan"
 echo "router keepalive: launchctl print $DOMAIN/com.trenchcoat.router"
 echo "backup (manual smoke): $REPO_ROOT/ops/backup.sh"
 echo "re-run this script after pulling code changes that affect the CLI"

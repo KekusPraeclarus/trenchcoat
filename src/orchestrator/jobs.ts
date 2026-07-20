@@ -1,6 +1,7 @@
 export type JobName =
   | "watchlist-scan"
   | "list-scan"
+  | "telegram-alpha"
   | "farcaster-scan"
   | "narrative-scan"
   | "research"
@@ -35,6 +36,7 @@ export type JobDefinition = Readonly<{
 export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "watchlist-scan", skill: "watchlist-scan", description: "Scan tracked tokens", preconditionTier: "host" },
   { name: "list-scan", skill: "list-scan", description: "Scan curated social lists", preconditionTier: "none" },
+  { name: "telegram-alpha", skill: "telegram-alpha", description: "Process a Telegram alpha-queue message", preconditionTier: "none" },
   { name: "farcaster-scan", skill: "farcaster-scan", description: "Scan Farcaster for-you and channels", preconditionTier: "collector" },
   { name: "narrative-scan", skill: "narrative-scan", description: "Narrative lifecycle", preconditionTier: "collector" },
   { name: "research", skill: "research", description: "Research queue drain", preconditionTier: "host" },

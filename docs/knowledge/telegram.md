@@ -33,7 +33,12 @@ last_verified: 2026-07-20
 | Broadcast fanout | `tc router serve` / `com.trenchcoat.router` | `TELEGRAM_ROUTER_*` |
 
 Working alpha: `mode: "preview"`, poller logs `preview:N` / `telegram preview polled`
-(on a ~30m cycle per channel batch), queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.
+(on a ~60s cycle per channel batch), queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.
+Each newly written message enqueues an immediate `telegram-alpha` agent pass
+(serial pump under the workspace lock; exit 3 retries). Broadcasts go through
+the normal host outbox/router path when the agent proposes them.
+`list-scan` / `review` may still write path-only alpha manifests for backlog
+drain; primary live digestion is `telegram-alpha`.
 List-scan writes `list-scan-alpha-manifest`; review writes `review-alpha-manifest`.
 Both are path-only and capped at 500 items (`truncated=N` when the queue is
 deeper) so digest can still run while backlog is drained. Overflow keeps the
@@ -65,7 +70,7 @@ ingestion is live — check channels poller logs and `alpha-queue/` separately.
   public call channels.
 - **Queue deep / digests never purge** — agent wrote narrative `items` instead of
   `entries` + content hashes. Receipt shows `invalidReason=schema-invalid` and
-  chat `alphaDigestInvalid` / `alphaPurged=0`. Fix skills (list-scan/review), sync
+  chat `alphaDigestInvalid` / `alphaPurged=0`. Fix skills (telegram-alpha/list-scan/review), sync
   into `~/.trenchcoat/agent/skills/`, redeploy host; do not mass-delete the queue.
   Last-resort operator drain: `pnpm exec tsx scripts/alpha-queue-drain.ts` (writes
   minimal archive record + host-valid digest; see orchestrator.md § Alpha-queue).
@@ -74,4 +79,7 @@ ingestion is live — check channels poller logs and `alpha-queue/` separately.
   does not sync skills).
 - **Poll interval change** — default cycle is code in `channels.ts`, not config;
   after redeploy restart **`com.trenchcoat.channels`** and confirm startup log
-  `pollMs` (2026-07-19 live: `1800000` = 30m, was `60000`).
+  `pollMs` (2026-07-20 live: `60000` = 60s; was `1800000`).
+- **Immediate agent not firing** — channels must be the redeployed runtime with
+  `onNewMessage` → `createTelegramAlphaPump`; check `/tmp/trenchcoat.channels.*.log`
+  for `telegram-alpha pass` lines and lock contention (`busy — will retry`).

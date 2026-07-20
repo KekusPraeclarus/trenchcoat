@@ -11,6 +11,7 @@ import {
   twitterSearchUrl,
   type TwitterPopularitySummary,
 } from "./popularity.js"
+import { accumulatePostsUntilCursor } from "./scrape-cursor.js"
 import { log } from "../../lib/log.js"
 
 /** Playwright mid-scrape death — page/context/browser closed under us */
@@ -101,16 +102,45 @@ async function waitForTweetArticles(page: Page, timeoutMs: number): Promise<bool
   }
 }
 
-async function scrapeTarget(
+export type TwitterScrapeUntilCursorResult = Readonly<{
+  bundle: TwitterScrapeBundle
+  /** Top-of-feed post id from this scrape (next cursor after a successful pass) */
+  newestPostId?: string
+  /** True when stopAtPostId was observed while scrolling */
+  hitCursor: boolean
+  pagesScrolled: number
+}>
+
+export async function scrapeTarget(
   page: Page,
   target: TwitterScrapeTarget,
   maxPages: number,
 ): Promise<TwitterScrapeBundle> {
+  const result = await scrapeTargetUntilCursor(page, target, { maxPages })
+  return result.bundle
+}
+
+/**
+ * Scroll a target until the previously-read post reappears, or maxPages is hit.
+ * New posts are those seen before hitting stopAtPostId (cursor post excluded).
+ */
+export async function scrapeTargetUntilCursor(
+  page: Page,
+  target: TwitterScrapeTarget,
+  opts: Readonly<{
+    maxPages: number
+    stopAtPostId?: string
+  }>,
+): Promise<TwitterScrapeUntilCursorResult> {
   await page.goto(target.url, { waitUntil: "domcontentloaded", timeout: 60_000 })
   await page.waitForTimeout(2_000 + Math.floor(Math.random() * 1_500))
 
   if (await detectChallenge(page)) {
-    return { target, posts: [], challenged: true }
+    return {
+      bundle: { target, posts: [], challenged: true },
+      hitCursor: false,
+      pagesScrolled: 0,
+    }
   }
 
   // Prefer "For you" tab on home when present
@@ -128,11 +158,25 @@ async function scrapeTarget(
   }
 
   const seen = new Map<string, TwitterPost>()
-  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+  let newestPostId: string | undefined
+  let hitCursor = false
+  let pagesScrolled = 0
+  const stopAt = opts.stopAtPostId?.trim() || undefined
+  const batches: TwitterPost[][] = []
+
+  for (let pageIndex = 0; pageIndex < opts.maxPages; pageIndex += 1) {
     const batch = await parseTwitterSearchPage(page)
-    for (const post of batch) {
-      if (!seen.has(post.id)) seen.set(post.id, post)
-    }
+    batches.push(batch)
+    pagesScrolled = pageIndex + 1
+    const partial = accumulatePostsUntilCursor({
+      batches,
+      ...(stopAt ? { stopAtPostId: stopAt } : {}),
+    })
+    hitCursor = partial.hitCursor
+    newestPostId = partial.newestPostId
+    seen.clear()
+    for (const post of partial.posts) seen.set(post.id, post)
+    if (hitCursor) break
     await page.mouse.wheel(0, 2_800)
     await page.waitForTimeout(1_200 + Math.floor(Math.random() * 1_800))
   }
@@ -142,16 +186,27 @@ async function scrapeTarget(
     await page.waitForTimeout(2_500)
     if (await waitForTweetArticles(page, 10_000)) {
       const batch = await parseTwitterSearchPage(page)
-      for (const post of batch) {
-        if (!seen.has(post.id)) seen.set(post.id, post)
-      }
+      batches.push(batch)
+      const partial = accumulatePostsUntilCursor({
+        batches,
+        ...(stopAt ? { stopAtPostId: stopAt } : {}),
+      })
+      hitCursor = partial.hitCursor
+      newestPostId = partial.newestPostId
+      seen.clear()
+      for (const post of partial.posts) seen.set(post.id, post)
     }
   }
 
   return {
-    target,
-    posts: [...seen.values()],
-    challenged: false,
+    bundle: {
+      target,
+      posts: [...seen.values()],
+      challenged: false,
+    },
+    ...(newestPostId ? { newestPostId } : {}),
+    hitCursor,
+    pagesScrolled,
   }
 }
 
@@ -177,6 +232,36 @@ async function openReadOnlySession(
   await attachReadOnlyRoutes(context)
   const page = await context.newPage()
   return { context, page }
+}
+
+export type PersistentTwitterSession = Readonly<{
+  page: () => Page
+  close: () => Promise<void>
+  relaunch: () => Promise<Page>
+}>
+
+/** Keep one authenticated read-only browser alive across round-robin targets */
+export async function openPersistentReadOnlyTwitter(
+  opts: Readonly<{ headless?: boolean }> = {},
+): Promise<PersistentTwitterSession> {
+  const state = assertTwitterSessionReady()
+  let browser = await chromium.launch({ headless: opts.headless !== false })
+  let opened = await openReadOnlySession(browser, state)
+
+  return {
+    page: () => opened.page,
+    close: async () => {
+      await opened.context.close().catch(() => undefined)
+      await browser.close().catch(() => undefined)
+    },
+    relaunch: async () => {
+      await opened.context.close().catch(() => undefined)
+      await browser.close().catch(() => undefined)
+      browser = await chromium.launch({ headless: opts.headless !== false })
+      opened = await openReadOnlySession(browser, state)
+      return opened.page
+    },
+  }
 }
 
 /**

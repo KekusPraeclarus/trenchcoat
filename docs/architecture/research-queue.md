@@ -2,7 +2,7 @@
 description: Research queue lifecycle - how candidates from scans, narrative transitions, new-pool feed, alpha digestion, and chat become bounded research runs. Schema, dedupe, priority, revisit handling, expiry.
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing candidate enqueueing, the research job trigger, narrative bridge, or revisit/expiry handling.
 ---
@@ -97,6 +97,10 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `run.ts` **defers** `preArchiveRun` until after `runResearchPasses` for cron
   research so those files are frozen before proposals/verifier (operator
   research archives after passes the same way)
+- **Immediate drain** — when social nominations, narrative bridge, or fomo-signal
+  enqueue at least one entry, `scheduleResearchDrain` kicks a host pump after the
+  parent run releases the workspace lock (does not nest under the same lock).
+  Hourly launchd `research` remains a backstop for anything left pending
 - **Narrative bridge** — after `narrative-scan` integrity succeeds,
   `bridgeNarrativeTickers` deterministically extracts bounded ticker candidates
   from explicit `tickers` fields and cashtags (`$TICKER`) only — never bare

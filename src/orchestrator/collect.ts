@@ -116,12 +116,21 @@ export async function collectForJob(args: Readonly<{
     tokenAddress?: string
   }>
   fetcher?: typeof fetch
+  /** Injected scrape results for streaming list-scan target passes */
+  listScanOverride?: Readonly<{
+    bundles: readonly TwitterScrapeBundle[]
+    includeAlphaManifest?: boolean
+  }>
+  /** Relative alpha-queue paths for telegram-alpha (path-only inbox) */
+  telegramAlphaPaths?: readonly string[]
 }>): Promise<CollectionSummary> {
   const job = getJob(args.job).name
 
   switch (job) {
     case "list-scan":
       return collectListScan(args)
+    case "telegram-alpha":
+      return collectTelegramAlpha(args)
     case "farcaster-scan":
       return collectFarcaster(args)
     case "chart-sweep":
@@ -645,9 +654,18 @@ async function collectListScan(args: Readonly<{
   writer: SnapshotWriter
   fetchedAt: string
   agentRoot: string
+  listScanOverride?: Readonly<{
+    bundles: readonly TwitterScrapeBundle[]
+    includeAlphaManifest?: boolean
+  }>
 }>): Promise<CollectionSummary> {
   const config = loadConfig()
-  const bundles = await scrapeConfiguredTwitter(config)
+  const bundles = args.listScanOverride?.bundles
+    ?? await scrapeConfiguredTwitter(config)
+  // Streaming target passes skip alpha by default (telegram-alpha owns that path)
+  const shouldWriteAlpha = args.listScanOverride
+    ? Boolean(args.listScanOverride.includeAlphaManifest)
+    : true
   const names: string[] = []
   const fypAuthors = new Set<string>()
   const sightings: DiscoverySighting[] = []
@@ -705,19 +723,28 @@ async function collectListScan(args: Readonly<{
     })
   }
 
-  const alpha = await writeListScanAlphaManifest(args)
-  names.push(alpha.snapshotName)
+  let alphaPendingCount = 0
+  let alphaManifestTruncated = 0
+  if (shouldWriteAlpha) {
+    const alpha = await writeListScanAlphaManifest(args)
+    names.push(alpha.snapshotName)
+    alphaPendingCount = alpha.pendingCount
+    alphaManifestTruncated = alpha.truncatedBy
+  }
 
   const statusParts: string[] = []
-  if (alpha.pendingCount > 0) {
+  if (shouldWriteAlpha && alphaPendingCount > 0) {
     statusParts.push(
-      alpha.truncatedBy > 0
-        ? `alpha-backlog:${alpha.pendingCount};truncated=${alpha.truncatedBy}`
-        : `alpha-pending:${alpha.pendingCount}`,
+      alphaManifestTruncated > 0
+        ? `alpha-backlog:${alphaPendingCount};truncated=${alphaManifestTruncated}`
+        : `alpha-pending:${alphaPendingCount}`,
     )
   }
   if (snapshotItemsTruncated > 0) {
     statusParts.push(`posts-truncated:${snapshotItemsTruncated}`)
+  }
+  if (args.listScanOverride) {
+    statusParts.push(`streaming-target:${bundles.map((b) => b.target.label).join(",")}`)
   }
 
   return {
@@ -733,10 +760,75 @@ async function collectListScan(args: Readonly<{
     fypCasts: [],
     postCount,
     collectionKind: "external",
-    alphaPendingCount: alpha.pendingCount,
-    alphaManifestTruncated: alpha.truncatedBy,
+    ...(shouldWriteAlpha
+      ? {
+        alphaPendingCount,
+        alphaManifestTruncated,
+      }
+      : {}),
     ...(snapshotItemsTruncated > 0 ? { snapshotItemsTruncated } : {}),
     ...(statusParts.length > 0 ? { collectionStatus: statusParts.join(";") } : {}),
+  }
+}
+
+async function collectTelegramAlpha(args: Readonly<{
+  runId: string
+  writer: SnapshotWriter
+  fetchedAt: string
+  agentRoot: string
+  telegramAlphaPaths?: readonly string[]
+}>): Promise<CollectionSummary> {
+  const paths = args.telegramAlphaPaths ?? []
+  if (paths.length === 0) {
+    await args.writer.writeInbox(args.runId, "collection-status", {
+      source: "host.telegram-alpha",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${args.runId}:telegram-alpha-status`,
+        text: "job=telegram-alpha status=skipped reason=no-paths",
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    })
+    return {
+      ...EMPTY_SUMMARY,
+      snapshotNames: ["collection-status"],
+      postCount: 1,
+      skipAgent: true,
+      collectionStatus: "skipped",
+      collectionKind: "host-only",
+    }
+  }
+
+  const alphaLines = capManifestLines(paths.map((path) => `path=${path}`))
+  const truncatedMarker = alphaLines.find((line) => line.startsWith("truncated="))
+  const truncatedBy = truncatedMarker
+    ? Number.parseInt(truncatedMarker.slice("truncated=".length), 10) || 0
+    : 0
+  await args.writer.writeInbox(args.runId, "telegram-alpha-manifest", {
+    source: "host.telegram-alpha",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: alphaLines.map((text, index) => ({
+      provenance: `${args.runId}:telegram-alpha-manifest:${index}`,
+      text,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    })),
+  })
+  return {
+    ...EMPTY_SUMMARY,
+    snapshotNames: ["telegram-alpha-manifest"],
+    postCount: alphaLines.length,
+    collectionKind: "external",
+    alphaPendingCount: paths.length,
+    alphaManifestTruncated: truncatedBy,
+    ...(truncatedBy > 0
+      ? { collectionStatus: `alpha-pending:${paths.length};truncated=${truncatedBy}` }
+      : { collectionStatus: `alpha-pending:${paths.length}` }),
   }
 }
 

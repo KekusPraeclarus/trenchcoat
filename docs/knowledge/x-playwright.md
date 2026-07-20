@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # X / Twitter (Playwright)
@@ -30,13 +30,16 @@ last_verified: 2026-07-19
   soft-retries once on empty, and falls back from Latest (`f=live`) to Top when
   Latest returns zero posts. Host queries: CA, `$SYMBOL`, `SYMBOL chain`.
 
-## list-scan cadence
+## list-scan / x-scan cadence
 
-- Launchd polls every 15m; `ops/run-job-jittered.sh` gates real runs to uniform
-  [30m, 1h45m] after each success (2026-07-19; was 3h15m–4h45m). Farcaster uses
-  the same script with a separate branch — do not assume shared constants.
-- Backoff persists in `~/.trenchcoat/var/list-scan.next` across redeploy; delete
-  to apply a shorter gate immediately after a cadence change.
+- **KeepAlive** `com.trenchcoat.x-scan` → `tc listen x-scan`: one persistent
+  Playwright session round-robins FYP → operator lists → managed list
+- Each target scrolls until the prior `lastPostId` cursor reappears (or
+  `max_pages_per_run`); then a per-target `list-scan` agent pass under the
+  workspace lock; cursors in `~/.trenchcoat/x-scan/cursors.json`
+- Random **5–30 minute** delay between completed rounds (natural pacing)
+- One-shot `tc run list-scan` still scrapes all targets in a single run
+- Legacy cron/jitter `com.trenchcoat.job.list-scan` is retired by install
 
 ## FYP engagement manifest
 

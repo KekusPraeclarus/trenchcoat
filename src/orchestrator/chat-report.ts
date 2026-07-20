@@ -24,6 +24,7 @@ import type { OutboxIngestReport } from "./outbox-ingest.js"
 /** Jobs that always get a host-rendered reports/chat/<run-id>.md after terminal success */
 export const CHAT_SUMMARY_JOBS = new Set([
   "list-scan",
+  "telegram-alpha",
   "narrative-scan",
   "farcaster-scan",
   "review",
