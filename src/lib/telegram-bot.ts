@@ -29,7 +29,13 @@ async function callBot(
   })
   if (!response.ok) {
     const detail = await response.text().catch(() => "")
-    throw new Error(`telegram ${method} HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`)
+    const err = new Error(
+      `telegram ${method} HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+    ) as Error & { retryable?: boolean; retryAfterSeconds?: number }
+    err.retryable = response.status === 429 || response.status >= 500
+    const ra = response.headers.get("retry-after")
+    if (ra) err.retryAfterSeconds = Number(ra)
+    throw err
   }
 }
 
@@ -81,6 +87,25 @@ export async function telegramSendMessageChunks(
   return parts.length
 }
 
+/**
+ * Strip refs, chunk markdown, send HTML with plain fallback per part.
+ * Shared by operator DMs and router channel fanout.
+ */
+export async function telegramSendFormattedChunks(
+  fetcher: TelegramBotFetcher,
+  token: string,
+  chatId: string,
+  text: string,
+  limit = TELEGRAM_SAFE_CHUNK,
+): Promise<number> {
+  const mdLimit = Math.max(64, Math.min(limit, TELEGRAM_SAFE_CHUNK) - 400)
+  const parts = splitTelegramText(stripLocalWorkspaceRefs(text), mdLimit)
+  for (const part of parts) {
+    await telegramSendOperatorMessage(fetcher, token, chatId, part)
+  }
+  return parts.length
+}
+
 /** Operator DMs with path strip + HTML; chunks markdown before conversion */
 export async function telegramSendOperatorMessageChunks(
   fetcher: TelegramBotFetcher,
@@ -89,13 +114,7 @@ export async function telegramSendOperatorMessageChunks(
   text: string,
   limit = TELEGRAM_SAFE_CHUNK,
 ): Promise<number> {
-  // Leave headroom for HTML tags after conversion
-  const mdLimit = Math.max(64, Math.min(limit, TELEGRAM_SAFE_CHUNK - 400))
-  const parts = splitTelegramText(stripLocalWorkspaceRefs(text), mdLimit)
-  for (const part of parts) {
-    await telegramSendOperatorMessage(fetcher, token, chatId, part)
-  }
-  return parts.length
+  return telegramSendFormattedChunks(fetcher, token, chatId, text, limit)
 }
 
 /**

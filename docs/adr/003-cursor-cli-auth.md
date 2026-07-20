@@ -2,6 +2,7 @@
 description: ADR — trenchcoat drives Cursor via CLI login, not @cursor/sdk API keys.
 status: accepted
 date: 2026-07-16
+last_verified: 2026-07-20
 ---
 
 # ADR 003 — Cursor CLI login auth

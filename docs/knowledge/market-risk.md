@@ -2,6 +2,7 @@
 description: Provider knowledge — GeckoTerminal, DexScreener, CoinGecko, Alternative.me, GoPlus, RugCheck.
 scope: project
 status: active
+last_verified: 2026-07-20
 ---
 
 # Market and risk providers

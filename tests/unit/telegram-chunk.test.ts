@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   splitTelegramText,
   TELEGRAM_SAFE_CHUNK,
+  telegramSendFormattedChunks,
 } from "../../src/lib/telegram-bot.js"
 import { prepareTelegramReply } from "../../src/chat/telegram-reply.js"
 import { mkdtempSync, readFileSync, existsSync } from "node:fs"
@@ -55,6 +56,23 @@ describe("splitTelegramText", () => {
     expect(parts.every((p) => p.length <= 500)).toBe(true)
     const rejoined = parts.map((p) => p.replace(/^\d+\/\d+\n/u, "")).join(" ")
     expect(rejoined.replace(/\s+/gu, " ")).toContain("word word")
+  })
+})
+
+describe("telegramSendFormattedChunks", () => {
+  it("sends markdown as HTML with parse_mode", async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    const fetcher = vi.fn(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body ?? "{}")))
+      return new Response("{}", { status: 200 })
+    })
+    await telegramSendFormattedChunks(fetcher, "token", "42", "**RH AI agents** — emerging")
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0]).toMatchObject({
+      chat_id: "42",
+      text: "<b>RH AI agents</b> — emerging",
+      parse_mode: "HTML",
+    })
   })
 })
 

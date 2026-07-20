@@ -2,7 +2,7 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # Module docs
@@ -13,7 +13,7 @@ last_verified: 2026-07-19
 | [collectors.md](collectors.md) | Social/market collectors, mention dedupe + clusters, source-call extraction, freshness, new pools, exact RSI contract, rate gate, atomic snapshots/provenance | `src/collectors/`, `src/lib/` |
 | [agent-workspace.md](agent-workspace.md) | The bot's instructions, skills, knowledge store (index, research, narratives, sources), state schemas + decision cards, decision weighting, outbox, sandbox config | anything under `agent/` |
 | [chat-agent.md](chat-agent.md) | Telegram bridge, confirmation-gated research, deep-research sub-agents | `src/chat/`, `src/orchestrator/research.ts`, `agent/skills/chat/`, `agent/skills/deep-research/` |
-| [discord-research.md](discord-research.md) | Private-guild Discord research bot (Gateway, isolated state, watch monitor) — **not** router webhook broadcasts | `src/discord/`, `chat.discord` config (schema 10), ADR 010 |
+| [discord-research.md](discord-research.md) | Private-guild Discord research bot (Gateway, isolated state, watch monitor) — **not** router webhook broadcasts | `src/discord/`, `chat.discord` config (schema 10), ADR 010, ADR 012 |
 | [chains.md](chains.md) | Chain registry, per-provider id mapping, fail-closed rule, new-chain flow (API-only, no RPC) | anything passing a chain id to an upstream API |
 | [token-resolution.md](token-resolution.md) | Canonical identity, isolated shortlist-bounded disambiguation, point-in-time dossier, ground-truth/proxy audit split, strict RSI-rule promotion | `src/lib/resolve.ts`, mention counting, watchlist entry creation |
 | [research-queue.md](research-queue.md) | Candidate buffer, dedupe, priority, revisit/expiry/cap, operator Telegram/CLI path | `src/lib/research-queue.ts`, `src/orchestrator/research.ts`, research job |

@@ -2,7 +2,7 @@
 title: Farcaster follow-graph as managed-list analog
 status: accepted
 date: 2026-07-17
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # ADR 007 — Farcaster follow-graph as managed-list analog

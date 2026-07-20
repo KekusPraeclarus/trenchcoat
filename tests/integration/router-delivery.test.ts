@@ -252,7 +252,7 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
 
   it("fans out per-channel text when channels are present", async () => {
     const dir = mkdtempSync(join(tmpdir(), "tc-channels-"))
-    const seen: Array<{ kind: string; text: string }> = []
+    const seen: Array<{ kind: string; text: string; parseMode?: string }> = []
     const server = createRouterServer({
       dbPath: join(dir, "router.sqlite3"),
       hmacKey,
@@ -264,9 +264,17 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
       workerIntervalMs: 50,
       fetcher: async (input, init) => {
         const url = String(input)
-        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string; content?: string }
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          text?: string
+          content?: string
+          parse_mode?: string
+        }
         if (url.includes("api.telegram.org")) {
-          seen.push({ kind: "telegram", text: body.text ?? "" })
+          seen.push({
+            kind: "telegram",
+            text: body.text ?? "",
+            parseMode: body.parse_mode,
+          })
         } else if (url.includes("discord.example")) {
           seen.push({ kind: "discord", text: body.content ?? "" })
         }
@@ -283,7 +291,7 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
     const event: RouterEvent = {
       ...base,
       channels: {
-        telegram: { text: "FULL TELEGRAM REPORT" },
+        telegram: { text: "**FULL TELEGRAM REPORT**" },
         discord: { text: "SHORT DISCORD LINE" },
       },
     }
@@ -293,7 +301,7 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
       await new Promise((r) => setTimeout(r, 50))
     }
     expect(seen).toEqual(expect.arrayContaining([
-      { kind: "telegram", text: "FULL TELEGRAM REPORT" },
+      { kind: "telegram", text: "<b>FULL TELEGRAM REPORT</b>", parseMode: "HTML" },
       { kind: "discord", text: "SHORT DISCORD LINE" },
     ]))
   })

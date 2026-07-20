@@ -2,7 +2,7 @@
 description: ADR — Discord research bot is Gateway-isolated from router webhook broadcasts and main agent state.
 scope: project
 status: accepted
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # ADR 010 — Discord research isolation
@@ -39,6 +39,7 @@ Message Content intent.
   redeploy code does not auto-sync them (same class of gotcha as Telegram runtime
   skills).
 - Live canaries require explicit `TRENCHCOAT_LIVE_DISCORD=1` (see plan §14).
+- Watch update voice and fallback contract: ADR 012.
 
 ## References
 

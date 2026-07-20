@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
-import { splitTelegramText } from "../lib/telegram-bot.js"
+import { splitTelegramText, telegramSendFormattedChunks } from "../lib/telegram-bot.js"
 
 export type DestinationRow = Readonly<{
   id: string
@@ -57,32 +57,7 @@ export async function deliverTelegram(
   chatId: string,
   text: string,
 ): Promise<void> {
-  const url = `https://api.telegram.org/bot${botToken}/sendMessage`
-  const parts = splitTelegramText(text)
-  for (const part of parts) {
-    const response = await fetcher(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: part,
-        disable_web_page_preview: true,
-      }),
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!response.ok) {
-      const retryable = response.status === 429 || response.status >= 500
-      const err = new Error(`telegram HTTP ${response.status}`) as Error & {
-        retryable?: boolean
-        retryAfterSeconds?: number
-      }
-      err.retryable = retryable
-      const ra = response.headers.get("retry-after")
-      if (ra) err.retryAfterSeconds = Number(ra)
-      throw err
-    }
-  }
+  await telegramSendFormattedChunks(fetcher, botToken, chatId, text)
 }
 
 export async function deliverDiscord(

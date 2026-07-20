@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   detectMaterialChanges,
+  formatMaterialChangeGloss,
   renderWatchUpdateFactsOnly,
 } from "../../src/discord/materiality.js"
 import type { DiscordObservation } from "../../src/discord/schemas.js"
@@ -115,7 +116,45 @@ describe("discord materiality", () => {
     expect(detectMaterialChanges(prior, current).some((c) => c.reason === "x-engagement")).toBe(true)
   })
 
-  it("facts-only render has no canned interpretation", () => {
+  it("soft prose fallback has no scan timestamp or bullet inventory", () => {
+    const text = renderWatchUpdateFactsOnly({
+      chain: "robinhood",
+      tokenAddress: "0xB47f4702DEB124cb4eB6286be83c9d84277C6239",
+      symbolDisplay: "KARMA",
+      observedAt: "2026-07-20T11:00:05.000Z",
+      changes: [
+        {
+          reason: "x-engagement",
+          label: "X engagement",
+          prior: "990",
+          current: "299",
+        },
+        {
+          reason: "security-flags",
+          label: "Security flags",
+          prior: "unverified-source",
+          current: "none",
+        },
+      ],
+    })
+    expect(text).toContain("X engagement cooled hard (990 → 299).")
+    expect(text).toContain("Contract source looks verified now.")
+    expect(text).not.toContain("Scan:")
+    expect(text).not.toContain("unverified-source")
+    expect(text).not.toContain("- Security flags:")
+  })
+
+  it("glosses security flag clears for the LLM input", () => {
+    const line = formatMaterialChangeGloss({
+      reason: "security-flags",
+      label: "Security flags",
+      prior: "unverified-source",
+      current: "none",
+    })
+    expect(line).toContain("Security flags cleared: contract source not verified → none")
+  })
+
+  it("soft prose fallback avoids canned interpretation phrases", () => {
     const text = renderWatchUpdateFactsOnly({
       chain: "solana",
       tokenAddress: "CREDBH1234567890123456789012345678901234",
@@ -128,7 +167,7 @@ describe("discord materiality", () => {
         current: "$1.66M",
       }],
     })
-    expect(text).toContain("24h volume")
+    expect(text).toContain("24h volume moved")
     expect(text).not.toContain("shifted materially")
     expect(text).not.toContain("narrative breadth")
   })

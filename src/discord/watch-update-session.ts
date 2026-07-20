@@ -7,7 +7,7 @@ import { hasLocalWorkspaceRefs } from "../lib/telegram-format.js"
 import { WATCH_UPDATE_PROMPT } from "../prompts/host.js"
 import { runOneShotSession } from "../orchestrator/session.js"
 import type { MaterialChange } from "./materiality.js"
-import { renderWatchUpdateFactsOnly } from "./materiality.js"
+import { formatMaterialChangeGloss, renderWatchUpdateFactsOnly } from "./materiality.js"
 
 export const WATCH_UPDATE_MODEL = "composer-2.5"
 export const WATCH_UPDATE_TEXT_MAX = 1200
@@ -15,7 +15,6 @@ export const WATCH_UPDATE_TIMEOUT_MS = 60_000
 
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u
 const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
-const EM_DASH = /\u2014/u
 
 export type WatchUpdateSessionRunner = (
   args: Readonly<{ prompt: string; message: string }>,
@@ -46,6 +45,10 @@ function stripFence(raw: string): string {
   return text
 }
 
+function normalizeWatchUpdateText(text: string): string {
+  return text.replace(/\u2014/g, "-").replace(/\u2013/g, "-")
+}
+
 function tokenLabel(args: WatchUpdateArgs): string {
   return args.symbolDisplay
     ? `${args.symbolDisplay} (${args.chain}:${args.tokenAddress})`
@@ -54,11 +57,10 @@ function tokenLabel(args: WatchUpdateArgs): string {
 
 export function watchUpdateUserMessage(args: WatchUpdateArgs): string {
   const brief = (args.researchBrief ?? "").trim()
-  const changeLines = args.changes.map((c) => `- ${c.label}: ${c.prior} → ${c.current}`)
+  const changeLines = args.changes.map((c) => formatMaterialChangeGloss(c))
   return [
     "Write a Discord watch update using the system rules.",
     `token: ${tokenLabel(args)}`,
-    `scanAt: ${args.observedAt.slice(0, 19)}Z`,
     "<metric-changes>",
     ...changeLines,
     "</metric-changes>",
@@ -71,12 +73,11 @@ export function watchUpdateUserMessage(args: WatchUpdateArgs): string {
 export function validateWatchUpdateOutput(
   raw: string,
 ): { ok: true; text: string } | { ok: false; reason: string } {
-  const text = stripFence(raw)
+  const text = normalizeWatchUpdateText(stripFence(raw))
   if (text.length < 1) return { ok: false, reason: "empty" }
   if ([...text].length > WATCH_UPDATE_TEXT_MAX) return { ok: false, reason: "too-long" }
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
-  if (EM_DASH.test(text)) return { ok: false, reason: "em-dash" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
   return { ok: true, text }
 }
@@ -113,15 +114,25 @@ export async function runWatchUpdateWriter(args: WatchUpdateArgs): Promise<Watch
     return session.text
   })
 
-  try {
-    const raw = await runSession({
-      prompt: WATCH_UPDATE_PROMPT,
-      message: watchUpdateUserMessage(args),
-    })
-    const checked = validateWatchUpdateOutput(raw)
-    if (!checked.ok) return fallback(checked.reason)
-    return { text: checked.text, usedFallback: false }
-  } catch {
-    return fallback("session-error")
+  const tryWrite = async (): Promise<{ ok: true; text: string } | { ok: false; reason: string }> => {
+    try {
+      const raw = await runSession({
+        prompt: WATCH_UPDATE_PROMPT,
+        message: watchUpdateUserMessage(args),
+      })
+      const checked = validateWatchUpdateOutput(raw)
+      if (!checked.ok) return { ok: false, reason: checked.reason }
+      return { ok: true, text: checked.text }
+    } catch {
+      return { ok: false, reason: "session-error" }
+    }
   }
+
+  const first = await tryWrite()
+  if (first.ok) return { text: first.text, usedFallback: false }
+
+  const second = await tryWrite()
+  if (second.ok) return { text: second.text, usedFallback: false }
+
+  return fallback(second.reason)
 }

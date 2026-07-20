@@ -93,6 +93,11 @@ export async function runDiscordWatchlistScan(args: Readonly<{
         ...(token.researchBrief ? { researchBrief: token.researchBrief } : {}),
         agentRoot,
       })
+      if (written.usedFallback) {
+        console.warn(
+          `discord watch update fallback for ${key}: ${written.reason ?? "unknown"}`,
+        )
+      }
       const parts = chunkDiscordReply(written.text)
       const mentionIds = otherSubscriberIds(token, anchor, nowIso)
 

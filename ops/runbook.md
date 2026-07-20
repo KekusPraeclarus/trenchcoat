@@ -188,15 +188,19 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   including the listener — no separate `kickstart -k` needed unless you are
   recovering a wedged process after install). Manual kick without the idle gate
   can kill mid-session work; prefer `tc harness wait-idle` first.
-  `install-launchd.sh` does **not** sync `agent/skills/` — copy changed skills
-  from the repo into `~/.trenchcoat/agent/skills/` **and** (when Discord research
-  is enabled) `~/.trenchcoat/discord/agent/skills/`, or agents keep stale
+  `install-launchd.sh` does **not** sync `agent/AGENTS.md` or `agent/skills/` —
+  copy changed voice/skill files from the repo into `~/.trenchcoat/agent/`
+  (**and**, when Discord research is enabled, matching skills under
+  `~/.trenchcoat/discord/agent/skills/`), or agents keep stale outbox voice /
   chat-summary / deferral text. Stale runtime is the usual cause of research
   asks falling through to a long ask-mode lecture instead of
   `Research <subject>? Reply confirm or cancel.` Session id lives in
   `~/.trenchcoat/chat-session.json`. Research asks are confirmation-gated on the
   host; confirmed work runs asynchronously under the workspace lock
   (docs/architecture/chat-agent.md).
+- After install reload, `tc status` may show `lock: … STALE` if launchd killed a
+  job mid-hold. Next `WorkspaceLock.tryAcquire` clears a dead-pid owner; or remove
+  `~/.trenchcoat/agent/.lock` and `.lock.owner` only when `kill -0 <pid>` fails.
 - **Discord research** (optional): enabled via config — no separate launchd unit.
   Same `com.trenchcoat.listener` supervises `tc listen discord` as a child process.
   Requires `DISCORD_RESEARCH_BOT_TOKEN` (separate from `DISCORD_WEBHOOK_URL`).

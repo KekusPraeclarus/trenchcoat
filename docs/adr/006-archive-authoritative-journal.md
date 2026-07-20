@@ -2,6 +2,7 @@
 description: ADR — Archive journal and run receipts are authoritative; periodic Git is backup-only.
 status: accepted
 date: 2026-07-17
+last_verified: 2026-07-20
 ---
 
 # ADR 006 — Archive-authoritative journal and receipts

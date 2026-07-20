@@ -2,7 +2,7 @@
 description: ADR — Bounded harness improvement loop with sealed-audit feedback and agent-gated promotion.
 status: accepted
 date: 2026-07-16
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # ADR 005 — Bounded harness improvement loop

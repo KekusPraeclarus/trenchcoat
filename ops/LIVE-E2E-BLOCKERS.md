@@ -1,11 +1,11 @@
-# Live E2E blockers (updated 2026-07-19)
+# Live E2E blockers (updated 2026-07-20)
 
 Offline gates (`pnpm test:all`) pass. Credential preflight and live market/gate
 smokes run under `TRENCHCOAT_LIVE_E2E=1` when `.env` is loaded.
 `live-gates.test.ts` last ran 4 passed / 1 skipped under `TRENCHCOAT_LIVE_E2E=1`
 (operator-verified 2026-07-18).
 
-## Deploy state (operator-verified 2026-07-19)
+## Deploy state (operator-verified 2026-07-19; redeploy pending 2026-07-20)
 
 - Env synced: `ops/install-launchd.sh --sync-env` copied `TAVILY_API_KEY` (and
   the rest of `.env`) into `~/.trenchcoat/env` at mode 600, atomically.
@@ -20,6 +20,11 @@ smokes run under `TRENCHCOAT_LIVE_E2E=1` when `.env` is loaded.
   `tc status` may warn `configSchema` vs runtime expected schema + `DIRTY` until
   a clean commit redeploy — jobs still load. First live overview TG post not yet
   operator-verified (wait for next staged broadcast).
+- **2026-07-20:** Repo has post-deploy fixes not confirmed live — `run-precheck` →
+  `run-with-lock-retry`, `TRENCHCOAT_REPO_ROOT` for harness, chat-report
+  `finalizeChatReportRunStatus`, Discord own-distill single-shot. Run
+  `ops/install-launchd.sh` once to activate; until then wallet/chart/research
+  precheck may ENOENT and chat recall may stay `status: running` after success.
 
 ## Cursor agent (required for live jobs)
 

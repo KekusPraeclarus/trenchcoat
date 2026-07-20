@@ -74,23 +74,26 @@ attaches:
 | Destination | Source |
 |---|---|
 | Telegram | Fail-closed landscape overview from the promoted chat report when `broadcast.telegram_overview.enabled` (longer chat-style report; may restate current narrative heat; no host plumbing / workspace paths / provenance or bare @handles; no trader roll calls; ≤8k); on any miss falls back to `event.text`. No daily message-count limit |
-| Discord | Fail-closed bottom-line distill from the chat report (≤320 chars, ≤3 tickers, no provenance or bare @handles, no trader roll calls, no status-quo filler / unchanged-stage restatement); at most one Discord payload per run — later claims omit `channels.discord` (`run-deduped`, no budget burn); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
+| Discord | Fail-closed **own** bottom-line distill from the chat report (≤320 chars, ≤3 tickers, no provenance or bare @handles, no trader roll calls, no status-quo filler / unchanged-stage restatement) — never reuse Telegram overview/closer text (multi-claim runs would otherwise fan out reworded duplicates); at most one Discord payload per run — later claims omit `channels.discord` (`run-deduped`, no budget burn); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
 When `channels` is present and `channels.discord` is absent, Discord delivery is
 skipped (`skipped-discord-budget` for budget omit; channel-render receipts also
-record `run-deduped` when a later claim in the same run was silenced).
+record `run-deduped` when a later claim in the same run was silenced). Telegram
+may still attach a per-claim overview; Discord is intentionally single-shot per
+run.
 
 ## Delivery workers
 
 - Leased rows with heartbeat; restart recovers incomplete leases
 - Bounded concurrency per destination
 - Honour `Retry-After`, jittered backoff, dead-letter after N attempts
-- Telegram: plain text, no parse mode. Host never truncates — `splitTelegramText`
-  in `src/lib/telegram-bot.ts` chunks at ~3800 chars on paragraph boundaries
-  (numbered `1/n` …), used by router fanout (`src/router/deliver.ts`) and the
-  operator chat listener. Chat replies longer than ~7600 chars also persist under
-  `agent/reports/chat/` with a short summary pointing at the file.
+- Telegram: markdown → HTML (`parse_mode: HTML`) with plain fallback on reject.
+  Host never truncates — `telegramSendFormattedChunks` in `src/lib/telegram-bot.ts`
+  chunks at ~3400 chars of markdown on paragraph boundaries (numbered `1/n` …),
+  used by router fanout (`src/router/deliver.ts`) and the operator chat listener.
+  Chat replies longer than ~7600 chars also persist under `agent/reports/chat/`
+  with a short summary pointing at the file.
 - Discord: webhook `wait=true`, `allowed_mentions.parse=[]`. Soft chunk ~1900
   chars (`splitDiscordText` in `src/router/deliver.ts`) with numbered `1/n`
   parts and stable per-part `Idempotency-Key` (`<deliveryId>:part:i/n`) so

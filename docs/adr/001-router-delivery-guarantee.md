@@ -2,6 +2,7 @@
 description: ADR — Telegram/Discord fanout is durable at-least-once with explicit duplicate risk.
 status: accepted
 date: 2026-07-16
+last_verified: 2026-07-20
 ---
 
 # ADR 001 — Router delivery guarantee

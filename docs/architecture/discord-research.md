@@ -2,7 +2,7 @@
 description: Discord research bot — private-guild Gateway listener, isolated state, final-only replies, watch subscriptions.
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/discord/ or chat.discord config.
   - Changing Discord research intake, delivery, watchlist, or monitor behaviour.
@@ -11,7 +11,7 @@ read_when:
 # Discord research bot
 
 Private-guild research-only bot isolated from the main agent and from router
-webhook broadcasts (ADR 010).
+webhook broadcasts (ADR 010). Watch update narration: ADR 012.
 
 ## Two Discord surfaces (do not conflate)
 
@@ -106,8 +106,38 @@ all skip subscribe while still delivering the report.
   in `src/discord/materiality.ts` (price ≥50%, liquidity/volume/fdv 2×/0.5×,
   X authors net +50/−100, engagement 2×/0.5×, security always)
 - Material diffs trigger `composer-2.5` watch-update writer (`PERSONA_VOICE`,
-  fail-closed to facts-only bullets if the session rejects)
+  human-readable metric glosses, one retry on failure, then soft prose fallback)
 - Resumable scan cursor in `monitor-cursor.json`
+
+### Watch update narration
+
+Watch updates are **not** agent-written. The monitor calls `runWatchUpdateWriter`
+(`src/discord/watch-update-session.ts`) — a host-side one-shot `composer-2.5`
+ask-mode session with `WATCH_UPDATE_PROMPT` (`src/prompts/host.ts`). Initial
+research replies stay on the fast agent model + `chat-summary.md` path; do not
+conflate the two.
+
+Flow:
+
+1. `detectMaterialChanges` compares monitor baseline vs fresh observation
+2. `formatMaterialChangeGloss` (`src/discord/materiality.ts`) turns raw scanner
+   codes (e.g. `unverified-source`) into trader English before the model sees them
+3. LLM writes conversational prose anchored on stored `researchBrief` + glossed
+   metric shifts — no `Scan:` timestamps, no `label: prior → current` inventory
+4. On session error or validation failure: **one retry**, then
+   `renderWatchUpdateFactsOnly` soft prose fallback (still no `Scan:` or raw flag
+   codes)
+
+**Diagnosing bad updates:** If users report scripted bullet updates with
+`Scan: <timestamp>` and raw security flag codes, the LLM path failed and the old
+facts-only template shipped. After the conversational-narration change, fallback
+is short prose sentences and monitor logs
+`discord watch update fallback for <tokenKey>: <reason>` (e.g. `session-error`,
+`empty`, `too-long`). Persistent fallback → check Cursor CLI / sandbox / agent
+workspace under `~/.trenchcoat/discord/agent/`.
+
+Em-dashes in model output are normalized to `-` before validation (rejecting them
+used to force fallback and fight natural prose).
 
 ## Source files
 
@@ -115,6 +145,7 @@ all skip subscribe while still delivering the report.
 - `src/discord/pump.ts` — accept + FIFO processor
 - `src/discord/research-run.ts` — isolated research (`evaluateResearchSubscribe`)
 - `src/discord/research-brief.ts` — bounded TL;DR extract for watch context
+- `src/discord/materiality.ts` — material thresholds + metric glosses + soft fallback prose
 - `src/discord/watch-update-session.ts` — host watch-update writer session
 - `src/discord/watchlist.ts` — subscriptions + renewals
 - `src/discord/monitor.ts` — scheduled scan

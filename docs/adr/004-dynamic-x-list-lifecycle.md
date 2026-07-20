@@ -2,6 +2,7 @@
 description: ADR — X source discovery uses two immutable operator lists + FYP; membership of one private managed list is host-deterministic only.
 status: accepted
 date: 2026-07-16
+last_verified: 2026-07-20
 ---
 
 # ADR 004 — Dynamic X list lifecycle

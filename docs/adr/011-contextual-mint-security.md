@@ -2,7 +2,7 @@
 description: ADR — Active mint authority is caution-only; host blocks track only for mintable memecoins after model classification.
 scope: project
 status: accepted
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # ADR 011 — Contextual mint security

@@ -1,6 +1,6 @@
 /**
- * Operator Telegram outbound: strip workspace paths, then map a safe markdown
- * subset to Telegram HTML. Router / broadcast delivery stays plain text.
+ * Telegram outbound: strip workspace paths, then map a safe markdown subset to
+ * Telegram HTML. Used for operator DMs and router channel fanout.
  */
 
 const WORKSPACE_PATH_RE =

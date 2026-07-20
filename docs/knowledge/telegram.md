@@ -14,8 +14,8 @@ last_verified: 2026-07-20
 - Operator chat bot is separate from router fanout bot
 - Chat replies allowlist-checked before any handling (INV-B3)
 - Market fanout Telegram text is a fail-closed landscape overview (`telegram_overview`),
-  not the host chat-recall dump; Discord stays a run-scoped bottom-line distill
-  (at most one Discord payload per run)
+  not the host chat-recall dump; Discord stays a run-scoped **own** bottom-line
+  distill (at most one Discord payload per run — never a reuse of the TG closer)
 
 ## Alpha ingestion vs operator chat
 

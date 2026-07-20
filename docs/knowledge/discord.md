@@ -2,7 +2,7 @@
 description: Provider knowledge — Discord webhook fanout (router) and Gateway research bot (isolated).
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # Discord
@@ -25,7 +25,9 @@ last_verified: 2026-07-19
 - No @mention required in allowed channels
 - FIFO research queue (one runner); ✅ when claimed; `chat.discord.model`
   defaults to `composer-2.5-fast` for the **initial research reply**; material
-  watch updates use `composer-2.5` (host update writer)
+  watch updates use `composer-2.5` via a **host-side** update writer (not the
+  deep-research agent). Glossed metric diffs + `researchBrief` feed the prompt;
+  one retry then soft prose fallback if the session fails
 - State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
 - Does not use main `agent/.lock` or research queue
 - Config: schema 10 `chat.discord.*` (disabled by default)
@@ -36,4 +38,4 @@ last_verified: 2026-07-19
   subscribe stores `researchBrief` from the reply for update narration
 - Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy
 - Stuck queue: hung scrape holding `.worker.lock` — see discord-research.md ops
-- See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010
+- See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010, ADR 012

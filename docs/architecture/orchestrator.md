@@ -410,9 +410,10 @@ staged router events.
   calls); else short `event.text`. Discord gets a fail-closed bottom-line distill
   (≤320 chars, at most once per run; later claims omit Discord as `run-deduped`)
   when `broadcast.discord_distiller.enabled` (else short broadcast text on the
-  first eligible event only). Bare intake hosts default to `/v1/events`; loopback
-  HTTP is allowed. Severity `lifecycle` (wallet add/drop) skips Discord market
-  budget and is never distilled
+  first eligible event only). Discord text is distilled independently of Telegram
+  — do not copy overview/closer text across channels. Bare intake hosts default
+  to `/v1/events`; loopback HTTP is allowed. Severity `lifecycle` (wallet
+  add/drop) skips Discord market budget and is never distilled
 - Send failures never fail the run; durable fanout retries with dead-letter visibility
 
 ## Design patterns
