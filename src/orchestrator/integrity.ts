@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { relative, resolve } from "node:path"
 
+export const INSTRUCTION_INTEGRITY_PATHS = ["AGENTS.md"] as const
+
 const AGENT_PROTECTED_PATHS = [
   "state/sources.json",
   "state/source-lifecycle.json",
@@ -23,21 +25,30 @@ const AGENT_PROTECTED_PATHS = [
 
 export type IntegritySnapshot = Readonly<Record<string, Buffer | undefined>>
 
-export function captureIntegritySnapshot(agentRoot: string): IntegritySnapshot {
-  const entries: Array<[string, Buffer | undefined]> = AGENT_PROTECTED_PATHS.map((path) => {
+function captureScopedIntegritySnapshot(
+  agentRoot: string,
+  paths: readonly string[],
+  includeSkills: boolean,
+): IntegritySnapshot {
+  const entries: Array<[string, Buffer | undefined]> = paths.map((path) => {
     const absolute = resolve(agentRoot, path)
     return [path, existsSync(absolute) ? readFileSync(absolute) : undefined]
   })
 
-  const skillsRoot = resolve(agentRoot, "skills")
-  if (existsSync(skillsRoot)) {
-    entries.push(["skills/", hashTreeMarker(skillsRoot)])
+  if (includeSkills) {
+    const skillsRoot = resolve(agentRoot, "skills")
+    if (existsSync(skillsRoot)) {
+      entries.push(["skills/", hashTreeMarker(skillsRoot)])
+    }
   }
 
   return Object.freeze(Object.fromEntries(entries))
 }
 
-export function assertAgentIntegrity(agentRoot: string, before: IntegritySnapshot): void {
+function assertScopedIntegrity(
+  agentRoot: string,
+  before: IntegritySnapshot,
+): void {
   for (const [path, original] of Object.entries(before)) {
     if (path === "skills/") {
       const current = existsSync(resolve(agentRoot, "skills"))
@@ -54,6 +65,23 @@ export function assertAgentIntegrity(agentRoot: string, before: IntegritySnapsho
       throw new Error(`Agent modified host-only path ${path}`)
     }
   }
+}
+
+export function captureIntegritySnapshot(agentRoot: string): IntegritySnapshot {
+  return captureScopedIntegritySnapshot(agentRoot, AGENT_PROTECTED_PATHS, true)
+}
+
+/** Ask-mode chat only — host jobs may mutate state while the session runs */
+export function captureInstructionIntegritySnapshot(agentRoot: string): IntegritySnapshot {
+  return captureScopedIntegritySnapshot(agentRoot, INSTRUCTION_INTEGRITY_PATHS, true)
+}
+
+export function assertAgentIntegrity(agentRoot: string, before: IntegritySnapshot): void {
+  assertScopedIntegrity(agentRoot, before)
+}
+
+export function assertInstructionIntegrity(agentRoot: string, before: IntegritySnapshot): void {
+  assertScopedIntegrity(agentRoot, before)
 }
 
 export function safeAgentPath(agentRoot: string, candidate: string): string {

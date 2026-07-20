@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { assertAgentIntegrity, captureIntegritySnapshot } from "../../src/orchestrator/integrity.js"
+import {
+  assertAgentIntegrity,
+  assertInstructionIntegrity,
+  captureInstructionIntegritySnapshot,
+  captureIntegritySnapshot,
+} from "../../src/orchestrator/integrity.js"
 import { validateAndPurgeAlphaDigest } from "../../src/orchestrator/alpha.js"
 import { ensureArchive } from "../../src/lib/archive.js"
 import { sha256Bytes } from "../../src/lib/fs-atomic.js"
@@ -73,5 +78,28 @@ describe("review redteam confinement", () => {
     const before = captureIntegritySnapshot(agentRoot)
     writeFileSync(join(agentRoot, "state", "research", "SOL.md"), "# SOL\n")
     expect(() => assertAgentIntegrity(agentRoot, before)).not.toThrow()
+  })
+
+  it("chat ask-mode ignores concurrent host state writes", () => {
+    const agentRoot = mkdtempSync(join(tmpdir(), "tc-chat-instruction-integrity-"))
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    writeFileSync(join(agentRoot, "AGENTS.md"), "# agent\n")
+    writeFileSync(join(agentRoot, "state", "watchlist.json"), JSON.stringify({ schema: 1, entries: [] }))
+    const before = captureInstructionIntegritySnapshot(agentRoot)
+
+    writeFileSync(join(agentRoot, "state", "watchlist.json"), JSON.stringify({
+      schema: 1,
+      entries: [{ status: "tracking" }],
+    }))
+
+    expect(() => assertInstructionIntegrity(agentRoot, before)).not.toThrow()
+  })
+
+  it("chat ask-mode still rejects instruction tampering", () => {
+    const agentRoot = mkdtempSync(join(tmpdir(), "tc-chat-instruction-tamper-"))
+    writeFileSync(join(agentRoot, "AGENTS.md"), "# agent\n")
+    const before = captureInstructionIntegritySnapshot(agentRoot)
+    writeFileSync(join(agentRoot, "AGENTS.md"), "# hacked\n")
+    expect(() => assertInstructionIntegrity(agentRoot, before)).toThrow(/AGENTS\.md/u)
   })
 })

@@ -7,8 +7,8 @@ import {
   type SessionResult,
 } from "../orchestrator/session.js"
 import {
-  assertAgentIntegrity,
-  captureIntegritySnapshot,
+  assertInstructionIntegrity,
+  captureInstructionIntegritySnapshot,
 } from "../orchestrator/integrity.js"
 import { buildChatPrompt } from "./prompt.js"
 
@@ -124,14 +124,20 @@ export function createChatTurnRunner(opts: Readonly<{
 
     const prompt = buildChatPrompt(operatorText)
     log.info("chat turn start", { cursorChatId: state.cursorChatId, streaming: true })
-    const integrityBefore = captureIntegritySnapshot(opts.agentRoot)
+    const integrityBefore = captureInstructionIntegritySnapshot(opts.agentRoot)
     const result = await runSession({
       prompt,
       cwd: opts.agentRoot,
       resumeChatId: state.cursorChatId,
       ...(sink?.onPartial ? { onPartial: sink.onPartial } : {}),
     })
-    assertAgentIntegrity(opts.agentRoot, integrityBefore)
+    try {
+      assertInstructionIntegrity(opts.agentRoot, integrityBefore)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "unknown"
+      log.error("chat turn failed", { detail })
+      throw error
+    }
 
     opts.store.save({
       ...state,
@@ -143,7 +149,10 @@ export function createChatTurnRunner(opts: Readonly<{
       throw new Error(result.error ?? "chat session failed")
     }
     const text = result.text?.trim()
-    if (!text) throw new Error("chat session returned empty reply")
+    if (!text) {
+      log.error("chat turn failed", { detail: "chat session returned empty reply" })
+      throw new Error("chat session returned empty reply")
+    }
     return text
   }
 }

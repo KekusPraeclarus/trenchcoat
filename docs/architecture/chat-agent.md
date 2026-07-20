@@ -69,6 +69,8 @@ little as possible itself:
   proposals never suppress the host summary. Agents never write `reports/chat/`
   directly; bypass files are removed. Summaries remain untrusted evidence.
 - Ordinary recall questions never take the writer lock.
+- Ask-mode chat checks instruction integrity only (`AGENTS.md`, `skills/**`) after
+  each turn — host cron jobs may mutate state concurrently without failing chat.
 
 ## Design
 
