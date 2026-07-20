@@ -52,3 +52,33 @@ Write `reports/<run-id>/chat-summary.md` for the user-facing reply — never wri
 Skip empty sections. Add Market / Security / Risk only when material and not
 already in TL;DR. Extra short sections OK if genuinely useful. No run-id meta,
 "(untrusted)" labels, tables, or mermaid.
+
+### Market broadcast (optional)
+
+When the dossier is solid enough to notify operators (track-worthy thesis,
+notable security/market finding with sealed evidence), optionally write
+`outbox/<run-id>.json`:
+
+```json
+{
+  "schema": 1,
+  "items": [
+    {
+      "severity": "watch",
+      "text": "≤280 chars",
+      "refs": ["inbox/<run-id>/…", "state/…"],
+      "auditClaim": {
+        "type": "token-upside",
+        "subject": "chain:address-or-slug",
+        "direction": "up",
+        "horizonHours": 72,
+        "verificationRule": "token.up.72h"
+      }
+    }
+  ]
+}
+```
+
+Skip outbox when thin, ambiguous, hard-fail, or nothing new. Host worthiness
+still gates Discord webhook delivery. Never invent CAs or refs.
+

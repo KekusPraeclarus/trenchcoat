@@ -17,6 +17,7 @@ import {
 } from "../contracts/schemas.js"
 import { openEntryPending, markExitPending, upsertPosition } from "./ledger.js"
 import { mintTrackBlockReason } from "../collectors/market/security.js"
+import { archiveAcceptedDecisionBundle } from "./decision-bundle.js"
 
 const TRACK_STATUSES = new Set<WatchlistStatus>(["tracking", "watching"])
 
@@ -236,6 +237,10 @@ export async function applyDecisionProposals(
   let blockedExternal = 0
   const previousDecisions = opts.state.readDecisions()
   const decisionChunks: string[] = []
+  const acceptedForArchive: Array<Readonly<{
+    proposal: DecisionProposal
+    gateReceiptId?: `sha256:${string}`
+  }>> = []
 
   for (const proposal of file.proposals) {
     if (opts.proposalIds && !opts.proposalIds.has(proposal.proposalId)) {
@@ -382,6 +387,17 @@ export async function applyDecisionProposals(
 
     receipts.push(accept(proposal, opts, blocked, gateReceiptId ? { gateReceiptId } : undefined))
     accepted += 1
+    acceptedForArchive.push({
+      proposal: {
+        ...proposal,
+        card: {
+          ...proposal.card,
+          policyVersion: opts.policyVersion,
+          assignment: opts.assignment,
+        },
+      },
+      ...(gateReceiptId ? { gateReceiptId } : {}),
+    })
   }
 
   const plannedDecisions = previousDecisions
@@ -404,6 +420,17 @@ export async function applyDecisionProposals(
     }
     await opts.state.saveWatchlist(watchlist)
     await opts.state.saveLedger(ledger)
+    if (opts.archiveRoot) {
+      for (const item of acceptedForArchive) {
+        await archiveAcceptedDecisionBundle({
+          archiveRoot: opts.archiveRoot,
+          proposal: item.proposal,
+          policyVersion: opts.policyVersion,
+          assignment: opts.assignment,
+          ...(item.gateReceiptId ? { gateReceiptId: item.gateReceiptId } : {}),
+        })
+      }
+    }
   }
 
   const receiptsBody = `${JSON.stringify({ schema: 1, runId: opts.runId, receipts }, null, 2)}\n`

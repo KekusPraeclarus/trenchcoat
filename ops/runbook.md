@@ -34,8 +34,9 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `watchlist-scan` | every 2h |
 | `x-scan` (KeepAlive) | always — round-robin FYP → lists with cursor stop; random 5–30m between rounds (`tc listen x-scan`) |
 | `farcaster-scan` | ~every 4h (jittered 3h15m–4h45m; requires `farcaster.enabled` + Neynar auth) |
-| `source-list-review` | daily and after a sealed audit |
-| `fc-source-review` | daily (Farcaster follow-graph sync) |
+| `source-list-review` | daily (`RunAtLoad`) and after a sealed audit; writes lagged `sources.json` scores |
+| `fc-source-review` | daily (`RunAtLoad`; Farcaster follow-graph sync + lagged scores) |
+| `outcomes-settle` | every 6h (`RunAtLoad`) and before audit |
 | `narrative-scan` | every 6h |
 | `research` | Immediate drain when social/narrative/fomo enqueue; hourly cron remains as backstop |
 | `fomo-trader-sync` | every 6h (host-only; skips unless `fomo.enabled` + gates) |
@@ -191,12 +192,12 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   including the listener — no separate `kickstart -k` needed unless you are
   recovering a wedged process after install). Manual kick without the idle gate
   can kill mid-session work; prefer `tc harness wait-idle` first.
-  `install-launchd.sh` does **not** sync `agent/AGENTS.md` or `agent/skills/` —
-  copy changed voice/skill files from the repo into `~/.trenchcoat/agent/`
-  (**and**, when Discord research is enabled, matching skills under
-  `~/.trenchcoat/discord/agent/skills/`), or agents keep stale outbox voice /
-  chat-summary / deferral text. Stale runtime is the usual cause of research
-  asks falling through to a long ask-mode lecture instead of
+  `install-launchd.sh` syncs `agent/AGENTS.md` + `agent/skills/` when passed
+  `--sync-skills` (also mirrors into `~/.trenchcoat/discord/agent/` when that
+  tree exists). Without it, copy changed voice/skill files manually or agents
+  keep stale outbox voice / chat-summary / deferral / alpha-digest text. Stale
+  runtime is the usual cause of research asks falling through to a long ask-mode
+  lecture instead of
   `Research <subject>? Reply confirm or cancel.` Session id lives in
   `~/.trenchcoat/chat-session.json`. Research asks are confirmation-gated on the
   host; confirmed work runs asynchronously under the workspace lock
@@ -263,7 +264,11 @@ predeploy backup only when migration itself corrupted host state.
 - **Exoneration review** — on a `warn` DM: reply `undock <id>` or
   `confirm <id>` in Telegram (or `tc undock` / `tc confirm`). No timeout — the
   penalty stays suspended and the adjacency counter already incremented.
-- **Outcome settlement** — `tc run outcomes-settle` materializes mature
+- **Outcome settlement** — launchd `com.trenchcoat.job.outcomes-settle` every 6h
+  (`RunAtLoad`); also runs inside audit. Manual: `tc run outcomes-settle`
+  materializes mature source-call + wallet-buy observations into
+  `archive/outcomes/`. Source-list-review loads those outcomes and writes lagged
+  scores into `sources.json` for callers with `settledCalls > 0`.
   source-call and wallet-buy observations (also invoked before `tc run audit`).
   Missing prices stay pending/excluded and never become invented losses.
 - **Narrative broadcasts** — `tc run narrative-scan` (every ~6h). Agent maintains

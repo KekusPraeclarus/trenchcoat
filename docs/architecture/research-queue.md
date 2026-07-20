@@ -119,6 +119,14 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `trigger: "social"` entries. Ticker-only, invented, malformed, expired,
   duplicated, or over-cap nominations are receipted and rejected. Nominations may
   consume research budget but never write watchlist, decisions, ledger, or wallets
+- **Telegram alpha bridge** — `telegram-alpha` seals message bodies into inbox,
+  then the host (`telegram-alpha-research.ts`) enqueues from a **single**
+  allowlisted-channel message: verbatim CA, or cashtag + chain-hint resolution
+  (DexScreener + optional `composer-2.5-fast` disambiguation). Cap 3/run;
+  `clusterCount: 1`. Ambiguous shortlists park without launching research.
+  `scheduleResearchDrain` runs after accepted enqueues. Research may propose
+  market outbox when solid; telegram-alpha prefers empty outbox. See
+  [ADR 015](../adr/015-telegram-alpha-research.md)
 - **Fomo signal bridge** — `fomo-signal-scan` may enqueue `trigger: "social"`
   entries from feed/alerts/derived convergence when config + FAFO gates pass and
   `shadow_mode=false`. Canonical resolution is required before enqueue; cluster

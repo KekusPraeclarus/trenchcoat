@@ -35,16 +35,16 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 |---|---|---|---|
 | `watchlist-scan` | every 2h | active watchlist market + security snapshots, optional bounded X/Farcaster token search; **host-pre skip** when empty watchlist | watchlist evidence review |
 | `list-scan` | KeepAlive `x-scan` drives per-target passes; one-shot `tc run list-scan` still supported | FYP + two operator X lists + managed list *(live)*; streaming skips alpha manifest; one-shot may include `list-scan-alpha-manifest` | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m) |
-| `telegram-alpha` | on each new channel message (`tc listen channels` pump) | path-only `telegram-alpha-manifest` for cited `alpha-queue/` files | `alpha-digest.json` + optional outbox broadcast |
+| `telegram-alpha` | on each new channel message (`tc listen channels` pump, batches ≤8) | path+contentHash manifest + sealed message-body snapshots | `alpha-digest.json` (knowledge or ack tombstone); host enqueues research ≤3 (ADR 015); prefer empty outbox |
 | `farcaster-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
-| `source-list-review` | daily + after sealed audit | lagged source-score epoch + managed-list membership | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
-| `fc-source-review` | daily | lagged `fc_*` source-score + follow-graph sync | **no agent** — promote/demote then Neynar follow/unfollow |
+| `source-list-review` | daily (`RunAtLoad` + 24h) and after sealed audit | lagged source-score epoch + managed-list membership; writes `sources.json` scores for settled callers | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
+| `fc-source-review` | daily (`RunAtLoad` + 24h) | lagged `fc_*` source-score + follow-graph sync; writes `sources.json` for settled FC callers | **no agent** — promote/demote then Neynar follow/unfollow |
 | `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new slug **or stage-change** → outbox (`narrative-emergence` / `narrative-fade` / `rotation`; same-stage re-sightings host-rejected; rotation host-rejected when market-blind; single-platform rotation/sentiment-collapse capped at `watch` and labeled `X-only` / `Farcaster-only`) |
 | `research` | on queue (research-queue.md), daily cap from config; also `tc research` / Telegram confirm | market data + security + bounded X + Farcaster token search (+ optional Tavily web search on operator path) | verdict (track / ignore / revisit) + research file with sentiment/popularity section, sources cited |
 | `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
 | `review` | daily 07:00 | sealed report manifests (path-only) + pending alpha + watchlist/macro + **host health snapshot** + skip-ledger counts; scope also from empty queues / silent wallets / stale FC / recurring skips | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
-| `outcomes-settle` | frequent / before audit | mature source-call + wallet-buy observations | **no agent** — resumable settlement writers |
+| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | mature source-call + wallet-buy observations | **no agent** — resumable settlement writers |
 | `wallet-discovery` | every 6h | watchlist token identities → Helius/Infura/Robinhood early buyers | host stages `candidate` wallets + cursors; evidence-only agent reads frozen snapshot |
 | `wallet-scan-solana` | every 5m | Helius finalized wallet actions | host archives buy outcomes; evidence-only agent reads frozen snapshot |
 | `wallet-scan-evm` | every 15m | Infura (eth/base) + throttled Robinhood public RPC | host archives buy outcomes; evidence-only agent reads frozen snapshot |
@@ -212,24 +212,27 @@ Delivery uses a stable idempotency key honoured by the in-repo router
 
 ## Alpha-queue lifecycle
 
-The telegram listener appends continuously; digestion is batch:
+The telegram listener appends continuously; digestion is immediate + batch:
 
-1. Alpha-digesting jobs (`list-scan`, `review`) include the queue contents in scope
-2. The agent records anything useful in the knowledge store (with provenance) and
-   writes `reports/<run-id>/alpha-digest.json` as `{schema,runId,proposedAt,entries}`
-   where each entry binds `channel`/`messageId`/`contentHash` to `state/…` record
-   hashes — never narrative-shaped `items`. Wrong shape → receipt
-   `invalidReason` and **no** purge
-3. After the state/report commit is durable, the orchestrator purges exactly
+1. `telegram-alpha` (channels pump, ≤8 paths/run) seals message bodies, runs the
+   agent, then host research enqueue (ADR 015, ≤3/run). Manifest lines are
+   `path=… contentHash=sha256:…` so digests can reuse host hashes
+2. The agent **must** write `reports/<run-id>/alpha-digest.json` as
+   `{schema,runId,proposedAt,entries}` for every cited queue message — either a
+   real `state/research/…` note or a minimal `state/research/alpha-ack-<channel>-<id>.md`
+   tombstone. Wrong shape → receipt `invalidReason` and **no** purge. Skipping
+   digest leaves ticker/noise stuck after host research
+3. `list-scan` / `review` may still include backlog manifests (≤500) for drain
+4. After the state/report commit is durable, the orchestrator purges exactly
    those ids before the completed marker (INV-Q1) — a retry sees the keyed purge
    as already satisfied; knowledge survives in state and raw messages don't linger
 
 **Operator backlog drain** — when agent digests use the wrong shape and the queue
 stalls, `scripts/alpha-queue-drain.ts` writes a host-valid `entries` digest plus a
 minimal archive record, then calls `validateAndPurgeAlphaDigest` in 500-id batches
-(resumable). This acknowledges messages without per-message distillation — prefer
-fixing skills + syncing `~/.trenchcoat/agent/skills/` so normal list-scan/review
-digests succeed. Never delete queue files by hand.
+(resumable). Prefer fixing skills + `./ops/install-launchd.sh --sync-skills` so
+normal telegram-alpha/list-scan/review digests succeed. Never delete queue files
+by hand.
 
 ## The audit job (performance + source scoring)
 
@@ -238,8 +241,13 @@ reasoning, confidence, and cited sources) is the raw material. Weekly:
 
 1. Orchestrator freezes an **audit epoch** before fetching anything: immutable
    cutoff, eligible event ids, config/code/feature/execution versions, prior
-   source-score cutoff, and input hashes. A rerun resumes or verifies that epoch;
-   it never silently forms a new cohort (snapshot-archive.md).
+   source-score cutoff, and input hashes. `codeCommit` is the installed runtime
+   `deployment.json` sourceCommit when present, else `git rev-parse HEAD` under
+   `TRENCHCOAT_REPO_ROOT` / cwd — never the placeholder `local`. A rerun resumes
+   or verifies that epoch; it never silently forms a new cohort
+   (snapshot-archive.md). Decision subjects come from archived
+   `decisions/<id>.json` bundles that are horizon-mature at the cutoff; if none
+   are eligible the job records a typed skip and does not seal an empty epoch.
 2. It materialises immutable outcome observations for every eligible directional
    verdict (`track` and `ignore`; `revisit` is latency/disposition only), source
    call event, resolution verdict, broadcast, and sampled discovery-log item.
@@ -461,6 +469,7 @@ staged router events.
 - `src/orchestrator/broadcast.ts` — Discord-only daily/urgent budget maths + known verification rules
 - `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals, worthiness gate, and stage (no count limit)
 - `src/orchestrator/broadcast-worthiness.ts` — host approve/reject session before stage (INV-B2)
+- `src/orchestrator/telegram-alpha-research.ts` — host CA/ticker → research enqueue (ADR 015)
 - `src/orchestrator/channel-render.ts` — attach Telegram/Discord payloads; Discord budget reserve
 - `src/orchestrator/chat-report.ts` — host-render `reports/chat/<run-id>.md` from trusted run facts after `ingestOutbox` (`list-scan`, `narrative-scan`, `farcaster-scan`, `review`, `research`); optional `chat-summary.json`/`.md` context appended when valid
 - `src/orchestrator/narrative-log.ts` — `pruneNarrativeLog`: drop malformed lines + purge `lastSeen` older than `narratives.retention_days` (default 14)

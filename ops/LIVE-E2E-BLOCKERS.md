@@ -68,10 +68,11 @@ reference/defense-in-depth only — not the production isolation boundary.
   `x-fyp-eligible`). Alpha-queue stayed ~500 because every agent digest used
   narrative-shaped `items` (Zod reject → `purged=0`); host now records
   `invalidReason=schema-invalid` and chat notes `alphaDigestInvalid` /
-  `alphaPurged`. Skills teach the correct `entries` + contentHash contract —
-  **sync `agent/skills/list-scan` and `review` into `~/.trenchcoat/agent/skills/`**
-  (installer does not), redeploy CLI for prompt/receipt changes, then wait for
-  the next list-scan/review. Do **not** mass-delete the queue.
+  `alphaPurged`. Skills teach the correct `entries` + contentHash contract
+  (telegram-alpha: knowledge **or** ack tombstone). Sync with
+  `./ops/install-launchd.sh --sync-skills`, redeploy CLI for prompt/receipt
+  changes, then wait for the next telegram-alpha/list-scan/review. Do **not**
+  mass-delete the queue.
 ## Farcaster — disabled pending feed tuning (2026-07-19)
 
 **Live config:** `farcaster.enabled=false` in `~/.trenchcoat/config.json`

@@ -87,9 +87,13 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 
 ## As-of bundles (the leakage firewall)
 
-When a post-run check detects a new decision entry (track/drop/ignore/revisit/
-broadcast), the orchestrator writes `decisions/<decision-id>.json` in the same
-run-completion step:
+When a post-run check accepts a decision proposal (track/drop/ignore/revisit),
+`applyDecisionProposals` (commit) writes `decisions/<decision-id>.json` via
+`writeDecisionBundle` in the same completion step. The on-disk shape is
+`DecisionBundleSchema` (`src/contracts/schemas.ts`): embedded decision card,
+provenance ids, inbox/source-score hashes, and a numeric `signals` map for
+harness holdout replay. Docs historically showed a richer illustrative JSON;
+the schema fields are authoritative.
 
 ```json
 {

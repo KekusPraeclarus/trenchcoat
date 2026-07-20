@@ -3,13 +3,16 @@
 # Deploys a runtime copy under ~/.trenchcoat/runtime so launchd is not blocked by
 # macOS TCC on ~/Documents.
 # Usage: ops/install-launchd.sh [--dry-run] [--without-harness] [--jobs-only]
-#                               [--no-load] [--sync-env] [--allow-dirty]
+#                               [--no-load] [--sync-env] [--sync-skills] [--allow-dirty]
 #                               [--skip-agent-wait]
 #   --without-harness  skip installing the weekly harness-improve job (on by default)
 #   --sync-env  atomically copy repo .env → ~/.trenchcoat/env (mode 600) after
 #               validating required key NAMES are present. If it is the only
 #               argument, sync and exit 0 without redeploying; otherwise sync
 #               before loading the launchd jobs.
+#   --sync-skills  rsync repo agent/skills/ + agent/AGENTS.md into
+#               ~/.trenchcoat/agent/ (and ~/.trenchcoat/discord/agent/ when present).
+#               Alone with --sync-env: sync both and exit. Alone: sync skills and exit.
 #   --allow-dirty  acknowledge deploying from a dirty git tree. Default refuses
 #               dirty working trees so deployment.json provenance stays exact.
 #   --skip-agent-wait  do not wait for in-flight agent/host jobs before
@@ -21,6 +24,7 @@ HOME="${HOME:-$(cd ~ && pwd)}"
 DEST="$HOME/Library/LaunchAgents"
 ENV_FILE="$HOME/.trenchcoat/env"
 AGENT_ROOT="$HOME/.trenchcoat/agent"
+DISCORD_AGENT_ROOT="$HOME/.trenchcoat/discord/agent"
 RUNTIME_ROOT="$HOME/.trenchcoat/runtime"
 RUNTIME_STAGING="$HOME/.trenchcoat/runtime.next"
 RUNTIME_PREVIOUS="$HOME/.trenchcoat/runtime.prev"
@@ -33,9 +37,10 @@ WITH_HARNESS=1
 JOBS_ONLY=0
 NO_LOAD=0
 SYNC_ENV=0
+SYNC_SKILLS=0
 ALLOW_DIRTY=0
 SKIP_AGENT_WAIT=0
-# Count non-sync args so `--sync-env` alone runs as a standalone sync
+# Count non-sync args so `--sync-env` / `--sync-skills` alone run as standalone sync
 INSTALL_ARGS=0
 
 # Required key NAMES for live ops (mirrors src/lib/preflight.ts). Presence is
@@ -46,6 +51,7 @@ REQUIRED_ENV_KEYS="TRENCHCOAT_ROUTER_URL TRENCHCOAT_ROUTER_TOKEN TRENCHCOAT_ROUT
 for arg in "$@"; do
   case "$arg" in
     --sync-env) SYNC_ENV=1 ;;
+    --sync-skills) SYNC_SKILLS=1 ;;
     --dry-run) DRY_RUN=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --without-harness) WITH_HARNESS=0; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --with-harness) WITH_HARNESS=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
@@ -127,10 +133,54 @@ upsert_repo_root_env() {
   echo "TRENCHCOAT_REPO_ROOT → $REPO_ROOT"
 }
 
-# Standalone sync: `--sync-env` with no install flags syncs env and exits.
-if [ "$SYNC_ENV" -eq 1 ] && [ "$INSTALL_ARGS" -eq 0 ]; then
-  sync_env
-  upsert_repo_root_env
+# Copy repo agent instructions + skills into the live agent workspace.
+# Never writes inbox/outbox/state — skills and AGENTS.md only.
+sync_skills() {
+  src_skills="$REPO_ROOT/agent/skills"
+  src_agents="$REPO_ROOT/agent/AGENTS.md"
+  if [ ! -d "$src_skills" ]; then
+    echo "missing $src_skills" >&2
+    exit 1
+  fi
+  if [ ! -f "$src_agents" ]; then
+    echo "missing $src_agents" >&2
+    exit 1
+  fi
+  sync_one_agent_skills() {
+    dest_root="$1"
+    label="$2"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "would sync skills + AGENTS.md → $dest_root ($label)"
+      return
+    fi
+    mkdir -p "$dest_root/skills"
+    chmod 700 "$dest_root" "$dest_root/skills" 2>/dev/null || true
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete "$src_skills/" "$dest_root/skills/"
+    else
+      rm -rf "$dest_root/skills"
+      mkdir -p "$dest_root/skills"
+      cp -R "$src_skills/." "$dest_root/skills/"
+    fi
+    cp "$src_agents" "$dest_root/AGENTS.md"
+    chmod -R u+rwX,go-rwx "$dest_root/skills" "$dest_root/AGENTS.md" 2>/dev/null || true
+    echo "synced skills + AGENTS.md → $dest_root ($label)"
+  }
+  sync_one_agent_skills "$AGENT_ROOT" "main"
+  if [ -d "$DISCORD_AGENT_ROOT" ] || [ -d "$HOME/.trenchcoat/discord" ]; then
+    sync_one_agent_skills "$DISCORD_AGENT_ROOT" "discord"
+  fi
+}
+
+# Standalone sync: `--sync-env` / `--sync-skills` with no install flags sync and exit.
+if [ "$INSTALL_ARGS" -eq 0 ] && { [ "$SYNC_ENV" -eq 1 ] || [ "$SYNC_SKILLS" -eq 1 ]; }; then
+  if [ "$SYNC_ENV" -eq 1 ]; then
+    sync_env
+    upsert_repo_root_env
+  fi
+  if [ "$SYNC_SKILLS" -eq 1 ]; then
+    sync_skills
+  fi
   exit 0
 fi
 
@@ -296,11 +346,16 @@ write_interval_plist() {
   job="$2"
   seconds="$3"
   use_precheck="${4:-0}"
+  run_at_load="${5:-0}"
   runner="$BIN_DIR/run-with-lock-retry"
   if [ "$use_precheck" -eq 1 ]; then
     runner="$BIN_DIR/run-precheck"
   fi
   out="$DEST/$label.plist"
+  run_at_load_xml=""
+  if [ "$run_at_load" -eq 1 ]; then
+    run_at_load_xml=$(printf '  <key>RunAtLoad</key>\n  <true/>\n')
+  fi
   body=$(cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -316,7 +371,7 @@ write_interval_plist() {
   </array>
   <key>StartInterval</key>
   <integer>$seconds</integer>
-  <key>StandardOutPath</key>
+$run_at_load_xml  <key>StandardOutPath</key>
   <string>/tmp/trenchcoat.$job.out.log</string>
   <key>StandardErrorPath</key>
   <string>/tmp/trenchcoat.$job.err.log</string>
@@ -327,7 +382,7 @@ write_interval_plist() {
 EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "would write $out ($job every ${seconds}s${use_precheck:+, precheck})"
+    echo "would write $out ($job every ${seconds}s${use_precheck:+, precheck}${run_at_load:+, RunAtLoad})"
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -759,9 +814,12 @@ if [ "$DRY_RUN" -eq 0 ]; then
   chmod +x "$REPO_ROOT/ops/backup.sh" "$REPO_ROOT/ops/install-launchd.sh"
 fi
 
-# --sync-env alongside install: refresh env atomically before deploy/load
+# --sync-env / --sync-skills alongside install: refresh before deploy/load
 if [ "$SYNC_ENV" -eq 1 ]; then
   sync_env
+fi
+if [ "$SYNC_SKILLS" -eq 1 ]; then
+  sync_skills
 fi
 
 upsert_repo_root_env
@@ -781,8 +839,9 @@ write_interval_plist com.trenchcoat.job.watchlist-scan watchlist-scan 7200 1
 write_jittered_job_plist farcaster-scan
 write_interval_plist com.trenchcoat.job.narrative-scan narrative-scan 21600
 write_interval_plist com.trenchcoat.job.research research 3600 1
-write_interval_plist com.trenchcoat.job.source-list-review source-list-review 86400
-write_interval_plist com.trenchcoat.job.fc-source-review fc-source-review 86400
+write_interval_plist com.trenchcoat.job.outcomes-settle outcomes-settle 21600 0 1
+write_interval_plist com.trenchcoat.job.source-list-review source-list-review 86400 0 1
+write_interval_plist com.trenchcoat.job.fc-source-review fc-source-review 86400 0 1
 write_calendar_plist com.trenchcoat.job.review review 7 0
 write_calendar_plist com.trenchcoat.job.audit audit 6 0 1
 write_interval_plist com.trenchcoat.job.wallet-discovery wallet-discovery 21600 1
@@ -821,6 +880,7 @@ for label in \
   com.trenchcoat.job.farcaster-scan \
   com.trenchcoat.job.narrative-scan \
   com.trenchcoat.job.research \
+  com.trenchcoat.job.outcomes-settle \
   com.trenchcoat.job.source-list-review \
   com.trenchcoat.job.fc-source-review \
   com.trenchcoat.job.review \

@@ -15,6 +15,7 @@ const dirs = [
   "knowledge",
   "skills/watchlist-scan",
   "skills/list-scan",
+  "skills/telegram-alpha",
   "skills/farcaster-scan",
   "skills/narrative-scan",
   "skills/research",
@@ -76,6 +77,7 @@ if (!existsSync(join(root, ".cursor", "sandbox.json"))) {
 for (const [name, blurb] of [
   ["watchlist-scan", "Scan watchlist tokens against inbox market/social evidence."],
   ["list-scan", "Scan curated X/Telegram lists for new candidates."],
+  ["telegram-alpha", "Digest newly arrived Telegram alpha-queue messages; ack or retain."],
   ["farcaster-scan", "Scan Farcaster for-you and channels; propose likes only."],
   ["narrative-scan", "Track narrative emergence, fade, and rotation."],
   ["research", "Deep-dive a research-queue subject using inbox dossiers only."],

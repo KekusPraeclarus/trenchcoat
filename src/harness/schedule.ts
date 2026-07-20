@@ -63,7 +63,7 @@ export type HarnessImproveReport = Readonly<{
 
 export type HarnessSessionFn = (opts: SessionOptions) => Promise<SessionResult>
 
-function listSealedEpochIds(archiveRoot: string): string[] {
+export function listSealedEpochIds(archiveRoot: string): string[] {
   const epochsRoot = archiveLayout(archiveRoot).epochs
   if (!existsSync(epochsRoot)) return []
   return readdirSync(epochsRoot)

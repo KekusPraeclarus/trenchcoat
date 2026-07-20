@@ -21,6 +21,7 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import { archiveLayout } from "../lib/archive.js"
 import { loadSourceCallOutcomes } from "./sources.js"
+import { SourceWriter } from "./sources-write.js"
 
 export function thresholdsFromConfig(config: TrenchcoatConfig): SourceLifecycleThresholds {
   return {
@@ -138,6 +139,23 @@ export async function runSourceListReview(
   if (opts.dryRun) return reportBase
 
   await state.saveSourceLifecycle(result.file)
+
+  // Lagged scores into sources.json for candidates with settled call outcomes
+  const writer = new SourceWriter(state)
+  for (const candidate of result.file.candidates) {
+    const perf = performances.get(candidate.sourceId)
+    if (!perf || perf.settledCalls <= 0) continue
+    await writer.upsertNeutralSource({
+      sourceId: candidate.sourceId,
+      handle: candidate.handle,
+      platform: "x",
+    })
+    await writer.applyLaggedScore({
+      sourceId: candidate.sourceId,
+      score: perf.score,
+      scoreUpdatedAt: scoreCutoff,
+    })
+  }
 
   const archiveDir = join(opts.archiveRoot, "source-lifecycle", epochId)
   mkdirSync(archiveDir, { recursive: true })

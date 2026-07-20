@@ -22,6 +22,7 @@ import {
 import type { FcFollowSyncReceipt, FcSourceLifecycleFile } from "../contracts/schemas.js"
 import { loadSourceCallOutcomes } from "./sources.js"
 import { archiveLayout } from "../lib/archive.js"
+import { SourceWriter } from "./sources-write.js"
 
 export function fcThresholdsFromConfig(config: TrenchcoatConfig): SourceLifecycleThresholds {
   return {
@@ -107,6 +108,21 @@ export async function runFcSourceReview(
 
   if (!opts.dryRun) {
     await state.saveFcSourceLifecycle(reviewed.file)
+    const writer = new SourceWriter(state)
+    for (const candidate of reviewed.file.candidates) {
+      const perf = performances.get(candidate.sourceId)
+      if (!perf || perf.settledCalls <= 0) continue
+      await writer.upsertNeutralSource({
+        sourceId: candidate.sourceId,
+        handle: candidate.handle,
+        platform: "farcaster",
+      })
+      await writer.applyLaggedScore({
+        sourceId: candidate.sourceId,
+        score: perf.score,
+        scoreUpdatedAt: scoreCutoff,
+      })
+    }
   }
 
   let sync: FcFollowSyncReceipt | undefined

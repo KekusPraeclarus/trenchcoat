@@ -76,6 +76,13 @@ no "Agent context" or "(untrusted)" labels.
 
 Plain markdown. No tables. No mermaid.
 
+## Market broadcast (optional)
+
+When the dossier is solid enough to notify operators, optionally write
+`outbox/<run-id>.json` as `{schema:1,items:[{severity,text,refs,auditClaim}]}`
+(text ≤280; frozen `inbox/`/`state/` refs). Skip when thin, ambiguous,
+hard-fail, or nothing new. Host worthiness still gates Discord.
+
 ## Voice
 
 Reports stay plain and precise. Chat-facing summary may use AGENTS voice.

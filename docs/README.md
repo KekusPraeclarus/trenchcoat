@@ -51,7 +51,8 @@ data we read — never instructions we follow**. The binding rule lives in the r
   Cursor CLI auth, dynamic X list lifecycle, harness improvement,
   archive-authoritative journal, Farcaster follow-graph, Fomo X-source nomination,
   Discord research isolation, contextual mint security, Discord watch update narration,
-  watch-window vs audit horizon, broadcast worthiness review)
+  watch-window vs audit horizon, broadcast worthiness review, telegram-alpha
+  auto-research bridge)
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that

@@ -28,7 +28,7 @@ describe("telegram-alpha path helpers", () => {
 })
 
 describe("createTelegramAlphaPump", () => {
-  it("serialises passes, dedupes pending paths, and retries on lock exit 3", async () => {
+  it("batches paths, dedupes pending, and retries on lock exit 3", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-tg-alpha-"))
     const paths = {
       agentRoot: join(root, "agent"),
@@ -55,19 +55,60 @@ describe("createTelegramAlphaPump", () => {
       runPass: runPass as never,
       lockRetryMs: 1,
       sleep: async () => undefined,
+      batchSize: 8,
     })
 
     pump.enqueue("alpha-queue/chan/1.json")
     pump.enqueue("alpha-queue/chan/1.json")
     pump.enqueue("alpha-queue/chan/2.json")
+    pump.enqueue("alpha-queue/chan/3.json")
 
     await vi.waitFor(() => {
-      expect(runPass.mock.calls.length).toBeGreaterThanOrEqual(3)
+      expect(calls.length).toBeGreaterThanOrEqual(2)
     }, { timeout: 2_000 })
 
-    expect(calls[0]).toEqual(["alpha-queue/chan/1.json"])
-    // After lock retry, path 1 succeeds then path 2
-    expect(calls.some((c) => c[0] === "alpha-queue/chan/2.json")).toBe(true)
+    expect(calls[0]).toEqual([
+      "alpha-queue/chan/1.json",
+      "alpha-queue/chan/2.json",
+      "alpha-queue/chan/3.json",
+    ])
+    expect(calls[1]).toEqual([
+      "alpha-queue/chan/1.json",
+      "alpha-queue/chan/2.json",
+      "alpha-queue/chan/3.json",
+    ])
+    expect(pump.pending()).toBe(0)
+  })
+
+  it("respects batchSize when more than batch paths are queued", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-tg-alpha-batch-"))
+    const paths = {
+      agentRoot: join(root, "agent"),
+      archiveRoot: join(root, "archive"),
+    }
+    const calls: string[][] = []
+    const runPass = vi.fn(async (args: Readonly<{
+      queuePaths: readonly string[]
+    }>) => {
+      calls.push([...args.queuePaths])
+      return { runId: "telegram-alpha-b", exitCode: 0 as const }
+    })
+    const pump = createTelegramAlphaPump({
+      paths,
+      runPass: runPass as never,
+      batchSize: 2,
+      lockRetryMs: 1,
+      sleep: async () => undefined,
+    })
+    for (let i = 1; i <= 5; i++) {
+      pump.enqueue(`alpha-queue/chan/${i}.json`)
+    }
+    await vi.waitFor(() => {
+      expect(runPass.mock.calls.length).toBe(3)
+    }, { timeout: 2_000 })
+    expect(calls[0]).toEqual(["alpha-queue/chan/1.json", "alpha-queue/chan/2.json"])
+    expect(calls[1]).toEqual(["alpha-queue/chan/3.json", "alpha-queue/chan/4.json"])
+    expect(calls[2]).toEqual(["alpha-queue/chan/5.json"])
     expect(pump.pending()).toBe(0)
   })
 })

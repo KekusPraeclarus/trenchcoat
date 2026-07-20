@@ -2,7 +2,7 @@
 description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
   - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
@@ -19,9 +19,11 @@ model choose members or mutate X.
 Binding decision: [ADR 004](../adr/004-dynamic-x-list-lifecycle.md).
 
 **Current limit:** `runSourceListReview` loads archive `source-call` outcomes when
-present (`src/orchestrator/sources.ts` via `source-list.ts`), but live outcome
-writers are still sparse — empty archives yield no promotions. Prefer
-`tc source-list review --dry-run` until sealed outcomes accumulate (INV-S21).
+present (`src/orchestrator/sources.ts` via `source-list.ts`), applies lagged
+scores into `sources.json` for candidates with `settledCalls > 0`, and runs on
+launchd daily (`RunAtLoad` + 24h) plus after a sealed audit. Empty archives still
+yield no promotions (INV-S21). Prefer `tc source-list review --dry-run` until
+sealed outcomes accumulate.
 
 ## State
 

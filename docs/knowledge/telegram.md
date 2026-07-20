@@ -35,11 +35,18 @@ last_verified: 2026-07-20
 Working alpha: `mode: "preview"`, poller logs `preview:N` / `telegram preview polled`
 (on a ~60s cycle per channel batch), queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.
 Each newly written message enqueues an immediate `telegram-alpha` agent pass
-(serial pump under the workspace lock; exit 3 retries). Broadcasts go through
-the normal host outbox/router path when the agent proposes them: mechanical
-validation, then a fail-closed **worthiness** review (`broadcast.worthiness`,
-default `composer-2.5-fast`) before stage — ADR 014. Telegram remains uncapped
-by daily count after approval; Discord still hits `daily_budget` / run-dedupe.
+(serial pump, ≤8 paths/run under the workspace lock; exit 3 retries). Collect
+seals each cited alpha-queue message body into
+`inbox/<run-id>/telegram-alpha-<channel>-<id>.json` and writes a manifest with
+`path=… contentHash=sha256:…`. After the agent, the host enqueues research from
+sealed CAs or cashtags+chain hints ([ADR 015](../adr/015-telegram-alpha-research.md),
+≤3/run) and drains the research queue. The agent must still emit
+`alpha-digest.json` with `entries[]` for every cited message — real research note
+**or** `state/research/alpha-ack-<channel>-<id>.md` tombstone — so INV-Q1 can
+purge (host research alone does not clear the queue). Prefer empty telegram-alpha
+outbox — research proposes market broadcasts when the dossier is solid; those go
+through worthiness ([ADR 014](../adr/014-broadcast-worthiness.md)) then Discord
+webhook budget/run-dedupe. Telegram remains uncapped by daily count after approval.
 `list-scan` / `review` may still write path-only alpha manifests for backlog
 drain; primary live digestion is `telegram-alpha`.
 List-scan writes `list-scan-alpha-manifest`; review writes `review-alpha-manifest`.
@@ -54,10 +61,8 @@ surface `alphaPending` and `alphaTruncated` when the queue is non-empty or
 capped. Digests must use `entries[]` with message/record `contentHash` values
 (byte hashes of on-disk files) — narrative-shaped `items`/`slug` digests fail
 Zod and purge **nothing** (`invalidReason=schema-invalid` on the receipt; chat
-notes `alphaDigestInvalid` / `alphaPurged`). 2026-07-19 live backlog (~500) was
-zero successful purges for that reason. Repo skill edits under `agent/skills/**`
-do **not** auto-deploy — copy into `~/.trenchcoat/agent/skills/` before live
-jobs (installer does not sync skills).
+notes `alphaDigestInvalid` / `alphaPurged`). Sync skills with
+`./ops/install-launchd.sh --sync-skills` (or alongside a full install).
 Operator chat working (`operator:telegram:…` research) does **not** imply alpha
 ingestion is live — check channels poller logs and `alpha-queue/` separately.
 
@@ -72,14 +77,16 @@ ingestion is live — check channels poller logs and `alpha-queue/` separately.
 - **Seed defaults** — `config/seed.example.json` is preview-first for all listed
   public call channels.
 - **Queue deep / digests never purge** — agent wrote narrative `items` instead of
-  `entries` + content hashes. Receipt shows `invalidReason=schema-invalid` and
-  chat `alphaDigestInvalid` / `alphaPurged=0`. Fix skills (telegram-alpha/list-scan/review), sync
-  into `~/.trenchcoat/agent/skills/`, redeploy host; do not mass-delete the queue.
-  Last-resort operator drain: `pnpm exec tsx scripts/alpha-queue-drain.ts` (writes
-  minimal archive record + host-valid digest; see orchestrator.md § Alpha-queue).
+  `entries` + content hashes, or skipped digest after ADR 015 research. Receipt
+  shows `invalidReason=schema-invalid` and chat `alphaDigestInvalid` /
+  `alphaPurged=0`. Fix skills (telegram-alpha requires knowledge **or** ack
+  tombstone), `./ops/install-launchd.sh --sync-skills`, redeploy host; do not
+  mass-delete the queue. Last-resort operator drain:
+  `pnpm exec tsx scripts/alpha-queue-drain.ts` (writes minimal archive record +
+  host-valid digest; see orchestrator.md § Alpha-queue).
 - **Skill / collector edits** — `ops/install-launchd.sh` redeploys the CLI runtime;
-  copy `agent/skills/**` into `~/.trenchcoat/agent/skills/` separately (installer
-  does not sync skills).
+  pass `--sync-skills` to rsync `agent/skills/**` + `AGENTS.md` into
+  `~/.trenchcoat/agent/` (and discord agent when present).
 - **Poll interval change** — default cycle is code in `channels.ts`, not config;
   after redeploy restart **`com.trenchcoat.channels`** and confirm startup log
   `pollMs` (2026-07-20 live: `60000` = 60s; was `1800000`).

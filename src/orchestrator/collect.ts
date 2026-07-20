@@ -43,6 +43,8 @@ import { collectFomoSignalScan } from "./fomo-signal-collect.js"
 import { collectFomoXSourceReview } from "./fomo-x-source-review.js"
 import { collectFomoNarrativeSourceScan } from "./fomo-narrative-source-scan.js"
 import { runNarrativeSourceReview } from "./narrative-source-review.js"
+import { sanitizePathSegment } from "../lib/snapshot.js"
+import { sha256Bytes } from "../lib/fs-atomic.js"
 
 export type DiscoverySighting = Readonly<{
   handle: string
@@ -802,11 +804,21 @@ async function collectTelegramAlpha(args: Readonly<{
     }
   }
 
-  const alphaLines = capManifestLines(paths.map((path) => `path=${path}`))
+  const alphaLines = capManifestLines(paths.map((path) => {
+    const abs = join(args.agentRoot, path)
+    if (!existsSync(abs)) return `path=${path}`
+    try {
+      const hash = sha256Bytes(readFileSync(abs))
+      return `path=${path} contentHash=${hash}`
+    } catch {
+      return `path=${path}`
+    }
+  }))
   const truncatedMarker = alphaLines.find((line) => line.startsWith("truncated="))
   const truncatedBy = truncatedMarker
     ? Number.parseInt(truncatedMarker.slice("truncated=".length), 10) || 0
     : 0
+  const snapshotNames: string[] = ["telegram-alpha-manifest"]
   await args.writer.writeInbox(args.runId, "telegram-alpha-manifest", {
     source: "host.telegram-alpha",
     fetchedAt: args.fetchedAt,
@@ -819,9 +831,28 @@ async function collectTelegramAlpha(args: Readonly<{
       freshnessTier: "live" as const,
     })),
   })
+
+  // Seal message bodies so host research enqueue can see verbatim CAs/tickers
+  for (const rel of paths) {
+    const sealed = trySealTelegramAlphaPath({
+      agentRoot: args.agentRoot,
+      runId: args.runId,
+      writer: args.writer,
+      fetchedAt: args.fetchedAt,
+      relativePath: rel,
+    })
+    if (!sealed) continue
+    try {
+      await sealed.write()
+      snapshotNames.push(sealed.name)
+    } catch {
+      // Fail closed per path — do not invent text
+    }
+  }
+
   return {
     ...EMPTY_SUMMARY,
-    snapshotNames: ["telegram-alpha-manifest"],
+    snapshotNames,
     postCount: alphaLines.length,
     collectionKind: "external",
     alphaPendingCount: paths.length,
@@ -829,6 +860,76 @@ async function collectTelegramAlpha(args: Readonly<{
     ...(truncatedBy > 0
       ? { collectionStatus: `alpha-pending:${paths.length};truncated=${truncatedBy}` }
       : { collectionStatus: `alpha-pending:${paths.length}` }),
+  }
+}
+
+/**
+ * Parse alpha-queue/<channel>/<id>.json and prepare a sealed inbox write.
+ * Returns undefined when the path is unsafe, missing, or unreadable.
+ */
+export function trySealTelegramAlphaPath(args: Readonly<{
+  agentRoot: string
+  runId: string
+  writer: SnapshotWriter
+  fetchedAt: string
+  relativePath: string
+}>): Readonly<{ name: string; write: () => Promise<void> }> | undefined {
+  const match = /^alpha-queue\/([^/]+)\/([^/]+)\.json$/u.exec(args.relativePath.trim())
+  if (!match) return undefined
+  let channel: string
+  let messageId: string
+  try {
+    channel = sanitizePathSegment(match[1]!)
+    messageId = sanitizePathSegment(match[2]!)
+  } catch {
+    return undefined
+  }
+  const queuePath = join(args.agentRoot, "alpha-queue", channel, `${messageId}.json`)
+  if (!existsSync(queuePath)) return undefined
+  let raw: string
+  try {
+    raw = readFileSync(queuePath, "utf8")
+  } catch {
+    return undefined
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined
+  const record = parsed as Record<string, unknown>
+  const items = record["items"]
+  if (!Array.isArray(items) || items.length === 0) return undefined
+  const first = items[0]
+  if (first === null || typeof first !== "object" || Array.isArray(first)) return undefined
+  const item = first as Record<string, unknown>
+  const text = item["text"]
+  if (typeof text !== "string" || text.length < 1) return undefined
+  const provenance = typeof item["provenance"] === "string" && item["provenance"].startsWith("telegram:")
+    ? item["provenance"].slice(0, 256)
+    : `telegram:${channel}`
+  const ts = typeof item["ts"] === "string" ? item["ts"] : args.fetchedAt
+  const url = typeof item["url"] === "string" ? item["url"] : undefined
+  const name = `telegram-alpha-${channel}-${messageId}`
+  return {
+    name,
+    write: async () => {
+      await args.writer.writeInbox(args.runId, name, {
+        source: "telegram.preview",
+        fetchedAt: args.fetchedAt,
+        trust: "untrusted-external",
+        items: [{
+          provenance,
+          text: text.slice(0, 20_000),
+          ...(url ? { url } : {}),
+          ts,
+          ageSec: 0,
+          freshnessTier: "live",
+        }],
+      })
+    },
   }
 }
 

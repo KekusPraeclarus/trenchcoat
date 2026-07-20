@@ -2,7 +2,7 @@
 description: Host-owned harness improvement loop — agent-gated plan/review/build, local main integrate, deferred agent activation, bounded-live canaries.
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/harness/**, decision proposals, or canary assignment.
   - Changing how sealed audits feed policy experiments.

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -144,4 +145,32 @@ export function loadDeploymentManifest(
   } catch {
     return undefined
   }
+}
+
+const COMMIT_SHA = /^[a-f0-9]{7,64}$/i
+
+/**
+ * Provenance for audit epoch manifests. Prefer the installed runtime commit;
+ * fall back to git HEAD under TRENCHCOAT_REPO_ROOT / cwd. Never returns "local".
+ */
+export function resolveAuditCodeCommit(opts?: Readonly<{
+  runtimeRoot?: string
+  repoRoot?: string
+}>): string {
+  const deployed = loadDeploymentManifest(opts?.runtimeRoot)?.sourceCommit
+  if (deployed && COMMIT_SHA.test(deployed)) return deployed.toLowerCase()
+
+  const repoRoot = opts?.repoRoot
+    ?? (process.env["TRENCHCOAT_REPO_ROOT"]?.trim() || process.cwd())
+  const out = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  })
+  const sha = (out.stdout ?? "").trim().toLowerCase()
+  if (out.status !== 0 || !COMMIT_SHA.test(sha)) {
+    throw new Error(
+      `cannot resolve audit codeCommit from deployment or git (${repoRoot})`,
+    )
+  }
+  return sha
 }

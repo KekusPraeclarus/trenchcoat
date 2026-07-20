@@ -43,9 +43,12 @@ function normalizeAlphaQueuePath(path: string): string {
 }
 
 /**
- * Serial pump: enqueue message paths and process one runJob at a time so the
- * channels listener never blocks on the agent, and INV-S15 is respected.
+ * Serial pump: enqueue message paths and process up to TELEGRAM_ALPHA_BATCH_SIZE
+ * per runJob so the channels listener never blocks on the agent, and INV-S15
+ * is respected.
  */
+export const TELEGRAM_ALPHA_BATCH_SIZE = 8
+
 export function createTelegramAlphaPump(args: Readonly<{
   paths: TelegramAlphaPaths
   runPass?: typeof runTelegramAlphaPass
@@ -53,6 +56,7 @@ export function createTelegramAlphaPump(args: Readonly<{
   /** Injectable lock-retry sleep (default 15s) */
   lockRetryMs?: number
   sleep?: (ms: number) => Promise<void>
+  batchSize?: number
 }>): Readonly<{
   enqueue: (queuePath: string) => void
   pending: () => number
@@ -64,44 +68,55 @@ export function createTelegramAlphaPump(args: Readonly<{
   const runPass = args.runPass ?? runTelegramAlphaPass
   const lockRetryMs = args.lockRetryMs ?? 15_000
   const sleep = args.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+  const batchSize = Math.max(1, args.batchSize ?? TELEGRAM_ALPHA_BATCH_SIZE)
 
   const pump = async (): Promise<void> => {
     if (running) return
     running = true
     try {
       while (queue.length > 0) {
-        const next = queue.shift()!
-        seen.delete(next)
+        // Yield so synchronous burst enqueues coalesce into one batch
+        await Promise.resolve()
+        if (queue.length === 0) break
+        const batch: string[] = []
+        while (batch.length < batchSize && queue.length > 0) {
+          const next = queue.shift()!
+          seen.delete(next)
+          batch.push(next)
+        }
         try {
           const result = await runPass({
             paths: args.paths,
-            queuePaths: [next],
+            queuePaths: batch,
           })
           if (result.exitCode === 3) {
-            // Lock held — requeue and pause briefly
-            if (!seen.has(next)) {
-              queue.push(next)
-              seen.add(next)
+            // Lock held — requeue whole batch and pause briefly
+            for (const path of batch) {
+              if (!seen.has(path)) {
+                queue.push(path)
+                seen.add(path)
+              }
             }
-            log.warn("telegram-alpha busy — will retry", { path: next })
+            log.warn("telegram-alpha busy — will retry", { paths: batch.join(",") })
             await sleep(lockRetryMs)
             continue
           }
           if (result.exitCode !== 0) {
             log.error("telegram-alpha pass failed", {
-              path: next,
+              paths: batch.join(","),
               exitCode: result.exitCode,
               runId: result.runId,
             })
           } else {
             log.info("telegram-alpha pass complete", {
-              path: next,
+              paths: batch.join(","),
+              count: batch.length,
               runId: result.runId,
             })
           }
         } catch (error) {
           log.error("telegram-alpha pass threw", {
-            path: next,
+            paths: batch.join(","),
             detail: error instanceof Error ? error.message : "unknown",
           })
         }
