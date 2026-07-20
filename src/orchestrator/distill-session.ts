@@ -3,7 +3,7 @@
  * per-destination payloads (INV-B2). Fixed host prompts, quoted untrusted input,
  * strict post-checks, never write state.
  *
- * Discord: short, new-things-only, silent on unchanged-stage heat.
+ * Discord: run-scoped bottom-line, silent on unchanged-stage heat.
  * Telegram: longer landscape overview; restating current narratives is encouraged.
  */
 
@@ -19,12 +19,14 @@ import {
   type StageKnown,
 } from "./narrative-stage-dedupe.js"
 
-export const DISCORD_TEXT_MAX = 1_000
+export const DISCORD_TEXT_MAX = 320
 export const DISCORD_TICKER_MAX = 3
 export const TELEGRAM_TEXT_MAX = 8_000
 
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u
 const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
+/** Bare @handle — excludes twitter:@ / farcaster:@ (colon precedes @) */
+const BARE_AT_HANDLE = /(?<![a-z:])@[\w.-]+/iu
 const TICKER_TOKEN = /\$[A-Za-z][A-Za-z0-9]{0,15}\b/gu
 
 export type DistillSessionRunner = (
@@ -91,8 +93,8 @@ export function distillUserMessage(args: Readonly<{
   unchangedStages?: readonly StageKnown[]
 }>): string {
   return [
-    "Rewrite the quoted report for Discord using the system rules.",
-    `auditClaim: ${claimLine(args.auditClaim)}`,
+    "Rewrite the quoted report as a single Discord bottom-line using the system rules.",
+    `auditClaim (context only): ${claimLine(args.auditClaim)}`,
     `unchangedStages: ${stageList(args.unchangedStages)}`,
     "<untrusted-report>",
     args.reportText,
@@ -125,6 +127,7 @@ export function validateDiscordDistillOutput(
   if ([...text].length > DISCORD_TEXT_MAX) return { ok: false, reason: "too-long" }
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
+  if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   const tickers = text.match(TICKER_TOKEN) ?? []
   if (tickers.length > DISCORD_TICKER_MAX) return { ok: false, reason: "ticker-overflow" }
   if (statusQuoFillerPattern().test(text)) return { ok: false, reason: "status-quo-filler" }
@@ -146,13 +149,15 @@ export function validateTelegramOverviewOutput(
   if ([...text].length > TELEGRAM_TEXT_MAX) return { ok: false, reason: "too-long" }
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
+  if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
   return { ok: true, text }
 }
 
 /**
- * Compress a chat report for Discord. Fail-closed to fallbackText on any miss:
- * disabled, missing runner, cap exhausted, session error, or post-check reject.
+ * Compress a chat report into a Discord bottom-line. Fail-closed to fallbackText
+ * on any miss: disabled, missing runner, cap exhausted, session error, or
+ * post-check reject. Host attaches at most one Discord payload per run.
  */
 export async function runDiscordDistiller(args: DistillArgs): Promise<DistillResult> {
   const fallback = (reason: string, used: number, capExhausted = false): DistillResult => ({

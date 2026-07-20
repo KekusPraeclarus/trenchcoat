@@ -98,6 +98,8 @@ required with a known `verificationRule`.
   sources converge; reserve `urgent` for clear capital rotation into the new
   narrative from a fading one (`type: "rotation"`, `verificationRule: "rotation"`).
 - `text`: operator voice (see AGENTS.md Voice) — ≤280 chars, no emoji/hashtags.
+  Narrative/ticker framing only; never name individual CT/trader handles or
+  "who's live" roll calls (cite people in the report, not inside `text`).
 - `refs`: `state/…` (usually `state/narratives/log.jsonl`) and/or same-run
   `inbox/<run-id>/…` evidence that supports the claim. Do not invent refs or cite
   other runs.

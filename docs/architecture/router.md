@@ -2,7 +2,7 @@
 description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -32,8 +32,8 @@ with backoff. Counts live in `summarizeIngressCounts` /
 
 `finding.broadcast` ingress fails closed when its Telegram channel payload is
 absent. This prevents a legacy or interrupted raw event from falling back to the
-same short text on both channels: Telegram receives the promoted long-form run
-report, while Discord receives the new-things-only distillation.
+same short text on both channels: Telegram receives the promoted landscape
+overview, while Discord receives a run-scoped bottom-line distillation.
 
 The router is a **long-lived KeepAlive process** (`com.trenchcoat.router` via
 `ops/install-launchd.sh` → `tc router serve`). Jobs only stage + HMAC-POST; without
@@ -73,12 +73,13 @@ attaches:
 
 | Destination | Source |
 |---|---|
-| Telegram | Fail-closed landscape overview from the promoted chat report when `broadcast.telegram_overview.enabled` (longer chat-style report; may restate current narrative heat; no host plumbing / workspace paths / provenance handles; ≤8k); on any miss falls back to `event.text`. No daily message-count limit |
-| Discord | Fail-closed distiller from the chat report (new-things-only, no provenance handles, ≤3 tickers, no status-quo filler / unchanged-stage restatement); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
+| Telegram | Fail-closed landscape overview from the promoted chat report when `broadcast.telegram_overview.enabled` (longer chat-style report; may restate current narrative heat; no host plumbing / workspace paths / provenance or bare @handles; no trader roll calls; ≤8k); on any miss falls back to `event.text`. No daily message-count limit |
+| Discord | Fail-closed bottom-line distill from the chat report (≤320 chars, ≤3 tickers, no provenance or bare @handles, no trader roll calls, no status-quo filler / unchanged-stage restatement); at most one Discord payload per run — later claims omit `channels.discord` (`run-deduped`, no budget burn); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
 When `channels` is present and `channels.discord` is absent, Discord delivery is
-skipped (`skipped-discord-budget`).
+skipped (`skipped-discord-budget` for budget omit; channel-render receipts also
+record `run-deduped` when a later claim in the same run was silenced).
 
 ## Delivery workers
 
@@ -93,7 +94,7 @@ skipped (`skipped-discord-budget`).
 - Discord: webhook `wait=true`, `allowed_mentions.parse=[]`. Soft chunk ~1900
   chars (`splitDiscordText` in `src/router/deliver.ts`) with numbered `1/n`
   parts and stable per-part `Idempotency-Key` (`<deliveryId>:part:i/n`) so
-  retries do not invent new keys. Distiller still targets ≤1000 when it succeeds.
+  retries do not invent new keys. Distiller still targets ≤320 when it succeeds.
 - Graceful shutdown drains in-flight leases, then exits
 
 ## Security surface

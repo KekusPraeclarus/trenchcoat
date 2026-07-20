@@ -40,7 +40,7 @@ export type ChannelRenderReceipt = Readonly<{
   eventId: `sha256:${string}`
   renderedAt: string
   telegram: "overview" | "broadcast-text"
-  discord: "distilled" | "broadcast-text" | "budget-skipped"
+  discord: "distilled" | "broadcast-text" | "budget-skipped" | "run-deduped"
   distillReason?: string
   telegramReason?: string
   inputHash?: `sha256:${string}`
@@ -89,7 +89,8 @@ function readPromotedReport(args: Readonly<{
  * Enrich staged finding.broadcast events with per-channel payloads before HMAC
  * delivery. Telegram is always attached (uncapped). Discord is reserved against
  * the Discord-only daily/urgent budget and omitted when over budget so the router
- * skips that destination. Idempotent on resume.
+ * skips that destination. At most one Discord payload per run (later claims omit
+ * channels.discord as run-deduped, without burning budget). Idempotent on resume.
  */
 export async function renderChannelPayloads(args: Readonly<{
   agentRoot: string
@@ -135,6 +136,7 @@ export async function renderChannelPayloads(args: Readonly<{
   let usedDistill = 0
   let usedTelegramOverview = 0
   let discordBudgetSkipped = 0
+  let discordAttachedThisRun = false
   const day = dayKey(new Date(args.nowIso))
 
   for (const event of events) {
@@ -204,51 +206,58 @@ export async function renderChannelPayloads(args: Readonly<{
       if (reportText && !args.telegramOverview.enabled) telegramReason = "disabled"
     }
 
-    const severity = event.severity as BroadcastItem["severity"]
-    const reservation = await reserveBroadcast({
-      layout: args.layout,
-      dayKey: day,
-      reservationKey: event.eventId,
-      severity,
-      dailyBudget: args.discordBudget.dailyBudget,
-      urgentCeiling: args.discordBudget.urgentCeiling,
-      nowIso: args.nowIso,
-    })
+    if (discordAttachedThisRun) {
+      discordSource = "run-deduped"
+      distillReason = "run-deduped"
+    } else {
+      const severity = event.severity as BroadcastItem["severity"]
+      const reservation = await reserveBroadcast({
+        layout: args.layout,
+        dayKey: day,
+        reservationKey: event.eventId,
+        severity,
+        dailyBudget: args.discordBudget.dailyBudget,
+        urgentCeiling: args.discordBudget.urgentCeiling,
+        nowIso: args.nowIso,
+      })
 
-    if (!reservation.ok) {
-      discordSource = "budget-skipped"
-      distillReason = `budget:${reservation.reason ?? "rejected"}`
-      discordBudgetSkipped += 1
-    } else if (reportText && args.distiller.enabled) {
-      inputHash ??= sha256Json({
-        report: reportText,
-        claim: event.auditClaim ?? null,
-        fallback: broadcastText,
-      })
-      const distill = await runDiscordDistiller({
-        reportText,
-        fallbackText: broadcastText,
-        ...(event.auditClaim ? { auditClaim: event.auditClaim as AuditClaim } : {}),
-        ...(args.unchangedStages && args.unchangedStages.length > 0
-          ? { unchangedStages: args.unchangedStages }
-          : {}),
-        dailyCap: args.distiller.dailyCap,
-        usedToday,
-        enabled: true,
-        ...(args.distiller.runSession ? { runSession: args.distiller.runSession } : {}),
-      })
-      usedToday = distill.used
-      if (!distill.usedFallback) {
-        channels.discord = { text: distill.text }
-        discordSource = "distilled"
-        usedDistill += 1
+      if (!reservation.ok) {
+        discordSource = "budget-skipped"
+        distillReason = `budget:${reservation.reason ?? "rejected"}`
+        discordBudgetSkipped += 1
+      } else if (reportText && args.distiller.enabled) {
+        inputHash ??= sha256Json({
+          report: reportText,
+          claim: event.auditClaim ?? null,
+          fallback: broadcastText,
+        })
+        const distill = await runDiscordDistiller({
+          reportText,
+          fallbackText: broadcastText,
+          ...(event.auditClaim ? { auditClaim: event.auditClaim as AuditClaim } : {}),
+          ...(args.unchangedStages && args.unchangedStages.length > 0
+            ? { unchangedStages: args.unchangedStages }
+            : {}),
+          dailyCap: args.distiller.dailyCap,
+          usedToday,
+          enabled: true,
+          ...(args.distiller.runSession ? { runSession: args.distiller.runSession } : {}),
+        })
+        usedToday = distill.used
+        if (!distill.usedFallback) {
+          channels.discord = { text: distill.text }
+          discordSource = "distilled"
+          usedDistill += 1
+        } else {
+          channels.discord = { text: broadcastText }
+          distillReason = distill.reason
+        }
+        discordAttachedThisRun = true
       } else {
         channels.discord = { text: broadcastText }
-        distillReason = distill.reason
+        if (reportText && !args.distiller.enabled) distillReason = "disabled"
+        discordAttachedThisRun = true
       }
-    } else {
-      channels.discord = { text: broadcastText }
-      if (reportText && !args.distiller.enabled) distillReason = "disabled"
     }
 
     const enriched: RouterEvent = { ...event, channels }

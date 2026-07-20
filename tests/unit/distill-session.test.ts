@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  DISCORD_TEXT_MAX,
   distillUserMessage,
   runDiscordDistiller,
   runTelegramOverviewDistiller,
@@ -33,6 +34,11 @@ describe("validateDiscordDistillOutput", () => {
     expect(validateDiscordDistillOutput("cast farcaster:@amc reacted").ok).toBe(false)
   })
 
+  it("rejects bare @handles", () => {
+    expect(validateDiscordDistillOutput("Flip (@brian_armstrong) live").ok).toBe(false)
+    expect(validateDiscordDistillOutput("palgrani & @stockcoin_flap pushing").ok).toBe(false)
+  })
+
   it("rejects ticker overflow", () => {
     const text = "Lane: $A vs $B vs $C vs $D"
     expect(validateDiscordDistillOutput(text)).toEqual({
@@ -61,7 +67,7 @@ describe("validateDiscordDistillOutput", () => {
   })
 
   it("rejects overlong and control chars", () => {
-    expect(validateDiscordDistillOutput("x".repeat(1001)).ok).toBe(false)
+    expect(validateDiscordDistillOutput("x".repeat(DISCORD_TEXT_MAX + 1)).ok).toBe(false)
     expect(validateDiscordDistillOutput("bad\u0000text").ok).toBe(false)
   })
 })
@@ -177,6 +183,7 @@ describe("runDiscordDistiller", () => {
         stage: "peaking",
       }],
     })
+    expect(msg).toContain("Discord bottom-line")
     expect(msg).toContain("type=rotation")
     expect(msg).toContain("unchangedStages: rh-chain-meme-rotation=peaking")
     expect(msg).toContain("<untrusted-report>\nbody\n</untrusted-report>")
@@ -201,6 +208,10 @@ describe("validateTelegramOverviewOutput", () => {
     expect(validateTelegramOverviewOutput("Flip (twitter:@brian_armstrong)").ok).toBe(false)
     expect(validateTelegramOverviewOutput("see reports/list-scan-1/agent.md").ok).toBe(false)
     expect(validateTelegramOverviewOutput("inbox/foo/twitter-fyp.json").ok).toBe(false)
+  })
+
+  it("rejects bare @handles", () => {
+    expect(validateTelegramOverviewOutput("palgrani & @stockcoin_flap pushing").ok).toBe(false)
   })
 
   it("rejects overlong and control chars", () => {

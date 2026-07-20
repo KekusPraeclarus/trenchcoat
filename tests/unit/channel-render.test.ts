@@ -358,4 +358,91 @@ describe("renderChannelPayloads", () => {
     expect(event?.channels?.discord).toBeUndefined()
     expect(report.receipts[0]?.discord).toBe("budget-skipped")
   })
+
+  it("attaches Discord to at most one event per run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-dedupe-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    const second = {
+      ...ITEM,
+      text: "Stockcoin framing is early noise on CT",
+      auditClaim: {
+        type: "narrative-emergence" as const,
+        subject: "stockcoin-meta",
+        direction: "up" as const,
+        horizonHours: 72,
+        verificationRule: "narrative.emergence",
+      },
+    }
+    const third = {
+      ...ITEM,
+      text: "ANSEM curl is the risk-on tell if it clears 200m",
+      auditClaim: {
+        type: "narrative-emergence" as const,
+        subject: "ansem-meme-surge",
+        direction: "up" as const,
+        horizonHours: 72,
+        verificationRule: "narrative.emergence",
+      },
+    }
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, second))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, third))
+    writeFileSync(
+      chatReportPath(agentRoot, RUN_ID),
+      "# Chat recall\n\n## Host summary\n\n- RH owns attention. Stockcoin early. ANSEM watch.\n",
+    )
+
+    const discordText =
+      "RH owns attention. Watch ANSEM for risk-on & stockcoin framing for early noise."
+    let dcLaunches = 0
+    const report = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      chatSummary: {
+        schema: 1,
+        runId: RUN_ID,
+        validatedAt: NOW,
+        promoted: true,
+        itemIds: [],
+        reportPath: `reports/chat/${RUN_ID}.md`,
+        untrustedEvidence: true,
+      },
+      discordBudget: DISCORD_BUDGET,
+      distiller: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 0,
+        runSession: async () => {
+          dcLaunches += 1
+          return discordText
+        },
+      },
+      telegramOverview: TG_OFF,
+    })
+
+    expect(report.rendered).toBe(3)
+    expect(report.usedDistill).toBe(1)
+    expect(dcLaunches).toBe(1)
+    const events = outbox.list()
+    expect(events).toHaveLength(3)
+    const withDiscord = events.filter((e) => e.channels?.discord?.text)
+    expect(withDiscord).toHaveLength(1)
+    expect(withDiscord[0]?.channels?.discord?.text).toBe(discordText)
+    expect(events.every((e) => e.channels?.telegram?.text)).toBe(true)
+    expect(report.receipts.map((r) => r.discord)).toEqual([
+      "distilled",
+      "run-deduped",
+      "run-deduped",
+    ])
+
+    const { loadBroadcastLedger } = await import("../../src/orchestrator/broadcast-ledger.js")
+    const { dayKey } = await import("../../src/orchestrator/broadcast.js")
+    const ledger = loadBroadcastLedger(layout, dayKey(new Date(NOW)))
+    expect(Object.keys(ledger.reservations)).toHaveLength(1)
+  })
 })

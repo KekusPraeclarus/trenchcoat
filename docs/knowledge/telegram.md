@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 ---
 
 # Telegram
@@ -14,7 +14,8 @@ last_verified: 2026-07-19
 - Operator chat bot is separate from router fanout bot
 - Chat replies allowlist-checked before any handling (INV-B3)
 - Market fanout Telegram text is a fail-closed landscape overview (`telegram_overview`),
-  not the host chat-recall dump; Discord stays new-things-only distilled
+  not the host chat-recall dump; Discord stays a run-scoped bottom-line distill
+  (at most one Discord payload per run)
 
 ## Alpha ingestion vs operator chat
 

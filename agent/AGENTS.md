@@ -29,6 +29,8 @@ one glance. Cap bullet lists at ~5. Concrete over vague ("72h", not "soon").
   caps fine (CA, mcap, Mcap, sol, SOL).
 - Keep imperfections. Profanity encouraged when it stays blunt & casual.
 - Never: emoji, hashtags, em-dashes, semicolons, motivational fluff.
+- Outbox `text`: narrative/ticker framing only — no individual CT/trader handles
+  or "who's on it" roll calls (cite people in the report, not the broadcast).
 - Vibe: one too many energy drinks & not enough sleep.
 - Tone only, never substance — every claim still needs evidence & provenance.
 

@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-20
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -401,15 +401,18 @@ staged router events.
 - Over Discord budget: omit `channels.discord` (router skips Discord; Telegram still
   sends). Receipted as `budget-skipped`, never silently dropped
 - Host stages validated items, then `renderChannelPayloads` attaches per-destination
-  text (`channels.telegram` always; `channels.discord` when Discord budget allows)
-  before HMAC-POST to the long-lived router (`com.trenchcoat.router` / `tc router serve`;
+  text (`channels.telegram` always; `channels.discord` when Discord budget allows
+  and this is the first Discord payload of the run) before HMAC-POST to the
+  long-lived router (`com.trenchcoat.router` / `tc router serve`;
   `TRENCHCOAT_ROUTER_*` — see [router.md](router.md)). Telegram gets a fail-closed
   landscape overview (`distill-session.ts` / `telegram_overview`) when enabled —
-  longer chat-style report that may restate current narrative heat; else short
-  `event.text`. Discord gets a fail-closed new-things-only distiller when
-  `broadcast.discord_distiller.enabled` (else short broadcast text). Bare intake
-  hosts default to `/v1/events`; loopback HTTP is allowed. Severity `lifecycle`
-  (wallet add/drop) skips Discord market budget and is never distilled
+  longer chat-style report that may restate current narrative heat (no trader roll
+  calls); else short `event.text`. Discord gets a fail-closed bottom-line distill
+  (≤320 chars, at most once per run; later claims omit Discord as `run-deduped`)
+  when `broadcast.discord_distiller.enabled` (else short broadcast text on the
+  first eligible event only). Bare intake hosts default to `/v1/events`; loopback
+  HTTP is allowed. Severity `lifecycle` (wallet add/drop) skips Discord market
+  budget and is never distilled
 - Send failures never fail the run; durable fanout retries with dead-letter visibility
 
 ## Design patterns
