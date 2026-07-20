@@ -132,9 +132,14 @@ host state mutation, archive seal, alpha purge, outbox delivery, and completion.
 Journals carry `status: running | complete | failed`. Incomplete (`running`)
 runs are resume candidates; `failed` is terminal (not auto-resumed —
 `findIncompleteRuns` skips it). Mid-flight errors call `markRunFailed` with a
-sanitised code/message before exit 2. Phases are fsynced and atomically renamed.
-Recovery resumes the first incomplete phase; it does not replay earlier side
-effects. Periodic Git (`tc backup`) is backup-only and never gates completion.
+sanitised code/message before exit 2. SIGTERM/SIGINT during `runJob` persist
+`signal-interrupted` before exit 143 so reload cannot leave forever-`running`
+zombies. Pre-seal resume is **not** supported — orphans are marked failed
+(`tc run fail <id>`, `tc status --heal-apply`, or `wait-idle` auto-abandon:
+pre-seal + no live lock + age ≥30m, or any running age ≥6h). Phases are fsynced
+and atomically renamed. Recovery resumes post-seal incomplete phases only; it
+does not replay earlier side effects. Periodic Git (`tc backup`) is backup-only
+and never gates completion.
 
 **Operator trap:** `archive/runs/<run-id>/journal.json` is written once at archive
 seal (`phase: host-prepared`) and is **not** updated when the run completes.
@@ -369,12 +374,20 @@ it can never create a dock, raise a score, or hide from the adjacency counter.
 Recovery is deterministic and privilege-preserving (ADR 006 / INV-S11):
 
 1. **Journal resume (host-side, no LLM)** — default path: listener death →
-   launchd keepalive; incomplete run → resume first unfinished phase from
-   `archive/transactions/<run-id>.json` without replaying sealed side effects;
-   hash conflict → quarantine under `archive/quarantine/` and refuse
-   auto-resume; router down → staged outbox waits for the next cycle. Alpha
-   queue is never purged until digest + seal succeed (INV-Q1).
-2. **Operator DM (auth + review)** — needs-headful-reauth (never automated) and
+   launchd keepalive; incomplete **post-seal** run → resume first unfinished
+   phase from `archive/transactions/<run-id>.json` without replaying sealed
+   side effects; pre-seal orphans → `markRunFailed` (operator / heal-apply /
+   wait-idle age gate); hash conflict → quarantine under
+   `archive/quarantine/` and refuse auto-resume; router down → staged outbox
+   waits for the next cycle. Alpha queue is never purged until digest + seal
+   succeed (INV-Q1).
+2. **Deploy pause** — `ops/install-launchd.sh` writes
+   `~/.trenchcoat/deploy-pause.json`, bootouts StartInterval jobs, waits for
+   idle, reloads launchd, then clears the pause and kickstarts deferred jobs.
+   While paused, `runJob` exits 3 and records the job name;
+   `run-with-lock-retry` waits without burning attempts; KeepAlive `x-scan`
+   sleeps until clear.
+3. **Operator DM (auth + review)** — needs-headful-reauth (never automated) and
    every **exoneration proposal** from a `warn` intent verdict (manual
    undock/confirm). Via the chat bot's outbound DM path — not the broadcast
    router.

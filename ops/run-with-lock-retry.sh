@@ -1,6 +1,8 @@
 #!/bin/sh
-# Run a trenchcoat job with bounded workspace-lock contention retries.
-# Exit 3 from `tc run` means the writer lock is held (INV-S15).
+# Run a trenchcoat job with bounded workspace-lock / deploy-pause retries.
+# Exit 3 from `tc run` means the writer lock is held (INV-S15) or deploy pause
+# is active — keep retrying. While ~/.trenchcoat/deploy-pause.json exists, do
+# not burn attempt budget (jobs resume as soon as upgrade clears the pause).
 # Usage: run-with-lock-retry.sh <job-name> [extra tc args...]
 set -eu
 
@@ -12,16 +14,33 @@ fi
 shift
 
 TC="${TRENCHCOAT_BIN:-$HOME/.trenchcoat/bin/trenchcoat}"
+PAUSE_FILE="${TRENCHCOAT_HOME:-$HOME/.trenchcoat}/deploy-pause.json"
 MAX_ATTEMPTS=3
 attempt=1
 
+wait_for_deploy_pause() {
+  if [ ! -f "$PAUSE_FILE" ]; then
+    return 0
+  fi
+  echo "deploy pause active — waiting to run $JOB" >&2
+  while [ -f "$PAUSE_FILE" ]; do
+    sleep 5
+  done
+  echo "deploy pause cleared — running $JOB" >&2
+}
+
 while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
+  wait_for_deploy_pause
   set +e
   "$TC" run "$JOB" "$@"
   rc=$?
   set -e
   if [ "$rc" -ne 3 ]; then
     exit "$rc"
+  fi
+  # Pause may have been set mid-run attempt — wait then retry without burning
+  if [ -f "$PAUSE_FILE" ]; then
+    continue
   fi
   if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
     echo "lock held after ${MAX_ATTEMPTS} attempts for $JOB" >&2

@@ -211,6 +211,7 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => {
 /**
  * Block until in-flight agent/host work finishes. Does not clear abandoned
  * history or backlog. Stale locks fail closed (operator must heal).
+ * Before polling, fails orphaned incomplete journals that block idle.
  */
 export async function waitForAgentIdle(
   opts: WaitForAgentIdleOptions,
@@ -219,6 +220,13 @@ export async function waitForAgentIdle(
   const timeoutMs = opts.timeoutMs ?? 30 * 60_000
   const sleep = opts.sleep ?? defaultSleep
   const started = Date.now()
+
+  const { abandonOrphanedRuns } = await import("../orchestrator/abandon.js")
+  await abandonOrphanedRuns({
+    agentRoot: opts.agentRoot,
+    archiveRoot: opts.archiveRoot,
+    ...(opts.nowIso ? { nowIso: opts.nowIso } : {}),
+  })
 
   for (;;) {
     const snapshot = await buildDrainSnapshot({

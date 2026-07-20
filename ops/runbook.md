@@ -128,8 +128,11 @@ docs/architecture/orchestrator.md / router.md), schedules the weekly backup
 cadences below (including weekly `harness-improve` unless opted out). Re-run
 after CLI changes. Flags: `--dry-run`, `--no-load`, `--without-harness`,
 `--jobs-only`, `--sync-env`, `--allow-dirty`, `--skip-agent-wait`. Before
-reloading launchd units the installer runs `tc harness wait-idle` (default 30m)
-so in-flight Cursor/host jobs finish; `--skip-agent-wait` bypasses that (unsafe).
+reloading launchd units the installer sets deploy-pause (bootouts StartInterval
+jobs), runs `tc harness wait-idle` (default 30m; auto-fails orphaned incomplete
+journals), reloads units, then clears the pause and kickstarts deferred jobs;
+`--skip-agent-wait` bypasses the idle wait (unsafe). Operator orphan cleanup:
+`tc run fail <run-id>`, `tc status --heal-apply`.
 The wipe matters: plain `tsc` leaves deleted modules in `dist/`, which would
 otherwise ship into the runtime.
 

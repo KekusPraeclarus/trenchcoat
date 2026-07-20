@@ -26,6 +26,7 @@ function usage(): never {
 Commands:
   init [--seed path] [--operator-seed path]
   run <job> [--skip-agent] [--dry-collect]
+  run fail <run-id> [--reason <text>]
   precheck <job>
   config validate
   config migrate --write
@@ -33,7 +34,7 @@ Commands:
   delivery retry
   undock <id>
   confirm <id>
-  status [--heal] [--json]
+  status [--heal] [--heal-apply] [--json]
   watchlist remove <chain:token> --subject <symbol> --reason <text>
   preflight [--live]
   probe twitter [--headed]
@@ -135,6 +136,30 @@ async function cmdWalletsSeed(seedPath: string): Promise<void> {
 }
 
 async function cmdRun(jobName: string, args: string[]): Promise<void> {
+  if (jobName === "fail") {
+    const runId = args[0]
+    if (!runId) usage()
+    const reasonIdx = args.indexOf("--reason")
+    const reason = reasonIdx >= 0
+      ? (args[reasonIdx + 1] ?? "operator fail")
+      : "operator fail"
+    const { agentRoot, archiveRoot } = resolveHomes()
+    const { failRunJournal } = await import("./orchestrator/abandon.js")
+    const journal = await failRunJournal({
+      archiveRoot,
+      agentRoot,
+      runId,
+      code: "operator-abandon",
+      message: reason,
+    })
+    console.log(JSON.stringify({
+      runId: journal.runId,
+      status: journal.status,
+      phase: journal.phase,
+      failure: journal.failure ?? null,
+    }, null, 2))
+    return
+  }
   getJob(jobName)
   const { agentRoot, archiveRoot } = resolveHomes()
   const result = await runJob({
@@ -809,7 +834,7 @@ async function main(): Promise<void> {
         }
       }
 
-      if (rest.includes("--heal")) {
+      if (rest.includes("--heal") || rest.includes("--heal-apply")) {
         const { listIncompleteRuns } = await import("./orchestrator/run.js")
         const incomplete = await listIncompleteRuns(archiveRoot)
         if (incomplete.length === 0) {
@@ -818,6 +843,16 @@ async function main(): Promise<void> {
           for (const run of incomplete) {
             console.log(`heal: incomplete run ${run.runId}${run.quarantined ? " (quarantined — needs operator review)" : ""}`)
           }
+        }
+        if (rest.includes("--heal-apply")) {
+          const { abandonOrphanedRuns } = await import("./orchestrator/abandon.js")
+          const result = await abandonOrphanedRuns({
+            agentRoot,
+            archiveRoot,
+            includeCreatedAbandoned: true,
+          })
+          console.log(`heal-apply: failed=${result.failed.length} skipped=${result.skipped.length}`)
+          for (const id of result.failed) console.log(`heal-apply: failed ${id}`)
         }
         const lockPath = join(agentRoot, ".lock")
         const ownerPath = `${lockPath}.owner`

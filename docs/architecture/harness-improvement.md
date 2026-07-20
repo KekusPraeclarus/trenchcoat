@@ -84,10 +84,15 @@ development sealed scorecard, and requires protected metrics not to regress.
 running incomplete archive runs, research `researching>0`, Telegram research
 `running`, or Discord locks/running requests. Abandoned runs and backlog depth
 do **not** block idle — they would hang redeploys forever on a busy host.
+`wait-idle` first fails orphaned incomplete journals (pre-seal + no lock + ≥30m,
+or any running ≥6h) so SIGTERM zombies cannot block forever.
 
-`ops/install-launchd.sh` waits for idle (default 30m) before `bootout`/`kickstart`
-so KeepAlive listeners and jobs are not killed mid-session. Escape hatch:
+`ops/install-launchd.sh` sets a deploy pause (`~/.trenchcoat/deploy-pause.json`),
+bootouts StartInterval jobs, waits for idle (default 30m), reloads launchd, then
+clears the pause and kickstarts any deferred job names. While paused, `runJob`
+exits 3 and `run-with-lock-retry` waits without burning attempts. Escape hatch:
 `--skip-agent-wait`. Operator probe: `tc harness wait-idle`.
+`tc run fail <id>` / `tc status --heal-apply` for manual orphan cleanup.
 
 ## Drain gate (agent activation)
 

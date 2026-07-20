@@ -1,6 +1,9 @@
 import { loadConfig } from "../lib/config.js"
 import { log } from "../lib/log.js"
 import { systemClock } from "../lib/clock.js"
+import { isDeployPaused } from "../lib/deploy-pause.js"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import {
   isBrowserClosedError,
   openPersistentReadOnlyTwitter,
@@ -126,6 +129,13 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
 
   try {
     while (!opts.signal?.aborted) {
+      const home = opts.home ?? join(homedir(), ".trenchcoat")
+      while (isDeployPaused(home) && !opts.signal?.aborted) {
+        log.info("x-scan paused for deploy")
+        await sleep(5_000).catch(() => undefined)
+      }
+      if (opts.signal?.aborted) break
+
       const targets = resolveTargets()
       const cursors = loadXScanCursors(cursorsFile)
       const scrape = opts.scrape ?? scrapeTargetUntilCursor

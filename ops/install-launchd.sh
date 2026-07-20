@@ -17,6 +17,9 @@
 #               dirty working trees so deployment.json provenance stays exact.
 #   --skip-agent-wait  do not wait for in-flight agent/host jobs before
 #               bootout/kickstart (unsafe; can kill mid-session).
+# Deploy pause: writes ~/.trenchcoat/deploy-pause.json early so cron/KeepAlive
+# jobs defer (exit 3 / wait) until reload finishes, then clears the pause and
+# kickstarts any deferred jobs.
 set -eu
 
 REPO_ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
@@ -30,6 +33,7 @@ RUNTIME_STAGING="$HOME/.trenchcoat/runtime.next"
 RUNTIME_PREVIOUS="$HOME/.trenchcoat/runtime.prev"
 BIN_DIR="$HOME/.trenchcoat/bin"
 TC="$BIN_DIR/trenchcoat"
+PAUSE_FILE="$HOME/.trenchcoat/deploy-pause.json"
 UID_NUM="$(id -u)"
 DOMAIN="gui/$UID_NUM"
 DRY_RUN=0
@@ -40,6 +44,7 @@ SYNC_ENV=0
 SYNC_SKILLS=0
 ALLOW_DIRTY=0
 SKIP_AGENT_WAIT=0
+PAUSE_ACTIVE=0
 # Count non-sync args so `--sync-env` / `--sync-skills` alone run as standalone sync
 INSTALL_ARGS=0
 
@@ -782,6 +787,111 @@ wait_for_agent_idle() {
   echo "agent idle — proceeding with launchd reload"
 }
 
+# Pause cron/KeepAlive work for the duration of install. Jobs that fire while
+# paused exit 3 / wait in run-with-lock-retry; deferred names are kickstarted
+# after the pause clears.
+begin_deploy_pause() {
+  if [ "$DRY_RUN" -eq 1 ] || [ "$NO_LOAD" -eq 1 ]; then
+    return 0
+  fi
+  mkdir -p "$HOME/.trenchcoat"
+  chmod 700 "$HOME/.trenchcoat" 2>/dev/null || true
+  now="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  printf '%s\n' "{
+  \"schema\": 1,
+  \"pausedAt\": \"$now\",
+  \"reason\": \"install-launchd\",
+  \"deferredJobs\": []
+}" > "$PAUSE_FILE"
+  chmod 600 "$PAUSE_FILE"
+  PAUSE_ACTIVE=1
+  echo "deploy pause on → $PAUSE_FILE"
+  # Stop StartInterval jobs from launching mid-upgrade; KeepAlives stay until
+  # after wait-idle so in-flight work can finish cleanly.
+  for label in \
+    com.trenchcoat.job.chart-sweep \
+    com.trenchcoat.job.watchlist-scan \
+    com.trenchcoat.job.farcaster-scan \
+    com.trenchcoat.job.narrative-scan \
+    com.trenchcoat.job.research \
+    com.trenchcoat.job.outcomes-settle \
+    com.trenchcoat.job.source-list-review \
+    com.trenchcoat.job.fc-source-review \
+    com.trenchcoat.job.review \
+    com.trenchcoat.job.audit \
+    com.trenchcoat.job.wallet-discovery \
+    com.trenchcoat.job.wallet-scan-solana \
+    com.trenchcoat.job.wallet-scan-evm \
+    com.trenchcoat.job.wallet-review \
+    com.trenchcoat.job.fomo-trader-sync \
+    com.trenchcoat.job.fomo-signal-scan \
+    com.trenchcoat.job.fomo-x-source-review \
+    com.trenchcoat.job.fomo-narrative-source-scan \
+    com.trenchcoat.job.narrative-source-review \
+    com.trenchcoat.job.delivery-retry \
+    com.trenchcoat.job.discord-watchlist-scan \
+    com.trenchcoat.job.harness-improve
+  do
+    launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
+  done
+  echo "bootout scheduled jobs for deploy pause"
+}
+
+job_to_label() {
+  case "$1" in
+    chart-sweep) echo com.trenchcoat.job.chart-sweep ;;
+    watchlist-scan) echo com.trenchcoat.job.watchlist-scan ;;
+    list-scan) echo com.trenchcoat.x-scan ;;
+    farcaster-scan) echo com.trenchcoat.job.farcaster-scan ;;
+    narrative-scan) echo com.trenchcoat.job.narrative-scan ;;
+    research) echo com.trenchcoat.job.research ;;
+    outcomes-settle) echo com.trenchcoat.job.outcomes-settle ;;
+    source-list-review) echo com.trenchcoat.job.source-list-review ;;
+    fc-source-review) echo com.trenchcoat.job.fc-source-review ;;
+    review) echo com.trenchcoat.job.review ;;
+    audit) echo com.trenchcoat.job.audit ;;
+    wallet-discovery) echo com.trenchcoat.job.wallet-discovery ;;
+    wallet-scan-solana) echo com.trenchcoat.job.wallet-scan-solana ;;
+    wallet-scan-evm) echo com.trenchcoat.job.wallet-scan-evm ;;
+    wallet-review) echo com.trenchcoat.job.wallet-review ;;
+    fomo-trader-sync) echo com.trenchcoat.job.fomo-trader-sync ;;
+    fomo-signal-scan) echo com.trenchcoat.job.fomo-signal-scan ;;
+    fomo-x-source-review) echo com.trenchcoat.job.fomo-x-source-review ;;
+    fomo-narrative-source-scan) echo com.trenchcoat.job.fomo-narrative-source-scan ;;
+    narrative-source-review) echo com.trenchcoat.job.narrative-source-review ;;
+    delivery-retry) echo com.trenchcoat.job.delivery-retry ;;
+    discord-watchlist-scan) echo com.trenchcoat.job.discord-watchlist-scan ;;
+    telegram-alpha) echo com.trenchcoat.channels ;;
+    harness-improve) echo com.trenchcoat.job.harness-improve ;;
+    *) echo "" ;;
+  esac
+}
+
+clear_deploy_pause_and_kick() {
+  deferred_jobs=""
+  if [ -f "$PAUSE_FILE" ] && [ -n "${NODE_BIN:-}" ]; then
+    # Single-quoted node body — double quotes expand $j / $PAUSE_* under set -u
+    deferred_jobs="$("$NODE_BIN" -e 'const fs=require("fs");try{const raw=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const jobs=Array.isArray(raw.deferredJobs)?raw.deferredJobs:[];process.stdout.write(jobs.filter((entry)=>typeof entry==="string").join(" "))}catch{process.stdout.write("")}' "$PAUSE_FILE")"
+  fi
+  rm -f "$PAUSE_FILE"
+  PAUSE_ACTIVE=0
+  echo "deploy pause cleared"
+  if [ "$NO_LOAD" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
+    return 0
+  fi
+  for job in $deferred_jobs; do
+    label="$(job_to_label "$job")"
+    if [ -z "$label" ]; then
+      echo "deferred job has no launchd label: $job" >&2
+      continue
+    fi
+    echo "kickstarting deferred $job → $label"
+    launchctl kickstart "$DOMAIN/$label" 2>/dev/null || true
+  done
+}
+
+trap 'if [ "${PAUSE_ACTIVE:-0}" -eq 1 ]; then rm -f "${PAUSE_FILE:-}"; echo "deploy pause cleared (install aborted)" >&2; fi' EXIT
+
 # --- host prep ---
 if [ "$DRY_RUN" -eq 0 ]; then
   mkdir -p "$DEST" "$HOME/.trenchcoat/backups"
@@ -824,6 +934,7 @@ fi
 
 upsert_repo_root_env
 
+begin_deploy_pause
 require_clean_source
 deploy_runtime
 if [ ! -x "$TC" ] && [ "$DRY_RUN" -eq 0 ]; then
@@ -911,6 +1022,8 @@ fi
 if [ "$WITH_HARNESS" -eq 1 ]; then
   bootstrap_label com.trenchcoat.job.harness-improve
 fi
+
+clear_deploy_pause_and_kick
 
 echo "done. trenchcoat=$TC (runtime under $RUNTIME_ROOT)"
 echo "logs: /tmp/trenchcoat.*.log"

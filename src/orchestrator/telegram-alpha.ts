@@ -1,4 +1,7 @@
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { sanitizePathSegment } from "../lib/snapshot.js"
+import { isDeployPaused } from "../lib/deploy-pause.js"
 import { log } from "../lib/log.js"
 import { runJob, type RunResult } from "./run.js"
 
@@ -90,12 +93,20 @@ export function createTelegramAlphaPump(args: Readonly<{
             queuePaths: batch,
           })
           if (result.exitCode === 3) {
-            // Lock held — requeue whole batch and pause briefly
+            // Lock held or deploy pause — requeue whole batch and pause briefly
             for (const path of batch) {
               if (!seen.has(path)) {
                 queue.push(path)
                 seen.add(path)
               }
+            }
+            const home = join(homedir(), ".trenchcoat")
+            if (isDeployPaused(home)) {
+              log.warn("telegram-alpha deferred for deploy pause", { paths: batch.join(",") })
+              while (isDeployPaused(home)) {
+                await sleep(5_000)
+              }
+              continue
             }
             log.warn("telegram-alpha busy — will retry", { paths: batch.join(",") })
             await sleep(lockRetryMs)

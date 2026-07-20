@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { WorkspaceLock, agentLockPath } from "../lib/lock.js"
+import { isDeployPaused, noteDeferredJob } from "../lib/deploy-pause.js"
 import { createRunId } from "../lib/run-id.js"
 import {
   createRunJournal,
@@ -225,6 +227,17 @@ function archiveWalletEvidenceReport(args: Readonly<{
 
 export async function runJob(opts: RunOptions): Promise<RunResult> {
   const job = getJob(opts.job)
+  const trenchHome = join(homedir(), ".trenchcoat")
+  if (isDeployPaused(trenchHome)) {
+    await noteDeferredJob({ home: trenchHome, job: job.name })
+    log.warn("deploy pause — deferring job", { job: job.name })
+    return {
+      runId: "none",
+      journal: createRunJournal("lock-held"),
+      exitCode: 3,
+    }
+  }
+
   const lock = new WorkspaceLock(agentLockPath(opts.paths.agentRoot))
   if (!lock.tryAcquire()) {
     log.error("workspace lock held")
@@ -245,6 +258,45 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     chain?: string
     tokenAddress?: string
   } | undefined
+  let signalHandled = false
+  const onSignal = (signal: NodeJS.Signals): void => {
+    if (signalHandled) return
+    signalHandled = true
+    void (async () => {
+      try {
+        if (journal && store && journal.status === "running") {
+          const failed = markRunFailed(journal, {
+            code: "signal-interrupted",
+            message: `interrupted by ${signal}`,
+            failedAt: systemClock.nowIso(),
+          })
+          await persistJournal(store, opts.paths.agentRoot, failed)
+          if (archive) {
+            finalizeChatReportRunStatus({
+              agentRoot: opts.paths.agentRoot,
+              layout: archive,
+              runId: failed.runId,
+              runStatus: "failed",
+            })
+          }
+          log.error("run interrupted", { runId: failed.runId, job: job.name, signal })
+        }
+      } catch (error) {
+        log.error("signal fail journal", {
+          detail: error instanceof Error ? error.message : "unknown",
+        })
+      } finally {
+        try {
+          lock.release()
+        } catch {
+          // already released
+        }
+        process.exit(143)
+      }
+    })()
+  }
+  process.once("SIGTERM", onSignal)
+  process.once("SIGINT", onSignal)
   try {
     const state = new StateStore(join(opts.paths.agentRoot, "state"))
 
@@ -1822,7 +1874,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       exitCode: code === "lock-held" ? 3 : 1,
     }
   } finally {
-    lock.release()
+    process.off("SIGTERM", onSignal)
+    process.off("SIGINT", onSignal)
+    if (!signalHandled) lock.release()
     if (drainResearchAfter && job.name !== "research") {
       scheduleResearchDrain(opts.paths)
     }

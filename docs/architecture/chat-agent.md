@@ -71,6 +71,9 @@ little as possible itself:
 - Ordinary recall questions never take the writer lock.
 - Ask-mode chat checks instruction integrity only (`AGENTS.md`, `skills/**`) after
   each turn — host cron jobs may mutate state concurrently without failing chat.
+- Incomplete `running` journals orphaned by SIGTERM (pre-seal) are abandoned by
+  `wait-idle` / `tc status --heal-apply` / `tc run fail <id>` so redeploy is not
+  blocked forever. `runJob` marks `signal-interrupted` on SIGTERM/SIGINT.
 
 ## Design
 

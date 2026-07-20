@@ -40,7 +40,9 @@ Operator decisions for the remaining gaps:
    never gates completion.
 6. Journal `status` is `running | complete | failed`. Interrupted or errored
    runs are marked `failed` (terminal); `findIncompleteRuns` only resumes
-   `running` journals. Failed runs are not auto-resumed.
+   `running` journals. Failed runs are not auto-resumed. SIGTERM/SIGINT during
+   a job persist `signal-interrupted`. Pre-seal orphans are abandoned (not
+   resumed) via age gates / operator `tc run fail`.
 7. **Legacy compatibility (post-ADR):** pre-status archive journals are accepted
    in-memory only — `phase: "complete"` ⇒ `status: "complete"`, otherwise
    `running` (or `failed` when a `failure` object is present). Historical files
