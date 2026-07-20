@@ -31,8 +31,8 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
 
 Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
 
-- `fomo-trader-sync` (daily) — leaderboard → candidate wallets + X nominations
-- `fomo-signal-scan` (30m) — feed/trending/alerts → dated signals + bounded research enqueue
+- `fomo-trader-sync` (6h) — leaderboard → candidate wallets + X nominations
+- `fomo-signal-scan` (20m) — feed/trending/alerts → dated signals + bounded research enqueue
 - `fomo-x-source-review` (6h) — one pending nomination → bounded X history + isolated classifier
 - `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles
 - `narrative-source-review` (daily) — utility promotion and gated X follow/unfollow

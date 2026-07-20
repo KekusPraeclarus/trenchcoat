@@ -295,7 +295,7 @@
   "fomo": {
     "enabled": false,
     "shadow_mode": true,
-    "daily_navigation_budget": 200,
+    "daily_navigation_budget": 300,
     "min_delay_ms": 1500,
     "max_delay_ms": 3500,
     "navigation_timeout_ms": 30000,

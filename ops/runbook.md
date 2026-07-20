@@ -38,8 +38,8 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `fc-source-review` | daily (Farcaster follow-graph sync) |
 | `narrative-scan` | every 6h |
 | `research` | Immediate drain when social/narrative/fomo enqueue; hourly cron remains as backstop |
-| `fomo-trader-sync` | daily (host-only; skips unless `fomo.enabled` + gates) |
-| `fomo-signal-scan` | every 30m (host-only; skips unless `fomo.enabled` + gates) |
+| `fomo-trader-sync` | every 6h (host-only; skips unless `fomo.enabled` + gates) |
+| `fomo-signal-scan` | every 20m (host-only; skips unless `fomo.enabled` + gates) |
 | `fomo-x-source-review` | every 6h (one nomination; requires `fomo.x_source_review.enabled`) |
 | `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
 | `narrative-source-review` | daily (promote/demote + gated follow) |
