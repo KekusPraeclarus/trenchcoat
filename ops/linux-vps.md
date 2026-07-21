@@ -145,8 +145,8 @@ systemctl --user status trenchcoat-router trenchcoat-listener trenchcoat-channel
 ```
 
 If router crash-loops with `Could not locate the bindings file` / `better_sqlite3.node`,
-the native addon failed to compile — redeploy (installer now fails closed) or:
-`cd ~/.trenchcoat/runtime && pnpm rebuild better-sqlite3 && systemctl --user restart trenchcoat-router`.
+pnpm ignored the native build (need `pnpm.onlyBuiltDependencies` + redeploy). Emergency:
+`cd ~/.trenchcoat/runtime/node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3 && npx node-gyp rebuild && systemctl --user restart trenchcoat-router`.
 
 Installer writes `~/bin/trenchcoat-deploy` → `~/.trenchcoat/bin/trenchcoat-deploy`.
 

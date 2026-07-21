@@ -194,15 +194,16 @@ deploy_runtime() {
   cp "$REPO_ROOT/pnpm-workspace.yaml" "$RUNTIME_STAGING/pnpm-workspace.yaml"
   (
     cd "$RUNTIME_STAGING"
-    # ignore-scripts skips lifecycle hooks for speed/safety, but better-sqlite3
-    # (router SQLite) needs its native addon — rebuild that one explicitly
-    pnpm install --prod --ignore-scripts --config.confirmModulesPurge=false >/dev/null
-    if ! pnpm rebuild better-sqlite3; then
-      echo "pnpm rebuild better-sqlite3 failed — router will not start" >&2
+    # pnpm 10 blocks lifecycle scripts unless onlyBuiltDependencies / allowBuilds
+    # lists them. Do not use --ignore-scripts here — that leaves better-sqlite3
+    # without better_sqlite3.node and crash-loops the router.
+    if ! pnpm install --prod --config.confirmModulesPurge=false; then
+      echo "pnpm install --prod failed in runtime staging" >&2
       exit 1
     fi
     if ! find node_modules -name better_sqlite3.node -type f | grep -q .; then
-      echo "better_sqlite3.node missing after rebuild — refusing to deploy" >&2
+      echo "better_sqlite3.node missing after prod install — refusing to deploy" >&2
+      echo "check package.json pnpm.onlyBuiltDependencies and pnpm-workspace.yaml allowBuilds" >&2
       exit 1
     fi
   )
