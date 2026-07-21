@@ -13,6 +13,7 @@ import {
   flipElapsedAwaitingReply,
   pruneTrackingFile,
   activeMatchableRequests,
+  trackingChainAllows,
   type TrackingConfigSlice,
 } from "../../src/discord/tracking-state.js"
 import { emptyTrackingFile } from "../../src/discord/store.js"
@@ -78,10 +79,12 @@ describe("tracking state transitions", () => {
       confidence: "high",
       nowIso: NOW,
       config: CFG,
+      chain: "robinhood",
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.kind).toBe("active")
+    expect(result.request.chain).toBe("robinhood")
     expect(result.reactMessageIds).toEqual(["1000000000000000010"])
     expect(countActiveForUser(result.file, GUILD, USER, NOW)).toBe(1)
   })
@@ -463,5 +466,13 @@ describe("tracking match sanitize", () => {
     const candidates = [{ provenance: "twitter:@x", text: "$FOO" }]
     expect(parseTrackingMatchOutput("not json", new Set(["trk-ok123456"]), candidates, 10)).toEqual([])
     expect(parseTrackingMatchOutput('{"matches":[]}\nextra', new Set(["trk-ok123456"]), candidates, 10)).toEqual([])
+  })
+})
+
+describe("tracking chain constraint", () => {
+  it("allows any chain when request has none; drops cross-chain when set", () => {
+    expect(trackingChainAllows(undefined, "solana")).toBe(true)
+    expect(trackingChainAllows("robinhood", "robinhood")).toBe(true)
+    expect(trackingChainAllows("robinhood", "solana")).toBe(false)
   })
 })

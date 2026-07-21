@@ -52,7 +52,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 [ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
-| `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, local main ff, runtime deploy; never activates agent or starts canary |
+| `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary |
 | `incident-remediate` | hourly (default **off** until `incident_remediation.enabled` + `schedule_enabled`) — scan health/logs, triage, gated fix/publish |
 | `incident-remediate-weekly` | Monday 08:00 local (default **off**) — one deferred remediation; never feeds the policy harness |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
@@ -327,7 +327,10 @@ predeploy backup only when migration itself corrupted host state.
   `agent/state/wallets.json` already has entries. Autonomous discovery can
   populate an empty file via `tc run wallet-discovery`. Wallet scans require a
   seeded or discovered eligible wallet.
-- **Wallet jobs** — `wallet-discovery` (6h), `wallet-scan-solana`
+- **Wallet jobs** — `wallet-discovery` (6h), `wallet-runner-discovery` (30m,
+  shadow/disabled by default), `wallet-scan-solana`
+  (5m), `wallet-scan-evm` (15m), `wallet-review` (daily). Runner discovery and
+  convergence stay off until canary gates in ADR 020 pass.
   (5m), and `wallet-scan-evm` (15m) run deterministic host collection plus an
   evidence-only wallet agent over frozen snapshots. `wallet-review` (daily)
   remains host-only. Need `HELIUS_API_KEY`

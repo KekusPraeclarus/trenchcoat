@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.13",
+    "pnpm": ">=10 <12"
   },
+  "packageManager": "pnpm@10.18.3",
   "bin": {
     "trenchcoat": "./dist/cli.js",
     "tc": "./dist/cli.js"

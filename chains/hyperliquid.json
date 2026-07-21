@@ -3,7 +3,7 @@
   "slug": "hyperliquid",
   "display": "Hyperliquid",
   "family": "evm",
-  "aliases": ["hyperevm", "hl"],
+  "aliases": ["hyperevm", "hl", "hype"],
   "geckoterminalNetwork": "hyperevm",
   "dexscreenerChainId": "hyperevm",
   "nativeBenchmark": "hyperevm:hype",

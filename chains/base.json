@@ -11,6 +11,14 @@
   "addressFormat": "evm",
   "walletTracking": "infura",
   "evmChainId": 8453,
+  "quoteAssets": {
+    "acceptNative": true,
+    "allowlist": [
+      "0x4200000000000000000000000000000000000006",
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "0xfde4C96c8593536E31F22390F270C48AAe055878"
+    ]
+  },
   "capabilities": {
     "research": true,
     "discordWatch": true,

@@ -160,6 +160,7 @@ describe("empty collector prerequisites", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
     const report = await runWalletDiscovery({
       agentRoot: root,
@@ -182,6 +183,7 @@ describe("empty collector prerequisites", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
     const report = await runWalletScan({
       agentRoot: root,
@@ -204,6 +206,7 @@ describe("empty collector prerequisites", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
 
     const result = await runJob({
@@ -235,6 +238,7 @@ describe("empty collector prerequisites", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
     const collection = await collectForJob({
       job: "wallet-scan-solana",

@@ -80,6 +80,7 @@ describe("job preconditions", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
 
     const pre = await evaluateJobPreconditions({

@@ -22,6 +22,7 @@ const EMPTY: WalletsFile = {
   transitions: [],
   pendingTransitionIds: [],
   cursors: [],
+      exclusions: [],
 }
 
 const thresholds = {
@@ -86,20 +87,28 @@ describe("wallet discovery registration", () => {
 })
 
 describe("solana buyer extraction", () => {
-  it("extracts owners with positive mint balance delta", () => {
+  it("extracts owners with positive mint balance delta and native spend", () => {
+    const buyer = "Buyer111111111111111111111111111111111111111"
     const buyers = extractSolanaBuyersFromTransaction({
+      slot: 1,
+      blockTime: 1_700_000_000,
       meta: {
         err: null,
+        preBalances: [2_000_000_000],
+        postBalances: [1_500_000_000],
         preTokenBalances: [],
         postTokenBalances: [{
           mint: SOL,
-          owner: "Buyer111111111111111111111111111111111111111",
+          owner: buyer,
           uiTokenAmount: { amount: "1000" },
         }],
       },
-      transaction: { message: { accountKeys: [SOL] } },
+      transaction: {
+        signatures: ["sig"],
+        message: { accountKeys: [buyer] },
+      },
     }, SOL)
-    expect(buyers).toEqual(["Buyer111111111111111111111111111111111111111"])
+    expect(buyers).toEqual([buyer])
   })
 })
 

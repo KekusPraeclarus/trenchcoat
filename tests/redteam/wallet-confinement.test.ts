@@ -63,6 +63,7 @@ describe("wallet redteam confinement", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     }))
     const before = captureIntegritySnapshot(agentRoot)
     mkdirSync(join(agentRoot, "reports", "wallet-run"), { recursive: true })

@@ -18,7 +18,7 @@ const EMPTY_WALLETS = {
   wallets: [] as [],
   transitions: [] as [],
   pendingTransitionIds: [] as [],
-  cursors: [] as [],
+  cursors: [] as [], exclusions: [] as [],
 }
 
 describe("operator wallet seed", () => {

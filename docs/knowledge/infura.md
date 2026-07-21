@@ -33,6 +33,7 @@ Published (MetaMask pricing, credit model):
 | Throughput | **500 credits/second** |
 | `eth_getLogs` | 255 credits |
 | `eth_getBlockByNumber` | 80 credits |
+| `eth_getTransactionReceipt` / `eth_getTransactionByHash` / `eth_getCode` | 80 credits |
 
 Wallet scans are getLogs-heavy. Host pacing (`src/collectors/wallets/infura.ts`
 via the shared `RateGate`):

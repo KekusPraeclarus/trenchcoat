@@ -14,6 +14,13 @@ export const ChainManifestSecuritySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("rugcheck") }),
 ])
 
+export const ChainQuoteAssetsSchema = z.object({
+  /** Allow native gas spend as quote evidence for a verified buy */
+  acceptNative: z.boolean().default(true),
+  /** Wrapped-native / stablecoin contract or mint addresses (case-insensitive compare) */
+  allowlist: z.array(z.string().min(1).max(128)).max(32).default([]),
+})
+
 export const ChainManifestSchema = z.object({
   schema: z.literal(1),
   slug: z.string().regex(/^[a-z][a-z0-9-]{1,31}$/u),
@@ -27,6 +34,7 @@ export const ChainManifestSchema = z.object({
   addressFormat: z.enum(["evm", "base58-32"]),
   walletTracking: z.enum(["helius", "infura", "robinhood-public", "unsupported"]),
   evmChainId: z.number().int().positive().optional(),
+  quoteAssets: ChainQuoteAssetsSchema.default({ acceptNative: true, allowlist: [] }),
   capabilities: ChainCapabilitiesSchema,
 }).superRefine((m, ctx) => {
   if (m.capabilities.mainTrack && !m.securityScanner) {

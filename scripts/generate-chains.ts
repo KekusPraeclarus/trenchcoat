@@ -71,6 +71,10 @@ function render(manifests: readonly ChainManifest[]): string {
     if (m.evmChainId != null) {
       lines.push(`    evmChainId: ${m.evmChainId},`)
     }
+    lines.push(`    quoteAssets: Object.freeze({`)
+    lines.push(`      acceptNative: ${m.quoteAssets.acceptNative},`)
+    lines.push(`      allowlist: Object.freeze(${JSON.stringify(m.quoteAssets.allowlist)}) as readonly string[],`)
+    lines.push(`    }),`)
     lines.push(`    capabilities: Object.freeze(${JSON.stringify(m.capabilities)}),`)
     lines.push("  }),")
   }

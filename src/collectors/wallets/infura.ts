@@ -33,6 +33,8 @@ const INFURA_CREDIT_COST: Readonly<Record<string, number>> = Object.freeze({
   eth_call: 80,
   eth_getBalance: 80,
   eth_getTransactionReceipt: 80,
+  eth_getTransactionByHash: 80,
+  eth_getCode: 80,
 })
 
 const TRANSFER_TOPIC = `0x${Buffer.from(keccak_256(new TextEncoder().encode("Transfer(address,address,uint256)"))).toString("hex")}`
@@ -86,7 +88,15 @@ export async function getFinalizedBlockNumber(opts: InfuraClientOptions): Promis
 export async function getTransferLogs(
   opts: InfuraClientOptions,
   args: Readonly<{ fromBlock: number; toBlock: number; token?: string }>,
-): Promise<Array<{ removed?: boolean; topics: string[]; data: string; transactionHash: string }>> {
+): Promise<Array<{
+  removed?: boolean
+  topics: string[]
+  data: string
+  transactionHash: string
+  address?: string
+  blockNumber?: string
+  logIndex?: string
+}>> {
   const result = await ethCall(opts, "eth_getLogs", [{
     fromBlock: `0x${args.fromBlock.toString(16)}`,
     toBlock: `0x${args.toBlock.toString(16)}`,
@@ -98,6 +108,9 @@ export async function getTransferLogs(
     topics: string[]
     data: string
     transactionHash: string
+    address?: string
+    blockNumber?: string
+    logIndex?: string
   }>) ?? []
 }
 

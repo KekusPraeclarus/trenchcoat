@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV14 } from "../../src/migrations/config.js"
+import { migrateConfigToV15 } from "../../src/migrations/config.js"
 import { ensureArchive, runArchiveDir } from "../../src/lib/archive.js"
 import { StateStore } from "../../src/lib/state.js"
 import { validateAndEnqueueResearchCandidates } from "../../src/orchestrator/research-candidates.js"
@@ -19,7 +19,7 @@ const TOKEN2 = "So11111111111111111111111111111111111111113"
 const RUN = "list-scan-rc-1"
 
 function writeMinimalConfig(dir: string): void {
-  const cfg = ConfigSchema.parse(migrateConfigToV14({
+  const cfg = ConfigSchema.parse(migrateConfigToV15({
     schema: 5,
     twitter: {
       operator_list_urls: [

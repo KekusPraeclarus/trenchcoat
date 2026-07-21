@@ -12,6 +12,11 @@ export type SecurityScanner =
   | Readonly<{ kind: "goplus"; chainId: string }>
   | Readonly<{ kind: "rugcheck" }>
 
+export type ChainQuoteAssets = Readonly<{
+  acceptNative: boolean
+  allowlist: readonly string[]
+}>
+
 export type ChainEntry = Readonly<{
   slug: string
   display: string
@@ -24,6 +29,7 @@ export type ChainEntry = Readonly<{
   addressFormat: AddressFormat
   walletTracking: "helius" | "infura" | "robinhood-public" | "unsupported"
   evmChainId?: number
+  quoteAssets: ChainQuoteAssets
   capabilities: ChainCapabilities
 }>
 

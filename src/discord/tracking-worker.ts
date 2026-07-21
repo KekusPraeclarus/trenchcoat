@@ -19,6 +19,7 @@ import {
   createOrGetDelivery,
   isDeliveryBlacklisted,
   pruneTrackingFile,
+  trackingChainAllows,
   type TrackingConfigSlice,
 } from "./tracking-state.js"
 import { addDaysIso } from "./tracking-ids.js"
@@ -120,6 +121,7 @@ async function handleHit(args: Readonly<{
       const file = store.loadTracking()
       const request = file.requests.find((r) => r.trackingId === hit.trackingId)
       if (!request || request.status !== "active") return undefined
+      if (!trackingChainAllows(request.chain, researchChain)) return undefined
       const created = createOrGetDelivery({
         file,
         trackingId: hit.trackingId,
@@ -147,17 +149,22 @@ async function handleHit(args: Readonly<{
     return
   }
 
-  // Resolve tokenQuery → canonical identity via host quick search
+  // Resolve with the request's chain constraint when present (cross-chain fail closed)
+  const requestBefore = store.loadTracking().requests.find((r) => r.trackingId === hit.trackingId)
+  if (!requestBefore || requestBefore.status !== "active") return
   const resolved = await resolveResearchSubject({
     subject: hit.resolveSubject,
+    ...(requestBefore.chain ? { chainHint: requestBefore.chain } : {}),
   })
   if (resolved.status !== "resolved") return
   const identity = resolved.identity
+  if (!trackingChainAllows(requestBefore.chain, identity.chain)) return
 
   const locked = await withStoreLockRetry(layout.lock, async () => {
     let file = store.loadTracking()
     const request = file.requests.find((r) => r.trackingId === hit.trackingId)
     if (!request || request.status !== "active") return { action: "skip" as const }
+    if (!trackingChainAllows(request.chain, identity.chain)) return { action: "skip" as const }
 
     const created = createOrGetDelivery({
       file,

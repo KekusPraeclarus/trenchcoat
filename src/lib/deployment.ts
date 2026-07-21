@@ -9,7 +9,7 @@ import { writeAtomicFile } from "./fs-atomic.js"
 export const DEPLOYMENT_MANIFEST_SCHEMA = 2 as const
 
 /** Must match live config schema in src/lib/config.ts / migrations */
-export const DEPLOYMENT_CONFIG_SCHEMA = 14 as const
+export const DEPLOYMENT_CONFIG_SCHEMA = 15 as const
 
 export type Sha256Digest = `sha256:${string}`
 

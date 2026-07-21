@@ -2,7 +2,7 @@
 description: ADR — Bounded harness improvement loop with sealed-audit feedback and agent-gated promotion.
 status: accepted
 date: 2026-07-16
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # ADR 005 — Bounded harness improvement loop
@@ -26,10 +26,12 @@ retains kill switches and rollback.
    `~/.trenchcoat/harness-improvements/`. The `harness-improve` job may run on a
    schedule, plan with a read-only agent, require an independent plan review,
    build only after approval, grade with single-use holdout replay, require an
-   independent implementation review, fast-forward **local** `main`, and deploy
-   the host runtime — but it never pushes to `origin`, never rewrites history,
-   never activates `~/.trenchcoat/agent` while the all-work drain gate is busy,
-   and never starts a canary until activation.
+   independent implementation review, fast-forward **`origin/main` then local
+   `main`** (`harness_improvement.push_origin`, default `true`), and deploy the
+   host runtime — but it never rewrites history, never activates
+   `~/.trenchcoat/agent` while the all-work drain gate is busy, and never starts
+   a canary until activation. Operator kill switch: `push_origin: false` keeps
+   local-only integrate.
 3. Autonomous mutation is limited to
    `agent/skills/decision-policy/policy.json`. Audit maths, harness code,
    router, chat, collectors, secrets, docs, and evaluation fixtures are

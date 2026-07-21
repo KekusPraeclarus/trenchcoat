@@ -20,6 +20,15 @@ import {
   sanitizeTrackingReason,
 } from "./tracking-sanitize.js"
 
+/** Fail closed when the request names a chain and the resolved identity differs */
+export function trackingChainAllows(
+  requestChain: TrackingRequestRecord["chain"] | undefined,
+  resolvedChain: string,
+): boolean {
+  if (!requestChain) return true
+  return requestChain === resolvedChain
+}
+
 export type TrackingConfigSlice = Readonly<{
   max_active_per_user: number
   ttl_days: number
@@ -84,6 +93,7 @@ export function applyTrackAction(args: Readonly<{
   confidence: "high" | "low"
   nowIso: string
   config: TrackingConfigSlice
+  chain?: TrackingRequestRecord["chain"]
   duplicateOfId?: string
   confirmTentativeId?: string
 }>): TrackActionResult {
@@ -167,6 +177,8 @@ export function applyTrackAction(args: Readonly<{
   const shortLabel = args.shortLabel.trim().slice(0, 64)
   if (!description || !shortLabel) return { ok: false, reason: "empty-description" }
 
+  const chainFields = args.chain ? { chain: args.chain } : {}
+
   if (args.confidence === "low") {
     const tentative: TrackingRequestRecord = {
       trackingId: newTrackingId(Date.parse(args.nowIso)),
@@ -176,6 +188,7 @@ export function applyTrackAction(args: Readonly<{
       userId: args.userId,
       description,
       shortLabel,
+      ...chainFields,
       status: "tentative",
       createdAt: args.nowIso,
       updatedAt: args.nowIso,
@@ -204,6 +217,7 @@ export function applyTrackAction(args: Readonly<{
       userId: args.userId,
       description,
       shortLabel,
+      ...chainFields,
       status: "pending-capacity",
       createdAt: args.nowIso,
       updatedAt: args.nowIso,
@@ -231,6 +245,7 @@ export function applyTrackAction(args: Readonly<{
     userId: args.userId,
     description,
     shortLabel,
+    ...chainFields,
     status: "active",
     createdAt: args.nowIso,
     updatedAt: args.nowIso,

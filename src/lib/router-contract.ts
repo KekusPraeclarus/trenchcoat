@@ -80,3 +80,16 @@ export function renderWalletLifecycleLine(transition: Readonly<{
   const line = `wallet ${verb}: ${transition.chain}:${short} — ${transition.reasonLine}`
   return [...line].slice(0, 280).join("")
 }
+
+export function renderWalletConvergenceLine(signal: Readonly<{
+  chain: string
+  tokenAddress: string
+  walletCount: number
+  windowMinutes: number
+}>): string {
+  const token = signal.tokenAddress.length > 12
+    ? `${signal.tokenAddress.slice(0, 6)}…${signal.tokenAddress.slice(-4)}`
+    : signal.tokenAddress
+  const line = `UNVERIFIED WALLET CONVERGENCE: ${signal.walletCount} tracked wallets on ${signal.chain}:${token} within ${signal.windowMinutes}m`
+  return [...line].slice(0, 280).join("")
+}

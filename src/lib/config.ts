@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV14 } from "../migrations/config.js"
+import { migrateConfigToV15 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(14),
+  schema: z.literal(15),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -223,6 +223,8 @@ export const ConfigSchema = z.object({
     test_command: z.string().min(1).max(64).default("test:all"),
     require_two_epochs: z.boolean().default(true),
     integrate_local_main: z.boolean().default(true),
+    /** After ff-only integrate, push candidate → origin/main (INV-S24) */
+    push_origin: z.boolean().default(true),
     deploy_runtime: z.boolean().default(true),
     defer_agent_activation: z.boolean().default(true),
     planner_model: z.string().min(1).max(128).default("composer-2.5"),
@@ -245,6 +247,7 @@ export const ConfigSchema = z.object({
     test_command: "test:all",
     require_two_epochs: true,
     integrate_local_main: true,
+    push_origin: true,
     deploy_runtime: true,
     defer_agent_activation: true,
     planner_model: "composer-2.5",
@@ -349,6 +352,44 @@ export const ConfigSchema = z.object({
       readd_cooldown_days: z.number().int().default(30),
       readd_min_new_events: z.number().int().default(5),
     }),
+    runner_discovery: z.object({
+      enabled: z.boolean().default(false),
+      shadow_mode: z.boolean().default(true),
+      interval_minutes: z.number().int().min(5).max(1_440).default(30),
+      max_age_hours: z.number().int().min(1).max(168).default(24),
+      min_liquidity_usd: z.number().min(0).default(50_000),
+      min_return_6h: z.number().default(1.0),
+      min_volume_6h_usd: z.number().min(0).default(250_000),
+      buyer_window_minutes: z.number().int().min(1).max(1_440).default(30),
+      top_buyers_per_runner: z.number().int().min(1).max(100).default(25),
+      min_runners_for_candidate: z.number().int().min(1).max(20).default(2),
+      sighting_lookback_days: z.number().int().min(1).max(90).default(30),
+      max_new_candidates_per_run: z.number().int().min(1).max(500).default(100),
+      max_active_candidates: z.number().int().min(1).max(5_000).default(500),
+      chains: z.array(z.enum(["solana", "ethereum", "base", "robinhood"])).min(1).max(8).default([
+        "solana",
+        "ethereum",
+        "base",
+        "robinhood",
+      ]),
+      anti_automation: z.object({
+        max_buys_per_hour: z.number().int().min(1).max(1_000).default(20),
+        max_distinct_tokens_per_day: z.number().int().min(1).max(1_000).default(30),
+        same_slot_ratio: z.number().min(0).max(1).default(0.5),
+        same_slot_min_buys: z.number().int().min(1).max(1_000).default(20),
+        same_funder_cluster_max: z.number().int().min(2).max(100).default(4),
+      }).default({}),
+    }).default({}),
+    convergence: z.object({
+      enabled: z.boolean().default(false),
+      shadow_mode: z.boolean().default(true),
+      min_wallets: z.number().int().min(2).max(50).default(4),
+      window_minutes: z.number().int().min(1).max(1_440).default(15),
+      max_token_age_hours: z.number().int().min(1).max(168).default(24),
+      cooldown_hours: z.number().int().min(1).max(168).default(6),
+      max_alerts_per_day: z.number().int().min(0).max(100).default(10),
+      max_enqueues_per_day: z.number().int().min(0).max(50).default(5),
+    }).default({}),
   }),
   fomo: z.object({
     enabled: z.boolean().default(false),
@@ -622,7 +663,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV14(raw))
+  return ConfigSchema.parse(migrateConfigToV15(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

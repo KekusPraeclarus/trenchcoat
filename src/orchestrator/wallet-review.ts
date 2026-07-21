@@ -13,7 +13,7 @@ import {
 import { aggregateWalletPerformance } from "../wallets/outcomes.js"
 import { reviewWalletLifecycle } from "../wallets/review.js"
 import { transitionToRouterEvent } from "../wallets/lifecycle.js"
-import { classifyHardExclusion, type ExclusionSubject } from "../wallets/exclusions.js"
+import { classifyHardExclusion, exclusionSubjectsFromEvidence, type ExclusionSubject } from "../wallets/exclusions.js"
 import type { HardExclusion } from "../wallets/scoring.js"
 import {
   blendWalletScores,
@@ -149,8 +149,14 @@ export async function runWalletReview(args: Readonly<{
   }
 
   const hardExclusions = new Map<string, HardExclusion>()
+  const subjects = new Map<string, ExclusionSubject>(
+    exclusionSubjectsFromEvidence(file.exclusions ?? []),
+  )
+  if (args.hardExclusionSubjects) {
+    for (const [id, subject] of args.hardExclusionSubjects) subjects.set(id, subject)
+  }
   for (const wallet of file.wallets) {
-    const subject = args.hardExclusionSubjects?.get(wallet.walletId)
+    const subject = subjects.get(wallet.walletId)
     if (!subject) continue
     const reason = classifyHardExclusion(subject)
     if (reason) hardExclusions.set(wallet.walletId, reason)

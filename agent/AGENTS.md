@@ -75,5 +75,13 @@ chars. `refs` must be `state/…` or same-run `inbox/<run-id>/…` paths that al
 exist as frozen regular files (host rejects traversal, cross-run, missing, and
 mutable refs; same-run inbox refs are canonicalized to sealed archive paths before
 ingress). Known `verificationRule` values include `narrative.emergence`,
-`narrative.fade`, `rotation`, `token.up.72h`, `token.down.72h`,
-`sentiment.collapse`.
+`narrative.fade`, `narrative.development`, `rotation`, `token.up.72h`,
+`token.down.72h`, `sentiment.collapse`.
+
+For a genuinely new update inside a narrative already in `state/narratives/log.jsonl`
+(major product/ecosystem catalyst, or the trending name set inside a rotation
+moving), use `type: "narrative-development"` with `direction: "rotation"`,
+`verificationRule: "narrative.development"`, subject = the narrative slug. Do not
+restate the narrative's stage in `text`, and only propose when the catalyst or
+name set is new — the host rejects developments that repeat a recent broadcast on
+the same narrative.

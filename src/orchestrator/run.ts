@@ -49,6 +49,7 @@ import {
   recordPairedEpisode,
 } from "../harness/paired.js"
 import { runWalletDiscovery } from "./wallet-discovery.js"
+import { runWalletRunnerDiscovery } from "./wallet-runner-discovery.js"
 import { runWalletScan } from "./wallet-scan.js"
 import { runWalletReview } from "./wallet-review.js"
 import { loadConfig } from "../lib/config.js"
@@ -786,12 +787,24 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         `${JSON.stringify(walletHostReport, null, 2)}\n`,
       )
     }
+    if (job.name === "wallet-runner-discovery" && !opts.dryCollect) {
+      walletHostReport = await runWalletRunnerDiscovery({
+        agentRoot: opts.paths.agentRoot,
+        archiveRoot: opts.paths.archiveRoot,
+        runId,
+      })
+      writeFileSync(
+        join(reportDir, "wallet-runner-discovery.json"),
+        `${JSON.stringify(walletHostReport, null, 2)}\n`,
+      )
+    }
     if (job.name === "wallet-scan-solana" && !opts.dryCollect) {
       walletHostReport = await runWalletScan({
         agentRoot: opts.paths.agentRoot,
         archiveRoot: opts.paths.archiveRoot,
         runId,
         family: "solana",
+        blockExternalEffects: canary.blockExternalEffects,
       })
       writeFileSync(
         join(reportDir, "wallet-scan.json"),
@@ -804,6 +817,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         archiveRoot: opts.paths.archiveRoot,
         runId,
         family: "evm",
+        blockExternalEffects: canary.blockExternalEffects,
       })
       writeFileSync(
         join(reportDir, "wallet-scan.json"),

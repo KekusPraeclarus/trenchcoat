@@ -5,6 +5,7 @@ import { StateStore } from "../lib/state.js"
 import { systemClock } from "../lib/clock.js"
 import { discoverSolanaEarlyBuyers } from "../collectors/wallets/helius-provider.js"
 import {
+  createEvmRunCache,
   discoverEvmEarlyBuyers,
   networkForChain,
   type EvmClientOptions,
@@ -13,6 +14,7 @@ import {
   registerWalletCandidates,
   type WalletDiscoverySighting,
 } from "../wallets/discovery.js"
+import { reconcileInvalidFomoWallets } from "../wallets/fomo-reconcile.js"
 import type { WalletScanCursor, WatchlistFile } from "../contracts/schemas.js"
 
 export type WalletDiscoverySkippedReason =
@@ -31,6 +33,7 @@ export type WalletDiscoveryReport = Readonly<{
   sightings: number
   candidatesAdded: number
   cursorsUpdated: number
+  fomoReconciled: number
   errors: readonly string[]
 }>
 
@@ -72,6 +75,11 @@ function upsertCursor(
   ))
 }
 
+function quoteAssetsFor(chainSlug: string) {
+  const chain = getChain(chainSlug)
+  return chain?.quoteAssets ?? { acceptNative: true, allowlist: [] as readonly string[] }
+}
+
 export async function runWalletDiscovery(args: Readonly<{
   agentRoot: string
   archiveRoot: string
@@ -84,6 +92,22 @@ export async function runWalletDiscovery(args: Readonly<{
   const archive = await ensureArchive(args.archiveRoot)
   const nowIso = systemClock.nowIso()
   let file = store.loadWallets()
+  const reconciled = reconcileInvalidFomoWallets(file, nowIso, args.runId)
+  file = reconciled.file
+  const fomoReconciled = reconciled.excluded.length + reconciled.dropped.length
+  if (!reconciled.unchanged && !args.dryRun) {
+    await writeJsonRecord(
+      join(archive.wallets, `${args.runId}-fomo-reconcile.json`),
+      {
+        schema: 1,
+        runId: args.runId,
+        excluded: reconciled.excluded,
+        dropped: reconciled.dropped,
+        transitions: reconciled.transitions.map((t) => t.transitionId),
+      } as never,
+    )
+  }
+
   const subjects = tokenSubjects(store.loadWatchlist())
   const eligibleTokens = subjects.length
   const supported = subjects.filter((subject) => {
@@ -104,6 +128,7 @@ export async function runWalletDiscovery(args: Readonly<{
       sightings: 0,
       candidatesAdded: 0,
       cursorsUpdated: 0,
+      fomoReconciled,
       errors: [],
     }
     await writeJsonRecord(join(archive.wallets, `${args.runId}-discovery-report.json`), report as never)
@@ -111,6 +136,7 @@ export async function runWalletDiscovery(args: Readonly<{
   }
 
   if (eligibleTokens === 0) {
+    if (fomoReconciled > 0) await store.saveWallets(file)
     const report: WalletDiscoveryReport = {
       runId: args.runId,
       status: "skipped",
@@ -122,6 +148,7 @@ export async function runWalletDiscovery(args: Readonly<{
       sightings: 0,
       candidatesAdded: 0,
       cursorsUpdated: 0,
+      fomoReconciled,
       errors: [],
     }
     await writeJsonRecord(join(archive.wallets, `${args.runId}-discovery-report.json`), report as never)
@@ -129,6 +156,7 @@ export async function runWalletDiscovery(args: Readonly<{
   }
 
   if (supportedTokens === 0) {
+    if (fomoReconciled > 0) await store.saveWallets(file)
     const report: WalletDiscoveryReport = {
       runId: args.runId,
       status: "skipped",
@@ -140,6 +168,7 @@ export async function runWalletDiscovery(args: Readonly<{
       sightings: 0,
       candidatesAdded: 0,
       cursorsUpdated: 0,
+      fomoReconciled,
       errors: [],
     }
     await writeJsonRecord(join(archive.wallets, `${args.runId}-discovery-report.json`), report as never)
@@ -151,10 +180,12 @@ export async function runWalletDiscovery(args: Readonly<{
   let cursorsUpdated = 0
   let cursors = [...file.cursors]
   let providerAttempts = 0
+  const evmCache = createEvmRunCache()
 
   for (const subject of supported) {
     const chain = getChain(subject.chain)
     if (!chain || chain.walletTracking === "unsupported") continue
+    const quoteAssets = quoteAssetsFor(subject.chain)
     try {
       if (chain.walletTracking === "helius") {
         if (!heliusApiKey) {
@@ -168,6 +199,7 @@ export async function runWalletDiscovery(args: Readonly<{
           tokenMint: subject.tokenAddress,
           ...(existing ? { before: existing.cursor } : {}),
           maxPages: 2,
+          quoteAssets,
         })
         for (const address of result.buyers) {
           sightings.push({
@@ -190,7 +222,13 @@ export async function runWalletDiscovery(args: Readonly<{
         }
         await writeJsonRecord(
           join(archive.wallets, `${args.runId}-${subject.chain}-${subject.tokenAddress.slice(0, 12)}.json`),
-          { kind: "discovery", chain: subject.chain, token: subject.tokenAddress, buyers: [...result.buyers] },
+          {
+            kind: "discovery",
+            chain: subject.chain,
+            token: subject.tokenAddress,
+            buyers: [...result.buyers],
+            actionCount: result.actions.length,
+          },
         )
       } else {
         const network = networkForChain(subject.chain)
@@ -214,6 +252,8 @@ export async function runWalletDiscovery(args: Readonly<{
           tokenAddress: subject.tokenAddress,
           fromBlock,
           maxBlocks: network === "robinhood" ? 400 : 2_000,
+          quoteAssets,
+          cache: evmCache,
         })
         for (const address of result.buyers) {
           sightings.push({
@@ -234,7 +274,13 @@ export async function runWalletDiscovery(args: Readonly<{
         cursorsUpdated += 1
         await writeJsonRecord(
           join(archive.wallets, `${args.runId}-${subject.chain}-${subject.tokenAddress.slice(0, 12)}.json`),
-          { kind: "discovery", chain: subject.chain, token: subject.tokenAddress, buyers: [...result.buyers] },
+          {
+            kind: "discovery",
+            chain: subject.chain,
+            token: subject.tokenAddress,
+            buyers: [...result.buyers],
+            actionCount: result.actions.length,
+          },
         )
       }
     } catch (error) {
@@ -268,6 +314,7 @@ export async function runWalletDiscovery(args: Readonly<{
     sightings: sightings.length,
     candidatesAdded,
     cursorsUpdated,
+    fomoReconciled,
     errors,
   }
   await writeJsonRecord(join(archive.wallets, `${args.runId}-discovery-report.json`), report as never)

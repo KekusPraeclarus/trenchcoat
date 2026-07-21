@@ -47,6 +47,7 @@ function expectedDirection(type: BroadcastClaimType): BroadcastDirection {
     case "sentiment-collapse":
     case "token-downside":
       return "down"
+    case "narrative-development":
     case "rotation":
       return "rotation"
     case "wallet-lifecycle":

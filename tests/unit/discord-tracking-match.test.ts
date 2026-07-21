@@ -3,6 +3,7 @@ import { parseTrackingMatchOutput } from "../../src/discord/tracking-match.js"
 import { sanitizeTrackingReason, renderTrackingFoundHeader } from "../../src/discord/tracking-sanitize.js"
 import { validateTokenQueryAgainstCandidate } from "../../src/discord/tracking-token-query.js"
 import { parseTrackingMentionReview } from "../../src/discord/tracking-qualify.js"
+import { trackingChainAllows } from "../../src/discord/tracking-state.js"
 import { TRACKING_MATCH_PROMPT, TRACKING_MENTION_REVIEW_PROMPT } from "../../src/prompts/host.js"
 
 const CANDIDATES = [
@@ -106,5 +107,11 @@ describe("discord tracking mention review + header", () => {
       userId: "1000000000000000004",
       shortLabel: "RH AI projects",
     })).toBe("<@1000000000000000004> I found a token matching RH AI projects")
+  })
+
+  it("drops robinhood-constrained request against a solana resolve", () => {
+    // Host worker uses this after resolveResearchSubject — Solana $AI must not bind RH AI
+    expect(trackingChainAllows("robinhood", "solana")).toBe(false)
+    expect(trackingChainAllows("robinhood", "robinhood")).toBe(true)
   })
 })

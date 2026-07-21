@@ -133,10 +133,17 @@ fallback kept the agent on as analysis-only noise — not recovery.
   (`ops/fafo-fomo/gates.operator-override-2026-07-19.json`). Host config
   `enabled=true`, `shadow_mode=false` for trader_sync + signal_scan.
   Verified: `fomo-trader-sync` wrote leaderboard receipts; `fomo-signal-scan`
-  wrote hot signals; wallets gained `origin=fomo` candidates. Full multi-day
+  wrote hot signals. **Fomo must not register wallet candidates** (profile
+  addresses are not trading wallets); legacy `discoveredFrom: "fomo"` records
+  are quarantined (`invalid-fomo-profile-address`). Full multi-day
   FAFO sample/evaluate still pending — replace override when available.
   Smoke: `pnpm fomo:smoke`. Playbook: `ops/fafo-fomo/SHADOW-CANARY.md`.
   Optional: `TRENCHCOAT_LIVE_FOMO=1 pnpm vitest run tests/e2e/fomo-live.test.ts`.
+
+- **Runner wallet discovery / convergence (ADR 020)** — offline fixtures land;
+  live gates still open. Defaults `runner_discovery` / `convergence`
+  `enabled=false`, `shadow_mode=true`. Follow `ops/runner-wallet-canary.md`
+  before candidate writes or alerts.
 
 ## Deploy provenance / canary (docs only — not executed here)
 

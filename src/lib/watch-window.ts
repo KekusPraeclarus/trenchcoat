@@ -22,6 +22,7 @@ type ClaimType = AuditClaim["type"]
 const NARRATIVE_LIKE = new Set<ClaimType>([
   "narrative-emergence",
   "narrative-fade",
+  "narrative-development",
   "rotation",
 ])
 

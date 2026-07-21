@@ -10,6 +10,7 @@ import {
   type WorthinessSessionRunner,
 } from "./broadcast-worthiness.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
+import { assertNarrativeDevelopmentAllowed } from "./narrative-development.js"
 import {
   assertNarrativeBroadcastAllowed,
   restatesUnchangedNarrativeStage,
@@ -183,6 +184,18 @@ export async function ingestOutbox(args: Readonly<{
     })
     if (!stageGate.ok) {
       reject(stageGate.reason, rawHash)
+      continue
+    }
+
+    // In-meta developments bypass the stage gate but must be genuinely new
+    const developmentGate = assertNarrativeDevelopmentAllowed({
+      item,
+      narrativeLog: logAfter ?? logBefore,
+      recentClaims: claimIndex.claims,
+      nowIso: args.nowIso,
+    })
+    if (!developmentGate.ok) {
+      reject(developmentGate.reason, rawHash)
       continue
     }
 

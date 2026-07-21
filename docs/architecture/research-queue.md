@@ -42,7 +42,7 @@ Telegram confirmation state is **not** stored here — it lives in
   "firstSeen": "2026-07-17T09:00:00.000Z",
   "enqueuedAt": "2026-07-17T09:00:00.000Z",
   "enqueuedBy": "rr-…",
-  "trigger": "social | new-pools | narrative | revisit | operator",
+  "trigger": "social | new-pools | narrative | revisit | operator | wallet-convergence",
   "provenance": ["operator:telegram:rr-…"],
   "clusterCount": 1,
   "security": { "status": "pass | fail | pending", "flags": [] },
@@ -68,9 +68,10 @@ Deterministic sort at dequeue time, no model involvement:
 
 1. `operator` trigger (chat/CLI requests jump the queue)
 2. `revisit` entries whose `revisitAfter` has passed
-3. `narrative` entries from a newly observed narrative or a transition to `peaking`
-4. Independent-cluster count (descending)
-5. Explicit `priority`, then `firstSeen` ascending
+3. `wallet-convergence` entries from ≥4 tracked wallets buying a fresh token
+4. `narrative` entries from a newly observed narrative or a transition to `peaking`
+5. Independent-cluster count (descending)
+6. Explicit `priority`, then `firstSeen` ascending
 
 Security `fail` entries become terminal `rejected` and never reach an agent
 session. Gate runs in `runOperatorResearchNow` before synthesis.
@@ -134,6 +135,11 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   WBNB, …) and reserved chain symbols (`SOL`, `ETH`, …) are never enqueued.
   Default cap is `signal_scan.max_enqueues_per_day` (3). See
   [knowledge/fomo-family.md](../knowledge/fomo-family.md)
+- **Wallet convergence bridge** — after `wallet-scan-*`, host may enqueue
+  `trigger: "wallet-convergence"` (priority 70) when ≥4 event-time `tracking`
+  wallets buy the same fresh token. Independent of the unverified alert path;
+  capped by `wallets.convergence.max_enqueues_per_day`. See
+  [smart-wallets.md](./smart-wallets.md) and [ADR 020](../adr/020-runner-wallet-discovery.md)
 - **Expiry** — pending/ambiguous entries past `expiresAt` are swept
 - **Ambiguous** — held when DexScreener resolution cannot bind a canonical
   identity; operator should resubmit `chain:address`

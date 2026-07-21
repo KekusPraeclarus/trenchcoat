@@ -6,6 +6,7 @@ import { systemClock } from "../lib/clock.js"
 import { loadConfig } from "../lib/config.js"
 import { WorkspaceLock } from "../lib/lock.js"
 import { log } from "../lib/log.js"
+import { normalizeChainSlug } from "../lib/chains.js"
 import { ensureDiscordAgentWorkspace } from "./agent-setup.js"
 import {
   createDiscordRestClient,
@@ -13,7 +14,11 @@ import {
 } from "./bot-client.js"
 import { discordLayout } from "./paths.js"
 import { createDiscordStore, type DiscordStore } from "./store.js"
-import { TrackingIdSchema, type TrackingRequestRecord } from "./schemas.js"
+import {
+  DiscordChainSchema,
+  TrackingIdSchema,
+  type TrackingRequestRecord,
+} from "./schemas.js"
 import {
   applyDropAction,
   applyExtendAction,
@@ -32,6 +37,7 @@ const TrackingIntentOutputSchema = z.discriminatedUnion("action", [
     description: z.string().min(1).max(500),
     shortLabel: z.string().min(1).max(64),
     confidence: z.enum(["high", "low"]),
+    chain: z.string().max(16).optional(),
     duplicateOfId: TrackingIdSchema.optional(),
     confirmTentativeId: TrackingIdSchema.optional(),
   }),
@@ -60,6 +66,17 @@ export type TrackingIntentSessionRunner = (args: Readonly<{
   mode: "ask"
   sandbox: true
 }>) => Promise<{ status: "finished" | "error"; text?: string }>
+
+/** Host-normalize optional model chain hint; unknown → undefined (no constraint) */
+export function normalizeTrackingChainHint(
+  raw: string | undefined,
+): z.infer<typeof DiscordChainSchema> | undefined {
+  if (!raw?.trim()) return undefined
+  const slug = normalizeChainSlug(raw.trim())
+  if (!slug) return undefined
+  const parsed = DiscordChainSchema.safeParse(slug)
+  return parsed.success ? parsed.data : undefined
+}
 
 export function parseTrackingIntentOutput(raw: string): TrackingIntentOutput | undefined {
   const trimmed = raw.trim()
@@ -256,8 +273,8 @@ export async function handleTrackingMessage(args: Readonly<{
   if (intent.action === "track") {
     if (intent.duplicateOfId && !allowlist.has(intent.duplicateOfId)) return "failed"
     if (intent.confirmTentativeId && !allowlist.has(intent.confirmTentativeId)) return "failed"
-    const applied = applyTrackAction({
-      file,
+    const chain = normalizeTrackingChainHint(intent.chain)
+    const trackArgs = {
       guildId: args.guildId,
       channelId: args.channelId,
       messageId: args.messageId,
@@ -267,26 +284,18 @@ export async function handleTrackingMessage(args: Readonly<{
       confidence: intent.confidence,
       nowIso,
       config: cfg,
+      ...(chain ? { chain } : {}),
       ...(intent.duplicateOfId ? { duplicateOfId: intent.duplicateOfId } : {}),
       ...(intent.confirmTentativeId ? { confirmTentativeId: intent.confirmTentativeId } : {}),
-    })
+    }
+    const applied = applyTrackAction({ file, ...trackArgs })
     if (!applied.ok) return "failed"
     const saved = await withStoreLockRetry(layout.lock, async () => {
       const latest = store.loadTracking()
       // Re-apply against latest under lock for durable commit of this action's resulting record set
       const reapplied = applyTrackAction({
         file: pruneTrackingFile({ file: latest, nowIso, config: cfg }),
-        guildId: args.guildId,
-        channelId: args.channelId,
-        messageId: args.messageId,
-        userId: args.userId,
-        description: intent.description,
-        shortLabel: intent.shortLabel,
-        confidence: intent.confidence,
-        nowIso,
-        config: cfg,
-        ...(intent.duplicateOfId ? { duplicateOfId: intent.duplicateOfId } : {}),
-        ...(intent.confirmTentativeId ? { confirmTentativeId: intent.confirmTentativeId } : {}),
+        ...trackArgs,
       })
       if (!reapplied.ok) return reapplied
       await store.saveTracking(reapplied.file)

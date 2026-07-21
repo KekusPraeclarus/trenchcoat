@@ -197,7 +197,25 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "discovery_interval_hours": 6,
     "max_transitions_per_review": 20,
     "promotion": { "min_blended": 0.7, "min_deterministic": 0.65 },
-    "drop": { "blended_floor": 0.45, "deterministic_floor": 0.4 }
+    "drop": { "blended_floor": 0.45, "deterministic_floor": 0.4 },
+    "runner_discovery": {
+      "enabled": false,
+      "shadow_mode": true,
+      "interval_minutes": 30,
+      "max_age_hours": 24,
+      "min_liquidity_usd": 50000,
+      "min_return_6h": 1.0,
+      "min_volume_6h_usd": 250000,
+      "chains": ["solana", "ethereum", "base", "robinhood"]
+    },
+    "convergence": {
+      "enabled": false,
+      "shadow_mode": true,
+      "min_wallets": 4,
+      "window_minutes": 15,
+      "max_alerts_per_day": 10,
+      "max_enqueues_per_day": 5
+    }
   },
   "router": {
     "bind_host": "127.0.0.1",
@@ -221,6 +239,7 @@ for new installs; migration preserves explicit `enabled:false` /
 | `enabled` | `true` | Master switch for propose / prepare / canary / activate CLI |
 | `schedule_enabled` | `true` | Allow the `harness-improve` job / launchd |
 | `integrate_local_main` | `true` | Fast-forward local `main` after implementation approval |
+| `push_origin` | `true` | Push candidate → `origin/main` before local ff (kill switch `false`) |
 | `deploy_runtime` | `true` | Deploy host runtime after integrate |
 | `defer_agent_activation` | `true` | Schedule writes pending agent deploy; no live swap |
 | `test_command` | `test:all` | `pnpm run <script>` inside the worktree |

@@ -16,7 +16,8 @@ origin) stay silent until a ticker/CA is host-validated, deep research
 resolves a canonical token, and qualification passes — then the bot posts a
 non-reply alert with the stored `shortLabel` and the full deep-research
 response. State lives under `~/.trenchcoat/discord/tracking.json` (host-owned).
-Binding decisions: **ADR 018** (intake/state), **ADR 019** (alert qualification).
+Binding decisions: **ADR 018** (intake/state), **ADR 019** (alert qualification),
+**ADR 021** (chain constraint + watch quality gate).
 
 ## Config
 
@@ -71,21 +72,29 @@ Match output is `{trackingId, candidateProvenance, tokenQuery, reason}`:
 - `candidateProvenance` must equal one host-supplied candidate provenance
 - `tokenQuery` must be a CA, `$TICKER`, or bare ticker that appears in that
   candidate (project-name-only guesses fail closed)
-- Host resolves via `resolveResearchSubject`; empty/ambiguous/unsupported → silent
+- Host resolves via `resolveResearchSubject` with the request's optional
+  `chain` as `chainHint`; empty/ambiguous/unsupported → silent
+- **Chain constraint:** when intake stored a canonical `chain` on the request
+  (LLM-mapped aliases such as RH→robinhood, SOL→solana, HL/HYPE→hyperliquid),
+  any resolve whose identity chain differs is dropped (no delivery, no research).
+  No stored chain → any chain allowed
 
 **Initial scan path:** no Discord message. Durably enqueue tracking-origin deep
 research. Notify only when `mainTrackEligible === true`. Failures move the
-delivery to `awaiting-mentions`.
+delivery to `awaiting-mentions`. Discord watch subscription for both
+tracking-origin and direct research also requires `mainTrackEligible` (ADR 021)
+so walk/ignore tokens never produce six-hour updates.
 
 **Three-mention reconsideration:** after non-qualification, accumulate three
 unique later provenance IDs (duplicate provenance and byte-normalized text
 count once). On the third, run `composer-2.5-fast` mention review. Reject →
 `blacklistedUntil = now + 7d`. Approve → one fresh deep research; alert may
 include a security hard-fail warning (watch subscribe / main promote still use
-existing gates).
+existing gates — watch subscribe still needs `mainTrackEligible`).
 
 **Research-origin batches:** require host `mainTrackEligible === true` plus
-canonical identity; missing metadata fails closed.
+canonical identity; missing metadata fails closed. Request chain constraint
+still applies when present.
 
 ## Delivery
 
@@ -142,5 +151,6 @@ recall, false-positive rate, safety failures (must be 0).
 
 - ADR 018 — Discord idea tracking
 - ADR 019 — Gated Discord tracking alerts
+- ADR 021 — Tracking chain constraint + watch quality gate
 - ADR 010 — Discord research isolation
 - INV-D3–D8 in [INVARIANTS.md](../INVARIANTS.md)

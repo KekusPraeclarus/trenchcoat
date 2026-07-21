@@ -27,6 +27,7 @@ describe("wallet discovery loop integration", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     }
     file = registerWalletCandidates(file, [
       { chain: "solana", address: SOL, origin: "watchlist", tokenAddress: SOL },
@@ -119,6 +120,7 @@ describe("wallet discovery loop integration", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     }, null, 2)}\n`)
     writeFileSync(join(agentRoot, "state", "watchlist.json"), `${JSON.stringify({ schema: 1, entries: [] }, null, 2)}\n`)
     writeFileSync(join(agentRoot, "AGENTS.md"), "# test\n")
@@ -157,6 +159,7 @@ describe("wallet discovery loop integration", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
 
     const runId = "wallet-scan-solana-2026-07-16T18-00-00-000Z"
@@ -189,5 +192,58 @@ describe("wallet discovery loop integration", () => {
     expect(evidence.job).toBe("wallet-scan-solana")
     expect(evidence.eligibleWalletIds).toContain(`solana:${SOL}`)
     expect(store.loadWallets().wallets[0]?.status).toBe("candidate")
+  })
+
+  it("tracked-wallet convergence is deterministic and idempotent by convergenceId", async () => {
+    const { deriveWalletBuyConvergence } = await import("../../src/wallets/convergence.js")
+    const { sha256Json } = await import("../../src/lib/canonical-json.js")
+    const { renderWalletConvergenceLine } = await import("../../src/lib/router-contract.js")
+    const TOKEN = "Token1111111111111111111111111111111111111"
+    const outcomes: WalletBuyOutcome[] = ["w1", "w2", "w3", "w4"].map((id, i) => ({
+      schema: 1 as const,
+      eventId: `wb_${id}`,
+      walletId: `solana:${id}`,
+      chain: "solana" as const,
+      tokenAddress: TOKEN,
+      boughtAt: `2026-07-16T17:0${i}:00.000Z`,
+      finalized: true,
+      removed: false,
+      priceable: true,
+      rug: false,
+      walletStatusAtEvent: "tracking" as const,
+      providerEventId: `prov_${id}`,
+    }))
+    const opts = {
+      minWallets: 4,
+      windowMinutes: 15,
+      maxTokenAgeHours: 24,
+      nowIso: NOW,
+      hash: (p: unknown) => sha256Json(p as never),
+    }
+    const first = deriveWalletBuyConvergence(outcomes, opts)
+    const second = deriveWalletBuyConvergence([...outcomes].reverse(), opts)
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(1)
+    expect(first[0]?.convergenceId).toBe(second[0]?.convergenceId)
+    const line = renderWalletConvergenceLine({
+      chain: first[0]!.chain,
+      tokenAddress: first[0]!.tokenAddress,
+      walletCount: first[0]!.walletIds.length,
+      windowMinutes: 15,
+    })
+    expect(line.startsWith("UNVERIFIED WALLET CONVERGENCE:")).toBe(true)
+
+    const root = mkdtempSync(join(tmpdir(), "tc-wallet-conv-idem-"))
+    const store = new StateStore(join(root, "state"))
+    await store.saveWalletRunners({
+      schema: 1,
+      pools: [],
+      sightings: [],
+      cursors: [],
+      alertedConvergenceIds: [first[0]!.convergenceId],
+      enqueuedConvergenceIds: [first[0]!.convergenceId],
+      cooldownUntilByToken: {},
+    })
+    expect(store.loadWalletRunners().alertedConvergenceIds).toEqual([first[0]!.convergenceId])
   })
 })

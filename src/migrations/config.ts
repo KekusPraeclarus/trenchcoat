@@ -372,6 +372,7 @@ const HARNESS_V11_DEFAULTS = {
   test_command: "test:all",
   require_two_epochs: true,
   integrate_local_main: true,
+  push_origin: true,
   deploy_runtime: true,
   defer_agent_activation: true,
   planner_model: "composer-2.5",
@@ -563,6 +564,81 @@ export function migrateConfigToV14(raw: unknown): unknown {
       ...INCIDENT_REMEDIATION_V13_DEFAULTS,
       ...prevIr,
       revalidation,
+    },
+  }
+}
+
+const WALLETS_RUNNER_DISCOVERY_V15_DEFAULTS = Object.freeze({
+  enabled: false,
+  shadow_mode: true,
+  interval_minutes: 30,
+  max_age_hours: 24,
+  min_liquidity_usd: 50_000,
+  min_return_6h: 1.0,
+  min_volume_6h_usd: 250_000,
+  buyer_window_minutes: 30,
+  top_buyers_per_runner: 25,
+  min_runners_for_candidate: 2,
+  sighting_lookback_days: 30,
+  max_new_candidates_per_run: 100,
+  max_active_candidates: 500,
+  chains: ["solana", "ethereum", "base", "robinhood"],
+  anti_automation: {
+    max_buys_per_hour: 20,
+    max_distinct_tokens_per_day: 30,
+    same_slot_ratio: 0.5,
+    same_slot_min_buys: 20,
+    same_funder_cluster_max: 4,
+  },
+})
+
+const WALLETS_CONVERGENCE_V15_DEFAULTS = Object.freeze({
+  enabled: false,
+  shadow_mode: true,
+  min_wallets: 4,
+  window_minutes: 15,
+  max_token_age_hours: 24,
+  cooldown_hours: 6,
+  max_alerts_per_day: 10,
+  max_enqueues_per_day: 5,
+})
+
+/** Schema 15: runner discovery + tracked-wallet convergence under wallets */
+export function migrateConfigToV15(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 15) return raw
+
+  const v14 = (
+    record?.["schema"] === 14
+      ? record
+      : migrateConfigToV14(raw)
+  ) as Record<string, unknown>
+
+  const prevWallets = (v14["wallets"] ?? {}) as Record<string, unknown>
+  const prevRunner = (prevWallets["runner_discovery"] ?? {}) as Record<string, unknown>
+  const prevConv = (prevWallets["convergence"] ?? {}) as Record<string, unknown>
+  const prevAnti = (prevRunner["anti_automation"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v14,
+    schema: 15,
+    wallets: {
+      ...prevWallets,
+      runner_discovery: {
+        ...WALLETS_RUNNER_DISCOVERY_V15_DEFAULTS,
+        ...prevRunner,
+        anti_automation: {
+          ...WALLETS_RUNNER_DISCOVERY_V15_DEFAULTS.anti_automation,
+          ...prevAnti,
+        },
+        chains: Array.isArray(prevRunner["chains"]) && (prevRunner["chains"] as unknown[]).length > 0
+          ? prevRunner["chains"]
+          : WALLETS_RUNNER_DISCOVERY_V15_DEFAULTS.chains,
+      },
+      convergence: {
+        ...WALLETS_CONVERGENCE_V15_DEFAULTS,
+        ...prevConv,
+      },
     },
   }
 }

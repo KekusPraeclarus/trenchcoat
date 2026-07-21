@@ -104,6 +104,12 @@ required with a known `verificationRule`.
   `inbox/<run-id>/…` evidence that supports the claim. Do not invent refs or cite
   other runs.
 - Subject = the slug. Cite evidence provenance in the report, not inside `text`.
+- In-meta development: when a narrative already in the log gets a genuinely new
+  update without a stage change — major product/ecosystem catalyst, or the
+  rotation's trending name set moving — propose `type: "narrative-development"`,
+  `direction: "rotation"`, `verificationRule: "narrative.development"`, subject
+  = the slug. Never restate the stage in `text`; host rejects developments that
+  repeat names/catalysts broadcast in the last 48h.
 
 ### Market-blind (host may mark degraded)
 

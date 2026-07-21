@@ -6,6 +6,9 @@ import { DECISION_POLICY_REL_PATH } from "./paths.js"
 export type IntegrateAbortReason =
   | "dirty-worktree"
   | "main-moved"
+  | "origin-moved"
+  | "fetch-failed"
+  | "push-failed"
   | "merge-in-progress"
   | "branch-mismatch"
   | "commit-failed"
@@ -60,6 +63,18 @@ function assertNoMergeInProgress(repoRoot: string): void {
   }
 }
 
+function fetchOriginMain(repoRoot: string): string {
+  const fetch = git(repoRoot, ["fetch", "origin", "main"])
+  if (fetch.status !== 0) {
+    throw new IntegrateError("fetch-failed", fetch.stderr || "fetch origin main failed")
+  }
+  const remote = git(repoRoot, ["rev-parse", "origin/main"])
+  if (remote.status !== 0 || remote.stdout.length < 7) {
+    throw new IntegrateError("fetch-failed", remote.stderr || "origin/main missing")
+  }
+  return remote.stdout
+}
+
 /** Stage and commit only the decision-policy file in the candidate worktree */
 export function commitCandidateBranch(
   worktreePath: string,
@@ -88,15 +103,20 @@ export function commitCandidateBranch(
 }
 
 /**
- * Fast-forward local main to the candidate branch. Never pushes.
- * Requires main == baseSha, clean tree, no merge in progress.
+ * After implementation approval: optionally push candidate → origin/main
+ * (ff-only remote update), then fast-forward local main. Push runs first so a
+ * failed push leaves local main unchanged. Requires main == baseSha, clean tree,
+ * no merge in progress; when pushing, origin/main must also equal baseSha.
  */
 export function fastForwardLocalMain(opts: Readonly<{
   repoRoot: string
   baseSha: string
   branch: string
   candidateSha: string
+  /** Default true — publish to origin/main after gates (INV-S24) */
+  pushOrigin?: boolean
 }>): string {
+  const pushOrigin = opts.pushOrigin !== false
   const lock = new WorkspaceLock(repoMutationLockPath())
   if (!lock.tryAcquire()) {
     throw new IntegrateError("mutation-lock", "repo mutation lock held")
@@ -122,6 +142,24 @@ export function fastForwardLocalMain(opts: Readonly<{
         "branch-mismatch",
         `branch=${branchSha.stdout || "missing"} expected=${opts.candidateSha}`,
       )
+    }
+
+    if (pushOrigin) {
+      const remote = fetchOriginMain(opts.repoRoot)
+      if (remote !== opts.baseSha) {
+        throw new IntegrateError(
+          "origin-moved",
+          `origin/main=${remote} base=${opts.baseSha}`,
+        )
+      }
+      const push = git(opts.repoRoot, [
+        "push",
+        "origin",
+        `${opts.candidateSha}:refs/heads/main`,
+      ])
+      if (push.status !== 0) {
+        throw new IntegrateError("push-failed", push.stderr || push.stdout || "push failed")
+      }
     }
 
     const checkout = git(opts.repoRoot, ["checkout", "main"])

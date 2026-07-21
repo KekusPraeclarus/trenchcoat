@@ -120,7 +120,7 @@ describe("buildHealthSnapshot", () => {
         reason: "fixture ambiguous",
       }],
     })
-    await state.saveWallets({ schema: 1, wallets: [], transitions: [], pendingTransitionIds: [], cursors: [] })
+    await state.saveWallets({ schema: 1, wallets: [], transitions: [], pendingTransitionIds: [], cursors: [], exclusions: [] })
     await state.saveXEngagement({
       schema: 1,
       likedPostIds: [],

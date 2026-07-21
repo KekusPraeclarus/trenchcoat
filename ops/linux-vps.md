@@ -45,7 +45,8 @@ sudo apt install -y build-essential git curl ca-certificates python3 \
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 sudo corepack enable
-corepack prepare pnpm@latest --activate
+# Pin to repo packageManager (avoid pnpm 11 "latest" until allowBuilds is settled)
+corepack prepare pnpm@10.18.3 --activate
 
 curl https://cursor.com/install -fsS | bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -97,7 +98,8 @@ Actions SSH deploys).
 On the **Mac**, stop trenchcoat launchd units so profiles/SQLite are quiet, then:
 
 ```bash
-rsync -aH --info=progress2 \
+# macOS stock rsync: use --progress (not --info=progress2)
+rsync -aH --progress \
   --exclude 'runtime/' \
   --exclude 'runtime.prev/' \
   --exclude 'bin/' \
@@ -123,12 +125,16 @@ Unload Mac launchd after cutover so Telegram/Discord are not double-connected.
 
 ## E — First install
 
+If `pnpm build` fails with `ERR_PNPM_IGNORED_BUILDS`, you are on pnpm 11
+without allowBuilds — pin with `corepack prepare pnpm@10.18.3 --activate`
+or pull a commit that includes `pnpm-workspace.yaml`, then
+`rm -rf node_modules && pnpm install`.
+
 ```bash
 cd ~/src/trenchcoat
-# If main does not yet include install-systemd.sh, check out the branch that does
-./ops/install-systemd.sh
-# first boot / no prior runtime idle wait:
-# ./ops/install-systemd.sh --skip-agent-wait
+git pull --ff-only origin main
+git status --porcelain
+./ops/install-systemd.sh --skip-agent-wait
 
 export PATH="$HOME/.trenchcoat/bin:$HOME/.local/bin:$PATH"
 tc status

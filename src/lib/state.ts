@@ -8,6 +8,7 @@ import {
   SourceLifecycleFileSchema,
   WatchlistFileSchema,
   WalletsFileSchema,
+  WalletRunnersFileSchema,
   XEngagementFileSchema,
   XBotHealthSchema,
   FcEngagementFileSchema,
@@ -19,6 +20,7 @@ import {
   type SourceLifecycleFile,
   type WatchlistFile,
   type WalletsFile,
+  type WalletRunnersFile,
   type XEngagementFile,
   type XBotHealth,
   type FcEngagementFile,
@@ -55,6 +57,7 @@ export class StateStore {
   ledgerPath(): string { return join(this.stateDir, "ledger.json") }
   researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
   walletsPath(): string { return join(this.stateDir, "wallets.json") }
+  walletRunnersPath(): string { return join(this.stateDir, "wallet-runners.json") }
   xSourceNominationsPath(): string { return join(this.stateDir, "x-source-nominations.json") }
   xNarrativeSourcesPath(): string { return join(this.stateDir, "x-narrative-sources.json") }
   decisionsPath(): string { return join(this.stateDir, "decisions.md") }
@@ -222,15 +225,53 @@ export class StateStore {
   }
 
   loadWallets(): WalletsFile {
-    return readOrDefault(
+    const parsed = readOrDefault(
       this.walletsPath(),
       (v) => WalletsFileSchema.parse(v),
-      { schema: 1, wallets: [], transitions: [], pendingTransitionIds: [], cursors: [] },
+      {
+        schema: 1,
+        wallets: [],
+        transitions: [],
+        pendingTransitionIds: [],
+        cursors: [],
+        exclusions: [],
+      },
     )
+    return { ...parsed, exclusions: parsed.exclusions ?? [] }
   }
 
   async saveWallets(file: WalletsFile): Promise<void> {
-    await writeAtomicFile(this.walletsPath(), `${JSON.stringify(WalletsFileSchema.parse(file), null, 2)}\n`)
+    const normalized = WalletsFileSchema.parse({
+      ...file,
+      exclusions: file.exclusions ?? [],
+    })
+    await writeAtomicFile(
+      this.walletsPath(),
+      `${JSON.stringify({ ...normalized, exclusions: normalized.exclusions ?? [] }, null, 2)}\n`,
+    )
+  }
+
+  loadWalletRunners(): WalletRunnersFile {
+    return readOrDefault(
+      this.walletRunnersPath(),
+      (v) => WalletRunnersFileSchema.parse(v),
+      {
+        schema: 1,
+        pools: [],
+        sightings: [],
+        cursors: [],
+        alertedConvergenceIds: [],
+        enqueuedConvergenceIds: [],
+        cooldownUntilByToken: {},
+      },
+    )
+  }
+
+  async saveWalletRunners(file: WalletRunnersFile): Promise<void> {
+    await writeAtomicFile(
+      this.walletRunnersPath(),
+      `${JSON.stringify(WalletRunnersFileSchema.parse(file), null, 2)}\n`,
+    )
   }
 
   loadXSourceNominations(): XSourceNominationsFile {

@@ -157,6 +157,8 @@ export const TrackingRequestRecordSchema = z.object({
   userId: DiscordSnowflakeSchema,
   description: z.string().min(1).max(500),
   shortLabel: z.string().min(1).max(64),
+  /** When set, match/resolve must land on this chain (cross-chain fail closed) */
+  chain: DiscordChainSchema.optional(),
   status: TrackingRequestStatusSchema,
   createdAt: IsoTimestampSchema,
   updatedAt: IsoTimestampSchema,

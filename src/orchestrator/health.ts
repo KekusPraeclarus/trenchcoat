@@ -38,6 +38,7 @@ export const KEY_HEALTH_JOBS: readonly JobName[] = Object.freeze([
   "watchlist-scan",
   "delivery-retry",
   "wallet-discovery",
+  "wallet-runner-discovery",
   "wallet-scan-solana",
   "wallet-scan-evm",
   "wallet-review",

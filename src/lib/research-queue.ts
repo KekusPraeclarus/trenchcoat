@@ -7,6 +7,7 @@ import type {
 const TRIGGER_PRIORITY: Readonly<Record<ResearchTrigger, number>> = {
   operator: 100,
   revisit: 80,
+  "wallet-convergence": 70,
   narrative: 55,
   social: 50,
   "new-pools": 40,
@@ -66,9 +67,11 @@ export function enqueueResearch(
         ? "operator"
         : entry.trigger === "revisit" || existing.trigger === "revisit"
           ? "revisit"
-          : entry.trigger === "narrative" || existing.trigger === "narrative"
-            ? "narrative"
-            : existing.trigger,
+          : entry.trigger === "wallet-convergence" || existing.trigger === "wallet-convergence"
+            ? "wallet-convergence"
+            : entry.trigger === "narrative" || existing.trigger === "narrative"
+              ? "narrative"
+              : existing.trigger,
       reason: entry.reason || existing.reason,
       expiresAt: entry.expiresAt,
       ...(entry.chain ? { chain: entry.chain } : {}),

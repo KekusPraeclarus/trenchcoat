@@ -39,9 +39,11 @@ export const VERIFICATION_RULES = Object.freeze([
   "token.down.72h",
   "narrative.emergence",
   "narrative.fade",
+  "narrative.development",
   "rotation",
   "sentiment.collapse",
   "wallet.lifecycle",
+  "wallet.convergence",
 ] as const)
 
 export function isKnownVerificationRule(rule: string): boolean {

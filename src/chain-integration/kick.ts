@@ -61,7 +61,7 @@ export function kickChainIntegrationWorker(): void {
       env: {
         ...process.env,
         XDG_RUNTIME_DIR:
-          process.env.XDG_RUNTIME_DIR ?? `/run/user/${String(uid)}`,
+          process.env["XDG_RUNTIME_DIR"] ?? `/run/user/${String(uid)}`,
       },
     })
     kick.unref()

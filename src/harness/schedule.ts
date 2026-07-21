@@ -671,6 +671,7 @@ export async function runHarnessImprove(
         baseSha: baseCommit,
         branch: meta.branch,
         candidateSha,
+        pushOrigin: hi.push_origin,
       })
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -695,7 +696,11 @@ export async function runHarnessImprove(
       opts.archiveRoot,
       hypothesis.hypothesisId,
       "integrated",
-      sha256Json({ candidateSha, baseCommit } as never),
+      sha256Json({
+        candidateSha,
+        baseCommit,
+        pushed: hi.push_origin,
+      } as never),
     )
 
     if (hi.deploy_runtime && opts.skipDeploy !== true) {

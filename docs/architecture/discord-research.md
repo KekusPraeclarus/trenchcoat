@@ -107,9 +107,11 @@ Malformed state files are quarantined and the process stops (fail closed).
    (same market/security/X evidence) — no second DexScreener/security/X collect.
 
 Security hard-fail still delivers the report but skips Discord watch
-subscription. Otherwise **every** completed research token is subscribed on the
-Discord watchlist (member updates) — no track-verdict gate. User-visible replies
-never mention watch subscribe, capacity, or main-agent tracking.
+subscription. Otherwise a completed research token is subscribed on the Discord
+watchlist only when research yields a validated track verdict
+(`mainTrackEligible` via `evaluateResearchSubscribe`) — walk/ignore tokens never
+get member updates. User-visible replies never mention watch subscribe,
+capacity, or main-agent tracking.
 
 Decent tokens (host-validated `track` via `evaluateResearchSubscribe`: matching
 proposal, non-hard-fail gate, contextual mint rule) are promoted onto the **main**

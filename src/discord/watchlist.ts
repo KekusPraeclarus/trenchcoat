@@ -8,6 +8,23 @@ import {
   type DiscordWatchToken,
 } from "./schemas.js"
 
+/** Host quality gate for Discord watch subscribe (ADR 021) */
+export function discordWatchSubscribeEligible(args: Readonly<{
+  hasIdentity: boolean
+  hasBaseline: boolean
+  subscribeAllowed?: boolean | undefined
+  mainTrackEligible?: boolean | undefined
+  securityHardFail?: boolean | undefined
+}>): boolean {
+  return Boolean(
+    args.hasIdentity
+    && args.hasBaseline
+    && args.subscribeAllowed
+    && args.mainTrackEligible
+    && !args.securityHardFail
+  )
+}
+
 export function activeSubscriptions(
   token: DiscordWatchToken,
   nowIso: string,

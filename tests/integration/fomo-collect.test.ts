@@ -129,6 +129,7 @@ function seedMutableState(agentRoot: string): Readonly<Record<string, string>> {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     }),
     "x-source-nominations.json": JSON.stringify({ schema: 1, nominations: [] }),
     "sources.json": JSON.stringify({ schema: 1, accounts: [] }),

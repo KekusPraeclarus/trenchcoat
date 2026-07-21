@@ -6,12 +6,14 @@ import { systemClock } from "../lib/clock.js"
 import { sha256Json } from "../lib/canonical-json.js"
 import { listSolanaWalletActions } from "../collectors/wallets/helius-provider.js"
 import {
+  createEvmRunCache,
   listEvmWalletActions,
   networkForChain,
   type EvmClientOptions,
 } from "../collectors/wallets/evm-provider.js"
 import { eligibleWalletActions } from "../wallets/providers.js"
-import type { WalletBuyOutcome, WalletScanCursor } from "../contracts/schemas.js"
+import type { WalletBuyOutcome, WalletScanCursor, WalletRecord } from "../contracts/schemas.js"
+import { runWalletConvergence } from "./wallet-convergence.js"
 
 export type WalletScanSkippedReason =
   | "wallet-state-empty"
@@ -30,8 +32,12 @@ export type WalletScanReport = Readonly<{
   walletsScanned: number
   actionsRecorded: number
   cursorsUpdated: number
+  convergenceAlerts?: number
+  convergenceEnqueues?: number
   errors: readonly string[]
 }>
+
+const BACKFILL_MS = 30 * 86_400_000
 
 function upsertCursor(
   cursors: readonly WalletScanCursor[],
@@ -43,8 +49,17 @@ function upsertCursor(
   return [...filtered, next]
 }
 
+function findCursor(
+  cursors: readonly WalletScanCursor[],
+  chain: string,
+  kind: WalletScanCursor["kind"],
+  subject: string,
+): WalletScanCursor | undefined {
+  return cursors.find((c) => c.chain === chain && c.kind === kind && c.subject === subject)
+}
+
 function outcomeFromAction(args: Readonly<{
-  walletId: string
+  wallet: WalletRecord
   chain: WalletBuyOutcome["chain"]
   action: Readonly<{
     walletAddress: string
@@ -53,6 +68,7 @@ function outcomeFromAction(args: Readonly<{
     finalized: boolean
     removed?: boolean
     priceable: boolean
+    providerEventId: string
   }>
 }>): WalletBuyOutcome {
   const boughtAt = new Date(
@@ -61,14 +77,15 @@ function outcomeFromAction(args: Readonly<{
       : args.action.timestamp * 1_000,
   ).toISOString()
   const eventId = sha256Json({
-    walletId: args.walletId,
+    walletId: args.wallet.walletId,
     token: args.action.tokenAddress,
+    providerEventId: args.action.providerEventId,
     ts: boughtAt,
   }).slice("sha256:".length).slice(0, 32)
   return {
     schema: 1,
     eventId: `wb_${eventId}`,
-    walletId: args.walletId,
+    walletId: args.wallet.walletId,
     chain: args.chain,
     tokenAddress: args.action.tokenAddress,
     boughtAt,
@@ -76,7 +93,14 @@ function outcomeFromAction(args: Readonly<{
     removed: Boolean(args.action.removed),
     priceable: args.action.priceable,
     rug: false,
+    providerEventId: args.action.providerEventId,
+    walletStatusAtEvent: args.wallet.status,
   }
+}
+
+function quoteAssetsFor(chainSlug: string) {
+  const chain = getChain(chainSlug)
+  return chain?.quoteAssets ?? { acceptNative: true, allowlist: [] as readonly string[] }
 }
 
 export async function runWalletScan(args: Readonly<{
@@ -85,6 +109,7 @@ export async function runWalletScan(args: Readonly<{
   runId: string
   family: "solana" | "evm"
   dryRun?: boolean
+  blockExternalEffects?: boolean
 }>): Promise<WalletScanReport> {
   const heliusApiKey = process.env["HELIUS_API_KEY"]?.trim()
   const infuraApiKey = process.env["INFURA_API_KEY"]?.trim()
@@ -182,38 +207,58 @@ export async function runWalletScan(args: Readonly<{
   let cursorsUpdated = 0
   let cursors = [...file.cursors]
   const outcomes: WalletBuyOutcome[] = []
+  const evmCache = createEvmRunCache()
+  const nowMs = Date.parse(nowIso)
 
   for (const wallet of trackable) {
     try {
       const chain = getChain(wallet.chain)!
+      const quoteAssets = quoteAssetsFor(wallet.chain)
+      const needsBackfill = wallet.status === "candidate"
       if (chain.walletTracking === "helius") {
         if (!heliusApiKey) {
           errors.push("missing HELIUS_API_KEY")
           break
         }
-        const existing = cursors.find((c) => (
-          c.chain === wallet.chain && c.kind === "wallet-scan" && c.subject === wallet.address
-        ))
+        const tip = findCursor(cursors, wallet.chain, "wallet-scan-tip", wallet.address)
+        const backfill = findCursor(cursors, wallet.chain, "wallet-scan-backfill", wallet.address)
+          ?? findCursor(cursors, wallet.chain, "wallet-scan", wallet.address)
+        const fromTimestamp = needsBackfill
+          ? Math.min(Date.parse(wallet.addedAt), nowMs - BACKFILL_MS)
+          : Date.parse(wallet.addedAt)
         const result = await listSolanaWalletActions({
           helius: { apiKey: heliusApiKey },
           walletAddress: wallet.address,
-          fromTimestamp: Date.parse(wallet.addedAt),
-          ...(existing ? { before: existing.cursor } : {}),
+          fromTimestamp,
+          ...(tip && !needsBackfill ? { until: tip.cursor } : {}),
+          ...(backfill && needsBackfill ? { before: backfill.cursor } : {}),
+          quoteAssets,
         })
         const eligible = eligibleWalletActions(result.actions)
         for (const action of eligible) {
           outcomes.push(outcomeFromAction({
-            walletId: wallet.walletId,
+            wallet,
             chain: wallet.chain,
             action,
           }))
         }
         actionsRecorded += eligible.length
+        if (result.tipSignature) {
+          cursors = upsertCursor(cursors, {
+            schema: 1,
+            chain: wallet.chain,
+            kind: "wallet-scan-tip",
+            subject: wallet.address,
+            cursor: result.tipSignature,
+            updatedAt: nowIso,
+          })
+          cursorsUpdated += 1
+        }
         if (result.nextBefore) {
           cursors = upsertCursor(cursors, {
             schema: 1,
             chain: wallet.chain,
-            kind: "wallet-scan",
+            kind: needsBackfill ? "wallet-scan-backfill" : "wallet-scan",
             subject: wallet.address,
             cursor: result.nextBefore,
             updatedAt: nowIso,
@@ -234,20 +279,21 @@ export async function runWalletScan(args: Readonly<{
           errors.push("missing INFURA_API_KEY")
           break
         }
-        const existing = cursors.find((c) => (
-          c.chain === wallet.chain && c.kind === "wallet-scan" && c.subject === wallet.address
-        ))
+        const existing = findCursor(cursors, wallet.chain, "wallet-scan", wallet.address)
+          ?? findCursor(cursors, wallet.chain, "wallet-scan-backfill", wallet.address)
         const fromBlock = existing ? Number(existing.cursor) : 0
         const result = await listEvmWalletActions({
           client,
           walletAddress: wallet.address,
           fromBlock,
           maxBlocks: network === "robinhood" ? 400 : 2_000,
+          quoteAssets,
+          cache: evmCache,
         })
         const eligible = eligibleWalletActions(result.actions)
         for (const action of eligible) {
           outcomes.push(outcomeFromAction({
-            walletId: wallet.walletId,
+            wallet,
             chain: wallet.chain,
             action,
           }))
@@ -269,6 +315,8 @@ export async function runWalletScan(args: Readonly<{
   }
 
   file = { ...file, cursors }
+  let convergenceAlerts = 0
+  let convergenceEnqueues = 0
   if (!args.dryRun) {
     await store.saveWallets(file)
     if (outcomes.length > 0) {
@@ -277,6 +325,18 @@ export async function runWalletScan(args: Readonly<{
         { schema: 1, runId: args.runId, outcomes } as never,
       )
     }
+    const convergence = await runWalletConvergence({
+      agentRoot: args.agentRoot,
+      archiveRoot: args.archiveRoot,
+      runId: args.runId,
+      family: args.family,
+      newOutcomes: outcomes,
+      ...(args.blockExternalEffects !== undefined
+        ? { blockExternalEffects: args.blockExternalEffects }
+        : {}),
+    })
+    convergenceAlerts = convergence.alertsStaged
+    convergenceEnqueues = convergence.researchEnqueued
   }
 
   const report: WalletScanReport = {
@@ -289,6 +349,8 @@ export async function runWalletScan(args: Readonly<{
     walletsScanned: trackable.length,
     actionsRecorded,
     cursorsUpdated,
+    convergenceAlerts,
+    convergenceEnqueues,
     errors,
   }
   await writeJsonRecord(join(archive.wallets, `${args.runId}-scan-report.json`), report as never)

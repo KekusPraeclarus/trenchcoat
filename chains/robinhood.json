@@ -3,7 +3,7 @@
   "slug": "robinhood",
   "display": "Robinhood Chain",
   "family": "evm",
-  "aliases": ["hood"],
+  "aliases": ["hood", "rh"],
   "geckoterminalNetwork": "robinhood",
   "dexscreenerChainId": "robinhood",
   "securityScanner": { "kind": "goplus", "chainId": "4663" },
@@ -11,6 +11,10 @@
   "addressFormat": "evm",
   "walletTracking": "robinhood-public",
   "evmChainId": 4663,
+  "quoteAssets": {
+    "acceptNative": true,
+    "allowlist": []
+  },
   "capabilities": {
     "research": true,
     "discordWatch": true,

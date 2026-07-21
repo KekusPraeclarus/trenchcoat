@@ -48,9 +48,11 @@ last_verified: 2026-07-21
 - Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
   (~≤1800 chars); multipart has no `1/n` labels
 - Watch baseline = dossier evidence (no post-reply Dex/security/X re-collect);
-  every non-hard-fail research token is subscribed (silent); `researchBrief`
-  stored for update narration; validated `track` may promote to main watchlist
-  (host-only, also silent in Discord replies)
+  subscribe only when research yields a validated track verdict
+  (`mainTrackEligible`, silent); `researchBrief` stored for update narration;
+  validated `track` may promote to main watchlist (host-only, also silent in
+  Discord replies). Idea-tracking may store an optional request `chain`
+  (RH→robinhood etc); cross-chain resolves fail closed (ADR 021)
 - Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy
 - Stuck queue: hung scrape holding `.worker.lock` — see discord-research.md ops
 - **Chain integration** (host lane, not the Discord agent): exact unknown

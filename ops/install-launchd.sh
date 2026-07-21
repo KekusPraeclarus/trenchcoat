@@ -878,6 +878,7 @@ begin_deploy_pause() {
     com.trenchcoat.job.review \
     com.trenchcoat.job.audit \
     com.trenchcoat.job.wallet-discovery \
+    com.trenchcoat.job.wallet-runner-discovery \
     com.trenchcoat.job.wallet-scan-solana \
     com.trenchcoat.job.wallet-scan-evm \
     com.trenchcoat.job.wallet-review \
@@ -911,6 +912,7 @@ job_to_label() {
     review) echo com.trenchcoat.job.review ;;
     audit) echo com.trenchcoat.job.audit ;;
     wallet-discovery) echo com.trenchcoat.job.wallet-discovery ;;
+    wallet-runner-discovery) echo com.trenchcoat.job.wallet-runner-discovery ;;
     wallet-scan-solana) echo com.trenchcoat.job.wallet-scan-solana ;;
     wallet-scan-evm) echo com.trenchcoat.job.wallet-scan-evm ;;
     wallet-review) echo com.trenchcoat.job.wallet-review ;;
@@ -1019,6 +1021,7 @@ write_interval_plist com.trenchcoat.job.fc-source-review fc-source-review 86400 
 write_calendar_plist com.trenchcoat.job.review review 7 0
 write_calendar_plist com.trenchcoat.job.audit audit 6 0 1
 write_interval_plist com.trenchcoat.job.wallet-discovery wallet-discovery 21600 1
+write_interval_plist com.trenchcoat.job.wallet-runner-discovery wallet-runner-discovery 1800 1
 write_interval_plist com.trenchcoat.job.wallet-scan-solana wallet-scan-solana 300 1
 write_interval_plist com.trenchcoat.job.wallet-scan-evm wallet-scan-evm 900 1
 write_interval_plist com.trenchcoat.job.wallet-review wallet-review 86400
@@ -1064,6 +1067,7 @@ for label in \
   com.trenchcoat.job.review \
   com.trenchcoat.job.audit \
   com.trenchcoat.job.wallet-discovery \
+  com.trenchcoat.job.wallet-runner-discovery \
   com.trenchcoat.job.wallet-scan-solana \
   com.trenchcoat.job.wallet-scan-evm \
   com.trenchcoat.job.wallet-review \

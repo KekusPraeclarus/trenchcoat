@@ -1,8 +1,8 @@
 ---
-description: Host-owned harness improvement loop — agent-gated plan/review/build, local main integrate, deferred agent activation, bounded-live canaries.
+description: Host-owned harness improvement loop — agent-gated plan/review/build, origin+local main integrate, deferred agent activation, bounded-live canaries.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 read_when:
   - Editing src/harness/**, decision proposals, or canary assignment.
   - Changing how sealed audits feed policy experiments.
@@ -27,7 +27,7 @@ flowchart TD
   build --> static[static gates + test:all]
   static --> holdout[evaluateHypothesis holdout]
   holdout --> implReview[implementation review]
-  implReview --> integrate[ff-only local main]
+  implReview --> integrate[push origin/main then ff local main]
   integrate --> deploy[deploy runtime]
   deploy --> pending[activation_pending manifest]
   pending --> activate[tc harness activate when drain clear]
@@ -43,6 +43,7 @@ flowchart TD
 | `harness_improvement.enabled` | `true` | Master switch |
 | `harness_improvement.schedule_enabled` | `true` | Allow `harness-improve` job / launchd |
 | `harness_improvement.integrate_local_main` | `true` | Fast-forward local `main` after approval |
+| `harness_improvement.push_origin` | `true` | Push candidate → `origin/main` before local ff (same class as chain-integration publish) |
 | `harness_improvement.deploy_runtime` | `true` | Run `ops/install-launchd.sh` after integrate |
 | `harness_improvement.defer_agent_activation` | `true` | Schedule stops at pending agent deploy |
 | `harness_improvement.test_command` | `test:all` | `pnpm run <script>` in the worktree |
@@ -125,5 +126,6 @@ state/inbox/outbox/reports/alpha-queue), then starts the bounded canary.
 - Audit spine: [audit-metrics.md](audit-metrics.md), [orchestrator.md](orchestrator.md)
 - Invariants: INV-S23, INV-S24, INV-S25
 - Discord chain-registry automation is a **separate** lane (INV-S26 / ADR 016);
-  it must not widen harness POLICY_ALLOWLIST or origin-push rules here.
+  it must not widen harness POLICY_ALLOWLIST. Both lanes may host-push
+  ff-only updates to `origin/main` under `repo-mutation.lock`.
 - Agent workspace sync boundary: [agent-workspace.md](agent-workspace.md)

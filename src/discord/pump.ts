@@ -20,7 +20,7 @@ import {
   deliverTerminalError,
   mapResearchError,
 } from "./delivery.js"
-import { subscribeAfterResearch } from "./watchlist.js"
+import { subscribeAfterResearch, discordWatchSubscribeEligible } from "./watchlist.js"
 import { promoteDiscordTrackToMain } from "./promote-to-main.js"
 import { tokenKey } from "./schemas.js"
 import { loadConfig } from "../lib/config.js"
@@ -316,22 +316,33 @@ export async function processNextDiscordRequest(args: Readonly<{
       }
     }
 
-    if (result.identity && result.subscribeAllowed && result.baseline) {
+    const watchBaseline = result.baseline
+    const watchIdentity = result.identity
+    if (
+      watchBaseline
+      && watchIdentity
+      && discordWatchSubscribeEligible({
+        hasIdentity: true,
+        hasBaseline: true,
+        subscribeAllowed: result.subscribeAllowed,
+        mainTrackEligible: result.mainTrackEligible,
+        securityHardFail: result.securityHardFail,
+      })
+    ) {
       const subscribeStarted = Date.now()
       try {
-        const baseline = result.baseline
         const researchBrief = reportText ? extractResearchBrief(reportText) : undefined
         const subLock = await withStoreLockRetry(layout.lock, async () => {
           let watch = store.loadWatchlist()
           const sub = subscribeAfterResearch({
             file: watch,
-            identity: result.identity!,
+            identity: watchIdentity,
             guildId: request.guildId,
             userId: request.userId,
             channelId: request.channelId,
             messageId: request.messageId,
             nowIso: systemClock.nowIso(),
-            baseline,
+            baseline: watchBaseline,
             ...(researchBrief ? { researchBrief } : {}),
             securityHardFail: Boolean(result.securityHardFail),
           })
@@ -342,7 +353,7 @@ export async function processNextDiscordRequest(args: Readonly<{
           if (sub.subscribed) {
             await store.saveWatchlist(watch)
             const obs = store.loadObservations()
-            obs.byToken[tokenKey(result.identity!.chain, result.identity!.tokenAddress)] = baseline
+            obs.byToken[tokenKey(watchIdentity.chain, watchIdentity.tokenAddress)] = watchBaseline
             await store.saveObservations(obs)
           }
           return { capacity: false as const }
@@ -529,35 +540,42 @@ async function finalizeTrackingOriginResearch(args: Readonly<{
     }
   }
 
-  // Watch subscribe / main promote still use existing gates — never bypassed by three-mention path
+  // Watch subscribe requires validated track verdict — never bypassed by three-mention path
+  const trackWatchBaseline = result.baseline
+  const trackWatchIdentity = result.identity
   if (
     result.status === "completed"
-    && result.identity
-    && result.subscribeAllowed
-    && result.baseline
-    && !result.securityHardFail
+    && trackWatchBaseline
+    && trackWatchIdentity
+    && discordWatchSubscribeEligible({
+      hasIdentity: true,
+      hasBaseline: true,
+      subscribeAllowed: result.subscribeAllowed,
+      mainTrackEligible: result.mainTrackEligible,
+      securityHardFail: result.securityHardFail,
+    })
   ) {
     try {
-      const baseline = result.baseline
       const researchBrief = reportText ? extractResearchBrief(reportText) : undefined
       await withStoreLockRetry(layout.lock, async () => {
         let watch = store.loadWatchlist()
         const sub = subscribeAfterResearch({
           file: watch,
-          identity: result.identity!,
+          identity: trackWatchIdentity,
           guildId: request.guildId,
           userId: request.userId,
           channelId: request.channelId,
           messageId: request.messageId,
           nowIso,
-          baseline,
+          baseline: trackWatchBaseline,
           ...(researchBrief ? { researchBrief } : {}),
           securityHardFail: Boolean(result.securityHardFail),
         })
         if (sub.subscribed) {
           await store.saveWatchlist(sub.file)
           const obs = store.loadObservations()
-          obs.byToken[tokenKey(result.identity!.chain, result.identity!.tokenAddress)] = baseline
+          obs.byToken[tokenKey(trackWatchIdentity.chain, trackWatchIdentity.tokenAddress)] =
+            trackWatchBaseline
           await store.saveObservations(obs)
         }
       })

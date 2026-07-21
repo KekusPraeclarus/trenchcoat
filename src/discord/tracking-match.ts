@@ -131,6 +131,7 @@ export async function runTrackingMatch(args: Readonly<{
         trackingId: r.trackingId,
         description: r.description,
         shortLabel: r.shortLabel,
+        ...(r.chain ? { chain: r.chain } : {}),
       }),
       ts: nowIso,
       ageSec: 0,

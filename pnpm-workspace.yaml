@@ -1,0 +1,8 @@
+# Single-package repo. pnpm 11+ reads allowBuilds from this file
+# (package.json#pnpm is ignored). Keep native/optional rebuilds explicit.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  bufferutil: true
+  utf-8-validate: true
+  es5-ext: true

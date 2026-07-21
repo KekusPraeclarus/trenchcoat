@@ -13,6 +13,7 @@ export type JobName =
   | "source-list-review"
   | "fc-source-review"
   | "wallet-discovery"
+  | "wallet-runner-discovery"
   | "wallet-scan-solana"
   | "wallet-scan-evm"
   | "wallet-review"
@@ -50,6 +51,7 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "source-list-review", skill: "review", description: "Deterministic X source-list lifecycle", preconditionTier: "none" },
   { name: "fc-source-review", skill: "review", description: "Deterministic Farcaster follow-graph lifecycle", preconditionTier: "none" },
   { name: "wallet-discovery", skill: "wallet-evidence", description: "Early buyer discovery evidence", preconditionTier: "host" },
+  { name: "wallet-runner-discovery", skill: "review", description: "Fresh-pool runner → verified buyer candidates", preconditionTier: "none" },
   { name: "wallet-scan-solana", skill: "wallet-evidence", description: "Solana wallet evidence", preconditionTier: "host" },
   { name: "wallet-scan-evm", skill: "wallet-evidence", description: "EVM wallet evidence", preconditionTier: "host" },
   { name: "wallet-review", skill: "review", description: "Wallet score/lifecycle review", preconditionTier: "none" },

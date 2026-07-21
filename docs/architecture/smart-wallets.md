@@ -2,7 +2,7 @@
 description: Smart-wallet discovery, deterministic scoring, bounded LLM vote, promotion/drop hysteresis, and mandatory lifecycle router events.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-21
 read_when:
   - Editing wallet collectors, scoring, lifecycle transitions, or wallet router events
 ---
@@ -10,8 +10,10 @@ read_when:
 # Smart wallets
 
 Solana truth is Helius finalized standard RPC (signatures + transaction/balance
-deltas). EVM truth is Infura HTTP on Ethereum and Base with finalized-block
-cursors and `removed` reorg handling. Infura pacing uses the shared host gate with
+deltas with native/allowlisted quote spend). EVM truth is Infura HTTP on
+Ethereum and Base, plus Robinhood Chain public RPC, with finalized-block
+cursors, receipt-backed swap-buy classification, block timestamps, and
+`removed` reorg handling. Infura pacing uses the shared host gate with
 credit-weighted takes and a ~638ms serial min interval (Core 500 credits/s,
 `eth_getLogs` 255 — `docs/knowledge/infura.md`). Robinhood Chain uses the throttled
 official public RPC (`https://rpc.mainnet.chain.robinhood.com`) and fail-closes
@@ -25,39 +27,53 @@ No signing libraries. No transaction submission. Read-only codecs only (INV-A1).
    `tracking-probation` with `reasonCode: operator-seed`, takes the workspace
    writer lock, and stages one `wallet.lifecycle` router event per transition
    (unless canary blocks external effects). Refuses non-empty `wallets.json`.
-   Autonomous discovery can populate an empty file. Manual Fomo wallet
-   extraction can feed this path when the web scrape cannot expose exact addresses
-   (see [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md)).
+   Autonomous discovery can populate an empty file.
 2. **`wallet-discovery`** — host walks watchlist token identities on
-   wallet-supported chains, extracts early buyers (Helius mint history /
-   EVM Transfer recipients), stages `candidate` wallets, checkpoints
-   resumable cursors in `state/wallets.json`. A sandboxed evidence-only agent
-   may summarize a frozen wallet snapshot, but cannot affect this host work.
-   Empty/skip reasons:
-   `no-active-watchlist-subjects`, `no-wallet-supported-subjects`, `dry-collect`.
-3. **`wallet-scan-solana` / `wallet-scan-evm`** — host performs incremental finalized action
-   scans for candidates/tracking wallets; archives buy outcomes under
-   `archive/outcomes/wallet-buy-*.json`. The evidence-only agent may inspect
-   frozen state and recent outcomes. Empty/skip reasons:
-   `wallet-state-empty`, `no-eligible-wallet-status`, `no-wallets-for-family`,
-   `dry-collect`.
-4. **Hard exclusions** — absolute and non-overridable by the LLM vote
+   wallet-supported chains, extracts verified early buyers, stages `candidate`
+   wallets, checkpoints resumable cursors in `state/wallets.json`, and
+   quarantines any legacy `discoveredFrom: "fomo"` records. A sandboxed
+   evidence-only agent may summarize a frozen wallet snapshot, but cannot
+   affect this host work.
+3. **`wallet-runner-discovery`** — host qualifies fresh GeckoTerminal pools
+   (age ≤24h, liquidity ≥$50k, closed 6h return ≥100%, volume ≥$250k), ranks
+   the first 25 verified buyers in 30 minutes, and registers `new-pools`
+   candidates only after ≥2 runner sightings in 30 days. Defaults
+   `enabled: false`, `shadow_mode: true`. State lives in
+   `state/wallet-runners.json`.
+4. **`wallet-scan-solana` / `wallet-scan-evm`** — host performs incremental
+   finalized action scans with separate tip/backfill cursors for candidates
+   (30-day backfill); archives buy outcomes under
+   `archive/outcomes/wallet-buy-*.json` with `providerEventId` and
+   `walletStatusAtEvent`. After each scan, host may derive tracked-wallet
+   convergence.
+5. **Hard exclusions** — absolute and non-overridable by the LLM vote
    (`src/wallets/exclusions.ts`): contracts, programs, routers/pools/bridges/
    CEX/team/deployer, wash/self-transfer, security-failed tokens, failed txs,
    unfinalized or unpriceable actions. Unknown entity kinds fail closed as
-   `contract`.
-5. **`wallet-review` (host-only)** — lagged settled outcomes → deterministic
+   `contract`. Objective evidence is persisted on `wallets.json` (`exclusions`)
+   during runner discovery and applied by `wallet-review` (not test-only maps).
+6. **`wallet-review` (host-only)** — lagged settled outcomes → deterministic
    score + bounded voter (neutral 50 on malformed) → promote/drop/re-add with
    hysteresis; caps `max_transitions_per_review`; stages one
    `wallet.lifecycle` router event per applied transition unless canary
    `blockExternalEffects` is set.
-6. Reviews apply at most `max_transitions_per_review` per run; excess stays queued.
+7. Reviews apply at most `max_transitions_per_review` per run; excess stays queued.
+
+## Convergence
+
+When ≥4 wallets with event-time status `tracking` buy the same fresh token
+(≤24h) within 15 minutes, the host stages a `wallet.convergence` router event
+with text prefix `UNVERIFIED WALLET CONVERGENCE` and independently enqueues
+research (`trigger: wallet-convergence`, priority 70). Alerts and enqueues
+have separate daily caps and a 6h per-token cooldown. Shadow mode logs without
+mutating queue/router state.
 
 ## Jobs / cadence (config)
 
 | Job | Default cadence |
 |---|---|
 | `wallet-discovery` | `wallets.discovery_interval_hours` (6h) |
+| `wallet-runner-discovery` | `wallets.runner_discovery.interval_minutes` (30m) |
 | `wallet-scan-solana` | `wallets.solana_scan_minutes` (5m) |
 | `wallet-scan-evm` | `wallets.evm_scan_minutes` (15m) |
 | `wallet-review` | after scans / daily |
@@ -83,18 +99,7 @@ router prose, or exceed 20% influence.
 Runtime research agents may treat wallet signals as token evidence only. They
 cannot nominate, score, add, or drop wallets.
 
-`wallet-discovery` and `wallet-scan-*` launch `wallet-evidence` only when
-prerequisites exist. It reads `wallet-evidence-*` inbox snapshots and may write
-one bounded `wallet-evidence.md` report with findings and optional token
-research suggestions. The host archives that report as non-authoritative
-evidence and ignores decision proposals or lifecycle-shaped output from these
-jobs. Empty discovery requires a tracking/watching watchlist entry. Empty scans
-require an eligible seeded or discovered wallet, so cold starts use
-`tc wallets seed <file>`.
-
-See ADR 002 for the scoring decision. Review archives per-vote evidence:
-`evidenceCardHash`, `voterPromptHash`, bounded raw output, parsed score, and
-weighted contribution (`src/orchestrator/wallet-review.ts`).
+See ADR 002 for scoring and ADR 020 for runner discovery / convergence.
 
 ## Implementation map
 
@@ -103,6 +108,9 @@ weighted contribution (`src/orchestrator/wallet-review.ts`).
 | Scoring maths | `src/wallets/scoring.ts` |
 | Lifecycle transitions | `src/wallets/lifecycle.ts` |
 | Discovery registration | `src/wallets/discovery.ts` |
+| Runner ranking / anti-automation | `src/wallets/runner-discovery.ts` |
+| Convergence deriver | `src/wallets/convergence.ts` |
+| Fomo quarantine | `src/wallets/fomo-reconcile.ts` |
 | Outcomes / lag | `src/wallets/outcomes.ts` |
 | Review / promote-drop | `src/wallets/review.ts` |
 | Exclusions | `src/wallets/exclusions.ts` |

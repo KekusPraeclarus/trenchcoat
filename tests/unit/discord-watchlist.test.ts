@@ -4,10 +4,32 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { discordLayout } from "../../src/discord/paths.js"
 import { createDiscordStore, emptyRequestsFile } from "../../src/discord/store.js"
-import { subscribeAfterResearch } from "../../src/discord/watchlist.js"
+import { subscribeAfterResearch, discordWatchSubscribeEligible } from "../../src/discord/watchlist.js"
 import { emptyWatchlistFile } from "../../src/discord/store.js"
 
 describe("discord watchlist", () => {
+  it("gates subscribe on mainTrackEligible", () => {
+    expect(discordWatchSubscribeEligible({
+      hasIdentity: true,
+      hasBaseline: true,
+      subscribeAllowed: true,
+      mainTrackEligible: false,
+    })).toBe(false)
+    expect(discordWatchSubscribeEligible({
+      hasIdentity: true,
+      hasBaseline: true,
+      subscribeAllowed: true,
+      mainTrackEligible: true,
+    })).toBe(true)
+    expect(discordWatchSubscribeEligible({
+      hasIdentity: true,
+      hasBaseline: true,
+      subscribeAllowed: true,
+      mainTrackEligible: true,
+      securityHardFail: true,
+    })).toBe(false)
+  })
+
   it("creates subscription after research", () => {
     const root = mkdtempSync(join(tmpdir(), "tc-discord-"))
     try {

@@ -165,6 +165,7 @@ export const BroadcastSeveritySchema = z.enum(["watch", "notable", "urgent"])
 export const BroadcastClaimTypeSchema = z.enum([
   "narrative-emergence",
   "narrative-fade",
+  "narrative-development",
   "rotation",
   "sentiment-collapse",
   "token-downside",
@@ -205,6 +206,7 @@ export const RouterEventTypeSchema = z.enum([
   "finding.broadcast",
   "finding.correction",
   "wallet.lifecycle",
+  "wallet.convergence",
 ])
 
 /** Per-destination fanout text. Optional; excluded from eventId derivation. */
@@ -242,6 +244,14 @@ export const RouterEventSchema = z.object({
     action: z.enum(["added", "dropped"]),
     reasonCode: z.string(),
     reasonLine: z.string().max(280),
+  }).optional(),
+  walletConvergence: z.object({
+    chain: ChainSlugSchema,
+    tokenAddress: AddressSchema,
+    walletIds: z.array(z.string().min(1).max(128)).min(2).max(64),
+    windowMinutes: z.number().int().positive().max(1_440),
+    firstBuyAt: IsoTimestampSchema,
+    label: z.literal("UNVERIFIED WALLET CONVERGENCE"),
   }).optional(),
 })
 export type RouterEvent = z.infer<typeof RouterEventSchema>
@@ -681,6 +691,7 @@ export const ResearchTriggerSchema = z.enum([
   "revisit",
   "operator",
   "narrative",
+  "wallet-convergence",
 ])
 export type ResearchTrigger = z.infer<typeof ResearchTriggerSchema>
 
@@ -836,6 +847,19 @@ export const WalletRecordSchema = z.object({
 })
 export type WalletRecord = z.infer<typeof WalletRecordSchema>
 
+/** Objective hard-exclusion evidence consumed by wallet-review (host-only) */
+export const WalletExclusionEvidenceSchema = z.object({
+  schema: z.literal(1),
+  walletId: SafeIdSchema,
+  address: AddressSchema,
+  chain: ChainSlugSchema,
+  kind: z.string().min(1).max(64),
+  evidenceHash: Sha256Schema,
+  observedAt: IsoTimestampSchema,
+  detail: z.string().max(280).optional(),
+})
+export type WalletExclusionEvidence = z.infer<typeof WalletExclusionEvidenceSchema>
+
 export const WalletTransitionSchema = z.object({
   schema: z.literal(1),
   transitionId: Sha256Schema,
@@ -854,7 +878,13 @@ export type WalletTransition = z.infer<typeof WalletTransitionSchema>
 export const WalletScanCursorSchema = z.object({
   schema: z.literal(1),
   chain: ChainSlugSchema,
-  kind: z.enum(["token-discovery", "wallet-scan"]),
+  kind: z.enum([
+    "token-discovery",
+    "wallet-scan",
+    "wallet-scan-tip",
+    "wallet-scan-backfill",
+    "runner-discovery",
+  ]),
   subject: z.string().min(1).max(128),
   cursor: z.string().min(1).max(256),
   updatedAt: IsoTimestampSchema,
@@ -876,6 +906,9 @@ export const WalletBuyOutcomeSchema = z.object({
   finalized: z.boolean(),
   removed: z.boolean().default(false),
   priceable: z.boolean(),
+  providerEventId: z.string().min(1).max(256).optional(),
+  /** Wallet status at event observation time — required for convergence */
+  walletStatusAtEvent: WalletStatusSchema.optional(),
 })
 export type WalletBuyOutcome = z.infer<typeof WalletBuyOutcomeSchema>
 
@@ -906,8 +939,56 @@ export const WalletsFileSchema = z.object({
   transitions: z.array(WalletTransitionSchema).max(50_000).default([]),
   pendingTransitionIds: z.array(Sha256Schema).max(5_000).default([]),
   cursors: z.array(WalletScanCursorSchema).max(10_000).default([]),
+  exclusions: z.array(WalletExclusionEvidenceSchema).max(5_000).optional(),
 })
 export type WalletsFile = z.infer<typeof WalletsFileSchema>
+
+export const RunnerPoolRecordSchema = z.object({
+  schema: z.literal(1),
+  runnerId: SafeIdSchema,
+  chain: ChainSlugSchema,
+  poolAddress: AddressSchema,
+  tokenAddress: AddressSchema,
+  pairAddress: AddressSchema,
+  firstSeenAt: IsoTimestampSchema,
+  qualifiedAt: IsoTimestampSchema.optional(),
+  rejectedReason: z.string().max(64).optional(),
+  liquidityUsd: z.number().nonnegative().optional(),
+  return6h: z.number().optional(),
+  volume6hUsd: z.number().nonnegative().optional(),
+})
+export type RunnerPoolRecord = z.infer<typeof RunnerPoolRecordSchema>
+
+export const RunnerBuyerSightingSchema = z.object({
+  schema: z.literal(1),
+  chain: ChainSlugSchema,
+  walletAddress: AddressSchema,
+  tokenAddress: AddressSchema,
+  runnerId: SafeIdSchema,
+  boughtAt: IsoTimestampSchema,
+  providerEventId: z.string().min(1).max(256),
+  blockOrSlot: z.number().int().nonnegative().optional(),
+})
+export type RunnerBuyerSighting = z.infer<typeof RunnerBuyerSightingSchema>
+
+export const WalletRunnersFileSchema = z.object({
+  schema: z.literal(1),
+  pools: z.array(RunnerPoolRecordSchema).max(5_000).default([]),
+  sightings: z.array(RunnerBuyerSightingSchema).max(50_000).default([]),
+  cursors: z.array(WalletScanCursorSchema).max(10_000).default([]),
+  alertedConvergenceIds: z.array(Sha256Schema).max(10_000).default([]),
+  enqueuedConvergenceIds: z.array(Sha256Schema).max(10_000).default([]),
+  cooldownUntilByToken: z.record(z.string(), IsoTimestampSchema).default({}),
+  alertsToday: z.object({
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    count: z.number().int().nonnegative(),
+  }).optional(),
+  enqueuesToday: z.object({
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    count: z.number().int().nonnegative(),
+  }).optional(),
+})
+export type WalletRunnersFile = z.infer<typeof WalletRunnersFileSchema>
 
 export const TelemetryRunSchema = z.object({
   schema: z.literal(1),

@@ -26,8 +26,15 @@ Scan FYP + operator discovery lists and curate the feed with likes/follows.
    validation; the host freezes them into sealed archive refs. Rejected shapes:
    traversal, other runs' inboxes, missing files, symlinks, `reports/`, `outbox/`.
    Read `state/narratives/log.jsonl` first: do **not** restate a narrative's known
-   stage (e.g. omit "RH still peaking" when it is already peaking). Mention heat
+   stage (e.g. omit "RH still peaking" when it is already peaking).    Mention heat
    only when it drops or increases; host rejects status-quo stage restatements.
+   A genuinely new development inside a known narrative is broadcastable even
+   without a stage change: a major product/ecosystem catalyst (e.g. a chain
+   founder announcement) or the rotation's trending name set moving (new tickers
+   entering, leaders changing). Use `auditClaim.type: "narrative-development"`,
+   `direction: "rotation"`, `verificationRule: "narrative.development"`, subject
+   = the narrative slug — and skip it when the names/catalyst already went out
+   (host rejects repeats within 48h).
    Prefer proposing only when clearly actionable — the host runs a separate
    worthiness review before staging; empty outbox is fine.
 4. Optional `reports/<run-id>/research-candidates.json` — at most three host-enqueued

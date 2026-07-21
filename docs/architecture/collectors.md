@@ -392,6 +392,18 @@ provenance id. Events carry source, cluster, identity, mention time, parser
 version, matched rule id, raw-item hash, and dedupe key. Audit-metrics.md defines
 pricing and scoring.
 
+### Wallet collectors (host-only)
+
+- **Helius** — Solana verified swap-buys (`helius-provider.ts`): target mint gain
+  + native/allowlisted quote spend; tip/`until` forward cursors; `getAccountInfo`
+  for executable/program hard exclusions.
+- **Infura / Robinhood** — EVM verified buys (`evm-provider.ts`): receipt + tx +
+  block timestamp; `eth_getCode` for contract exclusions; Robinhood public RPC
+  fail-closes on 429/5xx with 400-block work chunks.
+- **Runner discovery** — GeckoTerminal new pools + DexScreener identity/liquidity
+  + closed OHLCV → `wallet-runner-discovery` (ADR 020). Never feeds Fomo
+  addresses into `wallets.json`.
+
 ## Rate-limit gate
 
 One shared token-bucket per upstream host in `src/lib/`, consulted by every client

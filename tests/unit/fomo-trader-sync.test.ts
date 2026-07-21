@@ -81,6 +81,7 @@ describe("fomo trader sync host-only", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     }))
     await saveFomoGates(archiveRoot, failGates("test"))
 
@@ -110,6 +111,7 @@ describe("fomo trader sync host-only", () => {
       transitions: [],
       pendingTransitionIds: [],
       cursors: [],
+      exclusions: [],
     })
     const nominations = JSON.stringify({ schema: 1, nominations: [] })
     writeFileSync(join(agentRoot, "state", "wallets.json"), wallets)

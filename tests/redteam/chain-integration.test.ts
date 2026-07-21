@@ -32,6 +32,7 @@ describe("chain-integration red-team", () => {
         nativeBenchmark: "ethereum:eth",
         addressFormat: "evm",
         walletTracking: "infura",
+        quoteAssets: { acceptNative: true, allowlist: [] },
         capabilities: {
           research: true,
           discordWatch: true,

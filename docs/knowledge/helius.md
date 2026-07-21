@@ -19,5 +19,9 @@ last_verified: 2026-07-21
   are profile ids, not trading wallets (`getAccountInfo` often null). Do not
   nominate them into `wallets.json`. Fomo informs signals + optional X-source
   nomination only (`fomo-trader-sync` / `fomo-signal-scan`).
-- Wallet-scan cursor uses Helius `before` (paginate older history). Tip-following
-  for new activity needs `until` / newest-signature semantics — separate issue.
+- Wallet-scan cursor uses Helius `before` for backfill and tip/`until`
+  semantics for forward scans (`wallet-scan-tip` cursors)
+- Verified buys require target-mint gain **and** native/allowlisted quote
+  spend by the signer (`extractSolanaVerifiedBuysFromTransaction`)
+- Hard exclusions call `getAccountInfo` (executable → `program`); incomplete
+  evidence holds the sighting instead of excluding

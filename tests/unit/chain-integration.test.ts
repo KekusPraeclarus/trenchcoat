@@ -132,6 +132,7 @@ describe("research proposal validation", () => {
     nativeBenchmark: "ethereum:eth",
     addressFormat: "evm" as const,
     walletTracking: "unsupported" as const,
+    quoteAssets: { acceptNative: true, allowlist: [] as string[] },
     capabilities: {
       research: true,
       discordWatch: true,

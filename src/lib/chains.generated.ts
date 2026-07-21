@@ -16,6 +16,10 @@ export const GENERATED_CHAIN_REGISTRY = Object.freeze([
     addressFormat: "evm" as const,
     walletTracking: "infura" as const,
     evmChainId: 8453,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze(["0x4200000000000000000000000000000000000006","0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","0xfde4C96c8593536E31F22390F270C48AAe055878"]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":true,"geckoBars":true,"narrativeDiscovery":true,"walletTracking":true}),
   }),
   Object.freeze({
@@ -30,6 +34,10 @@ export const GENERATED_CHAIN_REGISTRY = Object.freeze([
     addressFormat: "evm" as const,
     walletTracking: "unsupported" as const,
     evmChainId: 56,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze([]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":true,"geckoBars":true,"narrativeDiscovery":false,"walletTracking":false}),
   }),
   Object.freeze({
@@ -44,19 +52,27 @@ export const GENERATED_CHAIN_REGISTRY = Object.freeze([
     addressFormat: "evm" as const,
     walletTracking: "infura" as const,
     evmChainId: 1,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze(["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","0xdAC17F958D2ee523a2206206994597C13D831ec7"]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":true,"geckoBars":true,"narrativeDiscovery":true,"walletTracking":true}),
   }),
   Object.freeze({
     slug: "hyperliquid",
     display: "Hyperliquid",
     family: "evm" as const,
-    aliases: Object.freeze(["hyperevm","hl"]) as readonly string[],
+    aliases: Object.freeze(["hyperevm","hl","hype"]) as readonly string[],
     geckoterminalNetwork: "hyperevm",
     dexscreenerChainId: "hyperevm",
     nativeBenchmark: "hyperevm:hype",
     addressFormat: "evm" as const,
     walletTracking: "unsupported" as const,
     evmChainId: 999,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze([]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":false,"geckoBars":true,"narrativeDiscovery":false,"walletTracking":false}),
   }),
   Object.freeze({
@@ -71,13 +87,17 @@ export const GENERATED_CHAIN_REGISTRY = Object.freeze([
     addressFormat: "evm" as const,
     walletTracking: "unsupported" as const,
     evmChainId: 9745,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze([]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":true,"geckoBars":true,"narrativeDiscovery":false,"walletTracking":false}),
   }),
   Object.freeze({
     slug: "robinhood",
     display: "Robinhood Chain",
     family: "evm" as const,
-    aliases: Object.freeze(["hood"]) as readonly string[],
+    aliases: Object.freeze(["hood","rh"]) as readonly string[],
     geckoterminalNetwork: "robinhood",
     dexscreenerChainId: "robinhood",
     securityScanner: { kind: "goplus" as const, chainId: "4663" },
@@ -85,6 +105,10 @@ export const GENERATED_CHAIN_REGISTRY = Object.freeze([
     addressFormat: "evm" as const,
     walletTracking: "robinhood-public" as const,
     evmChainId: 4663,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze([]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":true,"geckoBars":true,"narrativeDiscovery":false,"walletTracking":true}),
   }),
   Object.freeze({
@@ -98,6 +122,10 @@ export const GENERATED_CHAIN_REGISTRY = Object.freeze([
     nativeBenchmark: "solana:sol",
     addressFormat: "base58-32" as const,
     walletTracking: "helius" as const,
+    quoteAssets: Object.freeze({
+      acceptNative: true,
+      allowlist: Object.freeze(["So11111111111111111111111111111111111111112","EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v","Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"]) as readonly string[],
+    }),
     capabilities: Object.freeze({"research":true,"discordWatch":true,"mainTrack":true,"geckoBars":true,"narrativeDiscovery":true,"walletTracking":true}),
   }),
 ] as const)
@@ -111,9 +139,11 @@ export const GENERATED_ALIAS_TO_SLUG: Readonly<Record<string, string>> = Object.
   "hyperliquid": "hyperliquid",
   "hyperevm": "hyperliquid",
   "hl": "hyperliquid",
+  "hype": "hyperliquid",
   "plasma": "plasma",
   "robinhood": "robinhood",
   "hood": "robinhood",
+  "rh": "robinhood",
   "solana": "solana",
   "sol": "solana",
 })
