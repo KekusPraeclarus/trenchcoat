@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { migrateConfigToV12 } from "../../src/migrations/config.js"
+import { migrateConfigToV13 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { readFileSync } from "node:fs"
 
@@ -10,14 +10,15 @@ const seed = JSON.parse(
   readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
 )
 
-describe("config schema 12 chain_integration", () => {
-  it("migrates schema 11 → 12 with defaults", () => {
+describe("config schema 13 via chain_integration migration", () => {
+  it("migrates schema 11 → 13 with chain_integration defaults", () => {
     const raw = { ...seed, schema: 11 }
     delete (raw as { chat?: { discord?: { chain_integration?: unknown } } })
       .chat?.discord?.chain_integration
-    const migrated = migrateConfigToV12(raw)
+    const migrated = migrateConfigToV13(raw)
     const parsed = ConfigSchema.parse(migrated)
-    expect(parsed.schema).toBe(12)
+    expect(parsed.schema).toBe(13)
+    expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.chat.discord.chain_integration.enabled).toBe(true)
     expect(parsed.chat.discord.chain_integration.max_attempts_per_utc_day).toBe(3)
     expect(parsed.chat.discord.chain_integration.build_model).toBe("cursor-grok-4.5-high")
@@ -35,7 +36,7 @@ describe("config schema 12 chain_integration", () => {
         },
       },
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV12(raw))
+    const parsed = ConfigSchema.parse(migrateConfigToV13(raw))
     expect(parsed.chat.discord.chain_integration.enabled).toBe(false)
     expect(parsed.chat.discord.chain_integration.max_attempts_per_utc_day).toBe(1)
   })

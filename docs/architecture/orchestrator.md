@@ -50,6 +50,8 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `wallet-scan-evm` | every 15m | Infura (eth/base) + throttled Robinhood public RPC | host archives buy outcomes; evidence-only agent reads frozen snapshot |
 | `wallet-review` | daily / after scans | lagged settled buy outcomes + bounded voter | **no agent** — promote/drop + `wallet.lifecycle` router events |
 | `harness-improve` | weekly (off by default) | sealed scorecard epochs only | **no agent write to prod** — confined worktree + tests + optional `gh pr create` (ADR 005); never merges, never starts canary |
+| `incident-remediate` | hourly (off by default) | health/logs/skips | host remediation lane (ADR 017); Telegram approval for high-risk |
+| `incident-remediate-weekly` | Monday 08:00 local (off by default) | deferred queue | at most one revalidated deferred incident |
 
 Cadences live in `ops/` templates, not code; tune freely. Host-gated jobs
 (`chart-sweep`, `watchlist-scan`, `research`, wallet evidence jobs, and

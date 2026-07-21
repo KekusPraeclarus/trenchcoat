@@ -257,7 +257,12 @@ describe("review collector", () => {
       agentRoot,
       archiveRoot,
       fetcher: async () => new Response(JSON.stringify({
-        data: [{ value: "42", value_classification: "Fear", timestamp: String(Math.floor(Date.parse(NOW) / 1000)) }],
+        data: [{
+          value: "42",
+          value_classification: "Fear",
+          // feargreed.ts staleness is vs wall clock, not fetchedAt
+          timestamp: String(Math.floor(Date.now() / 1000) - 3_600),
+        }],
       }), { status: 200, headers: { "content-type": "application/json" } }),
     })
 

@@ -136,6 +136,8 @@ const HOST_ONLY_JOBS = new Set([
   "delivery-retry",
   "wallet-review",
   "harness-improve",
+  "incident-remediate",
+  "incident-remediate-weekly",
   "fomo-trader-sync",
   "fomo-signal-scan",
   "fomo-narrative-source-scan",
@@ -831,6 +833,24 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         `${JSON.stringify(harnessImproveReport, null, 2)}\n`,
       )
     }
+    let incidentRemediateReport: unknown
+    if (job.name === "incident-remediate" || job.name === "incident-remediate-weekly") {
+      const { runRemediationWorker } = await import("../remediation/orchestrate.js")
+      const { resolveHarnessRepoRoot } = await import("../harness/pr.js")
+      const cfg = loadConfig()
+      if (!cfg.incident_remediation.enabled || !cfg.incident_remediation.schedule_enabled) {
+        incidentRemediateReport = { ok: false, detail: "disabled" }
+      } else {
+        incidentRemediateReport = await runRemediationWorker({
+          repoRoot: resolveHarnessRepoRoot(),
+          weekly: job.name === "incident-remediate-weekly",
+        })
+      }
+      writeFileSync(
+        join(reportDir, `${job.name}.json`),
+        `${JSON.stringify(incidentRemediateReport, null, 2)}\n`,
+      )
+    }
     let engagementReport: unknown
     if (job.name === "list-scan" && !opts.dryCollect) {
       engagementReport = await processListScanEngagement({
@@ -1333,6 +1353,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       ...(fcSourceListReport ? { fcSourceListReport } : {}),
       ...(walletHostReport ? { walletHostReport } : {}),
       ...(harnessImproveReport ? { harnessImproveReport } : {}),
+      ...(incidentRemediateReport ? { incidentRemediateReport } : {}),
       ...(engagementReport ? { engagementReport } : {}),
       ...(fcEngagementReport ? { fcEngagementReport } : {}),
       ...(researchCandidatesReport ? { researchCandidatesReport } : {}),

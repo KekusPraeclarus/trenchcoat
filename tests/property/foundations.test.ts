@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import * as fc from "fast-check"
 import { sanitizePathSegment, assertPathInside } from "../../src/lib/snapshot.js"
 import { RateGate } from "../../src/lib/rate-gate.js"
-import { migrateConfigToV12 } from "../../src/migrations/config.js"
+import { migrateConfigToV13 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -39,12 +39,12 @@ describe("prop_inv_r1_rate_gate", () => {
 
 describe("config migration", () => {
   it("lifts v1 into parseable v7", () => {
-    const v7 = migrateConfigToV12({
+    const v7 = migrateConfigToV13({
       schema: 1,
       telegram_channels: ["alpha"],
       twitter: { max_pages_per_run: 3 },
     })
-    expect(ConfigSchema.parse(v7).schema).toBe(12)
+    expect(ConfigSchema.parse(v7).schema).toBe(13)
     expect(ConfigSchema.parse(v7).farcaster.enabled).toBe(false)
     expect(ConfigSchema.parse(v7).narratives.retention_days).toBe(14)
   })

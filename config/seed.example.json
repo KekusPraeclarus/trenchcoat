@@ -1,5 +1,5 @@
 {
-  "schema": 12,
+  "schema": 13,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -375,6 +375,24 @@
     "missingness_max": 0.3,
     "rug_exposure_max": 0.25,
     "one_active_experiment": true
+  },
+  "incident_remediation": {
+    "enabled": false,
+    "schedule_enabled": false,
+    "hourly_interval_s": 3600,
+    "triage_model": "composer-2.5-fast",
+    "diagnose_model": "composer-2.5-fast",
+    "propose_model": "cursor-grok-4.5-high",
+    "review_model": "composer-2.5-fast",
+    "build_model": "cursor-grok-4.5-high",
+    "max_active": 1,
+    "max_immediate_builds_per_utc_day": 2,
+    "max_origin_move_rebuilds": 1,
+    "max_weekly_deferred": 1,
+    "approval_ttl_hours": 24,
+    "max_evidence_bytes": 100000,
+    "max_diff_lines": 400,
+    "phase_timeout_ms": 1800000
   },
   "retention": {
     "inbox_archive_days": 30,

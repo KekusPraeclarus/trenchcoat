@@ -46,6 +46,10 @@ export type ExonerationCommandHooks = Readonly<{
   confirm: (id: string) => Promise<string>
 }>
 
+export type RemediationCommandHooks = Readonly<{
+  handle: (text: string, operatorId: string) => Promise<string | null>
+}>
+
 export async function handleChatUpdate(args: Readonly<{
   chatId: string
   userId: string
@@ -59,6 +63,7 @@ export async function handleChatUpdate(args: Readonly<{
   runTurn?: ChatTurnRunner
   research?: ResearchConfirmHooks
   exoneration?: ExonerationCommandHooks
+  remediation?: RemediationCommandHooks
   /** When set, overlong replies persist under reports/chat/ */
   agentRoot?: string
   /** Host homes for `/status` health snapshot (same builder as `tc status`) */
@@ -113,6 +118,23 @@ export async function handleChatUpdate(args: Readonly<{
           `exoneration failed: ${error instanceof Error ? error.message : "unknown"}`,
         )
       }
+      return "replied"
+    }
+  }
+
+  // Remediation approval/status before general chat so exact commands never reach the model.
+  if (args.remediation) {
+    try {
+      const reply = await args.remediation.handle(trimmed, args.userId)
+      if (reply !== null) {
+        await args.send(target, reply)
+        return "replied"
+      }
+    } catch (error) {
+      await args.send(
+        target,
+        `remediation failed: ${error instanceof Error ? error.message : "unknown"}`,
+      )
       return "replied"
     }
   }
@@ -230,6 +252,16 @@ export async function handleChatUpdate(args: Readonly<{
     })
     for (const part of prepared.parts) {
       await args.send(target, part)
+    }
+    // Host may act on a bounded approve|defer|reject intent forwarded by the operator agent.
+    if (args.remediation) {
+      const { parseForwardedRemediationIntent } = await import("../remediation/approval.js")
+      const intent = parseForwardedRemediationIntent(reply)
+      if (intent) {
+        const cmd = `${intent.action} remediation ${intent.incidentId}`
+        const follow = await args.remediation.handle(cmd, args.userId)
+        if (follow) await args.send(target, follow)
+      }
     }
   } catch (error) {
     if (draft) await draft.flush().catch(() => undefined)

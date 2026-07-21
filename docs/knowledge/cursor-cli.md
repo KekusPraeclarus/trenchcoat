@@ -2,7 +2,7 @@
 description: Provider knowledge — Cursor CLI local agent (login auth, not API key).
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-21
 ---
 
 # Cursor CLI
@@ -27,6 +27,9 @@ Binding decision: [ADR 003](../adr/003-cursor-cli-auth.md).
   (`chat.discord.model`, default `composer-2.5-fast`) and broadcast worthiness
   (`broadcast.worthiness.model`, default `composer-2.5-fast`, ADR 014). Channel
   distillers omit `--model` and fall through to the job default (`composer-2.5`)
+- Incident remediation (ADR 017): triage/diagnose/review use
+  `composer-2.5-fast`; propose/build use `cursor-grok-4.5-high`. Prompts are
+  path-only against host evidence artifacts under `~/.trenchcoat/remediations/`
 - Operator Telegram chat: same, plus `--mode ask --output-format stream-json --stream-partial-output` (assistant text deltas → Telegram `sendMessageDraft`)
 - Auth: operator CLI login — **not** `CURSOR_API_KEY` (production paths never pass `--api-key`)
 - Chat follow-ups: `--resume <chatId>` / `--continue`

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { spawn } from "node:child_process"
 import { loadDotEnv } from "./lib/dotenv.js"
 import { ConfigSchema } from "./lib/config.js"
-import { migrateConfigToV12 } from "./migrations/config.js"
+import { migrateConfigToV13 } from "./migrations/config.js"
 import { runJob } from "./orchestrator/run.js"
 import { getJob, JOBS } from "./orchestrator/jobs.js"
 import { runPreflight } from "./lib/preflight.js"
@@ -65,6 +65,7 @@ Commands:
   listen [telegram|discord|channels|x-scan]
   discord watchlist scan
   discord chains run|status|retry|fail|continue
+  remediations scan|run|status|approve|defer|reject|retry|fail
   backup
   research <subject>
   auth twitter [--create-managed-list] [--headed]
@@ -93,7 +94,7 @@ async function cmdInit(seedPath?: string, operatorSeedPath?: string): Promise<vo
   mkdirSync(destDir, { recursive: true, mode: 0o700 })
   const seed = seedPath ?? join(process.cwd(), "config/seed.example.json")
   const raw = JSON.parse(readFileSync(seed, "utf8")) as unknown
-  const cfg = ConfigSchema.parse(migrateConfigToV12(raw))
+  const cfg = ConfigSchema.parse(migrateConfigToV13(raw))
   writeFileSync(join(destDir, "config.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 })
   const agentSrc = join(process.cwd(), "agent")
   const agentDest = join(destDir, "agent")
@@ -340,6 +341,108 @@ async function cmdDiscordWatchlistScan(): Promise<void> {
   if (!token) throw new Error("DISCORD_RESEARCH_BOT_TOKEN required")
   const { runDiscordWatchlistScan } = await import("./discord/monitor.js")
   await runDiscordWatchlistScan({ token })
+}
+
+async function cmdRemediations(rest: string[]): Promise<void> {
+  const repoRoot = process.env["TRENCHCOAT_REPO_ROOT"]
+    ?? join(homedir(), "Documents", "trench-bot")
+  const root = existsSync(join(process.cwd(), "ops", "install-launchd.sh"))
+    ? process.cwd()
+    : (existsSync(join(repoRoot, "ops", "install-launchd.sh")) ? repoRoot : process.cwd())
+
+  const {
+    runRemediationWorker,
+    scanRemediationIncidents,
+    handleRemediationChatCommand,
+    remediationStatusSummary,
+  } = await import("./remediation/orchestrate.js")
+  const { createRemediationStore, upsertIncident } = await import("./remediation/store.js")
+  const { remediationLayout } = await import("./remediation/paths.js")
+  const { systemClock } = await import("./lib/clock.js")
+
+  const sub = rest[0]
+  if (sub === "status") {
+    console.log(JSON.stringify(remediationStatusSummary(), null, 2))
+    return
+  }
+  if (sub === "scan") {
+    const result = await scanRemediationIncidents({ repoRoot: root })
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+  if (sub === "run") {
+    const weekly = rest.includes("--weekly")
+    const id = rest.find((a) => a.startsWith("rem-"))
+    const result = await runRemediationWorker({
+      repoRoot: root,
+      weekly,
+      ...(id ? { incidentId: id } : {}),
+    })
+    console.log(JSON.stringify(result, null, 2))
+    if (!result.ok && result.detail !== "idle" && result.detail !== "worker busy"
+      && result.detail !== "awaiting-approval" && result.detail !== "disabled"
+      && result.detail !== "repo-mutation-lock-held" && result.detail !== "daily-build-cap") {
+      process.exit(1)
+    }
+    return
+  }
+  if (sub === "approve" || sub === "defer" || sub === "reject") {
+    const id = rest[1]
+    if (!id) usage()
+    const operatorId = process.env["TELEGRAM_OPERATOR_ID"] ?? "cli-operator"
+    const reply = await handleRemediationChatCommand({
+      text: `${sub} remediation ${id}`,
+      operatorId,
+      repoRoot: root,
+    })
+    console.log(reply ?? "no-op")
+    return
+  }
+  if (sub === "retry") {
+    const id = rest[1]
+    if (!id) usage()
+    const store = createRemediationStore(remediationLayout())
+    const incident = store.findById(id)
+    if (!incident) {
+      console.error("unknown incident")
+      process.exit(2)
+    }
+    let file = store.load()
+    file = upsertIncident(file, {
+      ...incident,
+      phase: "triaged",
+      terminalError: undefined,
+      updatedAt: systemClock.nowIso(),
+    })
+    file = { ...file, activeIncidentId: id }
+    await store.save(file)
+    const result = await runRemediationWorker({ repoRoot: root, incidentId: id })
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+  if (sub === "fail") {
+    const id = rest[1]
+    if (!id) usage()
+    const reason = rest.slice(2).join(" ").slice(0, 280) || "operator fail"
+    const store = createRemediationStore(remediationLayout())
+    const incident = store.findById(id)
+    if (!incident) {
+      console.error("unknown incident")
+      process.exit(2)
+    }
+    let file = store.load()
+    file = upsertIncident(file, {
+      ...incident,
+      phase: "failed",
+      terminalError: reason,
+      updatedAt: systemClock.nowIso(),
+    })
+    if (file.activeIncidentId === id) file = { ...file, activeIncidentId: null }
+    await store.save(file)
+    console.log(JSON.stringify({ ok: true, incidentId: id, phase: "failed" }, null, 2))
+    return
+  }
+  usage()
 }
 
 async function cmdDiscordChains(rest: string[]): Promise<void> {
@@ -606,6 +709,8 @@ async function cmdListenTelegram(): Promise<void> {
       const hostHandled = trimmed.startsWith("/status")
         || trimmed.startsWith("/start")
         || /^(undock|confirm)\s+\S+/iu.test(trimmed)
+        || /^(approve|defer|reject)\s+remediation\s+\S+/iu.test(trimmed)
+        || /^\/?remediations?\b/iu.test(trimmed)
         || /^(confirm|yes|y|do\s+it|go\s+ahead|approved?|cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu.test(trimmed)
         || /^[1-5]\s*$/u.test(trimmed)
         || /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into)\b/iu.test(trimmed)
@@ -631,6 +736,17 @@ async function cmdListenTelegram(): Promise<void> {
             onConfirmed: () => { void pumpResearch() },
           },
           exoneration: exonerationHooks,
+          remediation: {
+            handle: async (text, opId) => {
+              const { handleRemediationChatCommand } = await import("./remediation/orchestrate.js")
+              const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
+              return handleRemediationChatCommand({
+                text,
+                operatorId: opId,
+                repoRoot: resolveHarnessRepoRoot(),
+              })
+            },
+          },
           ...(needsAgent
             ? {
               openDraft: () => createDraftStream({
@@ -917,10 +1033,18 @@ async function main(): Promise<void> {
       }
 
       if (wantJson) {
+        let remediation: Record<string, unknown> | undefined
+        try {
+          const { remediationStatusSummary } = await import("./remediation/orchestrate.js")
+          remediation = remediationStatusSummary()
+        } catch {
+          remediation = undefined
+        }
         console.log(JSON.stringify({
           preflight: { ok: pf.ok && configOk && runtimeOk, checks: pf.checks },
           health: toHealthJsonPayload(health),
           ...(discordStatus ? { discord: discordStatus } : {}),
+          ...(remediation ? { remediation } : {}),
         }, null, 2))
       } else {
         for (const line of configLines) console.log(line)
@@ -962,6 +1086,26 @@ async function main(): Promise<void> {
           // best-effort
         }
       }
+
+        try {
+          const { remediationStatusSummary } = await import("./remediation/orchestrate.js")
+          const rem = remediationStatusSummary()
+          if (wantJson) {
+            // already printed above — include via separate path below
+          } else {
+            console.log("")
+            console.log("Incident remediation:")
+            console.log(`  enabled=${rem["enabled"]} active=${rem["activeIncidentId"] ?? "none"}`)
+            console.log(`  pendingApprovals=${rem["pendingApprovals"]} deferred=${rem["deferredCount"]}`)
+            if (rem["lastScanAt"]) console.log(`  lastScan=${rem["lastScanAt"]}`)
+            if (rem["automationHalted"]) {
+              console.log(`  HALTED: ${rem["automationHaltReason"] ?? "unknown"}`)
+            }
+            console.log("  recovery: tc remediations status|approve|defer|reject")
+          }
+        } catch {
+          // best-effort
+        }
 
       if (rest.includes("--heal") || rest.includes("--heal-apply")) {
         const { listIncompleteRuns } = await import("./orchestrator/run.js")
@@ -1041,6 +1185,9 @@ async function main(): Promise<void> {
       } else {
         usage()
       }
+      break
+    case "remediations":
+      await cmdRemediations(rest)
       break
     case "backup": {
       const { agentRoot, archiveRoot } = resolveHomes()

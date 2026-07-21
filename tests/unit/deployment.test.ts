@@ -39,7 +39,7 @@ describe("parseDeploymentManifest", () => {
       schema: 2,
       builtAt: "2026-07-19T12:00:00Z",
       packageVersion: "0.1.0",
-      configSchema: 12,
+      configSchema: DEPLOYMENT_CONFIG_SCHEMA,
       sourceCommit: COMMIT,
       sourceDirty: false,
       sourceHash: HASH_A,

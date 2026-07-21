@@ -23,6 +23,8 @@ export type JobName =
   | "narrative-source-review"
   | "recover"
   | "harness-improve"
+  | "incident-remediate"
+  | "incident-remediate-weekly"
 
 export type PreconditionTier = "host" | "collector" | "none"
 
@@ -58,6 +60,8 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "narrative-source-review", skill: "review", description: "Promote or demote narrative X sources", preconditionTier: "host" },
   { name: "recover", skill: "recover", description: "Recovery assist", preconditionTier: "none" },
   { name: "harness-improve", skill: "review", description: "Propose policy patch PR from sealed audit", preconditionTier: "none" },
+  { name: "incident-remediate", skill: "review", description: "Hourly incident detection and remediation", preconditionTier: "none" },
+  { name: "incident-remediate-weekly", skill: "review", description: "Weekly deferred incident remediation", preconditionTier: "none" },
 ])
 
 export function getJob(name: string): JobDefinition {

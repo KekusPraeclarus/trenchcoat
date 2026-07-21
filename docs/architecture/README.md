@@ -15,6 +15,7 @@ last_verified: 2026-07-20
 | [chat-agent.md](chat-agent.md) | Telegram bridge, confirmation-gated research, deep-research sub-agents | `src/chat/`, `src/orchestrator/research.ts`, `agent/skills/chat/`, `agent/skills/deep-research/` |
 | [discord-research.md](discord-research.md) | Private-guild Discord research bot (Gateway, isolated state, watch monitor) — **not** router webhook broadcasts | `src/discord/`, `chat.discord` config (schema 10+), ADR 010, ADR 012 |
 | [discord-chain-integration.md](discord-chain-integration.md) | Host lane: unknown `slug:address` → research/build/gate/push/deploy → research FIFO | `src/chain-integration/`, schema 12 `chain_integration`, ADR 016 |
+| [incident-remediation.md](incident-remediation.md) | Hourly/weekly host incident remediation with Telegram high-risk approval | `src/remediation/`, schema 13 `incident_remediation`, ADR 017 |
 | [chains.md](chains.md) | Chain registry, per-provider id mapping, fail-closed rule, new-chain flow (API-only, no RPC) | anything passing a chain id to an upstream API |
 | [token-resolution.md](token-resolution.md) | Canonical identity, isolated shortlist-bounded disambiguation, point-in-time dossier, ground-truth/proxy audit split, strict RSI-rule promotion | `src/lib/resolve.ts`, mention counting, watchlist entry creation |
 | [research-queue.md](research-queue.md) | Candidate buffer, dedupe, priority, revisit/expiry/cap, operator Telegram/CLI path | `src/lib/research-queue.ts`, `src/orchestrator/research.ts`, research job |

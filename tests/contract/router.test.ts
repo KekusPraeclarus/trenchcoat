@@ -68,7 +68,7 @@ describe("router ingress contract", () => {
     expect((await post(addr, conflict, "nonce-00000003")).status).toBe(409)
   })
 
-  it("sends Telegram as plain text without parse_mode", async () => {
+  it("sends Telegram with HTML parse_mode via formatted fanout", async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }))
     const server = createRouterServer({
       hmacKey,
@@ -90,6 +90,6 @@ describe("router ingress contract", () => {
     const payload = JSON.parse(String(request?.[1]?.body)) as Record<string, unknown>
     expect(payload["chat_id"]).toBe("123")
     expect(payload["text"]).toBe("A valid broadcast")
-    expect(payload["parse_mode"]).toBeUndefined()
+    expect(payload["parse_mode"]).toBe("HTML")
   })
 })

@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV12 } from "../migrations/config.js"
+import { migrateConfigToV13 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(12),
+  schema: z.literal(13),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -259,6 +259,41 @@ export const ConfigSchema = z.object({
     missingness_max: 0.3,
     rug_exposure_max: 0.25,
     one_active_experiment: true,
+  }),
+  incident_remediation: z.object({
+    enabled: z.boolean().default(false),
+    schedule_enabled: z.boolean().default(false),
+    hourly_interval_s: z.number().int().min(300).max(86_400).default(3_600),
+    triage_model: z.string().min(1).max(128).default("composer-2.5-fast"),
+    diagnose_model: z.string().min(1).max(128).default("composer-2.5-fast"),
+    propose_model: z.string().min(1).max(128).default("cursor-grok-4.5-high"),
+    review_model: z.string().min(1).max(128).default("composer-2.5-fast"),
+    build_model: z.string().min(1).max(128).default("cursor-grok-4.5-high"),
+    max_active: z.number().int().min(1).max(1).default(1),
+    max_immediate_builds_per_utc_day: z.number().int().min(0).max(10).default(2),
+    max_origin_move_rebuilds: z.number().int().min(0).max(3).default(1),
+    max_weekly_deferred: z.number().int().min(0).max(5).default(1),
+    approval_ttl_hours: z.number().int().min(1).max(168).default(24),
+    max_evidence_bytes: z.number().int().min(1_000).max(2_000_000).default(100_000),
+    max_diff_lines: z.number().int().min(50).max(2_000).default(400),
+    phase_timeout_ms: z.number().int().min(60_000).max(3_600_000).default(1_800_000),
+  }).default({
+    enabled: false,
+    schedule_enabled: false,
+    hourly_interval_s: 3_600,
+    triage_model: "composer-2.5-fast",
+    diagnose_model: "composer-2.5-fast",
+    propose_model: "cursor-grok-4.5-high",
+    review_model: "composer-2.5-fast",
+    build_model: "cursor-grok-4.5-high",
+    max_active: 1,
+    max_immediate_builds_per_utc_day: 2,
+    max_origin_move_rebuilds: 1,
+    max_weekly_deferred: 1,
+    approval_ttl_hours: 24,
+    max_evidence_bytes: 100_000,
+    max_diff_lines: 400,
+    phase_timeout_ms: 1_800_000,
   }),
   wallets: z.object({
     deterministic_weight: z.number().min(0).max(1).default(0.80),
@@ -546,7 +581,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV12(raw))
+  return ConfigSchema.parse(migrateConfigToV13(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

@@ -42,14 +42,15 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **12** (Discord `chat.discord.chain_integration` host lane;
+Current schema is **13** (host `incident_remediation` lane, ADR 017; prior
+schema **12** Discord `chat.discord.chain_integration` host lane;
 prior schema **11** agent-gated harness defaults on, local integrate /
 deferred activation; prior schema **10** `chat.discord` private-guild research
 bot section, plus prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v11 shapes via `migrateConfigToV12`.
+`loadConfig` migrates v1–v12 shapes via `migrateConfigToV13`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -58,7 +59,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 12,
+  "schema": 13,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -228,6 +229,25 @@ for new installs; migration preserves explicit `enabled:false` /
 | `min_events` / `min_holdout_events` / `min_mature_paired` | `40` / `20` / `40` | Sample floors |
 | `one_active_experiment` | `true` | Skip schedule while a canary is active |
 | `auto_open_pr` | `false` | Deprecated; PR path removed from schedule |
+
+### `incident_remediation` (schema 13)
+
+Host-owned hourly/weekly ops remediation (ADR 017 / INV-S27). Defaults
+**disabled** for safe rollout.
+
+| Field | Default | Role |
+|---|---|---|
+| `enabled` | `false` | Master switch |
+| `schedule_enabled` | `false` | Allow launchd hourly/weekly jobs |
+| `hourly_interval_s` | `3600` | Hourly scan cadence |
+| `triage_model` / `diagnose_model` / `review_model` | `composer-2.5-fast` | Read-only agent models |
+| `propose_model` / `build_model` | `cursor-grok-4.5-high` | Plan/build models |
+| `max_active` | `1` | One active remediation |
+| `max_immediate_builds_per_utc_day` | `2` | Daily build cap |
+| `max_origin_move_rebuilds` | `1` | Rebuilds when origin moves |
+| `max_weekly_deferred` | `1` | Weekly deferred items per run |
+| `approval_ttl_hours` | `24` | High-risk Telegram approval TTL |
+| `max_evidence_bytes` / `max_diff_lines` | `100000` / `400` | Evidence and diff bounds |
 
 ### `narratives` (schema 7)
 

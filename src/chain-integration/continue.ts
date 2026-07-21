@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { WorkspaceLock } from "../lib/lock.js"
 import { systemClock } from "../lib/clock.js"
 import { loadConfig } from "../lib/config.js"
+import { DEPLOYMENT_CONFIG_SCHEMA } from "../lib/deployment.js"
 import { log } from "../lib/log.js"
 import {
   createDiscordRestClient,
@@ -230,7 +231,7 @@ export function verifyPostDeployHealth(args: Readonly<{
       }
     }
     const cfg = loadConfig()
-    if (cfg.schema !== 12) {
+    if (cfg.schema !== DEPLOYMENT_CONFIG_SCHEMA) {
       return { ok: false, reason: `config schema ${cfg.schema}` }
     }
   } catch (error) {

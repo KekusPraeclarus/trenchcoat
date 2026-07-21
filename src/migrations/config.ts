@@ -442,6 +442,7 @@ const CHAIN_INTEGRATION_V12_DEFAULTS = {
 export function migrateConfigToV12(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
   if (record?.["schema"] === 12) return raw
+  if (record?.["schema"] === 13) return raw
   const v11 = migrateConfigToV11(raw) as Record<string, unknown>
   const chat = (v11["chat"] ?? {}) as Record<string, unknown>
   const discord = (chat["discord"] ?? {}) as Record<string, unknown>
@@ -465,5 +466,56 @@ export function migrateConfigToV12(raw: unknown): unknown {
         chain_integration: merged,
       },
     },
+  }
+}
+
+export const INCIDENT_REMEDIATION_V13_DEFAULTS = {
+  enabled: false,
+  schedule_enabled: false,
+  hourly_interval_s: 3_600,
+  triage_model: "composer-2.5-fast",
+  diagnose_model: "composer-2.5-fast",
+  propose_model: "cursor-grok-4.5-high",
+  review_model: "composer-2.5-fast",
+  build_model: "cursor-grok-4.5-high",
+  max_active: 1,
+  max_immediate_builds_per_utc_day: 2,
+  max_origin_move_rebuilds: 1,
+  max_weekly_deferred: 1,
+  approval_ttl_hours: 24,
+  max_evidence_bytes: 100_000,
+  max_diff_lines: 400,
+  phase_timeout_ms: 1_800_000,
+} as const
+
+/**
+ * Schema 13: host-owned incident remediation lane (hourly + weekly deferred).
+ * Defaults disabled for safe rollout; preserves explicit overrides.
+ */
+export function migrateConfigToV13(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 13) return raw
+
+  let v12: Record<string, unknown>
+  if (record?.["schema"] === 12) {
+    v12 = record
+  } else {
+    v12 = migrateConfigToV12(raw) as Record<string, unknown>
+  }
+
+  const prev = v12["incident_remediation"]
+  const merged = prev !== undefined && prev !== null && typeof prev === "object"
+    ? {
+      ...INCIDENT_REMEDIATION_V13_DEFAULTS,
+      ...(prev as Record<string, unknown>),
+      enabled: (prev as Record<string, unknown>)["enabled"] === true,
+      schedule_enabled: (prev as Record<string, unknown>)["schedule_enabled"] === true,
+    }
+    : { ...INCIDENT_REMEDIATION_V13_DEFAULTS }
+
+  return {
+    ...v12,
+    schema: 13,
+    incident_remediation: merged,
   }
 }

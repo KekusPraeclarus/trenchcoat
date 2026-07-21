@@ -250,7 +250,7 @@ deploy_runtime() {
   fi
   # Diff vs HEAD (staged + unstaged). Untracked paths appear in porcelain only.
   SOURCE_DIFF="$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null || true)"
-  # configSchema must match DEPLOYMENT_CONFIG_SCHEMA / live config schema (12)
+  # configSchema must match DEPLOYMENT_CONFIG_SCHEMA / live config schema (13)
   # Temp files avoid shell/env quoting limits for large dirty diffs
   PROV_DIR="$RUNTIME_STAGING/.provenance"
   mkdir -p "$PROV_DIR"
@@ -279,7 +279,7 @@ const manifest = {
   schema: 2,
   builtAt: "$BUILT_AT",
   packageVersion: "$PKG_VERSION",
-  configSchema: 12,
+  configSchema: 13,
   sourceCommit,
   sourceDirty,
   sourceHash,
@@ -292,7 +292,7 @@ console.log(
   "deployment provenance commit=" + (sourceCommit ? sourceCommit.slice(0, 12) : "none")
     + " dirty=" + sourceDirty
     + " sourceHash=" + sourceHash.slice(0, 19)
-    + " configSchema=12",
+    + " configSchema=13",
 )
 EOF
 
@@ -888,7 +888,9 @@ begin_deploy_pause() {
     com.trenchcoat.job.narrative-source-review \
     com.trenchcoat.job.delivery-retry \
     com.trenchcoat.job.discord-watchlist-scan \
-    com.trenchcoat.job.harness-improve
+    com.trenchcoat.job.harness-improve \
+    com.trenchcoat.job.incident-remediate \
+    com.trenchcoat.job.incident-remediate-weekly
   do
     launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
   done
@@ -922,6 +924,8 @@ job_to_label() {
     discord-chain-integration) echo com.trenchcoat.job.discord-chain-integration ;;
     telegram-alpha) echo com.trenchcoat.channels ;;
     harness-improve) echo com.trenchcoat.job.harness-improve ;;
+    incident-remediate) echo com.trenchcoat.job.incident-remediate ;;
+    incident-remediate-weekly) echo com.trenchcoat.job.incident-remediate-weekly ;;
     *) echo "" ;;
   esac
 }
@@ -1026,6 +1030,9 @@ write_interval_plist com.trenchcoat.job.narrative-source-review narrative-source
 write_interval_plist com.trenchcoat.job.delivery-retry delivery-retry 900 1
 write_discord_watchlist_scan_plist
 write_discord_chain_integration_plist
+write_interval_plist com.trenchcoat.job.incident-remediate incident-remediate 3600
+# Monday 08:00 local — Weekday 2 on Apple launchd
+write_calendar_plist com.trenchcoat.job.incident-remediate-weekly incident-remediate-weekly 8 0 2
 # Always retire the old list-scan StartInterval job (even with --jobs-only)
 retire_list_scan_cron_plist
 
@@ -1067,7 +1074,9 @@ for label in \
   com.trenchcoat.job.narrative-source-review \
   com.trenchcoat.job.delivery-retry \
   com.trenchcoat.job.discord-watchlist-scan \
-  com.trenchcoat.job.discord-chain-integration
+  com.trenchcoat.job.discord-chain-integration \
+  com.trenchcoat.job.incident-remediate \
+  com.trenchcoat.job.incident-remediate-weekly
 do
   bootstrap_label "$label"
 done
