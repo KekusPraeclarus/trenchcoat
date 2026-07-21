@@ -21,6 +21,12 @@ export function chargesDailyQuota(status: DiscordRequestRecord["status"]): boole
     || status === "completed"
 }
 
+/** Per-user daily: tracking-origin does not charge the user bucket */
+export function chargesUserDailyQuota(request: DiscordRequestRecord): boolean {
+  if (!chargesDailyQuota(request.status)) return false
+  return request.origin !== "tracking"
+}
+
 /** Recompute UTC-day counters from non-failed requests (source of truth) */
 export function recountDailyQuota(
   file: DiscordRequestsFile,
@@ -32,8 +38,10 @@ export function recountDailyQuota(
   for (const r of next.requests) {
     if (r.quotaDay !== next.quotaDay) continue
     if (!chargesDailyQuota(r.status)) continue
-    dailyByUser[r.userId] = (dailyByUser[r.userId] ?? 0) + 1
     dailyServer += 1
+    if (chargesUserDailyQuota(r)) {
+      dailyByUser[r.userId] = (dailyByUser[r.userId] ?? 0) + 1
+    }
   }
   return { ...next, dailyByUser, dailyServer }
 }
@@ -64,11 +72,14 @@ export function quotaAllows(
   userId: string,
   config: TrenchcoatConfig,
   nowIso: string,
+  opts?: Readonly<{ bypassUserCap?: boolean }>,
 ): { ok: true; file: DiscordRequestsFile } | { ok: false; file: DiscordRequestsFile; reason: "user" | "server" } {
   const next = recountDailyQuota(file, nowIso)
-  const userCount = next.dailyByUser[userId] ?? 0
-  if (userCount >= config.chat.discord.per_user_daily_cap) {
-    return { ok: false, file: next, reason: "user" }
+  if (!opts?.bypassUserCap) {
+    const userCount = next.dailyByUser[userId] ?? 0
+    if (userCount >= config.chat.discord.per_user_daily_cap) {
+      return { ok: false, file: next, reason: "user" }
+    }
   }
   if (next.dailyServer >= config.chat.discord.server_daily_cap) {
     return { ok: false, file: next, reason: "server" }

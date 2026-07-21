@@ -418,6 +418,15 @@ Host lane for exact unknown `slug:address` (ADR 016). Defaults: `enabled` true,
 `phase_timeout_ms` 1800000. See
 [architecture/discord-chain-integration.md](architecture/discord-chain-integration.md).
 
+### `chat.discord.tracking`
+
+NL idea-tracking requests (ADR 018, INV-D3–D8). Default `enabled: false`. Models
+`intent_model` / `match_model` default `composer-2.5`. Cap `max_active_per_user`
+10, `ttl_days` 30, `expiry_bundle_hours` 48, `pending_capacity_ttl_hours` 48,
+`tentative_confirm_window_hours` 24, `expiry_reply_window_days` 7. State:
+`~/.trenchcoat/discord/tracking.json`. See
+[architecture/discord-tracking.md](architecture/discord-tracking.md).
+
 Exit codes: `0` success, `1` run never started (env/config problem,
 `CursorAgentError`), `2` run failed mid-flight (inspect transcript), `3` lock
 held / refused. The two failure kinds are never conflated (orchestrator.md).

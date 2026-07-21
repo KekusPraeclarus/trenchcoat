@@ -8,12 +8,14 @@ import {
   DiscordMonitorCursorSchema,
   DiscordObservationsFileSchema,
   DiscordRequestsFileSchema,
+  DiscordTrackingFileSchema,
   DiscordWatchlistFileSchema,
   type DiscordDeliveriesFile,
   type DiscordHeartbeat,
   type DiscordMonitorCursor,
   type DiscordObservationsFile,
   type DiscordRequestsFile,
+  type DiscordTrackingFile,
   type DiscordWatchlistFile,
 } from "./schemas.js"
 
@@ -86,6 +88,10 @@ export function emptyDeliveriesFile(): DiscordDeliveriesFile {
   return { schema: 1, deliveries: [] }
 }
 
+export function emptyTrackingFile(): DiscordTrackingFile {
+  return { schema: 1, requests: [], matchBatches: [], trackingDeliveries: [] }
+}
+
 export type DiscordStore = Readonly<{
   layout: DiscordLayout
   loadRequests(): DiscordRequestsFile
@@ -96,6 +102,8 @@ export type DiscordStore = Readonly<{
   saveObservations(file: DiscordObservationsFile): Promise<void>
   loadDeliveries(): DiscordDeliveriesFile
   saveDeliveries(file: DiscordDeliveriesFile): Promise<void>
+  loadTracking(): DiscordTrackingFile
+  saveTracking(file: DiscordTrackingFile): Promise<void>
   writeHeartbeat(kind: "listener" | "monitor", beat: DiscordHeartbeat): Promise<void>
   loadMonitorCursor(): DiscordMonitorCursor | undefined
   saveMonitorCursor(cursor: DiscordMonitorCursor | null): Promise<void>
@@ -155,6 +163,19 @@ export function createDiscordStore(layout: DiscordLayout): DiscordStore {
     async saveDeliveries(file) {
       DiscordDeliveriesFileSchema.parse(file)
       await saveFile(layout.deliveries, file)
+    },
+    loadTracking() {
+      return loadFile(
+        layout,
+        layout.tracking,
+        "tracking",
+        DiscordTrackingFileSchema,
+        emptyTrackingFile,
+      )
+    },
+    async saveTracking(file) {
+      DiscordTrackingFileSchema.parse(file)
+      await saveFile(layout.tracking, file)
     },
     async writeHeartbeat(kind, beat) {
       DiscordHeartbeatSchema.parse(beat)

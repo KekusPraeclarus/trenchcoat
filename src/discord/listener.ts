@@ -23,6 +23,8 @@ import { renewSubscription } from "./watchlist.js"
 import { acceptChainIntegration } from "../chain-integration/intake.js"
 import { kickChainIntegrationWorker } from "../chain-integration/kick.js"
 import { reactAcceptedSources } from "../chain-integration/continue.js"
+import { handleTrackingMessage } from "./tracking-intent.js"
+import { kickTrackingWorker } from "./tracking-worker.js"
 
 export type DiscordListenerOpts = Readonly<{
   token: string
@@ -75,7 +77,12 @@ async function handleRenewal(message: Message, token: string): Promise<void> {
   }
 }
 
-async function handleResearchMessage(message: Message, repoRoot: string, token: string): Promise<void> {
+async function handleResearchMessage(
+  message: Message,
+  repoRoot: string,
+  token: string,
+  botUserId: string | undefined,
+): Promise<void> {
   const intent = extractDiscordResearchIntent(message.content)
   if (intent.kind === "chain-integration") {
     const accepted = await acceptChainIntegration({
@@ -100,31 +107,61 @@ async function handleResearchMessage(message: Message, repoRoot: string, token: 
     kickChainIntegrationWorker()
     return
   }
-  if (intent.kind !== "research") return
+  if (intent.kind === "research") {
+    const accepted = await acceptDiscordRequest({
+      guildId: message.guildId!,
+      channelId: message.channelId,
+      messageId: message.id,
+      userId: message.author.id,
+      subject: intent.subject,
+      ...(intent.chainHint ? { chainHint: intent.chainHint } : {}),
+      ...(intent.tokenHint ? { tokenHint: intent.tokenHint } : {}),
+    })
 
-  const accepted = await acceptDiscordRequest({
+    if ("duplicate" in accepted) return
+
+    if ("accepted" in accepted && !accepted.accepted) {
+      const client = createDiscordRestClient(token)
+      await client.sendReply({
+        channelId: message.channelId,
+        content: accepted.terminal.slice(0, 280),
+        replyToMessageId: message.id,
+      })
+      return
+    }
+
+    void pumpLoop(repoRoot, token)
+    return
+  }
+
+  const mentionsBot = Boolean(
+    botUserId && message.mentions.users.has(botUserId),
+  )
+  let replyToBot = false
+  if (message.reference?.messageId && botUserId) {
+    try {
+      const ref = await message.fetchReference()
+      replyToBot = ref.author.id === botUserId
+    } catch {
+      replyToBot = false
+    }
+  }
+  if (!mentionsBot && !replyToBot) return
+
+  await handleTrackingMessage({
+    repoRoot,
+    token,
     guildId: message.guildId!,
     channelId: message.channelId,
     messageId: message.id,
     userId: message.author.id,
-    subject: intent.subject,
-    ...(intent.chainHint ? { chainHint: intent.chainHint } : {}),
-    ...(intent.tokenHint ? { tokenHint: intent.tokenHint } : {}),
+    content: message.content,
+    mentionsBot,
+    replyToBot,
+    ...(message.reference?.messageId
+      ? { referencedMessageId: message.reference.messageId }
+      : {}),
   })
-
-  if ("duplicate" in accepted) return
-
-  if ("accepted" in accepted && !accepted.accepted) {
-    const client = createDiscordRestClient(token)
-    await client.sendReply({
-      channelId: message.channelId,
-      content: accepted.terminal.slice(0, 280),
-      replyToMessageId: message.id,
-    })
-    return
-  }
-
-  void pumpLoop(repoRoot, token)
 }
 
 async function pumpLoop(repoRoot: string, token: string): Promise<void> {
@@ -169,6 +206,9 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
   client.once("clientReady", () => {
     log.info("discord listener ready")
     void writeBeat()
+    if (config.chat.discord.tracking.enabled) {
+      kickTrackingWorker(opts.repoRoot)
+    }
   })
 
   client.on("messageCreate", (message) => {
@@ -179,7 +219,12 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
       })
       return
     }
-    void handleResearchMessage(message, opts.repoRoot, opts.token).catch(async (error) => {
+    void handleResearchMessage(
+      message,
+      opts.repoRoot,
+      opts.token,
+      client.user?.id,
+    ).catch(async (error) => {
       const msg = error instanceof Error ? error.message : "unknown"
       log.warn(`discord intake error: ${msg}`)
       await writeBeat(msg)

@@ -72,7 +72,7 @@ export async function deliverResearchReply(args: Readonly<{
       await args.client.sendReply({
         channelId: args.request.channelId,
         content,
-        replyToMessageId: args.request.messageId,
+        replyToMessageId: args.request.trackingPingMessageId ?? args.request.messageId,
       })
       delivered.add(key)
     } catch (error) {

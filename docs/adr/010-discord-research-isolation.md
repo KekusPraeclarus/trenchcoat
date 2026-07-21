@@ -47,6 +47,7 @@ Message Content intent.
   skills).
 - Live canaries require explicit `TRENCHCOAT_LIVE_DISCORD=1` (see plan §14).
 - Watch update voice and fallback contract: ADR 012.
+- Idea-tracking (NL watch-for-ideas, durable match batches): ADR 018 / INV-D3–D8.
 - Main promote is best-effort: if main `.lock` is busy, Discord subscribe still
   succeeds and promote is skipped (logged).
 

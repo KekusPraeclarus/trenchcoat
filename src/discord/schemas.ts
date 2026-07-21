@@ -16,6 +16,8 @@ export const DiscordRequestStatusSchema = z.enum([
   "rejected",
 ])
 
+export const DiscordRequestOriginSchema = z.enum(["user", "tracking"])
+
 export const DiscordRequestRecordSchema = z.object({
   requestId: DiscordSnowflakeSchema,
   guildId: DiscordSnowflakeSchema,
@@ -34,6 +36,11 @@ export const DiscordRequestRecordSchema = z.object({
   quotaDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   /** Reserved while a chain-integration runs; released on fail or consumed on research handoff */
   chainIntegrationId: z.string().max(128).optional(),
+  /** tracking-origin bypasses per-user caps; still counts server daily */
+  origin: DiscordRequestOriginSchema.optional(),
+  /** When set, research reply threads under this ping message */
+  trackingPingMessageId: DiscordSnowflakeSchema.optional(),
+  trackingId: z.string().regex(/^trk-[a-z0-9-]{8,64}$/u).optional(),
 })
 export type DiscordRequestRecord = z.infer<typeof DiscordRequestRecordSchema>
 
@@ -109,7 +116,7 @@ export const DiscordDeliveryStatusSchema = z.enum([
 
 export const DiscordDeliveryRecordSchema = z.object({
   deliveryId: z.string().min(8).max(128),
-  kind: z.enum(["research", "watch-update", "chain-integration"]),
+  kind: z.enum(["research", "watch-update", "chain-integration", "tracking-ping"]),
   requestId: DiscordSnowflakeSchema.optional(),
   chain: z.string().min(1).max(64).optional(),
   tokenAddress: z.string().min(32).max(128).optional(),
@@ -122,8 +129,119 @@ export const DiscordDeliveryRecordSchema = z.object({
   createdAt: IsoTimestampSchema,
   updatedAt: IsoTimestampSchema,
   observationKey: z.string().max(128).optional(),
+  trackingId: z.string().regex(/^trk-[a-z0-9-]{8,64}$/u).optional(),
 })
 export type DiscordDeliveryRecord = z.infer<typeof DiscordDeliveryRecordSchema>
+
+export const TrackingRequestStatusSchema = z.enum([
+  "active",
+  "pending-capacity",
+  "tentative",
+  "expired-awaiting-reply",
+  "expired-final",
+  "dropped",
+])
+export type TrackingRequestStatus = z.infer<typeof TrackingRequestStatusSchema>
+
+export const TrackingIdSchema = z.string().regex(/^trk-[a-z0-9-]{8,64}$/u)
+
+export const TrackingRequestRecordSchema = z.object({
+  trackingId: TrackingIdSchema,
+  guildId: DiscordSnowflakeSchema,
+  channelId: DiscordSnowflakeSchema,
+  messageId: DiscordSnowflakeSchema,
+  userId: DiscordSnowflakeSchema,
+  description: z.string().min(1).max(500),
+  shortLabel: z.string().min(1).max(64),
+  status: TrackingRequestStatusSchema,
+  createdAt: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+  expiresAt: IsoTimestampSchema,
+  extensionCount: z.number().int().min(0).max(100).default(0),
+  /** Derived from delivered/terminal deliveries; retained for fast allowlist checks */
+  matchedSubjects: z.array(z.string().min(1).max(256)).max(500).default([]),
+  expiryNoticeMessageId: DiscordSnowflakeSchema.optional(),
+  /** When pending-capacity / tentative silently expire */
+  pendingExpiresAt: IsoTimestampSchema.optional(),
+})
+export type TrackingRequestRecord = z.infer<typeof TrackingRequestRecordSchema>
+
+export const TrackingMatchSourceKindSchema = z.enum([
+  "list-scan",
+  "farcaster-scan",
+  "research",
+  "discord-research",
+])
+export type TrackingMatchSourceKind = z.infer<typeof TrackingMatchSourceKindSchema>
+
+export const TrackingMatchBatchStatusSchema = z.enum([
+  "pending",
+  "running",
+  "completed",
+  "failed",
+])
+
+export const TrackingMatchBatchSchema = z.object({
+  batchId: z.string().min(8).max(128),
+  sourceKind: TrackingMatchSourceKindSchema,
+  runId: z.string().min(1).max(128),
+  snapshotHash: z.string().min(8).max(128),
+  status: TrackingMatchBatchStatusSchema,
+  attemptCount: z.number().int().min(0).max(32).default(0),
+  createdAt: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+  nextAttemptAt: IsoTimestampSchema.optional(),
+  claimedAt: IsoTimestampSchema.optional(),
+  lastError: z.string().max(280).optional(),
+  /** Host-captured candidate payload summary for the matcher (path or inline digest) */
+  candidateDigest: z.string().min(1).max(64_000),
+  researchSummary: z.string().max(8_000).optional(),
+  researchSubject: z.string().max(256).optional(),
+})
+export type TrackingMatchBatch = z.infer<typeof TrackingMatchBatchSchema>
+
+export const TrackingDeliveryStatusSchema = z.enum([
+  "pending",
+  "sending",
+  "delivered",
+  "terminal",
+])
+
+export const TrackingDeliveryRecordSchema = z.object({
+  deliveryId: z.string().min(8).max(128),
+  trackingId: TrackingIdSchema,
+  subject: z.string().min(1).max(256),
+  normalizedSubject: z.string().min(1).max(256),
+  reason: z.string().min(1).max(200),
+  status: TrackingDeliveryStatusSchema,
+  guildId: DiscordSnowflakeSchema,
+  channelId: DiscordSnowflakeSchema,
+  userId: DiscordSnowflakeSchema,
+  anchorMessageId: DiscordSnowflakeSchema,
+  parts: z.array(z.string().max(2_000)).max(16),
+  deliveredPartKeys: z.array(z.string().max(128)).max(32).default([]),
+  discordMessageIds: z.array(DiscordSnowflakeSchema).max(16).default([]),
+  attemptCount: z.number().int().min(0).max(32).default(0),
+  createdAt: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+  lastError: z.string().max(280).optional(),
+  batchId: z.string().min(8).max(128),
+  sourceKind: TrackingMatchSourceKindSchema,
+  /** When true, enqueue tracking-origin research after ping */
+  needsResearch: z.boolean().default(false),
+  researchEnqueued: z.boolean().default(false),
+  researchSummary: z.string().max(8_000).optional(),
+  pingMessageId: DiscordSnowflakeSchema.optional(),
+})
+export type TrackingDeliveryRecord = z.infer<typeof TrackingDeliveryRecordSchema>
+
+export const DiscordTrackingFileSchema = z.object({
+  schema: z.literal(1),
+  requests: z.array(TrackingRequestRecordSchema).max(5_000),
+  matchBatches: z.array(TrackingMatchBatchSchema).max(5_000).default([]),
+  trackingDeliveries: z.array(TrackingDeliveryRecordSchema).max(10_000).default([]),
+})
+export type DiscordTrackingFile = z.infer<typeof DiscordTrackingFileSchema>
 
 export const DiscordDeliveriesFileSchema = z.object({
   schema: z.literal(1),

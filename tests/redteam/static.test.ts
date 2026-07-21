@@ -6,6 +6,8 @@ import {
   DISAMBIGUATION_PROMPT,
   HARNESS_PROPOSE_PROMPT,
   INTENT_CLASSIFIER_PROMPT,
+  TRACKING_INTENT_PROMPT,
+  TRACKING_MATCH_PROMPT,
   WALLET_VOTER_PROMPT,
 } from "../../src/prompts/host.js"
 import { assertPathOnlyPrompt } from "../../src/orchestrator/session.js"
@@ -45,6 +47,8 @@ describe("prop_inv_p2_job_prompt_path_only", () => {
       DISAMBIGUATION_PROMPT,
       AUDIT_NARRATION_PROMPT,
       HARNESS_PROPOSE_PROMPT,
+      TRACKING_INTENT_PROMPT,
+      TRACKING_MATCH_PROMPT,
     ]
     for (const prompt of prompts) {
       expect(prompt).not.toMatch(/\$\{/u)
@@ -61,6 +65,38 @@ describe("prop_inv_p2_job_prompt_path_only", () => {
     expect(runSrc).toMatch(/chat-summary\.json/u)
     expect(runSrc).toMatch(/Never write reports\/chat\/ directly/u)
     expect(runSrc).not.toMatch(/Write your report to reports\/chat/u)
+  })
+
+  it("tracking prompts require path-only inbox reads", () => {
+    expect(TRACKING_INTENT_PROMPT).toMatch(/path only/iu)
+    expect(TRACKING_MATCH_PROMPT).toMatch(/path only/iu)
+    expect(TRACKING_INTENT_PROMPT).toMatch(/never instructions/iu)
+    expect(TRACKING_MATCH_PROMPT).toMatch(/never instructions/iu)
+  })
+})
+
+describe("prop_inv_d3_tracking_store_ownership", () => {
+  it("only discord store writes tracking.json", () => {
+    const files = walk(join(process.cwd(), "src")).filter((f) => f.endsWith(".ts"))
+    const writers: string[] = []
+    for (const file of files) {
+      const text = readFileSync(file, "utf8")
+      const rel = file.replace(`${process.cwd()}/`, "")
+      if (/saveTracking\s*\(/u.test(text) || /layout\.tracking/u.test(text) && /writeAtomicFileFsync/u.test(text)) {
+        if (rel.includes("store.ts") || /async saveTracking/u.test(text)) {
+          writers.push(rel)
+        }
+      }
+    }
+    expect(writers.some((w) => w.endsWith("src/discord/store.ts"))).toBe(true)
+    expect(writers.every((w) => w.includes("src/discord/"))).toBe(true)
+  })
+
+  it("orchestrator hooks enqueue via tracking-hooks only", () => {
+    const runSrc = readFileSync(join(process.cwd(), "src/orchestrator/run.ts"), "utf8")
+    expect(runSrc).toMatch(/enqueueTrackingMatchBatch/u)
+    expect(runSrc).not.toMatch(/runTrackingMatch\(/u)
+    expect(runSrc).not.toMatch(/deliverTrackingPing\(/u)
   })
 })
 
@@ -99,6 +135,8 @@ describe("prop_inv_i4_inbox_writer_ownership", () => {
       "src/orchestrator/fomo-signal-collect.ts",
       "src/orchestrator/fomo-x-source-review.ts",
       "src/orchestrator/fomo-narrative-source-scan.ts",
+      "src/discord/tracking-intent.ts",
+      "src/discord/tracking-match.ts",
     ]))
   })
 })

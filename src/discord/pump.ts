@@ -25,6 +25,10 @@ import { promoteDiscordTrackToMain } from "./promote-to-main.js"
 import { tokenKey } from "./schemas.js"
 import { loadConfig } from "../lib/config.js"
 import { extractResearchBrief } from "./research-brief.js"
+import {
+  enqueueTrackingMatchBatch,
+  hashTrackingCandidates,
+} from "./tracking-hooks.js"
 
 async function withStoreLockRetry<T>(
   lockPath: string,
@@ -73,6 +77,9 @@ export async function acceptDiscordRequest(args: Readonly<{
   subject: string
   chainHint?: string
   tokenHint?: string
+  origin?: "user" | "tracking"
+  trackingPingMessageId?: string
+  trackingId?: string
 }>): Promise<
   | { accepted: true; request: DiscordRequestRecord }
   | { accepted: false; terminal: string }
@@ -81,6 +88,7 @@ export async function acceptDiscordRequest(args: Readonly<{
   const config = loadConfig()
   const layout = discordLayout()
   const store = createDiscordStore(layout)
+  const origin = args.origin ?? "user"
 
   const locked = await withStoreLockRetry(layout.lock, async () => {
     const nowIso = systemClock.nowIso()
@@ -91,12 +99,24 @@ export async function acceptDiscordRequest(args: Readonly<{
     const existing = file.requests.find((r) => r.requestId === args.messageId)
     if (existing) return { duplicate: true as const, request: existing }
 
-    const activeCount = countActiveForUser(file, args.userId)
-    if (activeCount >= config.chat.discord.max_active_per_user) {
-      return { accepted: false as const, terminal: DISCORD_ERRORS.ACTIVE }
+    if (origin === "tracking") {
+      const dupSubject = file.requests.find((r) => (
+        r.origin === "tracking"
+        && r.subject.toLowerCase() === args.subject.toLowerCase()
+        && (r.status === "queued" || r.status === "running" || r.status === "completed")
+        && r.quotaDay === file.quotaDay
+      ))
+      if (dupSubject) return { duplicate: true as const, request: dupSubject }
+    } else {
+      const activeCount = countActiveForUser(file, args.userId)
+      if (activeCount >= config.chat.discord.max_active_per_user) {
+        return { accepted: false as const, terminal: DISCORD_ERRORS.ACTIVE }
+      }
     }
 
-    const quota = quotaAllows(file, args.userId, config, nowIso)
+    const quota = quotaAllows(file, args.userId, config, nowIso, {
+      bypassUserCap: origin === "tracking",
+    })
     file = quota.file
     if (!quota.ok) {
       return {
@@ -121,6 +141,11 @@ export async function acceptDiscordRequest(args: Readonly<{
       updatedAt: nowIso,
       quotaDay: file.quotaDay,
       deliveredPartKeys: [],
+      origin,
+      ...(args.trackingPingMessageId
+        ? { trackingPingMessageId: args.trackingPingMessageId }
+        : {}),
+      ...(args.trackingId ? { trackingId: args.trackingId } : {}),
     }
     file.requests.push(request)
     file = recountDailyQuota(file, nowIso)
@@ -232,6 +257,29 @@ export async function processNextDiscordRequest(args: Readonly<{
     if (!delivered.ok) {
       await deliverTerminalError({ client, store, request, error: DISCORD_ERRORS.FAILED })
       return "processed"
+    }
+
+    // Idea-tracking match against completed Discord research (never fails the request)
+    if (request.origin !== "tracking" && reportText) {
+      try {
+        const digest = JSON.stringify([{
+          provenance: `discord-research:${request.requestId}`,
+          text: reportText.slice(0, 2_000),
+        }])
+        await enqueueTrackingMatchBatch({
+          sourceKind: "discord-research",
+          runId: result.runId ?? `discord-${request.requestId}`,
+          snapshotHash: hashTrackingCandidates(digest),
+          candidateDigest: digest,
+          researchSummary: reportText.slice(0, 8_000),
+          researchSubject: request.subject,
+        })
+      } catch (error) {
+        log.warn("discord tracking enqueue after research failed", {
+          requestId: request.requestId,
+          error: error instanceof Error ? error.message : "unknown",
+        })
+      }
     }
 
     if (result.identity && result.subscribeAllowed && result.baseline) {

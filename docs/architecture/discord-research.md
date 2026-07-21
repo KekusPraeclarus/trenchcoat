@@ -2,16 +2,17 @@
 description: Discord research bot — private-guild Gateway listener, isolated state, final-only replies, watch subscriptions.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 read_when:
   - Editing src/discord/ or chat.discord config.
-  - Changing Discord research intake, delivery, watchlist, or monitor behaviour.
+  - Changing Discord research intake, delivery, watchlist, monitor, or idea-tracking behaviour.
 ---
 
 # Discord research bot
 
 Private-guild research-only bot isolated from the main agent and from router
-webhook broadcasts (ADR 010). Watch update narration: ADR 012.
+webhook broadcasts (ADR 010). Watch update narration: ADR 012. Idea-tracking
+requests: [discord-tracking.md](discord-tracking.md) (ADR 018, INV-D3–D8).
 
 ## Two Discord surfaces (do not conflate)
 
@@ -24,22 +25,27 @@ webhook broadcasts (ADR 010). Watch update narration: ADR 012.
 
 - One configured guild (`chat.discord.guild_id`) and 1–20 explicit text channels
 - Any non-bot member with channel access may request research (no user allowlist)
-- **No @mention required** — Message Content Intent + channel allowlist; plain
-  `Research solana:<CA>` (or bare CA / `chain:CA`) in an allowed channel is enough
+- **No @mention required for research** — Message Content Intent + channel
+  allowlist; plain `Research solana:<CA>` (or bare CA / `chain:CA`) in an allowed
+  channel is enough. **Idea-tracking** is the exception: it requires an @mention
+  or a reply to the bot (see [discord-tracking.md](discord-tracking.md))
 - Research-only: no `/status`, exoneration, main watchlist commands, or broadcasts
 - **FIFO queue** — concurrent requests enqueue (`queued`); one runs at a time
   under `.worker.lock`. Per-user depth capped by `max_active_per_user` (default 5);
-  excess gets a terminal queue-full error. Daily caps still apply on accept
-- **Start signal** — ✅ (`white_check_mark`) reaction when claimed
-  (`queued` → `running`); queued messages stay silent until then
+  excess gets a terminal queue-full error. Daily caps still apply on accept.
+  Tracking-origin research (`origin: "tracking"`) bypasses per-user caps but still
+  counts against the server daily cap
+- **Start signal** — ✅ (`white_check_mark`) reaction when research is claimed
+  (`queued` → `running`); 🫡 for successful tracking track/drop/extend/decline
 - **Model** — `chat.discord.model` (default `composer-2.5-fast`) for the initial
   research reply only; six-hour watch updates use `composer-2.5` via a host-side
-  update writer. Does not change Telegram / main orchestrator sessions.
+  update writer; idea-tracking intent/match use `chat.discord.tracking.*_model`
+  (default `composer-2.5`). Does not change Telegram / main orchestrator sessions.
 - **Final-only text replies** — no typing/progress messages; next bot message is
   the result or one terminal error (quota / queue-full / bot-busy). Renewal ack
-  is the sole non-result text reply
+  and tracking capacity/expiry notices are the non-result text replies
 - Unrelated chatter, ticker-only, bots/webhooks, DMs, wrong guild/channel, and
-  edits are ignored silently
+  edits are ignored silently unless they @mention/reply-to-bot for tracking
 
 ## Commands and scheduling
 

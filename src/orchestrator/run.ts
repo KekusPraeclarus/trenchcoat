@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync } from "node:fs"
+import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { WorkspaceLock, agentLockPath } from "../lib/lock.js"
@@ -102,6 +102,10 @@ import { scheduleResearchDrain } from "./research-drain.js"
 import { migrateGenericNarrativeResearchQueue } from "../migrations/research-queue.js"
 import { retainWorkspaceArtifacts } from "./retention.js"
 import { runOutcomesSettle } from "./outcomes-settle.js"
+import {
+  enqueueTrackingMatchBatch,
+  hashTrackingCandidates,
+} from "../discord/tracking-hooks.js"
 import { findIncompleteRuns, nextPhase } from "./resume.js"
 import { isQuarantined, quarantineRun } from "./quarantine.js"
 import { runResearchPasses } from "./research.js"
@@ -1815,6 +1819,26 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       runId,
       runStatus: "complete",
     })
+
+    // Discord idea-tracking match enqueue (INV-D6) — never fails the parent run
+    try {
+      await maybeEnqueueDiscordTracking({
+        job: job.name,
+        runId,
+        agentRoot: opts.paths.agentRoot,
+        archiveRoot: opts.paths.archiveRoot,
+        ...(researchDue ? { researchDue: { queueId: researchDue.queueId, subject: researchDue.subject } } : {}),
+        ...(collection.researchResolution
+          ? { researchResolution: collection.researchResolution }
+          : {}),
+      })
+    } catch (error) {
+      log.warn("discord tracking enqueue skipped", {
+        runId,
+        error: error instanceof Error ? error.message : "unknown",
+      })
+    }
+
     log.info("run complete", { runId, job: job.name })
     return { runId, journal, exitCode: 0 }
     }
@@ -1934,4 +1958,84 @@ export async function listIncompleteRuns(
 export function clearRunArtifacts(agentRoot: string, runId: string): void {
   const dir = join(agentRoot, "reports", runId)
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
+}
+
+async function maybeEnqueueDiscordTracking(args: Readonly<{
+  job: JobName
+  runId: string
+  agentRoot: string
+  archiveRoot: string
+  researchDue?: Readonly<{ queueId: string; subject: string }>
+  researchResolution?: string
+}>): Promise<void> {
+  const sourceKind = args.job === "list-scan"
+    ? "list-scan" as const
+    : args.job === "farcaster-scan"
+      ? "farcaster-scan" as const
+      : args.job === "research"
+        ? "research" as const
+        : undefined
+  if (!sourceKind) return
+
+  if (sourceKind === "research") {
+    if (!args.researchDue) return
+    if (["ambiguous", "empty", "unsupported-chain"].includes(args.researchResolution ?? "")) {
+      return
+    }
+    const summaryPath = join(args.agentRoot, "reports", "chat", `${args.runId}.md`)
+    const altSummary = join(args.agentRoot, "reports", args.runId, "chat-summary.md")
+    const summary = existsSync(summaryPath)
+      ? readFileSync(summaryPath, "utf8")
+      : existsSync(altSummary)
+        ? readFileSync(altSummary, "utf8")
+        : args.researchDue.subject
+    const digest = JSON.stringify([{
+      provenance: `research:${args.researchDue.subject}`,
+      text: summary.slice(0, 2_000),
+    }])
+    await enqueueTrackingMatchBatch({
+      sourceKind,
+      runId: args.runId,
+      snapshotHash: hashTrackingCandidates(digest),
+      candidateDigest: digest,
+      researchSummary: summary.slice(0, 8_000),
+      researchSubject: args.researchDue.subject,
+    })
+    return
+  }
+
+  const inboxDir = join(runArchiveDir(archiveLayout(args.archiveRoot), args.runId), "inbox")
+  const fallbackInbox = join(args.agentRoot, "inbox", args.runId)
+  const dir = existsSync(inboxDir) ? inboxDir : fallbackInbox
+  if (!existsSync(dir)) return
+
+  const candidates: Array<{ provenance: string; text: string }> = []
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue
+    if (name.includes("receipt") || name.includes("manifest") || name.includes("eligible")) continue
+    try {
+      const raw = JSON.parse(readFileSync(join(dir, name), "utf8")) as {
+        items?: Array<{ provenance?: string; text?: string }>
+      }
+      for (const item of raw.items ?? []) {
+        if (!item.text) continue
+        candidates.push({
+          provenance: (item.provenance ?? name).slice(0, 256),
+          text: item.text.slice(0, 2_000),
+        })
+        if (candidates.length >= 500) break
+      }
+    } catch {
+      // skip malformed
+    }
+    if (candidates.length >= 500) break
+  }
+  if (candidates.length === 0) return
+  const digest = JSON.stringify(candidates)
+  await enqueueTrackingMatchBatch({
+    sourceKind,
+    runId: args.runId,
+    snapshotHash: hashTrackingCandidates(digest),
+    candidateDigest: digest,
+  })
 }

@@ -2,7 +2,7 @@
 description: Provider knowledge — Discord webhook fanout (router) and Gateway research bot (isolated).
 scope: project
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # Discord
@@ -21,19 +21,21 @@ last_verified: 2026-07-20
 
 - **Separate token**: `DISCORD_RESEARCH_BOT_TOKEN` — never the broadcast webhook
 - Intents: Guilds, GuildMessages, Message Content (privileged) — required so
-  plain channel text works without an @mention
+  plain channel text works without an @mention **for research**
 - Channel permissions: View Channels, Read Message History, Send Messages,
   Embed Links, Add Reactions
-- No @mention required in allowed channels
+- Research: no @mention required in allowed channels
+- Idea-tracking (ADR 018): **requires** @mention or reply-to-bot; ack 🫡;
+  state in `tracking.json`; default `chat.discord.tracking.enabled: false`
 - FIFO research queue (one runner); ✅ when claimed; `chat.discord.model`
   defaults to `composer-2.5-fast` for the **initial research reply**; material
   watch updates use `composer-2.5` via a **host-side** update writer (not the
-  deep-research agent). Glossed metric diffs + `researchBrief` feed the prompt;
-  one retry then soft prose fallback if the session fails
+  deep-research agent). Tracking intent/match default to `composer-2.5`
 - State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
 - Does not use main `agent/.lock` or research queue
 - Config: schema 10+ `chat.discord.*` (disabled by default); schema 12 adds
-  `chain_integration` for exact unknown `slug:address` host automation
+  `chain_integration` for exact unknown `slug:address` host automation;
+  `chat.discord.tracking` for NL idea-tracking
 - CLI: `tc listen discord`, `tc discord watchlist scan`,
   `tc discord chains run|status|retry|fail|continue`
 - Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
@@ -51,4 +53,6 @@ last_verified: 2026-07-20
   `cursor-grok-4.5-high`. See
   [discord-chain-integration.md](../architecture/discord-chain-integration.md),
   ADR 016, INV-D2/S26
-- See [architecture/discord-research.md](../architecture/discord-research.md), ADR 010, ADR 012
+- See [architecture/discord-research.md](../architecture/discord-research.md),
+  [architecture/discord-tracking.md](../architecture/discord-tracking.md),
+  ADR 010, ADR 012, ADR 018

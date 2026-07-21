@@ -7,6 +7,7 @@ export type DiscordLayout = Readonly<{
   watchlist: string
   observations: string
   deliveries: string
+  tracking: string
   agent: string
   archive: string
   archiveRuns: string
@@ -31,6 +32,7 @@ export function discordLayout(home = join(homedir(), ".trenchcoat")): DiscordLay
     watchlist: join(root, "watchlist.json"),
     observations: join(root, "observations.json"),
     deliveries: join(root, "deliveries.json"),
+    tracking: join(root, "tracking.json"),
     agent: join(root, "agent"),
     archive: join(root, "archive"),
     archiveRuns: join(root, "archive", "runs"),
