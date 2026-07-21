@@ -236,6 +236,10 @@ deploy_runtime() {
   "$NODE_BIN" --input-type=module <<EOF
 import { writeFileSync, readFileSync, rmSync } from "node:fs"
 import { createHash } from "node:crypto"
+import { pathToFileURL } from "node:url"
+const { DEPLOYMENT_CONFIG_SCHEMA } = await import(
+  pathToFileURL("$RUNTIME_STAGING/dist/lib/deployment.js").href
+)
 const cli = readFileSync("$RUNTIME_STAGING/dist/cli.js")
 const cfg = readFileSync("$RUNTIME_STAGING/dist/lib/config.js")
 const sha = (buf) => "sha256:" + createHash("sha256").update(buf).digest("hex")
@@ -256,7 +260,7 @@ const manifest = {
   schema: 2,
   builtAt: "$BUILT_AT",
   packageVersion: "$PKG_VERSION",
-  configSchema: 14,
+  configSchema: DEPLOYMENT_CONFIG_SCHEMA,
   sourceCommit,
   sourceDirty,
   sourceHash,
@@ -269,7 +273,7 @@ console.log(
   "deployment provenance commit=" + (sourceCommit ? sourceCommit.slice(0, 12) : "none")
     + " dirty=" + sourceDirty
     + " sourceHash=" + sourceHash.slice(0, 19)
-    + " configSchema=14",
+    + " configSchema=" + DEPLOYMENT_CONFIG_SCHEMA,
 )
 EOF
 
