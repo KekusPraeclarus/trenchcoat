@@ -9,6 +9,7 @@ import {
   mapLeaderboardEntry,
   mapThesis,
   mapTrader,
+  expandFeedItems,
   thesisRubricComplete,
 } from "../../src/collectors/fomo/mappers.js"
 import { FomoClientError } from "../../src/collectors/fomo/types.js"
@@ -24,6 +25,7 @@ import {
 import { freshnessFromIso, isLiveEligible, snapshotFieldsFromEvent } from "../../src/collectors/fomo/freshness.js"
 import { classifyFomoRequest } from "../../src/collectors/fomo/request-policy.js"
 import { resetRateGatesForTests } from "../../src/lib/rate-gate.js"
+import { isNativeOrWrapMint, inferChainFromTokenAddress } from "../../src/lib/native-mints.js"
 import leaderboard from "../fixtures/providers/fomo/leaderboard.json" with { type: "json" }
 
 describe("fomo mappers", () => {
@@ -69,6 +71,54 @@ describe("fomo mappers", () => {
     expect(bad).toBeUndefined()
   })
 
+  it("expands multi_user feed cards with networkId + topTraders", () => {
+    const events = expandFeedItems({
+      id: "card-1",
+      tokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+      networkId: 1399811149,
+      createdAt: "2026-07-21T01:00:00.000Z",
+      type: "multi_user_buy",
+      body: {
+        ticker: "Jimothy",
+        totalVolume: 10_000,
+        topTraders: [
+          { userHandle: "alice" },
+          { userHandle: "bob" },
+          { _truncated: 3 },
+        ],
+      },
+    }, "2026-07-21T01:05:00.000Z")
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({
+      handle: "alice",
+      action: "buy",
+      chain: "solana",
+      tokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+      symbol: "Jimothy",
+    })
+    expect(events[1]?.handle).toBe("bob")
+  })
+
+  it("infers solana from base58 when networkId is unknown", () => {
+    const events = expandFeedItems({
+      id: "card-2",
+      tokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+      networkId: 999999,
+      createdAt: "2026-07-21T01:00:00.000Z",
+      type: "multi_user_sell",
+      body: {
+        ticker: "Jimothy",
+        topTraders: [{ userHandle: "carol" }],
+      },
+    }, "2026-07-21T01:05:00.000Z")
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      handle: "carol",
+      action: "sell",
+      chain: "solana",
+    })
+  })
+
   it("applies thesis rubric", () => {
     const thesis = mapThesis({
       handle: "a",
@@ -90,6 +140,17 @@ describe("fomo mappers", () => {
       wallets_involved: [{ handle: "a" }, { handle: "b" }],
     })
     expect(event?.handles).toEqual(["a", "b"])
+  })
+})
+
+describe("native mint denylist", () => {
+  it("blocks wrapped SOL and reserved symbols", () => {
+    expect(isNativeOrWrapMint("So11111111111111111111111111111111111111112")).toBe(true)
+    expect(isNativeOrWrapMint("so11111111111111111111111111111111111111112", "WSOL")).toBe(true)
+    expect(isNativeOrWrapMint("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump", "SOL")).toBe(true)
+    expect(isNativeOrWrapMint("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump", "Jimothy")).toBe(false)
+    expect(inferChainFromTokenAddress("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump")).toBe("solana")
+    expect(inferChainFromTokenAddress("0xaf4c10fef50059d1e3e8ab1c80e46db6a76098b4")).toBeUndefined()
   })
 })
 

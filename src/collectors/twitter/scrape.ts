@@ -102,6 +102,44 @@ async function waitForTweetArticles(page: Page, timeoutMs: number): Promise<bool
   }
 }
 
+/** Empty + never saw the cursor is usually a hydration/tab miss, not a true idle feed */
+export function shouldRetryEmptyTimeline(args: Readonly<{
+  kind: TwitterScrapeTarget["kind"]
+  postCount: number
+  hitCursor: boolean
+}>): boolean {
+  if (args.postCount > 0 || args.hitCursor) return false
+  return args.kind === "home"
+    || args.kind === "token-search"
+    || args.kind === "operator-list"
+    || args.kind === "managed-list"
+}
+
+/**
+ * Prefer the For you tab on /home. Burner Following feeds are often empty while
+ * FYP is full — a missed/failed tab click looks like "idle FYP" in x-scan logs.
+ * Skip the click when already selected so we do not remount a live timeline.
+ */
+async function ensureHomeForYouTab(page: Page): Promise<void> {
+  const column = page.locator('[data-testid="primaryColumn"]')
+  const forYou = column.getByRole("tab", { name: /for you/iu })
+  if ((await forYou.count().catch(() => 0)) === 0) {
+    log.warn("twitter home: For you tab not found — scraping whatever is selected")
+    return
+  }
+  const tab = forYou.first()
+  const selected = await tab.getAttribute("aria-selected").catch(() => null)
+  if (selected === "true") return
+  try {
+    await tab.click({ timeout: 5_000 })
+    await page.waitForTimeout(1_500)
+  } catch (error) {
+    log.warn("twitter home: For you click failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 export type TwitterScrapeUntilCursorResult = Readonly<{
   bundle: TwitterScrapeBundle
   /** Top-of-feed post id from this scrape (next cursor after a successful pass) */
@@ -143,19 +181,12 @@ export async function scrapeTargetUntilCursor(
     }
   }
 
-  // Prefer "For you" tab on home when present
   if (target.kind === "home") {
-    const forYou = page.getByRole("tab", { name: /for you/iu })
-    if (await forYou.count().catch(() => 0)) {
-      await forYou.first().click().catch(() => undefined)
-      await page.waitForTimeout(1_500)
-    }
+    await ensureHomeForYouTab(page)
   }
 
-  // Token search often hydrates after domcontentloaded — wait before first parse
-  if (target.kind === "token-search") {
-    await waitForTweetArticles(page, 12_000)
-  }
+  // Home/lists/search often hydrate after domcontentloaded — wait before first parse
+  await waitForTweetArticles(page, 12_000)
 
   const seen = new Map<string, TwitterPost>()
   let newestPostId: string | undefined
@@ -181,9 +212,14 @@ export async function scrapeTargetUntilCursor(
     await page.waitForTimeout(1_200 + Math.floor(Math.random() * 1_800))
   }
 
-  // One soft retry: empty Latest/Top timelines are often a hydration race, not "no posts"
-  if (target.kind === "token-search" && seen.size === 0) {
+  // Soft retry: empty without cursor is usually hydration/tab miss, not a true idle
+  if (shouldRetryEmptyTimeline({
+    kind: target.kind,
+    postCount: seen.size,
+    hitCursor,
+  })) {
     await page.waitForTimeout(2_500)
+    if (target.kind === "home") await ensureHomeForYouTab(page)
     if (await waitForTweetArticles(page, 10_000)) {
       const batch = await parseTwitterSearchPage(page)
       batches.push(batch)

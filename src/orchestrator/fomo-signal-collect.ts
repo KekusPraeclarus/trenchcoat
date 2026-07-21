@@ -29,6 +29,7 @@ import { resolveResearchSubject } from "./research-collect.js"
 import type { CollectionSummary } from "./collect.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
+import { isNativeOrWrapMint } from "../lib/native-mints.js"
 
 function expiryIso(nowIso: string, days: number): string {
   return new Date(Date.parse(nowIso) + days * 86_400_000).toISOString()
@@ -345,6 +346,7 @@ export async function collectFomoSignalScan(args: Readonly<{
 
     for (const candidate of candidates) {
       if (used >= config.fomo.signal_scan.max_enqueues_per_day) break
+      if (isNativeOrWrapMint(candidate.tokenAddress, candidate.symbol)) continue
       const key = `${candidate.chain}:${candidate.tokenAddress}`
       if (watchlistKeys.has(key) || recentKeys.has(key)) continue
       const subject = key
@@ -353,6 +355,10 @@ export async function collectFomoSignalScan(args: Readonly<{
         args.fetcher ?? globalThis.fetch,
       )
       if (resolved.status !== "resolved") continue
+      if (isNativeOrWrapMint(
+        resolved.identity.tokenAddress,
+        resolved.identity.symbolDisplay ?? candidate.symbol,
+      )) continue
       const hash = eventHash({
         kind: candidate.kind,
         chain: candidate.chain,

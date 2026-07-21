@@ -1,5 +1,6 @@
 import { getChain } from "../../lib/chains.js"
 import { validateChainAddress } from "../../lib/address.js"
+import { inferChainFromTokenAddress } from "../../lib/native-mints.js"
 import { asIsoTimestamp } from "./freshness.js"
 import {
   FomoRawActivitySchema,
@@ -19,7 +20,7 @@ import {
   type FomoTrendingObservation,
 } from "./types.js"
 
-const SUPPORTED = new Set(["solana", "base", "ethereum"])
+const SUPPORTED = new Set(["solana", "base", "ethereum", "bsc"])
 
 /** Defined.fi / Fomo networkId → trenchcoat chain slug */
 const NETWORK_ID_TO_CHAIN: Readonly<Record<number, string>> = {
@@ -32,14 +33,40 @@ const NETWORK_ID_TO_CHAIN: Readonly<Record<number, string>> = {
 function mapChain(raw: string | undefined): string | undefined {
   if (!raw) return undefined
   const slug = raw.trim().toLowerCase()
-  if (slug === "bnb" || slug === "bsc") return "bsc"
+  if (slug === "bnb" || slug === "bsc") return getChain("bsc") ? "bsc" : undefined
   if (!SUPPORTED.has(slug)) return undefined
-  return slug
+  return getChain(slug) ? slug : undefined
 }
 
 function mapNetworkId(networkId: number | undefined): string | undefined {
   if (networkId === undefined) return undefined
-  return mapChain(NETWORK_ID_TO_CHAIN[networkId])
+  const mapped = NETWORK_ID_TO_CHAIN[networkId]
+  if (!mapped) return undefined
+  return getChain(mapped) ? mapped : undefined
+}
+
+function actionFromRaw(value: Readonly<{
+  action?: "buy" | "sell" | undefined
+  side?: "buy" | "sell" | undefined
+  type?: string | undefined
+}>): "buy" | "sell" | undefined {
+  if (value.action === "buy" || value.action === "sell") return value.action
+  if (value.side === "buy" || value.side === "sell") return value.side
+  if (typeof value.type === "string") {
+    if (/sell/iu.test(value.type)) return "sell"
+    if (/buy/iu.test(value.type)) return "buy"
+  }
+  return undefined
+}
+
+function resolveActivityChain(args: Readonly<{
+  chainRaw?: string | undefined
+  networkId?: number | undefined
+  tokenAddress?: string | undefined
+}>): string | undefined {
+  return mapChain(args.chainRaw)
+    ?? mapNetworkId(args.networkId)
+    ?? (args.tokenAddress ? inferChainFromTokenAddress(args.tokenAddress) : undefined)
 }
 
 function pushWallet(
@@ -166,19 +193,21 @@ export function mapActivity(raw: unknown): FomoActivity | undefined {
   if (!parsed.success) return undefined
   const value = parsed.data
   const body = value.body && typeof value.body === "object" ? value.body as Record<string, unknown> : undefined
-  const chain = mapChain(value.chain) ?? mapNetworkId(value.networkId)
   const tokenAddress = (
     value.token_mint
     ?? value.tokenAddress
     ?? value.mint
     ?? (typeof body?.["tokenAddress"] === "string" ? body["tokenAddress"] : undefined)
   )?.trim()
+  const chain = resolveActivityChain({
+    chainRaw: value.chain,
+    networkId: value.networkId,
+    ...(tokenAddress ? { tokenAddress } : {}),
+  })
   const eventAt = asIsoTimestamp(
     value.timestamp ?? value.observed_at ?? value.created_at ?? value.createdAt,
   )
-  const action = value.action ?? value.side
-    ?? (typeof value.type === "string" && /buy/iu.test(value.type) ? "buy" as const : undefined)
-    ?? (typeof value.type === "string" && /sell/iu.test(value.type) ? "sell" as const : undefined)
+  const action = actionFromRaw(value)
   const usdAmount = value.usd_amount ?? value.usdAmount
     ?? (typeof body?.["totalVolume"] === "number" ? body["totalVolume"] : undefined)
   const handle = resolveHandle({
@@ -235,7 +264,7 @@ export function mapTradeEvent(raw: unknown, observedAt: string): FomoTradeEvent 
   }
 }
 
-/** Expand multi-user feed cards into per-handle buy events for signal derivation */
+/** Expand multi-user feed cards into per-handle buy/sell events for signal derivation */
 export function expandFeedItems(raw: unknown, observedAt: string): FomoTradeEvent[] {
   const direct = mapTradeEvent(raw, observedAt)
   if (direct?.handle && direct.tokenAddress && direct.chain) return [direct]
@@ -247,33 +276,44 @@ export function expandFeedItems(raw: unknown, observedAt: string): FomoTradeEven
   const topTraders = Array.isArray(body?.["topTraders"]) ? body["topTraders"] : []
   if (topTraders.length === 0) return direct ? [direct] : []
 
-  const chain = mapChain(value.chain) ?? mapNetworkId(value.networkId)
-  const tokenAddress = value.tokenAddress?.trim()
+  const tokenAddress = (
+    value.tokenAddress
+    ?? value.token_mint
+    ?? value.mint
+    ?? (typeof body?.["tokenAddress"] === "string" ? body["tokenAddress"] : undefined)
+  )?.trim()
+  const chain = resolveActivityChain({
+    chainRaw: value.chain,
+    networkId: value.networkId,
+    ...(tokenAddress ? { tokenAddress } : {}),
+  })
   const eventAt = asIsoTimestamp(value.createdAt ?? value.created_at ?? value.timestamp)
+  const action = actionFromRaw(value) ?? "buy"
   if (!chain || !tokenAddress || !eventAt) return direct ? [direct] : []
   const entry = getChain(chain)
   if (!entry || !validateChainAddress(entry.addressFormat, tokenAddress)) return []
 
   const symbol = typeof body?.["ticker"] === "string" ? body["ticker"].slice(0, 32) : undefined
   const volume = typeof body?.["totalVolume"] === "number" ? body["totalVolume"] : undefined
-  const events: FomoTradeEvent[] = []
+  const handles: string[] = []
   for (const trader of topTraders) {
     if (!trader || typeof trader !== "object") continue
     const handle = resolveHandle(trader as { userHandle?: string, handle?: string, displayName?: string })
     if (!handle) continue
-    events.push({
-      ...(value.id !== undefined ? { sourceId: `${String(value.id)}:${handle}` } : {}),
-      handle,
-      action: "buy",
-      chain,
-      tokenAddress,
-      ...(symbol ? { symbol } : {}),
-      ...(volume !== undefined ? { usdAmount: volume / topTraders.length } : {}),
-      eventAt,
-      observedAt,
-    })
+    handles.push(handle)
   }
-  return events.length > 0 ? events : (direct ? [direct] : [])
+  if (handles.length === 0) return direct ? [direct] : []
+  return handles.map((handle) => ({
+    ...(value.id !== undefined ? { sourceId: `${String(value.id)}:${handle}` } : {}),
+    handle,
+    action,
+    chain,
+    tokenAddress,
+    ...(symbol ? { symbol } : {}),
+    ...(volume !== undefined ? { usdAmount: volume / handles.length } : {}),
+    eventAt,
+    observedAt,
+  }))
 }
 
 export function mapConvergence(raw: unknown): FomoConvergence | undefined {

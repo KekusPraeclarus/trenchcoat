@@ -316,7 +316,7 @@ export const ConfigSchema = z.object({
       min_converging_traders: z.number().int().min(2).max(50).default(2),
       pressure_window_minutes: z.number().int().min(1).max(1_440).default(60),
       min_pressure_traders: z.number().int().min(2).max(50).default(3),
-      max_enqueues_per_day: z.number().int().min(0).max(50).default(1),
+      max_enqueues_per_day: z.number().int().min(0).max(50).default(3),
     }).default({}),
     theses: z.object({
       enabled: z.boolean().default(false),

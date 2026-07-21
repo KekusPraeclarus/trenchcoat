@@ -175,11 +175,19 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
         }
 
         if (scraped.bundle.posts.length === 0) {
-          log.info("x-scan target idle", {
-            target: target.label,
-            hitCursor: scraped.hitCursor,
-            pagesScrolled: scraped.pagesScrolled,
-          })
+          // hitCursor=false after scrolling means zero articles parsed — not a caught-up feed
+          if (!scraped.hitCursor) {
+            log.warn("x-scan target empty without cursor — likely hydration/tab miss", {
+              target: target.label,
+              pagesScrolled: scraped.pagesScrolled,
+            })
+          } else {
+            log.info("x-scan target idle", {
+              target: target.label,
+              hitCursor: true,
+              pagesScrolled: scraped.pagesScrolled,
+            })
+          }
           // Refresh cursor to newest even when nothing new past stop point
           if (scraped.newestPostId) {
             await advanceXScanCursor({

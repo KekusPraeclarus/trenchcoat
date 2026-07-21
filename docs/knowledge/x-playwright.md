@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # X / Twitter (Playwright)
@@ -29,6 +29,12 @@ last_verified: 2026-07-20
 - Research token search waits for `article[data-testid=tweet]` after navigation,
   soft-retries once on empty, and falls back from Latest (`f=live`) to Top when
   Latest returns zero posts. Host queries: CA, `$SYMBOL`, `SYMBOL chain`.
+- Home/list timelines also wait for tweet articles and soft-retry when empty
+  **without** hitting the scroll cursor (`shouldRetryEmptyTimeline`). Empty +
+  `hitCursor=false` is a scrape fault (hydration / missed For you tab), not a
+  caught-up feed — x-scan logs it as `empty without cursor`. On `/home`, prefer
+  the For you tab and skip the click when already `aria-selected` (burner
+  Following feeds are often empty while FYP is full).
 
 ## list-scan / x-scan cadence
 

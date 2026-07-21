@@ -2,7 +2,7 @@
 description: Research queue lifecycle - how candidates from scans, narrative transitions, new-pool feed, alpha digestion, and chat become bounded research runs. Schema, dedupe, priority, revisit handling, expiry.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 read_when:
   - Editing candidate enqueueing, the research job trigger, narrative bridge, or revisit/expiry handling.
 ---
@@ -130,7 +130,10 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
 - **Fomo signal bridge** — `fomo-signal-scan` may enqueue `trigger: "social"`
   entries from feed/alerts/derived convergence when config + FAFO gates pass and
   `shadow_mode=false`. Canonical resolution is required before enqueue; cluster
-  count is unique mapped handles. See [knowledge/fomo-family.md](../knowledge/fomo-family.md)
+  count is unique mapped handles. Native/wrap gas mints (`So1111…` WSOL, WETH,
+  WBNB, …) and reserved chain symbols (`SOL`, `ETH`, …) are never enqueued.
+  Default cap is `signal_scan.max_enqueues_per_day` (3). See
+  [knowledge/fomo-family.md](../knowledge/fomo-family.md)
 - **Expiry** — pending/ambiguous entries past `expiresAt` are swept
 - **Ambiguous** — held when DexScreener resolution cannot bind a canonical
   identity; operator should resubmit `chain:address`

@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -262,6 +262,7 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `trader_sync.enabled` | `false` | Lane A wallet nomination job |
 | `signal_scan.enabled` | `false` | Lane B signal job |
 | `signal_scan.feed` / `trending` / `alerts` / `convergence` / `pressure` | `false` | Per-signal capability flags |
+| `signal_scan.max_enqueues_per_day` | `3` | Research-queue writes per UTC day (native/wrap mints never count) |
 | `theses.enabled` | `false` | Thesis attachment (adapter-ready; runtime off until gate pass) |
 | `x_source_review.enabled` | `false` | Classify Fomo-nominated X accounts |
 | `x_source_review.max_pending` | `100` | Pending nomination queue cap |

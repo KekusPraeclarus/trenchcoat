@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-21
 source: https://fomo.family
 ---
 
@@ -25,7 +25,12 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
 ## Jobs
 
 - `fomo-trader-sync` — leaderboard → wallet candidates + X nominations
-- `fomo-signal-scan` — feed / alerts / derived convergence & pressure
+- `fomo-signal-scan` — feed / alerts / derived convergence & pressure;
+  trending/hot may enqueue research when gates + config allow. Native/wrap gas
+  mints and reserved chain symbols never burn the daily enqueue cap
+  (`max_enqueues_per_day`, default 3). Feed cards are `multi_user_buy|sell`
+  shapes: expand `body.topTraders` with `networkId` (or solana base58 inference)
+  into per-handle trade events.
 - `fomo-x-source-review` — classify nominated X accounts; host merge extracts
   historical calls for shillers (`awaiting-review-epoch`) and registers narrative
   probation for narrative/both

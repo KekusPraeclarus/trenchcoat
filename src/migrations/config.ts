@@ -289,7 +289,7 @@ export function defaultFomoConfigV9(): Record<string, unknown> {
       min_converging_traders: 2,
       pressure_window_minutes: 60,
       min_pressure_traders: 3,
-      max_enqueues_per_day: 1,
+      max_enqueues_per_day: 3,
     },
     theses: {
       enabled: false,

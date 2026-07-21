@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   accumulatePostsUntilCursor,
 } from "../../src/collectors/twitter/scrape-cursor.js"
+import { shouldRetryEmptyTimeline } from "../../src/collectors/twitter/scrape.js"
 
 describe("accumulatePostsUntilCursor", () => {
   const post = (id: string) => ({
@@ -44,5 +45,31 @@ describe("accumulatePostsUntilCursor", () => {
     expect(result.hitCursor).toBe(true)
     expect(result.posts).toEqual([])
     expect(result.newestPostId).toBe("9")
+  })
+})
+
+describe("shouldRetryEmptyTimeline", () => {
+  it("retries home empty without cursor (hydration / For you miss)", () => {
+    expect(shouldRetryEmptyTimeline({
+      kind: "home",
+      postCount: 0,
+      hitCursor: false,
+    })).toBe(true)
+  })
+
+  it("does not retry true idle (cursor hit, no new posts)", () => {
+    expect(shouldRetryEmptyTimeline({
+      kind: "home",
+      postCount: 0,
+      hitCursor: true,
+    })).toBe(false)
+  })
+
+  it("does not retry when posts were parsed", () => {
+    expect(shouldRetryEmptyTimeline({
+      kind: "home",
+      postCount: 3,
+      hitCursor: false,
+    })).toBe(false)
   })
 })
