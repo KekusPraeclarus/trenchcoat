@@ -116,6 +116,20 @@ describe("discord materiality", () => {
     expect(detectMaterialChanges(prior, current).some((c) => c.reason === "x-engagement")).toBe(true)
   })
 
+  it("does not fire on security status or flag churn", () => {
+    const prior = {
+      ...base(),
+      securityStatus: "caution" as const,
+      securityFlags: ["low-lp-lock", "unverified-source"],
+    }
+    const current = {
+      ...base(),
+      securityStatus: "hard-fail" as const,
+      securityFlags: ["low-lp-lock"],
+    }
+    expect(detectMaterialChanges(prior, current)).toHaveLength(0)
+  })
+
   it("soft prose fallback has no scan timestamp or bullet inventory", () => {
     const text = renderWatchUpdateFactsOnly({
       chain: "robinhood",

@@ -2,7 +2,7 @@
 description: ADR — Discord watch updates use host-side glossed LLM narration with soft prose fallback, not scripted metric bullets.
 scope: project
 status: accepted
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # ADR 012 — Discord watch update narration
@@ -27,11 +27,12 @@ Initial research replies already sounded conversational via the agent
   ask-mode, `PERSONA_VOICE`) — do **not** route watch updates through the
   deep-research agent or `chat.discord.model` fast path.
 - **Glossed inputs:** `formatMaterialChangeGloss` in `src/discord/materiality.ts`
-  translates material diffs (including security flag codes) into trader English
-  before the model sees them; drop `scanAt` from the user message.
+  translates material diffs into trader English before the model sees them; drop
+  `scanAt` from the user message. Security status/flag churn is not material for
+  watch updates (research/subscribe gates still use security).
 - **Prompt contract:** `WATCH_UPDATE_PROMPT` requires takeaway-first prose,
-  1–2 beats of context per shift, plain-English security, and forbids `Scan:`
-  timestamps and `label: prior → current` inventory lines.
+  1–2 beats of context per shift, and forbids `Scan:` timestamps and
+  `label: prior → current` inventory lines.
 - **Validation:** normalize em-dashes to `-` before output checks instead of
   rejecting and falling back.
 - **Retry:** one retry on session error or validation failure.
@@ -52,8 +53,8 @@ Initial research replies already sounded conversational via the agent
 
 ## Alternatives considered
 
-- **Skip Discord send when LLM fails** — rejected; material security moves must
-  still reach subscribers.
+- **Skip Discord send when LLM fails** — rejected; material tape/social moves
+  must still reach subscribers (security flag churn is not a watch trigger).
 - **Soft prose only (no LLM)** — rejected; no flexibility for engagement context
   or thesis anchoring from `researchBrief`.
 - **Reuse deep-research agent for updates** — rejected; too heavy for a short

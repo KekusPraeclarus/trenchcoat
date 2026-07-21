@@ -40,14 +40,6 @@ function fmtNum(v: number | null | undefined): string {
   return String(v)
 }
 
-function setChanged(a: readonly string[], b: readonly string[]): boolean {
-  const sa = new Set(a)
-  const sb = new Set(b)
-  if (sa.size !== sb.size) return true
-  for (const x of sa) if (!sb.has(x)) return true
-  return false
-}
-
 function doubledOrHalved(prior: number, current: number): boolean {
   return (pctChange(prior, current) ?? 0) >= DOUBLE_OR_HALF_MIN
 }
@@ -58,35 +50,8 @@ export function detectMaterialChanges(
 ): MaterialChange[] {
   const out: MaterialChange[] = []
 
-  if (
-    baseline.securityStatus !== current.securityStatus
-    && (baseline.securityStatus != null || current.securityStatus != null)
-  ) {
-    out.push({
-      reason: "security-status",
-      label: "Security status",
-      prior: baseline.securityStatus ?? "unknown",
-      current: current.securityStatus ?? "unknown",
-    })
-  }
-
-  if (current.securityStatus === "hard-fail" && baseline.securityStatus !== "hard-fail") {
-    out.push({
-      reason: "security-hard-fail",
-      label: "Security hard-fail",
-      prior: baseline.securityStatus ?? "unknown",
-      current: current.securityStatus ?? "hard-fail",
-    })
-  }
-
-  if (setChanged(baseline.securityFlags, current.securityFlags)) {
-    out.push({
-      reason: "security-flags",
-      label: "Security flags",
-      prior: baseline.securityFlags.join(", ") || "none",
-      current: current.securityFlags.join(", ") || "none",
-    })
-  }
+  // Security status/flags stay on the dossier for research gates; they do not
+  // trigger watch-update broadcasts (flag churn is noisy and not tape)
 
   if (
     baseline.priceUsd != null && current.priceUsd != null

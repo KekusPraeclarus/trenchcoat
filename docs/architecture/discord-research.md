@@ -126,7 +126,8 @@ Promotion is silent, non-blocking on main `.lock`, and never stages broadcasts.
   from the delivered research reply for later update context
 - Monitor collects market/security/X without a model; strict material thresholds
   in `src/discord/materiality.ts` (price ≥50%, liquidity/volume/fdv 2×/0.5×,
-  X authors net +50/−100, engagement 2×/0.5×, security always)
+  X authors net +50/−100, engagement 2×/0.5×). Security status/flag churn does
+  **not** trigger watch updates (still used for research/subscribe gates)
 - Material diffs trigger `composer-2.5` watch-update writer (`PERSONA_VOICE`,
   human-readable metric glosses, one retry on failure, then soft prose fallback)
 - Resumable scan cursor in `monitor-cursor.json`
