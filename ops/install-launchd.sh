@@ -220,12 +220,22 @@ deploy_runtime() {
   mkdir -p "$RUNTIME_STAGING/dist"
   cp -R "$REPO_ROOT/dist/." "$RUNTIME_STAGING/dist/"
   cp "$REPO_ROOT/package.json" "$RUNTIME_STAGING/package.json"
+  # lockfile + allowBuilds so prod install/rebuild can compile better-sqlite3
+  cp "$REPO_ROOT/pnpm-lock.yaml" "$RUNTIME_STAGING/pnpm-lock.yaml"
+  cp "$REPO_ROOT/pnpm-workspace.yaml" "$RUNTIME_STAGING/pnpm-workspace.yaml"
   (
     cd "$RUNTIME_STAGING"
     # ignore-scripts skips lifecycle hooks for speed/safety, but better-sqlite3
     # (router SQLite) needs its native addon — rebuild that one explicitly
     pnpm install --prod --ignore-scripts --config.confirmModulesPurge=false >/dev/null
-    pnpm rebuild better-sqlite3 >/dev/null
+    if ! pnpm rebuild better-sqlite3; then
+      echo "pnpm rebuild better-sqlite3 failed — router will not start" >&2
+      exit 1
+    fi
+    if ! find node_modules -name better_sqlite3.node -type f | grep -q .; then
+      echo "better_sqlite3.node missing after rebuild — refusing to deploy" >&2
+      exit 1
+    fi
   )
 
   PKG_VERSION="$("$NODE_BIN" -e "console.log(require('$RUNTIME_STAGING/package.json').version)")"

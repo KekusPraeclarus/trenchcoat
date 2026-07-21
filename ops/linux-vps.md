@@ -137,11 +137,16 @@ git status --porcelain
 ./ops/install-systemd.sh --skip-agent-wait
 
 export PATH="$HOME/.trenchcoat/bin:$HOME/.local/bin:$PATH"
-tc status
+# On Linux never use bare `tc` — that is iproute2 traffic control.
+trenchcoat status
 curl -sS http://127.0.0.1:8787/healthz
 systemctl --user list-timers 'trenchcoat-*'
 systemctl --user status trenchcoat-router trenchcoat-listener trenchcoat-channels trenchcoat-x-scan
 ```
+
+If router crash-loops with `Could not locate the bindings file` / `better_sqlite3.node`,
+the native addon failed to compile — redeploy (installer now fails closed) or:
+`cd ~/.trenchcoat/runtime && pnpm rebuild better-sqlite3 && systemctl --user restart trenchcoat-router`.
 
 Installer writes `~/bin/trenchcoat-deploy` → `~/.trenchcoat/bin/trenchcoat-deploy`.
 
@@ -176,7 +181,8 @@ With secrets set and `.github/workflows/deploy-vps.yml` on `main`:
 
 - Cursor: already logged in on VPS (step A) — does not travel with rsync
 - X / Fomo Playwright profiles: try rsynced state; on challenge run
-  `tc auth twitter` / `tc auth fomo` (headed — use provider VNC/console if needed)
+  `trenchcoat auth twitter` / `trenchcoat auth fomo` (headed — needs a display;
+  prefer re-rsync profiles from Mac, or SSH `-X` / provider VNC)
 - GramJS session: rsync `telegram-session/` if present
 
 ## Security reminders
