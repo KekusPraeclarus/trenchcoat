@@ -22,6 +22,12 @@ export const RemediationPhaseSchema = z.enum([
   "publishing",
   "deploying",
   "deployed",
+  "awaiting-recovery-data",
+  "collecting-revalidation",
+  "revalidating",
+  "reconciling-state",
+  "correcting",
+  "attention-required",
   "rolling-back",
   "rolled-back",
   "completed",
@@ -49,6 +55,11 @@ export const ACTIVE_REMEDIATION_PHASES = new Set<RemediationPhase>([
   "gated",
   "publishing",
   "deploying",
+  "awaiting-recovery-data",
+  "collecting-revalidation",
+  "revalidating",
+  "reconciling-state",
+  "correcting",
   "rolling-back",
 ])
 
@@ -107,6 +118,16 @@ export const RemediationIncidentSchema = z.object({
   evidencePaths: z.array(z.string().max(512)).max(32).default([]),
   proposedPaths: z.array(z.string().max(512)).max(64).optional(),
   smokeChecks: z.array(z.string().max(64)).max(16).optional(),
+  affectedSources: z.array(z.string().min(1).max(64)).max(32).optional(),
+  affectedJobs: z.array(z.string().min(1).max(64)).max(32).optional(),
+  impactWindowStart: z.string().min(1).max(64).optional(),
+  impactWindowEnd: z.string().min(1).max(64).optional(),
+  deployedAt: z.string().min(1).max(64).optional(),
+  recoveryConfirmedAt: z.string().min(1).max(64).optional(),
+  revalidationRound: z.number().int().min(0).max(20).optional(),
+  revalidationRunId: z.string().min(1).max(128).optional(),
+  correctionEventIds: z.array(z.string().min(1).max(128)).max(16).optional(),
+  attentionReason: z.string().max(500).optional(),
 })
 export type RemediationIncident = z.infer<typeof RemediationIncidentSchema>
 
@@ -224,3 +245,54 @@ export type DeploymentReceipt = z.infer<typeof DeploymentReceiptSchema>
 
 export const ApprovalActionSchema = z.enum(["approve", "defer", "reject"])
 export type ApprovalAction = z.infer<typeof ApprovalActionSchema>
+
+export const SourceHealthStatusSchema = z.enum(["healthy", "unhealthy", "unknown"])
+export type SourceHealthStatus = z.infer<typeof SourceHealthStatusSchema>
+
+export const SourceHealthObservationSchema = z.object({
+  schema: z.literal(1),
+  observationId: z.string().min(8).max(128),
+  sourceKind: z.string().min(1).max(64),
+  target: z.string().min(1).max(128),
+  observedAt: z.string().min(1).max(64),
+  status: SourceHealthStatusSchema,
+  postCount: z.number().int().min(0).max(100_000).optional(),
+  hitCursor: z.boolean().optional(),
+  challenged: z.boolean().optional(),
+  pagesScrolled: z.number().int().min(0).max(1_000).optional(),
+  runId: z.string().min(1).max(128).optional(),
+  roundId: z.string().min(1).max(128).optional(),
+  sourceCommit: z.string().min(7).max(64).optional(),
+  reason: z.string().max(280).optional(),
+})
+export type SourceHealthObservation = z.infer<typeof SourceHealthObservationSchema>
+
+export const SourceHealthLedgerSchema = z.object({
+  schema: z.literal(1),
+  observations: z.array(SourceHealthObservationSchema).max(5_000),
+})
+export type SourceHealthLedger = z.infer<typeof SourceHealthLedgerSchema>
+
+export const ClaimVerdictSchema = z.enum(["stands", "invalidated", "inconclusive"])
+export type ClaimVerdict = z.infer<typeof ClaimVerdictSchema>
+
+export const ClaimRevalidationResultSchema = z.object({
+  schema: z.literal(1),
+  claimId: z.string().min(8).max(128),
+  verdict: ClaimVerdictSchema,
+  reason: z.string().min(1).max(1_000),
+  evidenceRefs: z.array(z.string().max(512)).max(32).default([]),
+  evaluatorNotes: z.string().max(1_000).optional(),
+  reviewerNotes: z.string().max(1_000).optional(),
+  uncertainty: z.array(z.string().max(500)).max(16).default([]),
+})
+export type ClaimRevalidationResult = z.infer<typeof ClaimRevalidationResultSchema>
+
+export const ImpactWindowSchema = z.object({
+  schema: z.literal(1),
+  ok: z.boolean(),
+  startExclusive: z.string().min(1).max(64).optional(),
+  endInclusive: z.string().min(1).max(64).optional(),
+  reason: z.string().max(280).optional(),
+})
+export type ImpactWindow = z.infer<typeof ImpactWindowSchema>

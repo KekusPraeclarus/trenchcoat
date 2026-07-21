@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV13 } from "../migrations/config.js"
+import { migrateConfigToV14 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(13),
+  schema: z.literal(14),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -277,6 +277,23 @@ export const ConfigSchema = z.object({
     max_evidence_bytes: z.number().int().min(1_000).max(2_000_000).default(100_000),
     max_diff_lines: z.number().int().min(50).max(2_000).default(400),
     phase_timeout_ms: z.number().int().min(60_000).max(3_600_000).default(1_800_000),
+    revalidation: z.object({
+      enabled: z.boolean().default(true),
+      required_healthy_observations: z.number().int().min(1).max(10).default(2),
+      max_rounds: z.number().int().min(1).max(20).default(3),
+      max_wait_hours: z.number().int().min(1).max(168).default(24),
+      evaluate_model: z.string().min(1).max(128).default("composer-2.5-fast"),
+      review_model: z.string().min(1).max(128).default("composer-2.5-fast"),
+      auto_correct: z.boolean().default(true),
+    }).default({
+      enabled: true,
+      required_healthy_observations: 2,
+      max_rounds: 3,
+      max_wait_hours: 24,
+      evaluate_model: "composer-2.5-fast",
+      review_model: "composer-2.5-fast",
+      auto_correct: true,
+    }),
   }).default({
     enabled: false,
     schedule_enabled: false,
@@ -294,6 +311,15 @@ export const ConfigSchema = z.object({
     max_evidence_bytes: 100_000,
     max_diff_lines: 400,
     phase_timeout_ms: 1_800_000,
+    revalidation: {
+      enabled: true,
+      required_healthy_observations: 2,
+      max_rounds: 3,
+      max_wait_hours: 24,
+      evaluate_model: "composer-2.5-fast",
+      review_model: "composer-2.5-fast",
+      auto_correct: true,
+    },
   }),
   wallets: z.object({
     deterministic_weight: z.number().min(0).max(1).default(0.80),
@@ -581,7 +607,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV13(raw))
+  return ConfigSchema.parse(migrateConfigToV14(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

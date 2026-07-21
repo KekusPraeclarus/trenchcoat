@@ -7,11 +7,14 @@ import {
   RemediationCursorsFileSchema,
   RemediationIncidentSchema,
   RemediationsFileSchema,
+  SourceHealthLedgerSchema,
   type DeferredQueueFile,
   type RemediationCursorsFile,
   type RemediationIncident,
   type RemediationsFile,
+  type SourceHealthLedger,
 } from "./schemas.js"
+import { emptySourceHealthLedger } from "./source-health.js"
 
 const MAX_FILE_BYTES = 4_000_000
 
@@ -62,6 +65,8 @@ export type RemediationStore = Readonly<{
   saveCursors(file: RemediationCursorsFile): Promise<void>
   loadDeferred(): DeferredQueueFile
   saveDeferred(file: DeferredQueueFile): Promise<void>
+  loadSourceHealthLedger(): SourceHealthLedger
+  saveSourceHealthLedger(file: SourceHealthLedger): Promise<void>
   findById(id: string): RemediationIncident | undefined
   findByFingerprint(fingerprint: string, activeOnly?: boolean): RemediationIncident | undefined
 }>
@@ -137,6 +142,28 @@ export function createRemediationStore(
         0o600,
       )
     },
+    loadSourceHealthLedger() {
+      ensureRoot(layout)
+      if (!existsSync(layout.sourceHealthLedger)) return emptySourceHealthLedger()
+      let raw = ""
+      try {
+        raw = readFileSync(layout.sourceHealthLedger, "utf8")
+        if (raw.length > MAX_FILE_BYTES) throw new Error("too large")
+        return SourceHealthLedgerSchema.parse(JSON.parse(raw))
+      } catch (error) {
+        if (raw) quarantine(layout, "source-health-ledger", raw)
+        throw error
+      }
+    },
+    async saveSourceHealthLedger(file) {
+      ensureRoot(layout)
+      SourceHealthLedgerSchema.parse(file)
+      await writeAtomicFileFsync(
+        layout.sourceHealthLedger,
+        `${JSON.stringify(file, null, 2)}\n`,
+        0o600,
+      )
+    },
     findById(id) {
       return this.load().incidents.find((i) => i.incidentId === id)
     },
@@ -149,6 +176,7 @@ export function createRemediationStore(
           && i.phase !== "ignored"
           && i.phase !== "rejected"
           && i.phase !== "rolled-back"
+          && i.phase !== "attention-required"
       })
     },
   }

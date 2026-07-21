@@ -228,6 +228,15 @@ export async function mergeNarrativeProposals(args: Readonly<{
   credited: number
   path: string
 }>> {
+  const hold = (await import("../remediation/integrity-hold.js")).loadIntegrityHold()
+  if (hold && !args.runId.startsWith("remediation-")) {
+    return {
+      merged: 0,
+      malformed: 0,
+      credited: 0,
+      path: narrativeLogPath(args.agentRoot),
+    }
+  }
   const proposalPath = narrativeProposalsPath(args.agentRoot, args.runId)
   const logPath = narrativeLogPath(args.agentRoot)
   const existingRaw = existsSync(logPath) ? readFileSync(logPath, "utf8") : ""
@@ -235,9 +244,39 @@ export async function mergeNarrativeProposals(args: Readonly<{
   const proposals = parseProposalEntries(proposalRaw)
   // Merge by feeding existing + proposals through the same prune/collapse path with
   // a long retention so we only schema-filter and dedupe here; age prune is separate.
+  const existingEntries = pruneNarrativeLogInMemory(existingRaw, args.nowIso, 3650).entries
+  const beforeBySlug = new Map(existingEntries.map((e) => [e.slug, e]))
   const combined = [existingRaw, proposalRaw].filter((s) => s.trim().length > 0).join("\n")
   const { entries, malformed: pruneMalformed } = pruneNarrativeLogInMemory(combined, args.nowIso, 3650)
   await writeAtomicFileFsync(logPath, serializeLog(entries))
+
+  try {
+    const {
+      loadMarketClaimIndex,
+      saveMarketClaimIndex,
+      upsertMarketClaim,
+      recordFromNarrativeTransition,
+    } = await import("./market-claims.js")
+    let index = loadMarketClaimIndex(args.agentRoot)
+    let changed = false
+    for (const after of entries) {
+      const before = beforeBySlug.get(after.slug)
+      if (before && before.stage === after.stage) continue
+      // Only index when this run proposed the slug
+      if (!proposals.entries.some((p) => p.slug === after.slug)) continue
+      const record = recordFromNarrativeTransition({
+        runId: args.runId,
+        before,
+        after,
+      })
+      if (!record) continue
+      index = upsertMarketClaim(index, record)
+      changed = true
+    }
+    if (changed) await saveMarketClaimIndex(args.agentRoot, index)
+  } catch {
+    // claim index is best-effort; never fail narrative merge
+  }
 
   let credited = 0
   try {

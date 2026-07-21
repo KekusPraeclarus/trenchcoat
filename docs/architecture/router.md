@@ -49,27 +49,32 @@ the router process, broadcasts never fan out. SQLite lives at
 | Durability | SQLite WAL: events, destination snapshots, deliveries, attempts, nonces, idempotency tombstones |
 | Ingress codes | `202` new event, `200` exact duplicate (same eventId + payload hash), `409` eventId/payload conflict (incident log) |
 | Fanout | At-least-once to Telegram and Discord. Providers have no idempotency primitive; ambiguous timeouts record duplicate risk |
-| Lanes | Discord `finding.broadcast` consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render; Telegram is uncapped after validation; `wallet.lifecycle` never spends Discord market budget |
-| Text ownership | Lifecycle one-liners are host-rendered from trusted reason codes/metrics. LLM prose is never forwarded |
+| Lanes | Discord `finding.broadcast` consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render; Telegram is uncapped after validation; `wallet.lifecycle` and `finding.correction` never spend Discord market budget |
+| Text ownership | Lifecycle one-liners are host-rendered from trusted reason codes/metrics. LLM prose is never forwarded. Correction copy is host-rendered from sealed revalidation artifacts (INV-S28) |
 
 ## Event shapes
 
 Frozen in `src/contracts/schemas.ts` as `RouterEventSchema`.
 
 - `finding.broadcast` — severity `watch|notable|urgent`, length-capped `text`, state refs, host-verifiable `auditClaim`, optional `channels` payloads
+- `finding.correction` — severity `info`, host integrity notice after post-fix claim audit (INV-S28); carries `correction` metadata (incidentId, invalidatedClaimIds, originalEventIds, optional Discord reply target); requires pre-attached channel payloads; bypasses worthiness and Discord market budget; Discord may reply to a persisted provider message ID for a single-claim correction, else standalone
 - `wallet.lifecycle` — severity `lifecycle`, host-rendered `reasonLine`, immutable transition metadata (no `channels`; never distilled)
 
 Event ids are content hashes of the canonical broadcast fields (not `channels`).
 Replays of the exact same full payload are duplicates; same id with a different
-payload is a conflict.
+payload is a conflict. Correction event ids are stable hashes of
+incident + destination + sorted invalidated claim ids.
 
 ### Per-channel payloads
 
 `finding.broadcast` ingress **requires** `channels.telegram` already attached —
 `deliverStagedOutbox` fails closed with
 `requires rendered Telegram channel payload before ingress` if channel-render
-was skipped. Host `renderChannelPayloads` (orchestrator, before first POST)
-attaches:
+was skipped. `finding.correction` requires at least one of
+`channels.telegram` / `channels.discord`, and only those destinations that
+originally received an invalidated public broadcast (INV-S28 — never for
+internal-only narrative/decision invalidations). Host `renderChannelPayloads`
+(orchestrator, before first POST) applies only to `finding.broadcast` and attaches:
 
 | Destination | Source |
 |---|---|
@@ -105,6 +110,9 @@ run.
   chars (`splitDiscordText` in `src/router/deliver.ts`) with numbered `1/n`
   parts and stable per-part `Idempotency-Key` (`<deliveryId>:part:i/n`) so
   retries do not invent new keys. Distiller still targets ≤320 when it succeeds.
+  Successful deliveries persist provider message IDs on the delivery row
+  (`provider_message_ids`) so single-claim `finding.correction` can reply on
+  Discord when an ID exists; missing IDs fall back to standalone.
 - Graceful shutdown drains in-flight leases, then exits
 
 ## Security surface

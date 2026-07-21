@@ -3,6 +3,7 @@ import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import {
   BroadcastItemSchema,
   type BroadcastItem,
+  type RouterChannelPayloads,
   type RouterEvent,
 } from "../contracts/schemas.js"
 import { sha256Json } from "../lib/canonical-json.js"
@@ -279,6 +280,50 @@ export async function deliverRouterEvent(
     retryable,
     parseRetryAfter(response.headers.get("retry-after")),
   )
+}
+
+/** Build a durable finding.correction RouterEvent (INV-S28 integrity notice). */
+export function buildCorrectionRouterEvent(args: Readonly<{
+  runId: string
+  occurredAt: string
+  eventId: `sha256:${string}`
+  text: string
+  refs: readonly string[]
+  incidentId: string
+  invalidatedClaimIds: readonly string[]
+  originalEventIds?: readonly string[]
+  replyToProviderMessageId?: string
+  channels: RouterChannelPayloads
+}>): RouterEvent {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(args.runId)) {
+    throw new TypeError("Run id is invalid")
+  }
+  const occurredTimestamp = Date.parse(args.occurredAt)
+  if (!Number.isFinite(occurredTimestamp) || new Date(occurredTimestamp).toISOString() !== args.occurredAt) {
+    throw new TypeError("occurredAt must be a canonical ISO timestamp")
+  }
+  if ([...args.text].length < 1 || [...args.text].length > 8_000) {
+    throw new TypeError("Correction text length invalid")
+  }
+  return {
+    schema: 1,
+    eventId: args.eventId,
+    occurredAt: args.occurredAt,
+    runId: args.runId,
+    type: "finding.correction",
+    severity: "info",
+    text: args.text,
+    refs: [...args.refs],
+    channels: args.channels,
+    correction: {
+      incidentId: args.incidentId,
+      invalidatedClaimIds: [...args.invalidatedClaimIds],
+      originalEventIds: [...(args.originalEventIds ?? [])],
+      ...(args.replyToProviderMessageId
+        ? { replyToProviderMessageId: args.replyToProviderMessageId }
+        : {}),
+    },
+  }
 }
 
 /** Deliver a BroadcastItem as a finding.broadcast event via HMAC intake */

@@ -56,20 +56,25 @@ export async function deliverTelegram(
   botToken: string,
   chatId: string,
   text: string,
-): Promise<void> {
-  await telegramSendFormattedChunks(fetcher, botToken, chatId, text)
+): Promise<{ messageIds: string[] }> {
+  const result = await telegramSendFormattedChunks(fetcher, botToken, chatId, text)
+  return { messageIds: result.messageIds }
 }
 
 export async function deliverDiscord(
   fetcher: FetchLike,
   webhookUrl: string,
   text: string,
-  opts?: Readonly<{ idempotencyKeyBase?: string }>,
-): Promise<void> {
+  opts?: Readonly<{
+    idempotencyKeyBase?: string
+    replyToMessageId?: string
+  }>,
+): Promise<{ messageIds: string[] }> {
   const url = new URL(webhookUrl)
   url.searchParams.set("wait", "true")
   const parts = splitDiscordText(text)
   const keyBase = opts?.idempotencyKeyBase
+  const messageIds: string[] = []
   for (let i = 0; i < parts.length; i += 1) {
     const part = parts[i]!
     const headers: Record<string, string> = {
@@ -79,13 +84,20 @@ export async function deliverDiscord(
     if (keyBase) {
       headers["Idempotency-Key"] = discordPartIdempotencyKey(keyBase, i, parts.length)
     }
+    const body: Record<string, unknown> = {
+      content: part,
+      allowed_mentions: { parse: [] },
+    }
+    if (i === 0 && opts?.replyToMessageId) {
+      body["message_reference"] = {
+        message_id: opts.replyToMessageId,
+        fail_if_not_exists: false,
+      }
+    }
     const response = await fetcher(url, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        content: part,
-        allowed_mentions: { parse: [] },
-      }),
+      body: JSON.stringify(body),
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
     })
@@ -100,7 +112,14 @@ export async function deliverDiscord(
       if (ra) err.retryAfterSeconds = Number(ra)
       throw err
     }
+    try {
+      const payload = await response.json() as { id?: string }
+      if (typeof payload.id === "string") messageIds.push(payload.id)
+    } catch {
+      // wait=true should return JSON; ignore parse miss
+    }
   }
+  return { messageIds }
 }
 
 export function leaseNextDelivery(
@@ -148,19 +167,27 @@ export async function processDelivery(
   const now = Date.now()
 
   // When channels were host-rendered, omit destinations without a payload
-  // (Discord daily budget skip). Lifecycle events have no channels → both fire.
-  if (
-    event.channels
-    && dest.kind === "discord"
-    && event.channels.discord === undefined
-  ) {
-    db.prepare(
-      `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
-    ).run(now, delivery.id)
-    db.prepare(
-      `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-discord-budget')`,
-    ).run(delivery.id, now)
-    return
+  // (Discord daily budget skip; correction destination scoping).
+  // Lifecycle events have no channels → both fire.
+  if (event.channels) {
+    if (dest.kind === "discord" && event.channels.discord === undefined) {
+      db.prepare(
+        `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
+      ).run(now, delivery.id)
+      db.prepare(
+        `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-discord-budget')`,
+      ).run(delivery.id, now)
+      return
+    }
+    if (dest.kind === "telegram" && event.channels.telegram === undefined) {
+      db.prepare(
+        `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
+      ).run(now, delivery.id)
+      db.prepare(
+        `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-no-channel-payload')`,
+      ).run(delivery.id, now)
+      return
+    }
   }
 
   const channelText = dest.kind === "telegram"
@@ -170,22 +197,35 @@ export async function processDelivery(
       : undefined
   const text = channelText ?? event.text
   try {
+    let messageIds: string[] = []
     if (dest.kind === "telegram") {
       if (!opts.telegramBotToken) throw Object.assign(new Error("no telegram token"), { retryable: false })
-      await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, text)
+      const result = await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, text)
+      messageIds = result.messageIds
     } else if (dest.kind === "discord") {
-      await deliverDiscord(fetcher, dest.target, text, {
+      const replyTo = event.type === "finding.correction"
+        && event.correction?.replyToProviderMessageId
+        ? event.correction.replyToProviderMessageId
+        : undefined
+      const result = await deliverDiscord(fetcher, dest.target, text, {
         idempotencyKeyBase: delivery.id,
+        ...(replyTo ? { replyToMessageId: replyTo } : {}),
       })
+      messageIds = result.messageIds
     } else {
       throw Object.assign(new Error(`unknown dest kind`), { retryable: false })
     }
     db.prepare(
-      `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
-    ).run(now, delivery.id)
+      `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL,
+       provider_message_ids = ?, updated_at = ? WHERE id = ?`,
+    ).run(messageIds.length > 0 ? JSON.stringify(messageIds) : null, now, delivery.id)
     db.prepare(
-      `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'ok')`,
-    ).run(delivery.id, now)
+      `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, ?)`,
+    ).run(
+      delivery.id,
+      now,
+      messageIds.length > 0 ? `ok:${messageIds[0]}` : "ok",
+    )
   } catch (error) {
     const err = error as Error & { retryable?: boolean; retryAfterSeconds?: number }
     const attempts = delivery.attempt_count + 1

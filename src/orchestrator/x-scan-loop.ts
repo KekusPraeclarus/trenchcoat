@@ -23,6 +23,15 @@ import {
   X_SCAN_ROUND_DELAY_MAX_MS,
   X_SCAN_ROUND_DELAY_MIN_MS,
 } from "./x-scan-cursors.js"
+import { loadDeploymentManifest } from "../lib/deployment.js"
+import {
+  appendSourceHealthObservation,
+  classifyXScanObservation,
+} from "../remediation/source-health.js"
+import {
+  createRemediationStore,
+} from "../remediation/store.js"
+import { remediationLayout } from "../remediation/paths.js"
 
 export type XScanLoopPaths = Readonly<{
   agentRoot: string
@@ -164,6 +173,34 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
           }
         }
         if (!scraped) continue
+
+        // Host-owned source-quality observation (INV-S28) — never blocks the loop
+        try {
+          const nowIso = systemClock.nowIso()
+          const deploy = loadDeploymentManifest()
+          const observation = classifyXScanObservation({
+            targetKind: target.kind,
+            targetLabel: target.label,
+            observedAt: nowIso,
+            postCount: scraped.bundle.posts.length,
+            hitCursor: scraped.hitCursor,
+            challenged: scraped.bundle.challenged === true,
+            pagesScrolled: scraped.pagesScrolled,
+            roundId: nowIso,
+            ...(deploy?.sourceCommit ? { sourceCommit: deploy.sourceCommit } : {}),
+          })
+          const layout = remediationLayout(home)
+          const store = createRemediationStore(layout)
+          const ledger = store.loadSourceHealthLedger()
+          await store.saveSourceHealthLedger(
+            appendSourceHealthObservation(ledger, observation),
+          )
+        } catch (error) {
+          log.warn("x-scan source-health write failed", {
+            target: target.label,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
 
         if (scraped.bundle.challenged) {
           log.error("x-scan challenge detected — needs headful re-auth", {

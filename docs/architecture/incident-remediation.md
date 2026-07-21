@@ -22,6 +22,29 @@ integration (INV-S26). See [ADR 017](../adr/017-incident-remediation.md).
    isolated worktree → post-diff review → gates (`test:all`) → ff-only push →
    deploy → smoke → revert+`runtime.prev` on failure.
 5. **Weekly** — Monday 08:00 local; revalidate deferred queue; at most one item.
+6. **Post-fix claim audit (INV-S28)** — after deploy health/smoke, set an
+   integrity hold on affected jobs; wait for configured healthy source
+   observations from the deployed commit; revalidate typed market claims in the
+   conservative impact window; append-only supersede invalidated state; stage
+   one destination-aware `finding.correction` per incident (no harness/canary).
+
+## Post-fix revalidation
+
+Config under `incident_remediation.revalidation` (schema 14):
+
+| Field | Default | Role |
+| --- | --- | --- |
+| `enabled` | `true` | Off only when parent lane needs deploy-without-audit; parent `enabled=false` still disables all |
+| `required_healthy_observations` | `2` | Distinct healthy post-deploy observations per affected source |
+| `max_rounds` | `3` | Inconclusive retry cap |
+| `max_wait_hours` | `24` | Max wait for recovery / inconclusive exhaustion |
+| `evaluate_model` / `review_model` | `composer-2.5-fast` | Unanimous invalidation gate |
+| `auto_correct` | `true` | Stage public corrections after reconcile |
+
+Phases after `deployed`: `awaiting-recovery-data` → collect/revalidate →
+`reconciling-state` → `correcting` → `completed` (or `attention-required`).
+Unknown impact window / unknown market-affecting paths → operator alert, no
+automatic correction. Historical manual FYP corrections are not backfilled.
 
 ## Risk
 
@@ -35,7 +58,8 @@ integration (INV-S26). See [ADR 017](../adr/017-incident-remediation.md).
 
 - Telegram: `approve|defer|reject remediation <id>`, `/remediations`, `remediation <id>`
 - CLI: `tc remediations scan|run|status|approve|defer|reject|retry|fail`
-- Config: `incident_remediation.enabled` + `schedule_enabled` (both default false)
+- Config: `incident_remediation.enabled` + `schedule_enabled` (both default false);
+  post-fix audit via nested `revalidation` (schema 14, INV-S28)
 
 ## Serialization
 

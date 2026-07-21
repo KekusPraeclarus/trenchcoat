@@ -263,6 +263,29 @@ export async function renderChannelPayloads(args: Readonly<{
     const enriched: RouterEvent = { ...event, channels }
     await outbox.enrich(enriched)
 
+    try {
+      const {
+        broadcastClaimId,
+        loadMarketClaimIndex,
+        saveMarketClaimIndex,
+        upsertMarketClaim,
+      } = await import("./market-claims.js")
+      const claimId = broadcastClaimId(event.eventId)
+      let index = loadMarketClaimIndex(args.agentRoot)
+      const existing = index.claims.find((c) => c.claimId === claimId)
+      if (existing) {
+        const destinations: Array<"telegram" | "discord"> = []
+        if (channels.telegram) destinations.push("telegram")
+        if (channels.discord) destinations.push("discord")
+        if (destinations.length > 0) {
+          index = upsertMarketClaim(index, { ...existing, destinations })
+          await saveMarketClaimIndex(args.agentRoot, index)
+        }
+      }
+    } catch {
+      // claim index is best-effort; delivery still proceeds
+    }
+
     const receipt: ChannelRenderReceipt = {
       schema: 1,
       runId: args.runId,

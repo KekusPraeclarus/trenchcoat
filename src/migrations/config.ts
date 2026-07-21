@@ -443,6 +443,7 @@ export function migrateConfigToV12(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
   if (record?.["schema"] === 12) return raw
   if (record?.["schema"] === 13) return raw
+  if (record?.["schema"] === 14) return raw
   const v11 = migrateConfigToV11(raw) as Record<string, unknown>
   const chat = (v11["chat"] ?? {}) as Record<string, unknown>
   const discord = (chat["discord"] ?? {}) as Record<string, unknown>
@@ -488,13 +489,23 @@ export const INCIDENT_REMEDIATION_V13_DEFAULTS = {
   phase_timeout_ms: 1_800_000,
 } as const
 
+export const INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS = {
+  enabled: true,
+  required_healthy_observations: 2,
+  max_rounds: 3,
+  max_wait_hours: 24,
+  evaluate_model: "composer-2.5-fast",
+  review_model: "composer-2.5-fast",
+  auto_correct: true,
+} as const
+
 /**
  * Schema 13: host-owned incident remediation lane (hourly + weekly deferred).
  * Defaults disabled for safe rollout; preserves explicit overrides.
  */
 export function migrateConfigToV13(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 13) return raw
+  if (record?.["schema"] === 13 || record?.["schema"] === 14) return raw
 
   let v12: Record<string, unknown>
   if (record?.["schema"] === 12) {
@@ -517,5 +528,42 @@ export function migrateConfigToV13(raw: unknown): unknown {
     ...v12,
     schema: 13,
     incident_remediation: merged,
+  }
+}
+
+/**
+ * Schema 14: post-fix claim revalidation settings under incident_remediation.
+ * Parent enabled/schedule flags stay authoritative; revalidation defaults on
+ * when the parent lane is present.
+ */
+export function migrateConfigToV14(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 14) return raw
+
+  const v13 = (
+    record?.["schema"] === 13
+      ? record
+      : migrateConfigToV13(raw)
+  ) as Record<string, unknown>
+
+  const prevIr = (v13["incident_remediation"] ?? {}) as Record<string, unknown>
+  const prevRev = prevIr["revalidation"]
+  const revalidation = prevRev !== undefined && prevRev !== null && typeof prevRev === "object"
+    ? {
+      ...INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,
+      ...(prevRev as Record<string, unknown>),
+      enabled: (prevRev as Record<string, unknown>)["enabled"] !== false,
+      auto_correct: (prevRev as Record<string, unknown>)["auto_correct"] !== false,
+    }
+    : { ...INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS }
+
+  return {
+    ...v13,
+    schema: 14,
+    incident_remediation: {
+      ...INCIDENT_REMEDIATION_V13_DEFAULTS,
+      ...prevIr,
+      revalidation,
+    },
   }
 }

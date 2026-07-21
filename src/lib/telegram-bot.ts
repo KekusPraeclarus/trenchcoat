@@ -46,14 +46,40 @@ export async function telegramSendMessage(
   token: string,
   chatId: string,
   text: string,
-  opts?: Readonly<{ parseMode?: "HTML" }>,
-): Promise<void> {
-  await callBot(fetcher, token, "sendMessage", {
-    chat_id: chatId,
-    text,
-    disable_web_page_preview: true,
-    ...(opts?.parseMode ? { parse_mode: opts.parseMode } : {}),
+  opts?: Readonly<{ parseMode?: "HTML"; replyToMessageId?: string }>,
+): Promise<{ messageId?: string }> {
+  const response = await fetcher(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      disable_web_page_preview: true,
+      ...(opts?.parseMode ? { parse_mode: opts.parseMode } : {}),
+      ...(opts?.replyToMessageId
+        ? { reply_to_message_id: Number(opts.replyToMessageId) }
+        : {}),
+    }),
+    redirect: "error",
+    signal: AbortSignal.timeout(30_000),
   })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "")
+    const err = new Error(
+      `telegram sendMessage HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+    ) as Error & { retryable?: boolean; retryAfterSeconds?: number }
+    err.retryable = response.status === 429 || response.status >= 500
+    const ra = response.headers.get("retry-after")
+    if (ra) err.retryAfterSeconds = Number(ra)
+    throw err
+  }
+  try {
+    const body = await response.json() as { result?: { message_id?: number } }
+    const id = body.result?.message_id
+    return typeof id === "number" ? { messageId: String(id) } : {}
+  } catch {
+    return {}
+  }
 }
 
 /**
@@ -65,12 +91,12 @@ export async function telegramSendOperatorMessage(
   token: string,
   chatId: string,
   text: string,
-): Promise<void> {
+): Promise<{ messageId?: string }> {
   const html = formatTelegramOperatorText(text)
   try {
-    await telegramSendMessage(fetcher, token, chatId, html, { parseMode: "HTML" })
+    return await telegramSendMessage(fetcher, token, chatId, html, { parseMode: "HTML" })
   } catch {
-    await telegramSendMessage(
+    return telegramSendMessage(
       fetcher,
       token,
       chatId,
@@ -106,13 +132,15 @@ export async function telegramSendFormattedChunks(
   chatId: string,
   text: string,
   limit = TELEGRAM_SAFE_CHUNK,
-): Promise<number> {
+): Promise<{ parts: number; messageIds: string[] }> {
   const mdLimit = Math.max(64, Math.min(limit, TELEGRAM_SAFE_CHUNK) - 400)
   const parts = splitTelegramText(stripLocalWorkspaceRefs(text), mdLimit)
+  const messageIds: string[] = []
   for (const part of parts) {
-    await telegramSendOperatorMessage(fetcher, token, chatId, part)
+    const result = await telegramSendOperatorMessage(fetcher, token, chatId, part)
+    if (result.messageId) messageIds.push(result.messageId)
   }
-  return parts.length
+  return { parts: parts.length, messageIds }
 }
 
 /** Operator DMs with path strip + HTML; chunks markdown before conversion */
@@ -123,7 +151,8 @@ export async function telegramSendOperatorMessageChunks(
   text: string,
   limit = TELEGRAM_SAFE_CHUNK,
 ): Promise<number> {
-  return telegramSendFormattedChunks(fetcher, token, chatId, text, limit)
+  const result = await telegramSendFormattedChunks(fetcher, token, chatId, text, limit)
+  return result.parts
 }
 
 /**

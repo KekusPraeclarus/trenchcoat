@@ -60,6 +60,9 @@ import {
   createRemediationStore,
   upsertIncident,
 } from "./store.js"
+import { runPostFixClaimAudit } from "./post-fix-audit.js"
+import { runOneShotSession } from "../orchestrator/session.js"
+import { type RevalidationSessionRunner } from "./revalidate.js"
 
 async function updateIncident(
   incidentId: string,
@@ -89,6 +92,7 @@ async function updateIncident(
       || next.phase === "rejected"
       || next.phase === "deferred"
       || next.phase === "rolled-back"
+      || next.phase === "attention-required"
     ) {
       if (file.activeIncidentId === incidentId) {
         file = { ...file, activeIncidentId: null }
@@ -747,16 +751,121 @@ async function runRemediationPhases(args: Readonly<{
       return
     }
 
-    await setPhase("deployed")
-    await setPhase("completed")
-    // Drop from deferred queue if present
+    await setPhase("deployed", { deployedAt: systemClock.nowIso() })
+  }
+
+  // Post-fix claim audit (INV-S28)
+  if (
+    record.phase === "deployed"
+    || record.phase === "awaiting-recovery-data"
+    || record.phase === "collecting-revalidation"
+    || record.phase === "revalidating"
+    || record.phase === "reconciling-state"
+    || record.phase === "correcting"
+  ) {
+    const candidateSha = record.candidateSha
+    if (!candidateSha) throw new Error("missing-candidate")
+    const deployedAt = record.deployedAt ?? systemClock.nowIso()
+    if (!record.deployedAt) {
+      record = await updateIncident(record.incidentId, { deployedAt })
+    }
+
+    const agentRoot = join(homedir(), ".trenchcoat", "agent")
+    const reval = ir.revalidation
+    const evalModel = reval.evaluate_model
+    const revModel = reval.review_model
+
+    const runSession: RevalidationSessionRunner | undefined = reval.enabled
+      ? async ({ prompt, message }) => {
+        const isReview = prompt.includes("independently review")
+        const session = await runOneShotSession({
+          prompt: `${prompt}\n\n${message}`,
+          cwd: args.repoRoot,
+          model: isReview ? revModel : evalModel,
+          sandbox: true,
+          mode: "ask",
+        })
+        if (session.status !== "finished" || !session.text) {
+          throw new Error(session.error ?? "revalidation session failed")
+        }
+        return session.text
+      }
+      : undefined
+
+    await setPhase("awaiting-recovery-data")
     const store = createRemediationStore(layout)
+    const audit = await runPostFixClaimAudit({
+      layout,
+      store,
+      incident: record,
+      agentRoot,
+      archiveRoot,
+      sourceCommit: candidateSha,
+      deployedAt,
+      config: {
+        enabled: reval.enabled,
+        requiredHealthyObservations: reval.required_healthy_observations,
+        maxRounds: reval.max_rounds,
+        maxWaitHours: reval.max_wait_hours,
+        autoCorrect: reval.auto_correct,
+      },
+      ...(runSession ? { runSession } : {}),
+    })
+
+    if (audit.phase === "awaiting-recovery-data") {
+      await setPhase("awaiting-recovery-data", {
+        ...(audit.recoveryConfirmedAt
+          ? { recoveryConfirmedAt: audit.recoveryConfirmedAt }
+          : {}),
+        ...(audit.revalidationRound !== undefined
+          ? { revalidationRound: audit.revalidationRound }
+          : record.revalidationRound !== undefined
+            ? { revalidationRound: record.revalidationRound }
+            : {}),
+        ...(audit.detail ? { attentionReason: audit.detail } : {}),
+      })
+      return
+    }
+
+    if (audit.phase === "attention-required") {
+      await setPhase("attention-required", {
+        ...(audit.detail ? { attentionReason: audit.detail.slice(0, 500) } : {}),
+        ...(audit.recoveryConfirmedAt
+          ? { recoveryConfirmedAt: audit.recoveryConfirmedAt }
+          : {}),
+        ...(audit.revalidationRound !== undefined
+          ? { revalidationRound: audit.revalidationRound }
+          : {}),
+      })
+      await notifyOperator(
+        `remediation ${record.incidentId} needs attention: ${audit.detail ?? "post-fix-audit"}`,
+      )
+      return
+    }
+
+    await setPhase("completed", {
+      ...(audit.recoveryConfirmedAt
+        ? { recoveryConfirmedAt: audit.recoveryConfirmedAt }
+        : {}),
+      ...(audit.correctionEventIds
+        ? { correctionEventIds: audit.correctionEventIds }
+        : {}),
+      ...(audit.revalidationRound !== undefined
+        ? { revalidationRound: audit.revalidationRound }
+        : {}),
+      ...(audit.detail ? { attentionReason: audit.detail } : {}),
+    })
     const deferred = store.loadDeferred()
     await store.saveDeferred({
       schema: 1,
       incidentIds: deferred.incidentIds.filter((id) => id !== record.incidentId),
     })
-    await notifyOperator(`remediation completed ${record.incidentId} @ ${record.candidateSha}`)
+    await notifyOperator(
+      `remediation completed ${record.incidentId} @ ${candidateSha}`
+        + (audit.correctionEventIds?.length
+          ? ` corrections=${audit.correctionEventIds.length}`
+          : ""),
+    )
   }
 }
 

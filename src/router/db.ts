@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   duplicate_risk INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
   updated_at INTEGER NOT NULL,
+  provider_message_ids TEXT,
   UNIQUE(event_id, destination_id),
   FOREIGN KEY(event_id) REFERENCES events(event_id),
   FOREIGN KEY(destination_id) REFERENCES destinations(id)
@@ -73,6 +74,15 @@ export function openRouterDb(path: string): Database.Database {
   db.prepare(
     `INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')`,
   ).run()
+  // Additive migration for provider message ids (idempotent)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(deliveries)`).all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === "provider_message_ids")) {
+      db.exec(`ALTER TABLE deliveries ADD COLUMN provider_message_ids TEXT`)
+    }
+  } catch {
+    // ignore
+  }
   return db
 }
 

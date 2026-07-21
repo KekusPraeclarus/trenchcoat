@@ -32,7 +32,11 @@ ops repair.
 - Weekly job `incident-remediate-weekly` (Monday 08:00 local) processes at most
   one revalidated deferred incident — **never** into the policy harness prompt.
 - Config schema **13** adds `incident_remediation` defaulting
-  `enabled=false` and `schedule_enabled=false`.
+  `enabled=false` and `schedule_enabled=false`. Schema **14** adds nested
+  `revalidation` for post-fix claim audit (INV-S28): source-health recovery
+  gate, sealed claim revalidation, append-only supersession, and destination-
+  aware `finding.correction` egress. Weekly decision-policy harness
+  (INV-S24) remains unchanged and must not absorb this work.
 - Harness integrate/deploy acquires the shared mutation lock; cadence/models/
   POLICY_ALLOWLIST/holdout/canary/no-origin-push unchanged.
 
@@ -41,14 +45,16 @@ ops repair.
 - **Widen INV-S24** — rejected; policy confinement must stay narrow.
 - **Let models choose shell/git/deploy** — rejected; fail-closed host gates only.
 - **Feed deferred ops into harness planner** — rejected; separate weekly pass.
+- **Put claim revalidation in the weekly harness** — rejected; this is
+  incident-lifecycle integrity under INV-S27/S28, not decision-policy.
 
 ## Consequences
 
-- New INV-S27. Operators must enable flags deliberately after dry canary.
-- Schema 13 must stay aligned across ConfigSchema, DEPLOYMENT_CONFIG_SCHEMA,
+- New INV-S27 and INV-S28. Operators must enable flags deliberately after dry canary.
+- Schema 14 must stay aligned across ConfigSchema, DEPLOYMENT_CONFIG_SCHEMA,
   and `install-launchd.sh`.
 
 ## References
 
 - [architecture/incident-remediation.md](../architecture/incident-remediation.md)
-- INV-S24 / INV-S26 / INV-S27 in [INVARIANTS.md](../INVARIANTS.md)
+- INV-S24 / INV-S26 / INV-S27 / INV-S28 in [INVARIANTS.md](../INVARIANTS.md)

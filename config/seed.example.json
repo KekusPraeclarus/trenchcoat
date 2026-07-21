@@ -1,5 +1,5 @@
 {
-  "schema": 13,
+  "schema": 14,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -392,7 +392,16 @@
     "approval_ttl_hours": 24,
     "max_evidence_bytes": 100000,
     "max_diff_lines": 400,
-    "phase_timeout_ms": 1800000
+    "phase_timeout_ms": 1800000,
+    "revalidation": {
+      "enabled": true,
+      "required_healthy_observations": 2,
+      "max_rounds": 3,
+      "max_wait_hours": 24,
+      "evaluate_model": "composer-2.5-fast",
+      "review_model": "composer-2.5-fast",
+      "auto_correct": true
+    }
   },
   "retention": {
     "inbox_archive_days": 30,

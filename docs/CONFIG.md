@@ -42,15 +42,16 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **13** (host `incident_remediation` lane, ADR 017; prior
-schema **12** Discord `chat.discord.chain_integration` host lane;
-prior schema **11** agent-gated harness defaults on, local integrate /
+Current schema is **14** (post-fix claim revalidation under
+`incident_remediation.revalidation`, INV-S28 / ADR 017; prior schema **13** host
+`incident_remediation` lane; prior schema **12** Discord `chat.discord.chain_integration`
+host lane; prior schema **11** agent-gated harness defaults on, local integrate /
 deferred activation; prior schema **10** `chat.discord` private-guild research
 bot section, plus prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v12 shapes via `migrateConfigToV13`.
+`loadConfig` migrates v1–v13 shapes via `migrateConfigToV14`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -59,7 +60,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 13,
+  "schema": 14,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -230,10 +231,11 @@ for new installs; migration preserves explicit `enabled:false` /
 | `one_active_experiment` | `true` | Skip schedule while a canary is active |
 | `auto_open_pr` | `false` | Deprecated; PR path removed from schedule |
 
-### `incident_remediation` (schema 13)
+### `incident_remediation` (schema 13+)
 
 Host-owned hourly/weekly ops remediation (ADR 017 / INV-S27). Defaults
-**disabled** for safe rollout.
+**disabled** for safe rollout. Schema **14** adds nested `revalidation`
+(INV-S28 post-fix claim audit).
 
 | Field | Default | Role |
 |---|---|---|
@@ -248,6 +250,12 @@ Host-owned hourly/weekly ops remediation (ADR 017 / INV-S27). Defaults
 | `max_weekly_deferred` | `1` | Weekly deferred items per run |
 | `approval_ttl_hours` | `24` | High-risk Telegram approval TTL |
 | `max_evidence_bytes` / `max_diff_lines` | `100000` / `400` | Evidence and diff bounds |
+| `revalidation.enabled` | `true` | Post-fix claim audit (parent `enabled` still required) |
+| `revalidation.required_healthy_observations` | `2` | Healthy post-deploy observations per affected source |
+| `revalidation.max_rounds` | `3` | Inconclusive retry cap |
+| `revalidation.max_wait_hours` | `24` | Recovery / inconclusive wait cap |
+| `revalidation.evaluate_model` / `review_model` | `composer-2.5-fast` | Unanimous invalidation reviewers |
+| `revalidation.auto_correct` | `true` | Stage destination-aware `finding.correction` events |
 
 ### `narratives` (schema 7)
 

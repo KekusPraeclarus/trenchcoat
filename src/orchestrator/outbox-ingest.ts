@@ -22,6 +22,16 @@ import {
 } from "./platform-coverage.js"
 import { buildBroadcastRouterEvent, validateBroadcastItem } from "./router.js"
 import type { BroadcastItem, BroadcastRejectReceipt } from "../contracts/schemas.js"
+import {
+  jobHeldByIntegrity,
+  loadIntegrityHold,
+} from "../remediation/integrity-hold.js"
+import {
+  loadMarketClaimIndex,
+  recordFromBroadcastEvent,
+  saveMarketClaimIndex,
+  upsertMarketClaim,
+} from "./market-claims.js"
 
 /** agent/outbox/<run-id>.json — zero or more untrusted broadcast proposals */
 export function outboxProposalPath(agentRoot: string, runId: string): string {
@@ -85,6 +95,8 @@ export async function ingestOutbox(args: Readonly<{
   runId: string
   nowIso: string
   marketBlind?: boolean
+  /** Job name for integrity-hold gating */
+  job?: string
   /** Pre-session narrative log — used to reject same-heat re-sightings */
   narrativeLogBefore?: readonly NarrativeLogEntry[]
   /** Post-merge narrative log — stage deltas unlock heat-change broadcasts */
@@ -130,7 +142,18 @@ export async function ingestOutbox(args: Readonly<{
     return { staged: 0, rejected: 1, rejects, items: [] }
   }
 
+  const hold = loadIntegrityHold()
+  if (args.job && jobHeldByIntegrity(hold, args.job)) {
+    reject(`integrity-hold:${hold?.incidentId ?? "active"}`)
+    await writeJsonRecordFsync(
+      join(runArchiveDir(args.layout, args.runId), "broadcast-rejects.json"),
+      { schema: 1, runId: args.runId, rejectedAt: args.nowIso, rejects: receipts } as never,
+    )
+    return { staged: 0, rejected: 1, rejects, items: [] }
+  }
+
   let staged = 0
+  let claimIndex = loadMarketClaimIndex(args.agentRoot)
   for (const raw of proposed.items) {
     const rawHash = sha256Json(raw as never)
     let item: BroadcastItem
@@ -212,8 +235,21 @@ export async function ingestOutbox(args: Readonly<{
     // key across retries even though occurredAt varies.
     const event = buildBroadcastRouterEvent(args.runId, args.nowIso, capped)
     await outbox.stage(event)
+    const claim = recordFromBroadcastEvent({
+      event,
+      // Telegram always fans out for market broadcasts; Discord is attached later
+      // by channel-render only when budget allows — update destinations then.
+      destinations: ["telegram"],
+    })
+    if (claim) {
+      claimIndex = upsertMarketClaim(claimIndex, claim)
+    }
     accepted.push(capped)
     staged += 1
+  }
+
+  if (staged > 0) {
+    await saveMarketClaimIndex(args.agentRoot, claimIndex)
   }
 
   await writeJsonRecordFsync(

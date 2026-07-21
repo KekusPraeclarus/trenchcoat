@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest"
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { migrateConfigToV13, INCIDENT_REMEDIATION_V13_DEFAULTS } from "../../src/migrations/config.js"
+import {
+  migrateConfigToV13,
+  migrateConfigToV14,
+  INCIDENT_REMEDIATION_V13_DEFAULTS,
+  INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,
+} from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import {
   classifyRemediationRisk,
@@ -43,14 +48,31 @@ describe("incident remediation config", () => {
     expect(ir["triage_model"]).toBe(INCIDENT_REMEDIATION_V13_DEFAULTS.triage_model)
   })
 
+  it("migrates schema 13 → 14 with revalidation defaults", () => {
+    const migrated = migrateConfigToV14({
+      schema: 13,
+      incident_remediation: { ...INCIDENT_REMEDIATION_V13_DEFAULTS },
+    }) as Record<string, unknown>
+    expect(migrated["schema"]).toBe(14)
+    const ir = migrated["incident_remediation"] as Record<string, unknown>
+    const rev = ir["revalidation"] as Record<string, unknown>
+    expect(rev["enabled"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.enabled)
+    expect(rev["required_healthy_observations"]).toBe(
+      INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.required_healthy_observations,
+    )
+    expect(rev["max_rounds"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.max_rounds)
+    expect(rev["auto_correct"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.auto_correct)
+  })
+
   it("parses seed with incident_remediation disabled", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV13(seed))
-    expect(parsed.schema).toBe(13)
+    const parsed = ConfigSchema.parse(migrateConfigToV14(seed))
+    expect(parsed.schema).toBe(14)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.incident_remediation.schedule_enabled).toBe(false)
+    expect(parsed.incident_remediation.revalidation.enabled).toBe(true)
   })
 
   it("preserves explicit enabled true only when set", () => {

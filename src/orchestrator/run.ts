@@ -1582,6 +1582,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         layout: layout,
         runId,
         nowIso: ingestNowIso,
+        job: job.name,
         ...(collection.marketBlind ? { marketBlind: true } : {}),
         ...(narrativeLogBefore.length > 0 ? { narrativeLogBefore } : {}),
         ...(narrativeLogAfter ? { narrativeLogAfter } : {}),

@@ -250,7 +250,7 @@ deploy_runtime() {
   fi
   # Diff vs HEAD (staged + unstaged). Untracked paths appear in porcelain only.
   SOURCE_DIFF="$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null || true)"
-  # configSchema must match DEPLOYMENT_CONFIG_SCHEMA / live config schema (13)
+  # configSchema must match DEPLOYMENT_CONFIG_SCHEMA / live config schema (14)
   # Temp files avoid shell/env quoting limits for large dirty diffs
   PROV_DIR="$RUNTIME_STAGING/.provenance"
   mkdir -p "$PROV_DIR"
@@ -279,7 +279,7 @@ const manifest = {
   schema: 2,
   builtAt: "$BUILT_AT",
   packageVersion: "$PKG_VERSION",
-  configSchema: 13,
+  configSchema: 14,
   sourceCommit,
   sourceDirty,
   sourceHash,
@@ -292,7 +292,7 @@ console.log(
   "deployment provenance commit=" + (sourceCommit ? sourceCommit.slice(0, 12) : "none")
     + " dirty=" + sourceDirty
     + " sourceHash=" + sourceHash.slice(0, 19)
-    + " configSchema=13",
+    + " configSchema=14",
 )
 EOF
 

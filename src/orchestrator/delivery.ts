@@ -74,6 +74,19 @@ async function attempt(
       deliveredAt: args.nowIso,
     })
   }
+  if (
+    event.type === "finding.correction"
+    && !event.channels?.telegram
+    && !event.channels?.discord
+  ) {
+    return buildReceipt({
+      runId: args.runId,
+      eventId,
+      status: "failed",
+      error: "finding.correction requires at least one destination channel payload",
+      deliveredAt: args.nowIso,
+    })
+  }
   try {
     const result = await deliverRouterEvent(
       fetcher,

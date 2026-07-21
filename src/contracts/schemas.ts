@@ -201,7 +201,11 @@ export const BroadcastItemSchema = z.object({
 })
 export type BroadcastItem = z.infer<typeof BroadcastItemSchema>
 
-export const RouterEventTypeSchema = z.enum(["finding.broadcast", "wallet.lifecycle"])
+export const RouterEventTypeSchema = z.enum([
+  "finding.broadcast",
+  "finding.correction",
+  "wallet.lifecycle",
+])
 
 /** Per-destination fanout text. Optional; excluded from eventId derivation. */
 export const RouterChannelPayloadsSchema = z.object({
@@ -220,11 +224,17 @@ export const RouterEventSchema = z.object({
   occurredAt: IsoTimestampSchema,
   runId: SafeIdSchema,
   type: RouterEventTypeSchema,
-  severity: BroadcastSeveritySchema.or(z.literal("lifecycle")),
-  text: z.string().min(1).max(280),
+  severity: BroadcastSeveritySchema.or(z.literal("lifecycle")).or(z.literal("info")),
+  text: z.string().min(1).max(8_000),
   refs: z.array(z.string()).max(16),
   auditClaim: AuditClaimSchema.optional(),
   channels: RouterChannelPayloadsSchema.optional(),
+  correction: z.object({
+    incidentId: z.string().min(8).max(128),
+    invalidatedClaimIds: z.array(z.string().min(8).max(128)).min(1).max(64),
+    originalEventIds: z.array(z.string().min(1).max(128)).max(64).default([]),
+    replyToProviderMessageId: z.string().min(1).max(128).optional(),
+  }).optional(),
   walletTransition: z.object({
     walletId: z.string(),
     chain: ChainSlugSchema,

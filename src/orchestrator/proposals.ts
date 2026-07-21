@@ -226,6 +226,14 @@ export async function applyDecisionProposals(
   opts: ApplyProposalsOptions,
 ): Promise<ApplyProposalsResult> {
   const commit = opts.commit !== false
+  const holdMod = await import("../remediation/integrity-hold.js")
+  const hold = holdMod.loadIntegrityHold()
+  if (hold && !opts.runId.startsWith("remediation-")) {
+    return {
+      ...emptyResult(opts, commit),
+      rejected: 1,
+    }
+  }
   const file = loadDecisionProposals(opts.agentRoot, opts.runId)
   if (!file) return emptyResult(opts, commit)
 
@@ -449,6 +457,36 @@ export async function applyDecisionProposals(
       "validation-receipts.json",
     )
     await writeAtomicFile(archiveReceipts, receiptsBody)
+  }
+
+  if (commit && opts.assignment !== "shadow" && acceptedForArchive.length > 0) {
+    try {
+      const {
+        loadMarketClaimIndex,
+        saveMarketClaimIndex,
+        upsertMarketClaim,
+        recordFromAcceptedDecision,
+      } = await import("./market-claims.js")
+      let index = loadMarketClaimIndex(opts.agentRoot)
+      for (const item of acceptedForArchive) {
+        const card = item.proposal.card
+        const subject = card.identity
+          ? `${card.identity.chain}:${card.identity.tokenAddress}`
+          : card.decisionId
+        index = upsertMarketClaim(index, recordFromAcceptedDecision({
+          runId: opts.runId,
+          occurredAt: opts.nowIso,
+          decisionId: card.decisionId,
+          subject,
+          verdict: card.verdict,
+          thesis: card.thesis,
+          provenanceIds: item.proposal.provenanceIds,
+        }))
+      }
+      await saveMarketClaimIndex(opts.agentRoot, index)
+    } catch {
+      // claim index best-effort
+    }
   }
 
   return {
