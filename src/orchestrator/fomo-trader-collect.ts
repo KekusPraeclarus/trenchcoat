@@ -3,9 +3,8 @@ import { join } from "node:path"
 import type { SnapshotWriter } from "../lib/snapshot.js"
 import { loadConfig, type TrenchcoatConfig } from "../lib/config.js"
 import { StateStore } from "../lib/state.js"
-import { registerWalletCandidates } from "../wallets/discovery.js"
 import { FomoWebClient, type FomoDataSource } from "../collectors/fomo/web-client.js"
-import { providerGateAllowsSchedule, requireGatePass } from "../collectors/fomo/gates.js"
+import { providerGateAllowsSchedule } from "../collectors/fomo/gates.js"
 import { FomoClientError, type FomoLeaderboardEntry, type FomoTrader } from "../collectors/fomo/types.js"
 import { pointInTimeSnapshot } from "../collectors/fomo/freshness.js"
 import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
@@ -24,19 +23,16 @@ function rankTraders(traders: readonly FomoTrader[]): FomoTrader[] {
   })
 }
 
-function nominationLines(traders: readonly FomoTrader[]): string[] {
-  const lines: string[] = []
-  for (const trader of traders) {
-    for (const wallet of trader.wallets) {
-      lines.push(
-        `handle=${trader.handle} chain=${wallet.chain} address=${wallet.address}`
-          + (trader.trades !== undefined ? ` trades=${trader.trades}` : "")
-          + (trader.winRate !== undefined ? ` winRate=${trader.winRate}` : "")
-          + (trader.pnl !== undefined ? ` pnl=${trader.pnl}` : ""),
-      )
-    }
-  }
-  return lines
+/** Handle-ranked leaderboard lines — never chain addresses (Fomo profiles ≠ wallets) */
+function leaderboardLines(traders: readonly FomoTrader[]): string[] {
+  return traders.map((trader) => {
+    let line = `handle=${trader.handle}`
+    if (trader.xHandle) line += ` xHandle=${trader.xHandle}`
+    if (trader.trades !== undefined) line += ` trades=${trader.trades}`
+    if (trader.winRate !== undefined) line += ` winRate=${trader.winRate}`
+    if (trader.pnl !== undefined) line += ` pnl=${trader.pnl}`
+    return line
+  })
 }
 
 function skipResult(
@@ -100,7 +96,6 @@ export async function collectFomoTraderSync(args: Readonly<{
     return skipResult(await writeSkip(args, "fomo-missing-session"), "fomo-missing-session")
   }
 
-  const walletGate = requireGatePass(args.archiveRoot, "walletNomination")
   const client = args.client ?? new FomoWebClient({
     archiveRoot: args.archiveRoot,
     dailyNavigationBudget: config.fomo.daily_navigation_budget,
@@ -116,7 +111,7 @@ export async function collectFomoTraderSync(args: Readonly<{
     const byHandle = new Map<string, FomoLeaderboardEntry>()
     for (const trader of leaderboard) byHandle.set(trader.handle, trader)
     for (const entry of leaderboard.slice(0, config.fomo.trader_sync.max_profile_pages)) {
-      if (entry.xHandle || entry.wallets.length > 0) continue
+      if (entry.xHandle) continue
       try {
         const stats = await client.getHandleStats(entry.handle)
         if (stats) byHandle.set(entry.handle, stats)
@@ -135,15 +130,14 @@ export async function collectFomoTraderSync(args: Readonly<{
     if (!args.client) await client.close?.().catch(() => undefined)
   }
 
-  const withWallets = traders.filter((trader) => trader.wallets.length > 0)
-  const lines = nominationLines(withWallets)
+  const lines = leaderboardLines(traders)
   const snap = pointInTimeSnapshot(args.fetchedAt, args.fetchedAt)
-  await args.writer.writeInbox(args.runId, "fomo-wallet-nominations", {
+  await args.writer.writeInbox(args.runId, "fomo-leaderboard", {
     source: "host.fomo-trader-sync",
     fetchedAt: args.fetchedAt,
     trust: "untrusted-external",
     items: lines.map((text, index) => ({
-      provenance: `${args.runId}:fomo:nomination:${index}`,
+      provenance: `${args.runId}:fomo:leaderboard:${index}`,
       text,
       ts: snap.ts,
       ageSec: snap.ageSec,
@@ -151,9 +145,9 @@ export async function collectFomoTraderSync(args: Readonly<{
       dedupeKey: createHash("sha256").update(text).digest("hex").slice(0, 32),
     })),
   })
-  snapshotNames.push("fomo-wallet-nominations")
+  snapshotNames.push("fomo-leaderboard")
 
-  // Shadow stays mutation-free: nominations are source-list adjacent state
+  // Shadow stays mutation-free; live may upsert X nominations only (never wallets)
   if (!config.fomo.shadow_mode && config.fomo.x_source_review.enabled) {
     const state = new StateStore(join(args.agentRoot, "state"))
     const next = upsertXSourceNominations(state.loadXSourceNominations(), {
@@ -164,48 +158,6 @@ export async function collectFomoTraderSync(args: Readonly<{
     await state.saveXSourceNominations(next)
   }
 
-  if (!walletGate.ok || withWallets.length === 0) {
-    await args.writer.writeInbox(args.runId, "collection-status", {
-      source: "host.fomo-trader-sync",
-      fetchedAt: args.fetchedAt,
-      trust: "untrusted-external",
-      items: [{
-        provenance: `${args.runId}:fomo:no-address`,
-        text: `kind=skip reason=${walletGate.ok ? "fomo-no-address" : walletGate.reason} nominees=${withWallets.length}`,
-        ts: args.fetchedAt,
-        ageSec: 0,
-        freshnessTier: "live",
-      }],
-    })
-    snapshotNames.push("collection-status")
-    return {
-      snapshotNames,
-      fypAuthors: [],
-      discoverySightings: [],
-      fcDiscoverySightings: [],
-      fypPosts: [],
-      fypCasts: [],
-      postCount: lines.length,
-      skipAgent: true,
-      collectionKind: "host-only",
-      collectionStatus: walletGate.ok ? "fomo-no-address" : walletGate.reason,
-    }
-  }
-
-  const sightings = withWallets.flatMap((trader) => (
-    trader.wallets.map((wallet) => ({
-      chain: wallet.chain,
-      address: wallet.address,
-      origin: "fomo" as const,
-    }))
-  )).slice(0, config.fomo.trader_sync.max_wallet_candidates)
-
-  if (!config.fomo.shadow_mode) {
-    const state = new StateStore(join(args.agentRoot, "state"))
-    const next = registerWalletCandidates(state.loadWallets(), sightings, args.fetchedAt)
-    await state.saveWallets(next)
-  }
-
   return {
     snapshotNames,
     fypAuthors: [],
@@ -213,9 +165,9 @@ export async function collectFomoTraderSync(args: Readonly<{
     fcDiscoverySightings: [],
     fypPosts: [],
     fypCasts: [],
-    postCount: sightings.length,
+    postCount: lines.length,
     skipAgent: true,
     collectionKind: "host-only",
-    collectionStatus: config.fomo.shadow_mode ? "fomo-shadow" : "fomo-nominated",
+    collectionStatus: config.fomo.shadow_mode ? "fomo-shadow" : "fomo-leaderboard",
   }
 }

@@ -111,9 +111,12 @@ export function buildCursorCliArgs(opts: Readonly<{
   return args
 }
 
+/** Cold CLI / post-deploy create-chat often exceeds 30s under load */
+const CREATE_CHAT_TIMEOUT_MS = 90_000
+
 /** Allocate a durable Cursor chat id for resumable operator conversations */
 export async function createCursorChat(bin = resolveCursorCliBin()): Promise<string> {
-  const result = await runCapture(bin, ["create-chat"], 30_000)
+  const result = await runCapture(bin, ["create-chat"], CREATE_CHAT_TIMEOUT_MS)
   if (result.exitCode !== 0) {
     throw new Error(result.stderr || `create-chat exited ${result.exitCode}`)
   }

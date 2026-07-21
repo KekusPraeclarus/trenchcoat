@@ -2,7 +2,7 @@
 description: Context map and entry point for developer documentation. Tells a fresh session what to read, in what order, and what to skip.
 scope: project
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # trenchcoat — developer docs

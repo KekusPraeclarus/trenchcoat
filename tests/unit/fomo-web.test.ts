@@ -29,7 +29,7 @@ import { isNativeOrWrapMint, inferChainFromTokenAddress } from "../../src/lib/na
 import leaderboard from "../fixtures/providers/fomo/leaderboard.json" with { type: "json" }
 
 describe("fomo mappers", () => {
-  it("maps traders with exact wallets and drops malformed", () => {
+  it("maps traders without binding profile addresses as wallets", () => {
     const trader = mapTrader({
       handle: "Alpha",
       trades: 12,
@@ -37,12 +37,12 @@ describe("fomo mappers", () => {
       pnl: 1000,
       wallets: [
         { chain: "solana", address: "So11111111111111111111111111111111111111112" },
-        { chain: "bnb", address: "0x0000000000000000000000000000000000000001" },
       ],
+      address: "FJhXFik8Kfno3EgYPoWgGniTth9xkJGPWTZGr4ExoG2P",
+      evmAddress: "0xbd26897dbfaeae67742e5e9766b504e00f463fbd",
     })
     expect(trader?.handle).toBe("alpha")
-    expect(trader?.wallets).toHaveLength(1)
-    expect(trader?.wallets[0]?.chain).toBe("solana")
+    expect(trader?.wallets).toEqual([])
   })
 
   it("maps leaderboard fixture entries", () => {
@@ -50,7 +50,7 @@ describe("fomo mappers", () => {
     const entry = mapLeaderboardEntry(raw, "2026-07-19T00:00:00.000Z", "7d")
     expect(entry?.handle).toBe("alphatrader")
     expect(entry?.xHandle).toBe("alphatrader")
-    expect(entry?.wallets.length).toBeGreaterThan(0)
+    expect(entry?.wallets).toEqual([])
   })
 
   it("maps activity and rejects invalid token addresses for chain binding", () => {
@@ -175,7 +175,7 @@ describe("fomo request policy", () => {
     expect(classifyFomoRequest("DELETE", "https://fomo.family/account").allow).toBe(false)
   })
 
-  it("maps live leaderboard userHandle + wallets", () => {
+  it("maps live leaderboard userHandle without wallet binding", () => {
     const entry = mapLeaderboardEntry({
       userHandle: "Juicycooks",
       address: "FJhXFik8Kfno3EgYPoWgGniTth9xkJGPWTZGr4ExoG2P",
@@ -185,8 +185,7 @@ describe("fomo request policy", () => {
     }, "2026-07-19T00:00:00.000Z", "7d")
     expect(entry?.handle).toBe("juicycooks")
     expect(entry?.pnl).toBe(1000)
-    expect(entry?.wallets.some((w) => w.chain === "solana")).toBe(true)
-    expect(entry?.wallets.some((w) => w.chain === "ethereum")).toBe(true)
+    expect(entry?.wallets).toEqual([])
   })
 })
 

@@ -1,3 +1,4 @@
+import { log } from "../lib/log.js"
 import type { ChatTurnRunner } from "./session.js"
 import {
   extractResearchIntent,
@@ -266,6 +267,7 @@ export async function handleChatUpdate(args: Readonly<{
   } catch (error) {
     if (draft) await draft.flush().catch(() => undefined)
     const detail = error instanceof Error ? error.message : "unknown"
+    log.error("chat turn failed", { detail })
     const hint = detail.includes("timed out")
       ? "chat turn timed out — try again or ask something smaller"
       : "chat turn failed — check listener logs"

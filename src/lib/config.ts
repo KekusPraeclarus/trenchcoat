@@ -363,7 +363,6 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(false),
       max_handles: z.number().int().min(1).max(200).default(50),
       max_profile_pages: z.number().int().min(1).max(100).default(20),
-      max_wallet_candidates: z.number().int().min(1).max(100).default(20),
     }).default({}),
     signal_scan: z.object({
       enabled: z.boolean().default(false),

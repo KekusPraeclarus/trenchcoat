@@ -112,6 +112,34 @@ describe("chat turn runner", () => {
     expect(creates).toBe(1)
     expect(store.load()?.cursorChatId).toBe("new-chat-id-11111111")
   })
+
+  it("resumes the prior chat when idle create-chat fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-chat-"))
+    const store = fileChatSessionStore(join(dir, "chat-session.json"))
+    store.save({
+      cursorChatId: "prior-chat-id-000000",
+      lastActivityAt: "2026-07-16T10:00:00.000Z",
+      telegramUserId: "42",
+    })
+    const resumes: string[] = []
+    const runTurn = createChatTurnRunner({
+      agentRoot: dir,
+      telegramUserId: "42",
+      idleTimeoutMinutes: 30,
+      store,
+      createChat: async () => {
+        throw new Error("cursor cli timed out after 90000ms")
+      },
+      runSession: async (args) => {
+        resumes.push(args.resumeChatId)
+        return { status: "finished", text: "still answered" }
+      },
+      nowIso: () => "2026-07-16T11:00:00.000Z",
+    })
+    expect(await runTurn("Any social / fomo updates?")).toBe("still answered")
+    expect(resumes).toEqual(["prior-chat-id-000000"])
+    expect(store.load()?.cursorChatId).toBe("prior-chat-id-000000")
+  })
 })
 
 describe("chat handler", () => {
@@ -151,23 +179,20 @@ describe("chat handler", () => {
     expect(sent).toEqual([{ chatId: "ops", text: "empty store for now" }])
   })
 
-  it("handles /start without spawning an agent turn", async () => {
-    let ran = false
+  it("maps turn timeout errors to an operator-facing hint and logs detail", async () => {
     const sent: string[] = []
     await handleChatUpdate({
       chatId: "ops",
       userId: "ops",
-      text: "/start",
+      text: "Any social / fomo updates?",
       allowlist: ["ops"],
       runTurn: async () => {
-        ran = true
-        return "nope"
+        throw new Error("cursor cli timed out after 90000ms")
       },
       send: async (_chatId, text) => {
         sent.push(text)
       },
     })
-    expect(ran).toBe(false)
-    expect(sent[0]).toMatch(/trenchcoat chat online/u)
+    expect(sent).toEqual(["chat turn timed out — try again or ask something smaller"])
   })
 })

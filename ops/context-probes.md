@@ -48,7 +48,8 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P40 | recall | What happens when a list-scan Twitter bundle exceeds 500 posts? | Host caps at `SNAPSHOT_MAX_ITEMS` (500) with trailing `truncated=N` via `capEnvelopeItems`; FYP summary pre-sliced so INV-S22 engagement cannot like off-snapshot posts; `collectionStatus` may note `posts-truncated=N` / `casts-truncated=N` → collectors.md, `review-collect.ts` | pass | 2026-07-20 |
 | P41 | recall | Chat recall `reports/chat/<run-id>.md` still says `status: running` after a successful run — is the run stuck? What rewrites status? | Not stuck: host promotes chat recall mid-run after alpha purge with in-flight status; `finalizeChatReportRunStatus` rewrites the `- status:` line to `complete`/`failed` at terminal journal advance. Distinct from ADR 006 trap (`archive/runs/<id>/journal.json` seal-time only) → orchestrator.md § Run idempotency, chat-agent.md | pass | 2026-07-20 |
 | P42 | recall | Why must channel copy not paste `72h`, and is `watchWindow` on the outbox proposal? | Host derives `watchWindow` at distill from claim type + `horizonHours` (ADR 013); settlement stays 24/72/168. Not agent-authored. Thin scrub only replaces leaked hour tokens; natural phrases stand. TG fanout is HTML + narrative deslug → watch-window.ts, telegram.md, INV-B2 | pass | 2026-07-20 |
-| P44 | recall | When does Discord idea-tracking alert a user, and is the alert a reply to their track request? | Silent until host-validated ticker/CA in matched candidate + deep research; initial notify only if `mainTrackEligible`. Else await 3 unique later mentions → `composer-2.5-fast` review (reject = 7d blacklist). Alert is a **non-reply** channel message `@user I found a token matching <shortLabel>` + full research; `shortLabel` as stored. Dedupe `(trackingId, chain, tokenAddress)`. Schema default `enabled` does not override explicit live config. → ADR 018/019, discord-tracking.md, knowledge/discord.md, INV-D6/D7 | | 2026-07-21 |
+| P44 | recall | When does Discord idea-tracking alert a user, and is the alert a reply to their track request? | Silent until host-validated ticker/CA in matched candidate + deep research; initial notify only if `mainTrackEligible`. Else await 3 unique later mentions → `composer-2.5-fast` review (reject = 7d blacklist). Alert is a **non-reply** channel message `@user I found a token matching <shortLabel>` + full research; `shortLabel` as stored. Dedupe `(trackingId, chain, tokenAddress)`. Schema default `enabled` does not override explicit live config. → ADR 018/019, discord-tracking.md, knowledge/discord.md, INV-D6/D7 | pass | 2026-07-21 |
+| P45 | recall | Telegram DM says chat turn timed out ~30–90s after idle, with no `chat turn start` in listener logs — what failed, and what does the host do now? | Idle rotation’s `agent create-chat` (90s) hung/failed under load; host resumes prior same-operator chat id instead of failing the turn (rotation is hygiene). Handler logs underlying `detail`. → chat-agent.md Session policy / Gotchas, knowledge/cursor-cli.md | pass | 2026-07-21 |
 
 ## Failure log
 
@@ -232,3 +233,11 @@ patterns become visible.
   non-reply `shortLabel` + full research). ADR 018 cites 019 for delivery.
   Ops note: schema default ≠ live config override; @mention always runs intent
   classifier (`none` = ignore). Added P44. Gotchas empty.
+- 2026-07-21 session-learning (Telegram chat timeout): Operator DMs
+  “Any social / fomo updates?” hit `chat turn timed out` ~1–2m with no
+  `chat turn start` in logs. Root cause: idle session expiry → `create-chat`
+  (was 30s) hung under post-deploy load / concurrent Discord research; handler
+  swallowed error detail. Fix: create-chat timeout 90s; on failure resume prior
+  same-operator chat id; handler `log.error` with detail. Added P45; docs in
+  chat-agent.md + cursor-cli.md. No new ADR (ops resilience, not architecture).
+  Redeploy listener required for live. Gotchas empty.

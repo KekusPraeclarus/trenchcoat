@@ -59,7 +59,6 @@ function passGates(): FomoGatesFile {
       feed: { verdict: "pass", sampleSize: 30 },
       trending: { verdict: "pass", sampleSize: 30 },
       alerts: { verdict: "insufficient-sample", sampleSize: 0 },
-      walletNomination: { verdict: "pass", sampleSize: 30, exactAddresses: true },
       theses: { verdict: "fail", sampleSize: 0 },
     },
   }
@@ -97,7 +96,7 @@ function mockTraderClient(): FomoDataSource {
       xHandle: "alpha_x",
       timeframe: "7d",
       rank: 1,
-      wallets: [{ chain: "solana", address: SOL }],
+      wallets: [],
       observedAt: "2026-07-19T10:00:00.000Z",
       trades: 40,
       winRate: 0.7,
@@ -212,7 +211,7 @@ describe("fomo collect shadow integration", () => {
     })
 
     expect(summary.collectionStatus).toBe("fomo-shadow")
-    expect(summary.snapshotNames).toContain("fomo-wallet-nominations")
+    expect(summary.snapshotNames).toContain("fomo-leaderboard")
     for (const [name, body] of Object.entries(before)) {
       expect(readFileSync(join(agentRoot, "state", name), "utf8")).toBe(body)
     }

@@ -31,7 +31,7 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
 
 Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
 
-- `fomo-trader-sync` (6h) — leaderboard → candidate wallets + X nominations
+- `fomo-trader-sync` (6h) — leaderboard handles → optional X nominations (no wallets)
 - `fomo-signal-scan` (20m) — feed/trending/alerts → dated signals + bounded research enqueue
 - `fomo-x-source-review` (6h) — one pending nomination → bounded X history + isolated classifier
 - `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles
@@ -395,10 +395,12 @@ pricing and scoring.
 ## Rate-limit gate
 
 One shared token-bucket per upstream host in `src/lib/`, consulted by every client
-(including the audit job's outcome fetches and chat-triggered research). Budgets set
-below published limits (GeckoTerminal 25/min, DexScreener 200/min, CoinGecko
-spread across the month). On 429: back off per `Retry-After` if present, exponential
-otherwise; never tighten the loop.
+(including the audit job's outcome fetches and chat-triggered research). Takes are
+serialized per host; optional `minIntervalMs` forces a wall-clock pause between
+grants. Budgets set below published limits (GeckoTerminal 25/min, DexScreener
+200/min, CoinGecko spread across the month, Infura Core 500 credits/s paced for
+`eth_getLogs` at 255 credits — see `docs/knowledge/infura.md`). On 429: back off
+per `Retry-After` if present, exponential otherwise; never tighten the loop.
 
 ## Snapshot and provenance format
 

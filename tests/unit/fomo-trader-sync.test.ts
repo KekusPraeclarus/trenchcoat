@@ -10,7 +10,6 @@ import { saveFomoGates } from "../../src/collectors/fomo/gates.js"
 import type { FomoDataSource } from "../../src/collectors/fomo/web-client.js"
 import type { FomoGatesFile, FomoLeaderboardEntry } from "../../src/collectors/fomo/types.js"
 
-const SOL = "So11111111111111111111111111111111111111112"
 const seed = JSON.parse(
   readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
 ) as Record<string, unknown>
@@ -41,7 +40,6 @@ function failGates(probeRunId: string): FomoGatesFile {
       feed: { verdict: "insufficient-sample", sampleSize: 0 },
       trending: { verdict: "insufficient-sample", sampleSize: 0 },
       alerts: { verdict: "insufficient-sample", sampleSize: 0 },
-      walletNomination: { verdict: "insufficient-sample", sampleSize: 0 },
       theses: { verdict: "insufficient-sample", sampleSize: 0 },
     },
   }
@@ -100,7 +98,7 @@ describe("fomo trader sync host-only", () => {
     expect(summary.collectionKind).toBe("host-only")
   })
 
-  it("shadow mode writes receipts without wallet or nomination mutation", async () => {
+  it("shadow mode writes leaderboard receipt without wallet or nomination mutation", async () => {
     const root = mkdtempSync(join(tmpdir(), "fomo-trader-shadow-"))
     const agentRoot = join(root, "agent")
     const archiveRoot = join(root, "archive")
@@ -124,7 +122,6 @@ describe("fomo trader sync host-only", () => {
         feed: { verdict: "pass", sampleSize: 30 },
         trending: { verdict: "pass", sampleSize: 30 },
         alerts: { verdict: "pass", sampleSize: 30 },
-        walletNomination: { verdict: "pass", sampleSize: 30, exactAddresses: true },
         theses: { verdict: "fail", sampleSize: 0 },
       },
     })
@@ -142,14 +139,21 @@ describe("fomo trader sync host-only", () => {
         xHandle: "alpha_x",
         timeframe: "7d",
         rank: 1,
-        wallets: [{ chain: "solana", address: SOL }],
+        wallets: [],
         observedAt: "2026-07-19T00:00:00.000Z",
       }]),
     })
 
     expect(summary.collectionStatus).toBe("fomo-shadow")
-    expect(summary.snapshotNames).toContain("fomo-wallet-nominations")
+    expect(summary.snapshotNames).toContain("fomo-leaderboard")
     expect(readFileSync(join(agentRoot, "state", "wallets.json"), "utf8")).toBe(wallets)
     expect(readFileSync(join(agentRoot, "state", "x-source-nominations.json"), "utf8")).toBe(nominations)
+    const inbox = readFileSync(
+      join(agentRoot, "inbox", "fomo-trader-sync-shadow", "fomo-leaderboard.json"),
+      "utf8",
+    )
+    expect(inbox).toContain("handle=alpha")
+    expect(inbox).toContain("xHandle=alpha_x")
+    expect(inbox).not.toMatch(/chain=|address=/u)
   })
 })

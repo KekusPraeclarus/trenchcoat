@@ -275,7 +275,6 @@ export function defaultFomoConfigV9(): Record<string, unknown> {
       enabled: false,
       max_handles: 50,
       max_profile_pages: 20,
-      max_wallet_candidates: 20,
     },
     signal_scan: {
       enabled: false,

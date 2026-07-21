@@ -107,19 +107,40 @@ export function createChatTurnRunner(opts: Readonly<{
   return async (operatorText, sink) => {
     let state = opts.store.load()
     const now = nowIso()
-    if (
-      !state
+    const needsNewChat = !state
       || state.telegramUserId !== opts.telegramUserId
       || sessionExpired(state, opts.idleTimeoutMinutes, Date.parse(now))
-    ) {
-      const cursorChatId = await createChat()
-      state = {
-        cursorChatId,
-        lastActivityAt: now,
-        telegramUserId: opts.telegramUserId,
+    if (needsNewChat) {
+      const priorId = state?.telegramUserId === opts.telegramUserId
+        ? state.cursorChatId
+        : undefined
+      try {
+        const cursorChatId = await createChat()
+        state = {
+          cursorChatId,
+          lastActivityAt: now,
+          telegramUserId: opts.telegramUserId,
+        }
+        opts.store.save(state)
+        log.info("chat session created", { cursorChatId })
+      } catch (error) {
+        // Idle rotation is our hygiene policy, not a Cursor invalidation. Under
+        // load (post-deploy, concurrent Discord research) create-chat can time
+        // out — resume the prior id rather than failing the operator turn.
+        if (!priorId) throw error
+        const detail = error instanceof Error ? error.message : "unknown"
+        log.warn("chat create-chat failed; resuming prior session", { detail, priorId })
+        state = {
+          cursorChatId: priorId,
+          lastActivityAt: now,
+          telegramUserId: opts.telegramUserId,
+        }
+        opts.store.save(state)
       }
-      opts.store.save(state)
-      log.info("chat session created", { cursorChatId })
+    }
+
+    if (!state) {
+      throw new Error("chat session missing after create")
     }
 
     const prompt = buildChatPrompt(operatorText)

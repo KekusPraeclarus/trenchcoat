@@ -53,7 +53,7 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "wallet-scan-solana", skill: "wallet-evidence", description: "Solana wallet evidence", preconditionTier: "host" },
   { name: "wallet-scan-evm", skill: "wallet-evidence", description: "EVM wallet evidence", preconditionTier: "host" },
   { name: "wallet-review", skill: "review", description: "Wallet score/lifecycle review", preconditionTier: "none" },
-  { name: "fomo-trader-sync", skill: "review", description: "Fomo trader wallet nomination", preconditionTier: "host" },
+  { name: "fomo-trader-sync", skill: "review", description: "Fomo leaderboard → X nominations (no wallets)", preconditionTier: "host" },
   { name: "fomo-signal-scan", skill: "review", description: "Fomo feed convergence and pressure signals", preconditionTier: "host" },
   { name: "fomo-x-source-review", skill: "fomo-x-source-review", description: "Classify Fomo-nominated X accounts", preconditionTier: "host" },
   { name: "fomo-narrative-source-scan", skill: "review", description: "Scan probation narrative X sources", preconditionTier: "host" },

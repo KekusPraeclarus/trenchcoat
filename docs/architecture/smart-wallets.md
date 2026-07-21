@@ -11,7 +11,9 @@ read_when:
 
 Solana truth is Helius finalized standard RPC (signatures + transaction/balance
 deltas). EVM truth is Infura HTTP on Ethereum and Base with finalized-block
-cursors and `removed` reorg handling. Robinhood Chain uses the throttled
+cursors and `removed` reorg handling. Infura pacing uses the shared host gate with
+credit-weighted takes and a ~638ms serial min interval (Core 500 credits/s,
+`eth_getLogs` 255 — `docs/knowledge/infura.md`). Robinhood Chain uses the throttled
 official public RPC (`https://rpc.mainnet.chain.robinhood.com`) and fail-closes
 on HTTP 429/5xx. BSC remains wallet-tracking unsupported.
 
@@ -33,10 +35,6 @@ No signing libraries. No transaction submission. Read-only codecs only (INV-A1).
    may summarize a frozen wallet snapshot, but cannot affect this host work.
    Empty/skip reasons:
    `no-active-watchlist-subjects`, `no-wallet-supported-subjects`, `dry-collect`.
-2b. **`fomo-trader-sync` (optional)** — host-only Fomo leaderboard sync may
-   register additional `candidate` wallets with `discoveredFrom: "fomo"`
-   when `fomo.enabled` + gates pass and `shadow_mode=false`. No lifecycle events
-   at nomination; existing scans/review remain authoritative (INV-S19).
 3. **`wallet-scan-solana` / `wallet-scan-evm`** — host performs incremental finalized action
    scans for candidates/tracking wallets; archives buy outcomes under
    `archive/outcomes/wallet-buy-*.json`. The evidence-only agent may inspect

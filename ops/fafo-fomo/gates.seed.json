@@ -29,11 +29,6 @@
       "verdict": "insufficient-sample",
       "sampleSize": 0
     },
-    "walletNomination": {
-      "verdict": "insufficient-sample",
-      "exactAddresses": false,
-      "sampleSize": 0
-    },
     "theses": {
       "verdict": "insufficient-sample",
       "sampleSize": 0

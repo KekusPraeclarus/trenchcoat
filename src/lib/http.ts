@@ -8,6 +8,9 @@ export type GatedFetchOptions = Readonly<{
   capacity: number
   refillPerSecond: number
   monthlyBudget?: number
+  minIntervalMs?: number
+  /** Token / credit cost consumed per take (default 1) */
+  cost?: number
   maxBytes?: number
   timeoutMs?: number
   headers?: HeadersInit
@@ -25,8 +28,11 @@ export async function gatedFetch(
     ...(options.monthlyBudget === undefined
       ? {}
       : { monthlyBudget: options.monthlyBudget }),
+    ...(options.minIntervalMs === undefined
+      ? {}
+      : { minIntervalMs: options.minIntervalMs }),
   })
-  await gate.take()
+  await gate.take(options.cost ?? 1)
 
   const response = await fetcher(url, {
     ...init,

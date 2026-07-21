@@ -132,7 +132,7 @@ fallback kept the agent on as analysis-only noise — not recovery.
 - **Fomo** — live smoke + operator override gates installed 2026-07-19
   (`ops/fafo-fomo/gates.operator-override-2026-07-19.json`). Host config
   `enabled=true`, `shadow_mode=false` for trader_sync + signal_scan.
-  Verified: `fomo-trader-sync` wrote 100 wallet nominations; `fomo-signal-scan`
+  Verified: `fomo-trader-sync` wrote leaderboard receipts; `fomo-signal-scan`
   wrote hot signals; wallets gained `origin=fomo` candidates. Full multi-day
   FAFO sample/evaluate still pending — replace override when available.
   Smoke: `pnpm fomo:smoke`. Playbook: `ops/fafo-fomo/SHADOW-CANARY.md`.

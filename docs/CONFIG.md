@@ -287,7 +287,7 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `enabled` | `false` | Master switch; false ⇒ no Fomo navigation |
 | `shadow_mode` | `true` | Snapshots/receipts only; no wallet, research-queue, X-nomination, watchlist, engagement, or broadcast mutation |
 | `daily_navigation_budget` | `200` | Local ledger cap on page navigations |
-| `trader_sync.enabled` | `false` | Lane A wallet nomination job |
+| `trader_sync.enabled` | `false` | Leaderboard sync for signals / X nominations (no wallets) |
 | `signal_scan.enabled` | `false` | Lane B signal job |
 | `signal_scan.feed` / `trending` / `alerts` / `convergence` / `pressure` | `false` | Per-signal capability flags |
 | `signal_scan.max_enqueues_per_day` | `3` | Research-queue writes per UTC day (native/wrap mints never count) |

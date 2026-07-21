@@ -181,7 +181,6 @@ export const FomoGatesFileSchema = z.object({
     feed: GateResultSchema,
     trending: GateResultSchema,
     alerts: GateResultSchema,
-    walletNomination: GateResultSchema,
     theses: GateResultSchema,
   }),
 })

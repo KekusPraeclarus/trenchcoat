@@ -2,7 +2,7 @@
 description: Provider knowledge — Helius Solana finalized RPC for wallet tracking.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-21
 ---
 
 # Helius
@@ -15,3 +15,9 @@ last_verified: 2026-07-19
 - Wallet scan: same primitives for known wallet addresses
 - Env: `HELIUS_API_KEY`
 - No signing / sendTransaction paths
+- **Fomo never feeds wallet tracking.** Leaderboard `address` / `evmAddress`
+  are profile ids, not trading wallets (`getAccountInfo` often null). Do not
+  nominate them into `wallets.json`. Fomo informs signals + optional X-source
+  nomination only (`fomo-trader-sync` / `fomo-signal-scan`).
+- Wallet-scan cursor uses Helius `before` (paginate older history). Tip-following
+  for new activity needs `until` / newest-signature semantics — separate issue.

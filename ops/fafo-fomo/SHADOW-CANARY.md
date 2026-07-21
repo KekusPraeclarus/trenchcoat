@@ -41,7 +41,7 @@ pnpm tsx scripts/fomo-shadow-metrics.ts --day $(date -u +%F)
 ```
 
 **Shadow graduation:** provider success ≥95%; no secret/payment/invariant
-breaches; wallet nomination and signal enqueue rates reviewed by operator.
+breaches; signal enqueue rates reviewed by operator.
 
 ## Canary
 

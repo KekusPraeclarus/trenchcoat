@@ -18,13 +18,24 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
 - Host-only burner profile (INV-I3). Never under `agent/`, never in fixtures
 - Navigation budget + request policy gate every request (INV-R1)
 - Snapshots are `trust: untrusted-external` (INV-P1)
-- Wallet / research / X-nomination mutations only when FAFO gates pass and
-  `shadow_mode=false`. Health reports FOMO as a parallel-only section — it
-  never clears FC corroboration or legacy research/wallet warnings
+- Research / X-nomination mutations only when FAFO gates pass and
+  `shadow_mode=false`. Fomo never writes `wallets.json`. Health reports FOMO
+  as a parallel-only section — it never clears FC corroboration or legacy
+  research/wallet warnings
 
 ## Jobs
 
-- `fomo-trader-sync` — leaderboard → wallet candidates + X nominations
+- `fomo-trader-sync` — leaderboard handles for signals / optional X nominations
+  (never wallet candidates; Fomo profile `address`/`evmAddress` are not trading
+  wallets). Host-only; shares the agent workspace lock with `source-list-review`,
+  `list-scan`, telegram-alpha (via channels), and x-scan. A hung Playwright X
+  list sync can starve trader-sync for hours (`workspace lock held` in
+  `/tmp/trenchcoat.fomo-trader-sync.*.log`). If the holder is idle chromium with
+  only `blocked non-list mutation` logs past ~10m, operator-fail the run and
+  re-kick: `tc run fail <runId> --reason '…'` then
+  `run-with-lock-retry fomo-trader-sync -- --skip-agent`. Not listed in
+  `KEY_HEALTH_JOBS` — verify via archive run / `fomo-leaderboard` inbox, not
+  `tc status` job lines.
 - `fomo-signal-scan` — feed / alerts / derived convergence & pressure;
   trending/hot may enqueue research when gates + config allow. Native/wrap gas
   mints and reserved chain symbols never burn the daily enqueue cap

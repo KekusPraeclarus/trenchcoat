@@ -69,20 +69,6 @@ function resolveActivityChain(args: Readonly<{
     ?? (args.tokenAddress ? inferChainFromTokenAddress(args.tokenAddress) : undefined)
 }
 
-function pushWallet(
-  wallets: { chain: string, address: string }[],
-  chainRaw: string | undefined,
-  addressRaw: string | undefined,
-): void {
-  const chain = mapChain(chainRaw)
-  if (!chain || !addressRaw) return
-  const entry = getChain(chain)
-  if (!entry || entry.walletTracking === "unsupported") return
-  if (!validateChainAddress(entry.addressFormat, addressRaw)) return
-  if (wallets.some((wallet) => wallet.chain === chain && wallet.address === addressRaw)) return
-  wallets.push({ chain, address: addressRaw })
-}
-
 function normalizeXHandle(raw: string | undefined): string | undefined {
   if (!raw) return undefined
   const trimmed = raw.trim()
@@ -141,13 +127,7 @@ export function mapTrader(raw: unknown, observedAt?: string): FomoTrader | undef
   const value = parsed.data
   const handle = resolveHandle(value)
   if (!handle) return undefined
-  const wallets: { chain: string, address: string }[] = []
-  for (const wallet of value.wallets ?? []) {
-    pushWallet(wallets, wallet.chain, wallet.address)
-  }
-  pushWallet(wallets, "solana", value.solana_wallet ?? value.address)
-  pushWallet(wallets, "base", value.base_wallet)
-  pushWallet(wallets, "ethereum", value.ethereum_wallet ?? value.evmAddress)
+  // Fomo profile address/evmAddress are not trading wallets — never bind them
   const x = extractXLink(value as Record<string, unknown>)
   const winRate = value.win_rate ?? value.winRate
   const pnl = value.pnl ?? value.pnl7d ?? value.pnl24h ?? value.pnl30d
@@ -157,7 +137,7 @@ export function mapTrader(raw: unknown, observedAt?: string): FomoTrader | undef
     ...(pnl !== undefined ? { pnl } : {}),
     ...(winRate !== undefined ? { winRate } : {}),
     ...(trades !== undefined ? { trades } : {}),
-    wallets,
+    wallets: [],
     ...x,
     ...(observedAt ? { observedAt } : {}),
   }

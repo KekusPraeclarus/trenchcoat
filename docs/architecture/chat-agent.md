@@ -2,7 +2,7 @@
 description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -86,7 +86,12 @@ little as possible itself:
   reply without an ask-mode agent turn
 - **Session policy**: Cursor chat id persisted in `~/.trenchcoat/chat-session.json`;
   rotated after `config.chat.idle_timeout_minutes` (default 30). Knowledge store
-  is long-term memory; sessions stay disposable
+  is long-term memory; sessions stay disposable. Idle rotation calls
+  `agent create-chat` (90s host timeout). If create-chat fails under load
+  (post-deploy cold start, concurrent Discord research), the host **resumes the
+  prior chat id** rather than failing the turn — rotation is hygiene, not a
+  Cursor invalidation. Handler catch logs the underlying `detail` before the
+  operator-facing timeout hint.
 - **Streaming**: chat turns use Cursor `--output-format stream-json
   --stream-partial-output`. Partials go to Telegram `sendMessageDraft` (Bot API
   9.5+; same `draft_id` animates updates). Drafts are ephemeral — the host then
@@ -162,6 +167,11 @@ Full contract: [discord-research.md](discord-research.md).
 - Idle expiry must use the injected turn clock (`Date.parse(nowIso())`), not
   wall-clock `Date.now()`. Fixture-date or clock-injected tests otherwise look
   “expired” and silently rotate the Cursor chat id
+- A mid-turn `SIGTERM` (launchd redeploy) kills the listener without a timeout
+  reply; the next poll after restart processes backlog. “chat turn timed out”
+  after ~30–90s with no `chat turn start` in logs usually means **create-chat**
+  hung on idle rotation — check `/tmp/trenchcoat.listener.out.log` for
+  `chat create-chat failed; resuming prior session` after the resilience fix
 - Launchd runs `~/.trenchcoat/bin/trenchcoat` against a **deployed**
   `~/.trenchcoat/runtime`, not the repo `dist/`. After host-gate changes
   (`research-intent`, `handler`, listener), redeploy via `ops/install-launchd.sh`

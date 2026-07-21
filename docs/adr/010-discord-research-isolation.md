@@ -2,7 +2,7 @@
 description: ADR — Discord research bot is Gateway-isolated from router webhook broadcasts and main agent state.
 scope: project
 status: accepted
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # ADR 010 — Discord research isolation

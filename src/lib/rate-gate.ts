@@ -2,11 +2,15 @@ export type RateGateOptions = Readonly<{
   capacity: number
   refillPerSecond: number
   monthlyBudget?: number
+  /** Floor gap between successful takes once the mutex admits a waiter */
+  minIntervalMs?: number
 }>
 
 export class RateGate {
   private tokens: number
   private lastRefillMs: number
+  private lastTakeAtMs = 0
+  private mutex: Promise<void> = Promise.resolve()
   private monthlyUsed = 0
   private monthKey = currentMonthKey()
 
@@ -19,6 +23,21 @@ export class RateGate {
   }
 
   async take(cost = 1): Promise<void> {
+    let release!: () => void
+    const next = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const previous = this.mutex
+    this.mutex = next
+    await previous
+    try {
+      await this.takeLocked(cost)
+    } finally {
+      release()
+    }
+  }
+
+  private async takeLocked(cost: number): Promise<void> {
     this.rotateMonthIfNeeded()
     if (
       this.options.monthlyBudget !== undefined
@@ -27,11 +46,18 @@ export class RateGate {
       throw new Error(`Monthly budget exhausted for ${this.host}`)
     }
 
+    const minIntervalMs = this.options.minIntervalMs ?? 0
+    if (minIntervalMs > 0 && this.lastTakeAtMs > 0) {
+      const gap = this.lastTakeAtMs + minIntervalMs - Date.now()
+      if (gap > 0) await sleep(gap)
+    }
+
     for (;;) {
       this.refill()
       if (this.tokens >= cost) {
         this.tokens -= cost
         this.monthlyUsed += cost
+        this.lastTakeAtMs = Date.now()
         return
       }
       const deficit = cost - this.tokens
@@ -43,7 +69,11 @@ export class RateGate {
   observe429(retryAfterSeconds?: number): void {
     this.tokens = 0
     if (retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds)) {
-      this.lastRefillMs = Date.now() + Math.ceil(retryAfterSeconds * 1_000)
+      const holdMs = Math.ceil(retryAfterSeconds * 1_000)
+      this.lastRefillMs = Date.now() + holdMs
+      this.lastTakeAtMs = Date.now() + holdMs
+    } else {
+      this.lastTakeAtMs = Date.now()
     }
   }
 
