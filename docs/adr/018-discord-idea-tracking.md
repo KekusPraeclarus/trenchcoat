@@ -28,7 +28,7 @@ or quotas. Matching must not fail or roll back parent `list-scan` /
 
 - Store host-owned requests under `~/.trenchcoat/discord/tracking.json`
   (schema-validated transitions in `tracking-state.ts`, lock via Discord
-  `layout.lock`). Config: `chat.discord.tracking` (default `enabled: false`).
+  `layout.lock`). Config: `chat.discord.tracking` (default `enabled: true`).
 - **Intake gate:** after renew / deterministic research / chain-integration fall
   through, only @mention or reply-to-bot messages hit the intent classifier.
   Research intents keep priority even when the bot is mentioned.
@@ -59,8 +59,9 @@ or quotas. Matching must not fail or roll back parent `list-scan` /
   the research-vs-tracking distinction.
 - Matching latency/cost scales with active request count × scan volume; early-out
   when zero active requests keeps scan latency unchanged.
-- Enabling in production requires a live composer-2.5 eval archive in
-  `docs/architecture/discord-tracking.md` (INV-D8); keep `enabled: false` until then.
+- Enabling is on by default; archive a live composer-2.5 eval in
+  `docs/architecture/discord-tracking.md` (INV-D8) when tightening semantic
+  readiness claims. Operators may still set `enabled: false` to disable.
 - Ambiguous Discord sends after `sending` are marked terminal without blind
   resend (INV-D7 PARTIAL) — prefer miss over duplicate ping.
 - SnapshotWriter callers under `src/discord/tracking-*.ts` are allowlisted for
@@ -77,7 +78,7 @@ or quotas. Matching must not fail or roll back parent `list-scan` /
 ## Follow-ups
 
 - Run opt-in `tests/e2e/discord-tracking-model-live.test.ts` and archive metrics
-  before flipping `chat.discord.tracking.enabled`.
+  to support INV-D8 semantic claims.
 - Optional Discord message nonce reconciliation if the API surface becomes
   reliable enough to tighten INV-D7.
 

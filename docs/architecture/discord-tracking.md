@@ -17,7 +17,7 @@ origin) ping the user and attach research. State lives under
 
 ## Config
 
-`chat.discord.tracking` (default `enabled: false`):
+`chat.discord.tracking` (default `enabled: true`):
 
 | Key | Default | Role |
 |---|---|---|
@@ -104,9 +104,9 @@ all-or-nothing.
 
 ## Live eval archive
 
-Before enabling in production, run the live suite on composer-2.5 and record
-here: model, date, corpus hash, intent accuracy, match recall, false-positive
-rate, safety failures (must be 0).
+Feature defaults on. For INV-D8 semantic claims, run the live suite on
+composer-2.5 and record here: model, date, corpus hash, intent accuracy, match
+recall, false-positive rate, safety failures (must be 0).
 
 ## References
 

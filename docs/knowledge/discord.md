@@ -26,7 +26,7 @@ last_verified: 2026-07-21
   Embed Links, Add Reactions
 - Research: no @mention required in allowed channels
 - Idea-tracking (ADR 018): **requires** @mention or reply-to-bot; ack 🫡;
-  state in `tracking.json`; default `chat.discord.tracking.enabled: false`
+  state in `tracking.json`; default `chat.discord.tracking.enabled: true`
 - FIFO research queue (one runner); ✅ when claimed; `chat.discord.model`
   defaults to `composer-2.5-fast` for the **initial research reply**; material
   watch updates use `composer-2.5` via a **host-side** update writer (not the

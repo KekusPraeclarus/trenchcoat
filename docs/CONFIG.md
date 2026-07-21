@@ -420,7 +420,7 @@ Host lane for exact unknown `slug:address` (ADR 016). Defaults: `enabled` true,
 
 ### `chat.discord.tracking`
 
-NL idea-tracking requests (ADR 018, INV-D3–D8). Default `enabled: false`. Models
+NL idea-tracking requests (ADR 018, INV-D3–D8). Default `enabled: true`. Models
 `intent_model` / `match_model` default `composer-2.5`. Cap `max_active_per_user`
 10, `ttl_days` 30, `expiry_bundle_hours` 48, `pending_capacity_ttl_hours` 48,
 `tentative_confirm_window_hours` 24, `expiry_reply_window_days` 7. State:

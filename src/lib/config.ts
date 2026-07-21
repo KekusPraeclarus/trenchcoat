@@ -446,7 +446,7 @@ export const ConfigSchema = z.object({
         phase_timeout_ms: z.number().int().min(60_000).max(3_600_000).default(1_800_000),
       }).default({}),
       tracking: z.object({
-        enabled: z.boolean().default(false),
+        enabled: z.boolean().default(true),
         intent_model: z.string().min(1).max(64).default("composer-2.5"),
         match_model: z.string().min(1).max(64).default("composer-2.5"),
         max_active_per_user: z.number().int().min(1).max(20).default(10),

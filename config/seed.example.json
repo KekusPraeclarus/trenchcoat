@@ -436,7 +436,7 @@
         "phase_timeout_ms": 1800000
       },
       "tracking": {
-        "enabled": false,
+        "enabled": true,
         "intent_model": "composer-2.5",
         "match_model": "composer-2.5",
         "max_active_per_user": 10,
