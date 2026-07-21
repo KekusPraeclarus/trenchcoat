@@ -1,7 +1,9 @@
 # Runbook
 
-Deployment and operations for trenchcoat on macOS (launchd). Linux/cron
-equivalents follow the same cadences.
+Deployment and operations for trenchcoat on macOS (launchd). Linux uses the
+same cadences via user systemd — see [linux-vps.md](linux-vps.md)
+(`ops/install-systemd.sh`, `ops/trenchcoat-deploy.sh`, Actions workflow
+`.github/workflows/deploy-vps.yml`).
 
 ## Layout on the host
 

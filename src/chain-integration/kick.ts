@@ -31,7 +31,9 @@ function spawnDetachedCli(): void {
   child.unref()
 }
 
-/** Prefer launchd one-shot; fall back to detached local CLI process */
+const SYSTEMD_UNIT = "trenchcoat-job-discord-chain-integration.service"
+
+/** Prefer launchd / user-systemd one-shot; fall back to detached local CLI */
 export function kickChainIntegrationWorker(): void {
   const uid = process.getuid?.() ?? 501
   const domain = `gui/${uid}`
@@ -46,5 +48,25 @@ export function kickChainIntegrationWorker(): void {
     kick.unref()
     return
   }
+
+  const sys = spawnSync(
+    "systemctl",
+    ["--user", "show", SYSTEMD_UNIT, "--property=LoadState", "--value"],
+    { encoding: "utf8" },
+  )
+  if ((sys.status ?? 1) === 0 && String(sys.stdout).trim() === "loaded") {
+    const kick = spawn("systemctl", ["--user", "start", SYSTEMD_UNIT], {
+      stdio: "ignore",
+      detached: true,
+      env: {
+        ...process.env,
+        XDG_RUNTIME_DIR:
+          process.env.XDG_RUNTIME_DIR ?? `/run/user/${String(uid)}`,
+      },
+    })
+    kick.unref()
+    return
+  }
+
   spawnDetachedCli()
 }
