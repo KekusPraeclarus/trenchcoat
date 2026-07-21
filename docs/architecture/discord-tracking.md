@@ -19,6 +19,10 @@ response. State lives under `~/.trenchcoat/discord/tracking.json` (host-owned).
 Binding decisions: **ADR 018** (intake/state), **ADR 019** (alert qualification),
 **ADR 021** (chain constraint + watch quality gate).
 
+Watch-token subscriptions (post-research) use a parallel proactive expiry flow
+that mirrors idea-tracking notices — see [discord-conversation.md](discord-conversation.md)
+and `runWatchExpirySweep` / `watch_expiry_reply_window_days`.
+
 ## Config
 
 `chat.discord.tracking` (default `enabled: true`):

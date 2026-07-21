@@ -9,8 +9,15 @@ import {
 } from "./render.js"
 import type { DiscordStore } from "./store.js"
 import type { DiscordRequestRecord } from "./schemas.js"
-import { DISCORD_ERRORS, recountDailyQuota } from "./quota.js"
 import { discordLayout } from "./paths.js"
+
+export const DISCORD_ERRORS = {
+  MULTI_NETWORK: "Multiple networks found. Resend as chain:address.",
+  NO_MARKET: "No supported market found for that contract.",
+  FAILED: "Research failed. Please try again later.",
+  BUSY: "Bot is busy. Try again in a moment.",
+  WATCH_CAPACITY: "Watchlist capacity reached; this token was not added.",
+} as const
 
 async function withStoreLockRetry<T>(
   lockPath: string,
@@ -43,8 +50,6 @@ async function persistRequestUpdate(
     const idx = file.requests.findIndex((r) => r.requestId === requestId)
     if (idx < 0) return false
     file.requests[idx] = patch(file.requests[idx]!)
-    // Failures drop out of daily caps; recount keeps counters aligned
-    file = recountDailyQuota(file, nowIso)
     await store.saveRequests(file)
     return true
   })

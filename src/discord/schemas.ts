@@ -16,10 +16,15 @@ export const DiscordRequestStatusSchema = z.enum([
   "rejected",
 ])
 
-export const DiscordRequestOriginSchema = z.enum(["user", "tracking"])
+export const DiscordRequestOriginSchema = z.enum(["user", "tracking", "conversation"])
+
+export const DiscordRequestIdSchema = z.union([
+  DiscordSnowflakeSchema,
+  z.string().regex(/^conv-\d{17,20}-\d{1,2}$/u),
+])
 
 export const DiscordRequestRecordSchema = z.object({
-  requestId: DiscordSnowflakeSchema,
+  requestId: DiscordRequestIdSchema,
   guildId: DiscordSnowflakeSchema,
   channelId: DiscordSnowflakeSchema,
   messageId: DiscordSnowflakeSchema,
@@ -36,7 +41,7 @@ export const DiscordRequestRecordSchema = z.object({
   quotaDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   /** Reserved while a chain-integration runs; released on fail or consumed on research handoff */
   chainIntegrationId: z.string().max(128).optional(),
-  /** tracking-origin bypasses per-user caps; still counts server daily */
+  /** tracking-origin / conversation-origin research (silent delivery paths differ) */
   origin: DiscordRequestOriginSchema.optional(),
   /** When set, research reply threads under this ping message (legacy; gated tracking no longer uses replies) */
   trackingPingMessageId: DiscordSnowflakeSchema.optional(),
@@ -65,6 +70,8 @@ export const DiscordSubscriptionSchema = z.object({
   startedAt: IsoTimestampSchema,
   renewedAt: IsoTimestampSchema,
   expiresAt: IsoTimestampSchema,
+  expiryNoticeMessageId: DiscordSnowflakeSchema.optional(),
+  expiryNoticeAt: IsoTimestampSchema.optional(),
 })
 export type DiscordSubscription = z.infer<typeof DiscordSubscriptionSchema>
 
@@ -120,8 +127,8 @@ export const DiscordDeliveryStatusSchema = z.enum([
 
 export const DiscordDeliveryRecordSchema = z.object({
   deliveryId: z.string().min(8).max(128),
-  kind: z.enum(["research", "watch-update", "chain-integration", "tracking-ping"]),
-  requestId: DiscordSnowflakeSchema.optional(),
+  kind: z.enum(["research", "watch-update", "chain-integration", "tracking-ping", "conversation"]),
+  requestId: DiscordRequestIdSchema.optional(),
   chain: z.string().min(1).max(64).optional(),
   tokenAddress: z.string().min(32).max(128).optional(),
   channelId: DiscordSnowflakeSchema,
@@ -285,6 +292,44 @@ export const DiscordDeliveriesFileSchema = z.object({
   deliveries: z.array(DiscordDeliveryRecordSchema).max(2_000),
 })
 export type DiscordDeliveriesFile = z.infer<typeof DiscordDeliveriesFileSchema>
+
+export const ConversationStatusSchema = z.enum([
+  "awaiting-research",
+  "synthesizing",
+  "answered",
+  "failed",
+])
+
+export const ConversationRecordSchema = z.object({
+  conversationId: DiscordSnowflakeSchema,
+  guildId: DiscordSnowflakeSchema,
+  channelId: DiscordSnowflakeSchema,
+  userId: DiscordSnowflakeSchema,
+  question: z.string().min(1).max(2_000),
+  cursorChatId: z.string().min(1).max(128),
+  requestIds: z.array(DiscordRequestIdSchema).min(1).max(10),
+  status: ConversationStatusSchema,
+  createdAt: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+  claimedAt: IsoTimestampSchema.optional(),
+  lastError: z.string().max(280).optional(),
+})
+export type ConversationRecord = z.infer<typeof ConversationRecordSchema>
+
+export const DiscordConversationsFileSchema = z.object({
+  schema: z.literal(1),
+  conversations: z.array(ConversationRecordSchema).max(5_000),
+})
+export type DiscordConversationsFile = z.infer<typeof DiscordConversationsFileSchema>
+
+export const ConversationSessionsFileSchema = z.object({
+  schema: z.literal(1),
+  channels: z.record(z.string(), z.object({
+    cursorChatId: z.string().min(1).max(128),
+    lastActivityAt: IsoTimestampSchema,
+  })).default({}),
+})
+export type ConversationSessionsFile = z.infer<typeof ConversationSessionsFileSchema>
 
 export const DiscordHeartbeatSchema = z.object({
   schema: z.literal(1),

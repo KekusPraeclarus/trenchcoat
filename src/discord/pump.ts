@@ -3,12 +3,6 @@ import { log } from "../lib/log.js"
 import { WorkspaceLock } from "../lib/lock.js"
 import { discordLayout } from "./paths.js"
 import { createDiscordStore, pruneOldRequests, rolloverQuotaDay } from "./store.js"
-import {
-  countActiveForUser,
-  DISCORD_ERRORS,
-  quotaAllows,
-  recountDailyQuota,
-} from "./quota.js"
 import type { DiscordRequestRecord } from "./schemas.js"
 import { runDiscordResearch } from "./research-run.js"
 import {
@@ -16,6 +10,7 @@ import {
   DISCORD_RESEARCH_STARTED_EMOJI,
 } from "./bot-client.js"
 import {
+  DISCORD_ERRORS,
   deliverResearchReply,
   deliverTerminalError,
   mapResearchError,
@@ -69,6 +64,62 @@ export async function reclaimOrphanedDiscordRequests(): Promise<number> {
   return locked.ok ? locked.value : 0
 }
 
+export function appendQueuedDiscordRequest(
+  file: import("./schemas.js").DiscordRequestsFile,
+  args: Readonly<{
+    requestId: string
+    guildId: string
+    channelId: string
+    messageId: string
+    userId: string
+    subject: string
+    chainHint?: string
+    tokenHint?: string
+    origin?: "user" | "tracking" | "conversation"
+    nowIso: string
+  }>,
+): {
+  file: import("./schemas.js").DiscordRequestsFile
+  result:
+    | { accepted: true; request: DiscordRequestRecord }
+    | { duplicate: true; request: DiscordRequestRecord }
+} {
+  const existing = file.requests.find((r) => r.requestId === args.requestId)
+  if (existing) return { file, result: { duplicate: true, request: existing } }
+
+  const origin = args.origin ?? "user"
+  if (origin === "tracking") {
+    const dupSubject = file.requests.find((r) => (
+      r.origin === "tracking"
+      && r.subject.toLowerCase() === args.subject.toLowerCase()
+      && (r.status === "queued" || r.status === "running" || r.status === "completed")
+      && r.quotaDay === file.quotaDay
+    ))
+    if (dupSubject) return { file, result: { duplicate: true, request: dupSubject } }
+  }
+
+  const request: DiscordRequestRecord = {
+    requestId: args.requestId,
+    guildId: args.guildId,
+    channelId: args.channelId,
+    messageId: args.messageId,
+    userId: args.userId,
+    subject: args.subject.slice(0, 256),
+    ...(args.chainHint ? { chain: args.chainHint as DiscordRequestRecord["chain"] } : {}),
+    ...(args.tokenHint ? { tokenAddress: args.tokenHint } : {}),
+    status: "queued",
+    createdAt: args.nowIso,
+    updatedAt: args.nowIso,
+    quotaDay: file.quotaDay,
+    deliveredPartKeys: [],
+    origin,
+  }
+  return {
+    file: { ...file, requests: [...file.requests, request] },
+    result: { accepted: true, request },
+  }
+}
+
 export async function acceptDiscordRequest(args: Readonly<{
   guildId: string
   channelId: string
@@ -77,7 +128,8 @@ export async function acceptDiscordRequest(args: Readonly<{
   subject: string
   chainHint?: string
   tokenHint?: string
-  origin?: "user" | "tracking"
+  origin?: "user" | "tracking" | "conversation"
+  requestId?: string
   trackingPingMessageId?: string
   trackingId?: string
   trackingDeliveryId?: string
@@ -88,10 +140,9 @@ export async function acceptDiscordRequest(args: Readonly<{
   | { accepted: false; terminal: string }
   | { duplicate: true; request: DiscordRequestRecord }
 > {
-  const config = loadConfig()
   const layout = discordLayout()
   const store = createDiscordStore(layout)
-  const origin = args.origin ?? "user"
+  const requestId = args.requestId ?? args.messageId
 
   const locked = await withStoreLockRetry(layout.lock, async () => {
     const nowIso = systemClock.nowIso()
@@ -99,70 +150,42 @@ export async function acceptDiscordRequest(args: Readonly<{
     file = pruneOldRequests(file, nowIso)
     file = rolloverQuotaDay(file, nowIso)
 
-    const existing = file.requests.find((r) => r.requestId === args.messageId)
-    if (existing) return { duplicate: true as const, request: existing }
-
-    if (origin === "tracking") {
-      const dupSubject = file.requests.find((r) => (
-        r.origin === "tracking"
-        && r.subject.toLowerCase() === args.subject.toLowerCase()
-        && (r.status === "queued" || r.status === "running" || r.status === "completed")
-        && r.quotaDay === file.quotaDay
-      ))
-      if (dupSubject) return { duplicate: true as const, request: dupSubject }
-    } else {
-      const activeCount = countActiveForUser(file, args.userId)
-      if (activeCount >= config.chat.discord.max_active_per_user) {
-        return { accepted: false as const, terminal: DISCORD_ERRORS.ACTIVE }
-      }
-    }
-
-    const quota = quotaAllows(file, args.userId, config, nowIso, {
-      bypassUserCap: origin === "tracking",
-    })
-    file = quota.file
-    if (!quota.ok) {
-      return {
-        accepted: false as const,
-        terminal: quota.reason === "server"
-          ? DISCORD_ERRORS.SERVER_CAP
-          : DISCORD_ERRORS.USER_CAP,
-      }
-    }
-
-    const request: DiscordRequestRecord = {
-      requestId: args.messageId,
+    const appended = appendQueuedDiscordRequest(file, {
+      requestId,
       guildId: args.guildId,
       channelId: args.channelId,
       messageId: args.messageId,
       userId: args.userId,
-      subject: args.subject.slice(0, 256),
-      ...(args.chainHint ? { chain: args.chainHint as DiscordRequestRecord["chain"] } : {}),
-      ...(args.tokenHint ? { tokenAddress: args.tokenHint } : {}),
-      status: "queued",
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      quotaDay: file.quotaDay,
-      deliveredPartKeys: [],
-      origin,
-      ...(args.trackingPingMessageId
-        ? { trackingPingMessageId: args.trackingPingMessageId }
-        : {}),
-      ...(args.trackingId ? { trackingId: args.trackingId } : {}),
-      ...(args.trackingDeliveryId
-        ? { trackingDeliveryId: args.trackingDeliveryId }
-        : {}),
-      ...(args.trackingShortLabel
-        ? { trackingShortLabel: args.trackingShortLabel.slice(0, 64) }
-        : {}),
-      ...(args.trackingQualificationSource
-        ? { trackingQualificationSource: args.trackingQualificationSource }
-        : {}),
+      subject: args.subject,
+      ...(args.chainHint ? { chainHint: args.chainHint } : {}),
+      ...(args.tokenHint ? { tokenHint: args.tokenHint } : {}),
+      ...(args.origin ? { origin: args.origin } : {}),
+      nowIso,
+    })
+    file = appended.file
+    if ("accepted" in appended.result && appended.result.accepted) {
+      const request: DiscordRequestRecord = {
+        ...appended.result.request,
+        ...(args.trackingPingMessageId
+          ? { trackingPingMessageId: args.trackingPingMessageId }
+          : {}),
+        ...(args.trackingId ? { trackingId: args.trackingId } : {}),
+        ...(args.trackingDeliveryId
+          ? { trackingDeliveryId: args.trackingDeliveryId }
+          : {}),
+        ...(args.trackingShortLabel
+          ? { trackingShortLabel: args.trackingShortLabel.slice(0, 64) }
+          : {}),
+        ...(args.trackingQualificationSource
+          ? { trackingQualificationSource: args.trackingQualificationSource }
+          : {}),
+      }
+      const idx = file.requests.findIndex((r) => r.requestId === requestId)
+      if (idx >= 0) file.requests[idx] = request
+      await store.saveRequests(file)
+      return { accepted: true as const, request }
     }
-    file.requests.push(request)
-    file = recountDailyQuota(file, nowIso)
-    await store.saveRequests(file)
-    return { accepted: true as const, request }
+    return appended.result
   })
 
   if (!locked.ok) {
@@ -206,8 +229,9 @@ export async function processNextDiscordRequest(args: Readonly<{
 
     const client = createDiscordRestClient(args.token)
     const isTrackingOrigin = request.origin === "tracking"
+    const isConversationOrigin = request.origin === "conversation"
 
-    if (!isTrackingOrigin) {
+    if (!isTrackingOrigin && !isConversationOrigin) {
       try {
         await client.addReaction({
           channelId: request.channelId,
@@ -236,6 +260,17 @@ export async function processNextDiscordRequest(args: Readonly<{
 
     if (isTrackingOrigin) {
       await finalizeTrackingOriginResearch({
+        store,
+        request,
+        result,
+        repoRoot: args.repoRoot,
+        token: args.token,
+      })
+      return "processed"
+    }
+
+    if (isConversationOrigin) {
+      await finalizeConversationOriginResearch({
         store,
         request,
         result,
@@ -411,6 +446,149 @@ export async function processNextDiscordRequest(args: Readonly<{
   }
 }
 
+async function finalizeConversationOriginResearch(args: Readonly<{
+  store: ReturnType<typeof createDiscordStore>
+  request: DiscordRequestRecord
+  result: Awaited<ReturnType<typeof runDiscordResearch>>
+  repoRoot: string
+  token: string
+}>): Promise<void> {
+  const { store, request, result } = args
+  const layout = discordLayout()
+  const nowIso = systemClock.nowIso()
+  const reportText = result.reportText ?? ""
+
+  await withStoreLockRetry(layout.lock, async () => {
+    const file = store.loadRequests()
+    const idx = file.requests.findIndex((r) => r.requestId === request.requestId)
+    if (idx < 0) return
+    file.requests[idx] = {
+      ...file.requests[idx]!,
+      status: result.status === "completed" ? "completed" : "failed",
+      updatedAt: nowIso,
+      ...(result.runId ? { runId: result.runId } : {}),
+      ...(result.status !== "completed"
+        ? { terminalError: (result.error ?? result.status).slice(0, 280) }
+        : {}),
+    }
+    await store.saveRequests(file)
+  })
+
+  if (reportText) {
+    try {
+      const digest = JSON.stringify([{
+        provenance: `discord-research:${request.requestId}`,
+        text: reportText.slice(0, 2_000),
+      }])
+      await enqueueTrackingMatchBatch({
+        sourceKind: "discord-research",
+        runId: result.runId ?? `discord-${request.requestId}`,
+        snapshotHash: hashTrackingCandidates(digest),
+        candidateDigest: digest,
+        researchSummary: reportText.slice(0, 8_000),
+        researchSubject: request.subject,
+        ...(result.identity
+          ? {
+            researchChain: result.identity.chain,
+            researchTokenAddress: result.identity.tokenAddress,
+          }
+          : {}),
+        mainTrackEligible: Boolean(result.mainTrackEligible),
+      })
+    } catch (error) {
+      log.warn("discord tracking enqueue after conversation research failed", {
+        requestId: request.requestId,
+        error: error instanceof Error ? error.message : "unknown",
+      })
+    }
+  }
+
+  const watchBaseline = result.baseline
+  const watchIdentity = result.identity
+  if (
+    result.status === "completed"
+    && watchBaseline
+    && watchIdentity
+    && discordWatchSubscribeEligible({
+      hasIdentity: true,
+      hasBaseline: true,
+      subscribeAllowed: result.subscribeAllowed,
+      mainTrackEligible: result.mainTrackEligible,
+      securityHardFail: result.securityHardFail,
+    })
+  ) {
+    try {
+      const researchBrief = reportText ? extractResearchBrief(reportText) : undefined
+      await withStoreLockRetry(layout.lock, async () => {
+        let watch = store.loadWatchlist()
+        const sub = subscribeAfterResearch({
+          file: watch,
+          identity: watchIdentity,
+          guildId: request.guildId,
+          userId: request.userId,
+          channelId: request.channelId,
+          messageId: request.messageId,
+          nowIso,
+          baseline: watchBaseline,
+          ...(researchBrief ? { researchBrief } : {}),
+          securityHardFail: Boolean(result.securityHardFail),
+        })
+        if (sub.subscribed) {
+          await store.saveWatchlist(sub.file)
+          const obs = store.loadObservations()
+          obs.byToken[tokenKey(watchIdentity.chain, watchIdentity.tokenAddress)] = watchBaseline
+          await store.saveObservations(obs)
+        }
+      })
+    } catch {
+      // silent
+    }
+  }
+
+  if (
+    result.mainTrackEligible
+    && result.identity
+    && result.runId
+    && result.security
+    && !result.securityHardFail
+  ) {
+    try {
+      await promoteDiscordTrackToMain({
+        discordAgentRoot: layout.agent,
+        discordArchiveRoot: layout.archive,
+        runId: result.runId,
+        identity: result.identity,
+        security: result.security,
+      })
+    } catch {
+      // silent
+    }
+  }
+
+  try {
+    const { maybeSynthesizeConversation } = await import("./conversation.js")
+    await maybeSynthesizeConversation({
+      repoRoot: args.repoRoot,
+      token: args.token,
+      request: {
+        ...request,
+        status: result.status === "completed" ? "completed" : "failed",
+        updatedAt: nowIso,
+        ...(result.runId ? { runId: result.runId } : {}),
+        ...(result.status !== "completed"
+          ? { terminalError: (result.error ?? result.status).slice(0, 280) }
+          : {}),
+      },
+      store,
+    })
+  } catch (error) {
+    log.warn("discord conversation synthesis kick failed", {
+      requestId: request.requestId,
+      error: error instanceof Error ? error.message : "unknown",
+    })
+  }
+}
+
 async function finalizeTrackingOriginResearch(args: Readonly<{
   store: ReturnType<typeof createDiscordStore>
   request: DiscordRequestRecord
@@ -438,7 +616,6 @@ async function finalizeTrackingOriginResearch(args: Readonly<{
         ? { terminalError: (result.error ?? result.status).slice(0, 280) }
         : {}),
     }
-    file = recountDailyQuota(file, nowIso)
     await store.saveRequests(file)
   })
 

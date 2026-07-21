@@ -4,6 +4,8 @@ import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
 import type { DiscordLayout } from "./paths.js"
 import {
   DiscordDeliveriesFileSchema,
+  DiscordConversationsFileSchema,
+  ConversationSessionsFileSchema,
   DiscordHeartbeatSchema,
   DiscordMonitorCursorSchema,
   DiscordObservationsFileSchema,
@@ -11,6 +13,8 @@ import {
   DiscordTrackingFileSchema,
   DiscordWatchlistFileSchema,
   type DiscordDeliveriesFile,
+  type DiscordConversationsFile,
+  type ConversationSessionsFile,
   type DiscordHeartbeat,
   type DiscordMonitorCursor,
   type DiscordObservationsFile,
@@ -92,6 +96,14 @@ export function emptyTrackingFile(): DiscordTrackingFile {
   return { schema: 1, requests: [], matchBatches: [], trackingDeliveries: [] }
 }
 
+export function emptyConversationsFile(): DiscordConversationsFile {
+  return { schema: 1, conversations: [] }
+}
+
+export function emptyConversationSessionsFile(): ConversationSessionsFile {
+  return { schema: 1, channels: {} }
+}
+
 export type DiscordStore = Readonly<{
   layout: DiscordLayout
   loadRequests(): DiscordRequestsFile
@@ -104,6 +116,10 @@ export type DiscordStore = Readonly<{
   saveDeliveries(file: DiscordDeliveriesFile): Promise<void>
   loadTracking(): DiscordTrackingFile
   saveTracking(file: DiscordTrackingFile): Promise<void>
+  loadConversations(): DiscordConversationsFile
+  saveConversations(file: DiscordConversationsFile): Promise<void>
+  loadConversationSessions(): ConversationSessionsFile
+  saveConversationSessions(file: ConversationSessionsFile): Promise<void>
   writeHeartbeat(kind: "listener" | "monitor", beat: DiscordHeartbeat): Promise<void>
   loadMonitorCursor(): DiscordMonitorCursor | undefined
   saveMonitorCursor(cursor: DiscordMonitorCursor | null): Promise<void>
@@ -176,6 +192,32 @@ export function createDiscordStore(layout: DiscordLayout): DiscordStore {
     async saveTracking(file) {
       DiscordTrackingFileSchema.parse(file)
       await saveFile(layout.tracking, file)
+    },
+    loadConversations() {
+      return loadFile(
+        layout,
+        layout.conversations,
+        "conversations",
+        DiscordConversationsFileSchema,
+        emptyConversationsFile,
+      )
+    },
+    async saveConversations(file) {
+      DiscordConversationsFileSchema.parse(file)
+      await saveFile(layout.conversations, file)
+    },
+    loadConversationSessions() {
+      return loadFile(
+        layout,
+        layout.conversationSessions,
+        "conversation-sessions",
+        ConversationSessionsFileSchema,
+        emptyConversationSessionsFile,
+      )
+    },
+    async saveConversationSessions(file) {
+      ConversationSessionsFileSchema.parse(file)
+      await saveFile(layout.conversationSessions, file)
     },
     async writeHeartbeat(kind, beat) {
       DiscordHeartbeatSchema.parse(beat)

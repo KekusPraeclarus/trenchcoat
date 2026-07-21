@@ -40,8 +40,9 @@ Message Content intent.
 
 - Two tokens, two processes, two state trees — docs and ops must never conflate
   “Discord webhook” with “Discord research bot”.
-- Discord research quota is independent of main `research.daily_cap` and router
-  Discord broadcast budget.
+- Discord research caps were independent of main `research.daily_cap` and router
+  Discord broadcast budget; schema 16 / ADR 022 later **removed** Discord
+  intake caps (FIFO + tracking / chain-integration caps remain).
 - Skills under `~/.trenchcoat/discord/agent/skills/` are copied on first run;
   redeploy code does not auto-sync them (same class of gotcha as Telegram runtime
   skills).
@@ -49,6 +50,8 @@ Message Content intent.
 - Watch update voice and fallback contract: ADR 012.
 - Idea-tracking (NL watch-for-ideas, durable match batches, gated alerts):
   ADR 018 / ADR 019 / INV-D3–D8.
+- Channel conversation over main workspace (addressing gate, unconfirmed
+  research + synthesis, Discord intake caps removed): ADR 022 / INV-D9.
 - Main promote is best-effort: if main `.lock` is busy, Discord subscribe still
   succeeds and promote is skipped (logged).
 

@@ -137,18 +137,21 @@ little as possible itself:
 
 ## Discord research (separate bridge)
 
-Telegram chat above is **operator-only with confirm/cancel**. Discord research is a
+Telegram chat above is **operator-only with confirm/cancel**. Discord is a
 different product surface (ADR 010):
 
 - Gateway listener (`tc listen discord`), not the router webhook
 - Any guild member in configured channels; no `TELEGRAM_OPERATOR_ID` allowlist
-- ✅ reaction when research starts; final-only text replies (no confirm /
-  progress messages)
+- ✅ reaction when research starts; final-only text replies for research (no
+  confirm / progress messages)
 - State under `~/.trenchcoat/discord/` with its own lock; main
-  `pending-research.json` / research queue are not used
+  `pending-research.json` / research queue are not used for Discord intake
 - Intent: `src/discord/intent.ts` (stricter CA-required policy)
+- Optional conversation (`chat.discord.conversation.enabled`): ask-mode over the
+  **main** agent workspace with an addressing gate and unconfirmed research +
+  synthesis — see [discord-conversation.md](discord-conversation.md) (ADR 022)
 
-Full contract: [discord-research.md](discord-research.md).
+Full research contract: [discord-research.md](discord-research.md).
 
 ## Gotchas and security-sensitive boundaries
 

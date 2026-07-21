@@ -20,11 +20,26 @@ import {
 import { createDiscordRestClient } from "./bot-client.js"
 import { deliverRenewalAck } from "./delivery.js"
 import { renewSubscription } from "./watchlist.js"
+import {
+  applyWatchExpiryReply,
+  classifyWatchExpiryReply,
+  findSubscriptionsByNotice,
+} from "./watchlist.js"
 import { acceptChainIntegration } from "../chain-integration/intake.js"
 import { kickChainIntegrationWorker } from "../chain-integration/kick.js"
 import { reactAcceptedSources } from "../chain-integration/continue.js"
 import { handleTrackingMessage } from "./tracking-intent.js"
+import { DISCORD_TRACKING_ACK_EMOJI } from "./tracking-intent.js"
 import { kickTrackingWorker } from "./tracking-worker.js"
+import {
+  createChannelContextBuffer,
+  evaluateConversationAddressed,
+  type ChannelContextBuffer,
+} from "./conversation-intent.js"
+import {
+  handleConversationTurn,
+  reclaimConversationState,
+} from "./conversation.js"
 
 export type DiscordListenerOpts = Readonly<{
   token: string
@@ -77,12 +92,73 @@ async function handleRenewal(message: Message, token: string): Promise<void> {
   }
 }
 
+async function handleWatchExpiryReply(
+  message: Message,
+  token: string,
+): Promise<"handled" | "other" | "ignored"> {
+  const referenced = message.reference?.messageId
+  if (!referenced) return "ignored"
+  const config = loadConfig()
+  if (!config.chat.discord.enabled) return "ignored"
+  const layout = discordLayout()
+  const store = createDiscordStore(layout)
+  const lock = new WorkspaceLock(layout.lock)
+  if (!lock.tryAcquire()) return "ignored"
+
+  try {
+    const file = store.loadWatchlist()
+    const matches = findSubscriptionsByNotice({
+      file,
+      noticeMessageId: referenced,
+      userId: message.author.id,
+    })
+    if (matches.length === 0) return "ignored"
+    const decision = classifyWatchExpiryReply(message.content)
+    if (decision === "other") return "other"
+    const applied = applyWatchExpiryReply({
+      file,
+      noticeMessageId: referenced,
+      userId: message.author.id,
+      decision,
+      nowIso: systemClock.nowIso(),
+    })
+    if (!applied.ok) return "ignored"
+    await store.saveWatchlist(applied.file)
+    const client = createDiscordRestClient(token)
+    try {
+      await client.addReaction({
+        channelId: message.channelId,
+        messageId: message.id,
+        emoji: DISCORD_TRACKING_ACK_EMOJI,
+      })
+    } catch {
+      // best effort
+    }
+    return "handled"
+  } finally {
+    lock.release()
+  }
+}
+
 async function handleResearchMessage(
   message: Message,
   repoRoot: string,
   token: string,
   botUserId: string | undefined,
+  context: ChannelContextBuffer,
 ): Promise<void> {
+  const config = loadConfig()
+  const contextMax = config.chat.discord.conversation.context_messages
+  context.push(message.channelId, {
+    authorId: message.author.id,
+    authorIsBot: false,
+    content: message.content,
+    ts: systemClock.nowIso(),
+  }, contextMax)
+
+  const watchReply = await handleWatchExpiryReply(message, token)
+  if (watchReply === "handled") return
+
   const intent = extractDiscordResearchIntent(message.content)
   if (intent.kind === "chain-integration") {
     const accepted = await acceptChainIntegration({
@@ -138,17 +214,53 @@ async function handleResearchMessage(
     botUserId && message.mentions.users.has(botUserId),
   )
   let replyToBot = false
+  let replyToOtherMember = false
   if (message.reference?.messageId && botUserId) {
     try {
       const ref = await message.fetchReference()
       replyToBot = ref.author.id === botUserId
+      replyToOtherMember = !replyToBot && !ref.author.bot
     } catch {
       replyToBot = false
+      replyToOtherMember = false
     }
   }
-  if (!mentionsBot && !replyToBot) return
 
-  await handleTrackingMessage({
+  if (mentionsBot || replyToBot) {
+    const tracking = await handleTrackingMessage({
+      repoRoot,
+      token,
+      guildId: message.guildId!,
+      channelId: message.channelId,
+      messageId: message.id,
+      userId: message.author.id,
+      content: message.content,
+      mentionsBot,
+      replyToBot,
+      ...(message.reference?.messageId
+        ? { referencedMessageId: message.reference.messageId }
+        : {}),
+    })
+    if (tracking === "processed" || tracking === "failed") return
+    // tracking none → fall through to conversation
+  }
+
+  if (!config.chat.discord.conversation.enabled) return
+
+  const addressed = await evaluateConversationAddressed({
+    repoRoot,
+    channelId: message.channelId,
+    messageId: message.id,
+    userId: message.author.id,
+    content: message.content,
+    mentionsBot,
+    replyToBot,
+    replyToOtherMember,
+    context: context.recent(message.channelId, contextMax),
+  })
+  if (!addressed) return
+
+  await handleConversationTurn({
     repoRoot,
     token,
     guildId: message.guildId!,
@@ -156,11 +268,6 @@ async function handleResearchMessage(
     messageId: message.id,
     userId: message.author.id,
     content: message.content,
-    mentionsBot,
-    replyToBot,
-    ...(message.reference?.messageId
-      ? { referencedMessageId: message.reference.messageId }
-      : {}),
   })
 }
 
@@ -184,6 +291,7 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
 
   const layout = discordLayout()
   const store = createDiscordStore(layout)
+  const context = createChannelContextBuffer()
 
   const client = new Client({
     intents: [
@@ -224,6 +332,7 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
       opts.repoRoot,
       opts.token,
       client.user?.id,
+      context,
     ).catch(async (error) => {
       const msg = error instanceof Error ? error.message : "unknown"
       log.warn(`discord intake error: ${msg}`)
@@ -249,6 +358,10 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
   const reclaimed = await reclaimOrphanedDiscordRequests()
   if (reclaimed > 0) {
     log.info("discord reclaimed orphaned requests", { count: reclaimed })
+  }
+  const convReclaimed = await reclaimConversationState()
+  if (convReclaimed > 0) {
+    log.info("discord reclaimed conversation claims", { count: convReclaimed })
   }
   void pumpLoop(opts.repoRoot, opts.token)
 }

@@ -13,13 +13,20 @@ vi.mock("../../src/lib/config.js", () => ({
     chat: {
       discord: {
         enabled: true,
-        per_user_daily_cap: 5,
-        server_daily_cap: 20,
-        max_active_per_user: 5,
         model: "composer-2.5-fast",
         watch_days: 30,
+        watch_expiry_reply_window_days: 7,
         max_watched_tokens: 500,
         max_subscribers_per_token: 100,
+        conversation: {
+          enabled: false,
+          model: "composer-2.5",
+          classifier_model: "composer-2.5-fast",
+          idle_timeout_minutes: 30,
+          context_messages: 10,
+          channel_ids: [],
+          max_research_per_turn: 5,
+        },
         tracking: {
           enabled: true,
           intent_model: "composer-2.5",

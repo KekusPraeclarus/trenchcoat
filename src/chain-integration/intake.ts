@@ -5,7 +5,6 @@ import { WorkspaceLock } from "../lib/lock.js"
 import { getChain } from "../lib/chains.js"
 import { discordLayout } from "../discord/paths.js"
 import { createDiscordStore } from "../discord/store.js"
-import { recountDailyQuota, countActiveForUser } from "../discord/quota.js"
 import { chainIntegrationLayout } from "./paths.js"
 import { createChainIntegrationStore, appendJournalLine } from "./store.js"
 import type { ChainIntegrationRecord, ChainIntegrationsFile } from "./schemas.js"
@@ -192,7 +191,6 @@ async function reserveResearchSlot(args: Readonly<{
   chainIntegrationId: string
   nowIso: string
 }>): Promise<{ ok: true } | { ok: false; terminal: string }> {
-  const config = loadConfig()
   const dLayout = discordLayout()
   const lock = new WorkspaceLock(dLayout.lock)
   if (!lock.tryAcquire()) {
@@ -203,18 +201,7 @@ async function reserveResearchSlot(args: Readonly<{
     if (file.requests.some((r) => r.requestId === args.messageId)) {
       return { ok: true }
     }
-    file = recountDailyQuota(file, args.nowIso)
     const day = utcDay(args.nowIso)
-    const userCount = file.dailyByUser[args.userId] ?? 0
-    if (userCount >= config.chat.discord.per_user_daily_cap) {
-      return { ok: false, terminal: "daily research quota reached" }
-    }
-    if (file.dailyServer >= config.chat.discord.server_daily_cap) {
-      return { ok: false, terminal: "server daily research quota reached" }
-    }
-    if (countActiveForUser(file, args.userId) >= config.chat.discord.max_active_per_user) {
-      return { ok: false, terminal: "too many active research requests" }
-    }
     // Placeholder reservation row — not pumped until handoff
     file.requests.push({
       requestId: args.messageId,
@@ -232,7 +219,6 @@ async function reserveResearchSlot(args: Readonly<{
       chainIntegrationId: args.chainIntegrationId,
       terminalError: "awaiting-chain-integration",
     })
-    file = recountDailyQuota(file, args.nowIso)
     await args.dStore.saveRequests(file)
     return { ok: true }
   } finally {
@@ -261,7 +247,6 @@ export async function releaseResearchReservation(
       updatedAt: systemClock.nowIso(),
       chainIntegrationId: undefined,
     }
-    file = recountDailyQuota(file, systemClock.nowIso())
     await dStore.saveRequests(file)
   } finally {
     lock.release()

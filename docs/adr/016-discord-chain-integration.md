@@ -23,8 +23,9 @@ either would conflate advisory research with repository mutation.
 - Exact unknown `slug:address` (optional research verb) in configured guild
   channels may enqueue a **host-owned** chain-integration job under
   `~/.trenchcoat/discord/chain-integrations/`.
-- Listener accepts, reacts ✅, reserves normal research quota via Discord request
-  status `awaiting-chain` (so the research pump never claims the placeholder),
+- Listener accepts, reacts ✅, reserves a Discord research slot via request
+  status `awaiting-chain` (so the research pump never claims the placeholder;
+  post–ADR 022 this is FIFO reservation only — no daily research cap charge),
   and kickstarts `tc discord chains run`. It never deploys itself.
 - Evidence collection and gate/publish/deploy are host-deterministic. Models
   receive only host-validated artifacts. Mutation agents are confined to additive
@@ -37,7 +38,7 @@ either would conflate advisory research with repository mutation.
   CLI (`tc discord chains continue <id>`), not the pre-deploy worker process —
   otherwise `DiscordChainSchema` / generated slugs lack the new chain.
 - Success copy is exactly `<Display Name> chain now integrated`, then handoff
-  into the existing Discord research FIFO without a second quota charge.
+  into the existing Discord research FIFO without a second reservation.
 - Config schema **12** adds `chat.discord.chain_integration`.
 - **INV-D2**: Discord may only enqueue this lane; no untrusted value directly
   chooses mutation/deploy. **INV-S26**: additive chain publication lane (INV-S24
@@ -58,7 +59,7 @@ either would conflate advisory research with repository mutation.
 
 - Discord becomes a trigger surface for repository mutation, but only through
   fail-closed host gates.
-- Daily UTC attempt cap (default 3) and research-quota reservation apply; failed
+- Daily UTC attempt cap (default 3) and research-slot reservation apply; failed
   attempts consume the integration cap; joining an in-flight slug does not.
 - Research-only chains (no scanner) may deploy; INV-S9 still blocks main tracking.
 - Wallet/Fomo support stays off for automated integrations.

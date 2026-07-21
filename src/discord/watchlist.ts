@@ -25,6 +25,11 @@ export function discordWatchSubscribeEligible(args: Readonly<{
   )
 }
 
+export function watchExpiryReplyWindowMs(config = loadConfig()): number {
+  return config.chat.discord.watch_expiry_reply_window_days * 86_400_000
+}
+
+/** Active = not yet expired (receives watch updates) */
 export function activeSubscriptions(
   token: DiscordWatchToken,
   nowIso: string,
@@ -33,16 +38,49 @@ export function activeSubscriptions(
   return token.subscriptions.filter((s) => Date.parse(s.expiresAt) > now)
 }
 
+/** Awaiting reply: expired, notice sent, still inside reply window */
+export function isExpiredAwaitingReply(
+  sub: DiscordSubscription,
+  nowIso: string,
+  replyWindowMs: number,
+): boolean {
+  const now = Date.parse(nowIso)
+  if (Date.parse(sub.expiresAt) > now) return false
+  if (!sub.expiryNoticeMessageId || !sub.expiryNoticeAt) return false
+  return now < Date.parse(sub.expiryNoticeAt) + replyWindowMs
+}
+
+/** Keep if active, awaiting-reply, or expired-without-notice still inside window from expiresAt */
+export function retainSubscription(
+  sub: DiscordSubscription,
+  nowIso: string,
+  replyWindowMs: number,
+): boolean {
+  const now = Date.parse(nowIso)
+  if (Date.parse(sub.expiresAt) > now) return true
+  if (isExpiredAwaitingReply(sub, nowIso, replyWindowMs)) return true
+  if (!sub.expiryNoticeMessageId) {
+    return now < Date.parse(sub.expiresAt) + replyWindowMs
+  }
+  return false
+}
+
 export function pruneExpiredWatchlist(
   file: DiscordWatchlistFile,
   nowIso: string,
+  replyWindowMs = watchExpiryReplyWindowMs(),
 ): DiscordWatchlistFile {
   const tokens = file.tokens.flatMap((token) => {
-    const subs = activeSubscriptions(token, nowIso)
+    const subs = token.subscriptions.filter((s) => (
+      retainSubscription(s, nowIso, replyWindowMs)
+    ))
     if (subs.length === 0) return []
     return [{ ...token, subscriptions: subs }]
   })
-  return tokens.length === file.tokens.length ? file : { ...file, tokens }
+  return tokens.length === file.tokens.length
+    && tokens.every((t, i) => t.subscriptions.length === file.tokens[i]!.subscriptions.length)
+    ? file
+    : { ...file, tokens }
 }
 
 export function findWatchToken(
@@ -55,7 +93,9 @@ export function findWatchToken(
 }
 
 export function countActiveTokens(file: DiscordWatchlistFile, nowIso: string): number {
-  return pruneExpiredWatchlist(file, nowIso).tokens.length
+  return pruneExpiredWatchlist(file, nowIso).tokens.filter((t) => (
+    activeSubscriptions(t, nowIso).length > 0
+  )).length
 }
 
 export function countActiveSubscribers(token: DiscordWatchToken, nowIso: string): number {
@@ -156,10 +196,11 @@ export function renewSubscription(args: Readonly<{
 }>): { ok: true; file: DiscordWatchlistFile } | { ok: false; reason: "not-found" | "expired" | "unauthorized" } {
   const config = loadConfig()
   const watchDays = config.chat.discord.watch_days
-  const graceMs = 7 * 86_400_000
+  const graceMs = watchExpiryReplyWindowMs(config)
   const expiresAt = new Date(Date.parse(args.nowIso) + watchDays * 86_400_000).toISOString()
 
   let found = false
+  let renewed = false
   const tokens = args.file.tokens.map((token) => {
     const subs = token.subscriptions.map((sub) => {
       if (
@@ -170,22 +211,197 @@ export function renewSubscription(args: Readonly<{
       found = true
       const expiredMs = Date.parse(args.nowIso) - Date.parse(sub.expiresAt)
       if (expiredMs > graceMs) return sub
-      return { ...sub, renewedAt: args.nowIso, expiresAt }
+      renewed = true
+      return {
+        ...sub,
+        renewedAt: args.nowIso,
+        expiresAt,
+        expiryNoticeMessageId: undefined,
+        expiryNoticeAt: undefined,
+      }
     })
     return { ...token, subscriptions: subs }
   })
 
   if (!found) return { ok: false, reason: "not-found" }
-  const target = tokens.flatMap((t) => t.subscriptions).find((s) => (
-    s.guildId === args.guildId
-    && s.userId === args.userId
-    && s.messageId === args.anchorMessageId
-  ))
-  if (!target) return { ok: false, reason: "not-found" }
-  if (Date.parse(args.nowIso) - Date.parse(target.expiresAt) > graceMs) {
-    return { ok: false, reason: "expired" }
-  }
+  if (!renewed) return { ok: false, reason: "expired" }
   return { ok: true, file: { ...args.file, tokens } }
+}
+
+export type WatchExpiryNoticePlan = Readonly<{
+  userId: string
+  channelId: string
+  guildId: string
+  labels: readonly string[]
+  /** Keys `${chain}:${tokenAddress}:${userId}` for subscriptions covered */
+  subscriptionKeys: readonly string[]
+}>
+
+export function planWatchExpiryNotices(args: Readonly<{
+  file: DiscordWatchlistFile
+  nowIso: string
+  replyWindowMs?: number
+}>): WatchExpiryNoticePlan[] {
+  const now = Date.parse(args.nowIso)
+  const windowMs = args.replyWindowMs ?? watchExpiryReplyWindowMs()
+  const byUserChannel = new Map<string, {
+    userId: string
+    channelId: string
+    guildId: string
+    labels: string[]
+    subscriptionKeys: string[]
+  }>()
+
+  for (const token of args.file.tokens) {
+    const label = token.symbolDisplay
+      ?? `${token.chain}:${token.tokenAddress.slice(0, 8)}`
+    for (const sub of token.subscriptions) {
+      if (Date.parse(sub.expiresAt) > now) continue
+      if (sub.expiryNoticeMessageId) continue
+      if (now >= Date.parse(sub.expiresAt) + windowMs) continue
+      const key = `${sub.userId}:${sub.channelId}`
+      const existing = byUserChannel.get(key)
+      const subKey = `${token.chain}:${token.tokenAddress}:${sub.userId}`
+      if (existing) {
+        if (!existing.labels.includes(label)) existing.labels.push(label)
+        existing.subscriptionKeys.push(subKey)
+      } else {
+        byUserChannel.set(key, {
+          userId: sub.userId,
+          channelId: sub.channelId,
+          guildId: sub.guildId,
+          labels: [label],
+          subscriptionKeys: [subKey],
+        })
+      }
+    }
+  }
+
+  return [...byUserChannel.values()].map((v) => ({
+    userId: v.userId,
+    channelId: v.channelId,
+    guildId: v.guildId,
+    labels: v.labels,
+    subscriptionKeys: v.subscriptionKeys,
+  }))
+}
+
+export function renderWatchExpiryNotice(args: Readonly<{
+  userId: string
+  labels: readonly string[]
+}>): string {
+  const labelText = args.labels.slice(0, 12).join(", ")
+  return [
+    `<@${args.userId}> your watch on ${labelText} has expired.`,
+    "Extend another month? (yes/no)",
+  ].join(" ").slice(0, 2_000)
+}
+
+export function applyWatchExpiryNoticeSent(args: Readonly<{
+  file: DiscordWatchlistFile
+  plan: WatchExpiryNoticePlan
+  noticeMessageId: string
+  nowIso: string
+}>): DiscordWatchlistFile {
+  const keySet = new Set(args.plan.subscriptionKeys)
+  return {
+    ...args.file,
+    tokens: args.file.tokens.map((token) => ({
+      ...token,
+      subscriptions: token.subscriptions.map((sub) => {
+        const key = `${token.chain}:${token.tokenAddress}:${sub.userId}`
+        if (!keySet.has(key)) return sub
+        if (sub.userId !== args.plan.userId) return sub
+        if (sub.channelId !== args.plan.channelId) return sub
+        if (Date.parse(sub.expiresAt) > Date.parse(args.nowIso)) return sub
+        if (sub.expiryNoticeMessageId) return sub
+        return {
+          ...sub,
+          expiryNoticeMessageId: args.noticeMessageId,
+          expiryNoticeAt: args.nowIso,
+        }
+      }),
+    })),
+  }
+}
+
+const WATCH_YES_RE = /^(?:yes|yeah|yep|y|renew|keep\s+watching)\b/iu
+const WATCH_NO_RE = /^(?:no|nope|nah|n)\b/iu
+
+export function classifyWatchExpiryReply(text: string): "yes" | "no" | "other" {
+  const trimmed = text.trim()
+  if (WATCH_YES_RE.test(trimmed)) return "yes"
+  if (WATCH_NO_RE.test(trimmed)) return "no"
+  return "other"
+}
+
+export function findSubscriptionsByNotice(args: Readonly<{
+  file: DiscordWatchlistFile
+  noticeMessageId: string
+  userId: string
+}>): ReadonlyArray<{ token: DiscordWatchToken; subscription: DiscordSubscription }> {
+  const out: { token: DiscordWatchToken; subscription: DiscordSubscription }[] = []
+  for (const token of args.file.tokens) {
+    for (const sub of token.subscriptions) {
+      if (
+        sub.expiryNoticeMessageId === args.noticeMessageId
+        && sub.userId === args.userId
+      ) {
+        out.push({ token, subscription: sub })
+      }
+    }
+  }
+  return out
+}
+
+export function applyWatchExpiryReply(args: Readonly<{
+  file: DiscordWatchlistFile
+  noticeMessageId: string
+  userId: string
+  decision: "yes" | "no"
+  nowIso: string
+}>): { ok: true; file: DiscordWatchlistFile; renewed: number; removed: number }
+  | { ok: false; reason: "not-found" } {
+  const matches = findSubscriptionsByNotice({
+    file: args.file,
+    noticeMessageId: args.noticeMessageId,
+    userId: args.userId,
+  })
+  if (matches.length === 0) return { ok: false, reason: "not-found" }
+
+  const config = loadConfig()
+  const watchDays = config.chat.discord.watch_days
+  const expiresAt = new Date(Date.parse(args.nowIso) + watchDays * 86_400_000).toISOString()
+  const matchKeys = new Set(
+    matches.map((m) => `${m.token.chain}:${m.token.tokenAddress}:${m.subscription.userId}`),
+  )
+
+  let renewed = 0
+  let removed = 0
+  const tokens = args.file.tokens.flatMap((token) => {
+    const subscriptions = token.subscriptions.flatMap((sub) => {
+      const key = `${token.chain}:${token.tokenAddress}:${sub.userId}`
+      if (!matchKeys.has(key) || sub.expiryNoticeMessageId !== args.noticeMessageId) {
+        return [sub]
+      }
+      if (args.decision === "no") {
+        removed += 1
+        return []
+      }
+      renewed += 1
+      return [{
+        ...sub,
+        renewedAt: args.nowIso,
+        expiresAt,
+        expiryNoticeMessageId: undefined,
+        expiryNoticeAt: undefined,
+      }]
+    })
+    if (subscriptions.length === 0) return []
+    return [{ ...token, subscriptions }]
+  })
+
+  return { ok: true, file: { ...args.file, tokens }, renewed, removed }
 }
 
 export function newestAnchorSubscription(

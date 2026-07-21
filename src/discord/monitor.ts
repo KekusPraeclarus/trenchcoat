@@ -18,6 +18,7 @@ import { ensureDiscordAgentWorkspace } from "./agent-setup.js"
 import { resolveDiscordRepoRoot } from "./listener.js"
 import { runWatchUpdateWriter } from "./watch-update-session.js"
 import { runTrackingExpirySweep } from "./tracking-expiry.js"
+import { runWatchExpirySweep } from "./watch-expiry.js"
 import { processTrackingBatches } from "./tracking-worker.js"
 
 export async function runDiscordWatchlistScan(args: Readonly<{
@@ -46,6 +47,14 @@ export async function runDiscordWatchlistScan(args: Readonly<{
           `discord tracking sweep failed: ${error instanceof Error ? error.message : "unknown"}`,
         )
       }
+    }
+
+    try {
+      await runWatchExpirySweep({ token: args.token, store, nowIso })
+    } catch (error) {
+      console.warn(
+        `discord watch expiry sweep failed: ${error instanceof Error ? error.message : "unknown"}`,
+      )
     }
 
     let watch = pruneExpiredWatchlist(store.loadWatchlist(), nowIso)

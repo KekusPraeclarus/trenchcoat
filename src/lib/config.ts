@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV15 } from "../migrations/config.js"
+import { migrateConfigToV16 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(15),
+  schema: z.literal(16),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -463,16 +463,22 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(false),
       guild_id: z.string().regex(/^\d{17,20}$/u).optional(),
       channel_ids: z.array(z.string().regex(/^\d{17,20}$/u)).max(20).default([]),
-      per_user_daily_cap: z.number().int().min(1).max(20).default(5),
-      server_daily_cap: z.number().int().min(1).max(200).default(20),
-      // Max queued+running requests per user (FIFO globally; one runs at a time)
-      max_active_per_user: z.number().int().min(1).max(20).default(5),
       /** Cursor model for Discord research sessions only */
       model: z.string().min(1).max(64).default("composer-2.5-fast"),
       watch_days: z.literal(30).default(30),
       watch_scan_hours: z.literal(6).default(6),
+      watch_expiry_reply_window_days: z.number().int().min(1).max(30).default(7),
       max_watched_tokens: z.number().int().min(1).max(2_000).default(500),
       max_subscribers_per_token: z.number().int().min(1).max(500).default(100),
+      conversation: z.object({
+        enabled: z.boolean().default(false),
+        model: z.string().min(1).max(64).default("composer-2.5"),
+        classifier_model: z.string().min(1).max(64).default("composer-2.5-fast"),
+        idle_timeout_minutes: z.number().int().min(1).max(1_440).default(30),
+        context_messages: z.number().int().min(2).max(50).default(10),
+        channel_ids: z.array(z.string().regex(/^\d{17,20}$/u)).max(20).default([]),
+        max_research_per_turn: z.number().int().min(1).max(10).default(5),
+      }).default({}),
       chain_integration: z.object({
         enabled: z.boolean().default(true),
         max_attempts_per_utc_day: z.number().int().min(1).max(20).default(3),
@@ -663,7 +669,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV15(raw))
+  return ConfigSchema.parse(migrateConfigToV16(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

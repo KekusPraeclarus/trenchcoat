@@ -413,20 +413,30 @@ application is not wired yet — only wallets are applied today.
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
 | `tc status` | shared health snapshot (lock/runs/jobs/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
 
-### `chat.discord` (schema 10+)
+### `chat.discord` (schema 16+)
 
 Private-guild research bot. Disabled by default. When enabled requires
-`guild_id` and 1–20 unique `channel_ids`. Caps: `per_user_daily_cap` (default 5),
-`server_daily_cap` (20), `max_active_per_user` (default 5 — max queued+running+
-awaiting-chain per user; global FIFO, one research at a time). Daily caps charge
-`queued` / `running` / `awaiting-chain` / `completed` only — terminal `failed`
-requests do not consume quota.
+`guild_id` and 1–20 unique `channel_ids`. Research has **no** per-user or
+server daily caps and **no** per-user queue-depth cap — FIFO under `.worker.lock`
+(one research at a time). Schema 16 removed `per_user_daily_cap`,
+`server_daily_cap`, and `max_active_per_user` from `chat.discord` (tracking's
+own `max_active_per_user` under `chat.discord.tracking` is unchanged).
 `model` (default `composer-2.5-fast`, initial Discord research reply only;
 material watch updates use host `composer-2.5` writer),
 `max_watched_tokens` (500), `max_subscribers_per_token` (100). Watch
-subscriptions last `watch_days` (30); monitor cadence `watch_scan_hours` (6).
+subscriptions last `watch_days` (30); monitor cadence `watch_scan_hours` (6);
+proactive expiry asks use `watch_expiry_reply_window_days` (default 7).
 State lives under `~/.trenchcoat/discord/` — see
-[architecture/discord-research.md](architecture/discord-research.md).
+[architecture/discord-research.md](architecture/discord-research.md) and
+[architecture/discord-conversation.md](architecture/discord-conversation.md).
+
+### `chat.discord.conversation` (schema 16+)
+
+Opt-in channel conversation (`enabled` default false). Ask-mode sessions over
+the main agent workspace; addressing gate + agent-triggered research with
+synthesis. Defaults: `model` `composer-2.5`, `classifier_model`
+`composer-2.5-fast`, `idle_timeout_minutes` 30, `context_messages` 10,
+`channel_ids` `[]` (all research channels), `max_research_per_turn` 5.
 
 ### `chat.discord.chain_integration` (schema 12)
 

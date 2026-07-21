@@ -78,13 +78,15 @@ survival). Drain treats `deploying` as idle-safe; other active phases block idle
 - After deploy, worker invokes newly deployed `tc discord chains continue <id>`
   so announcement/handoff see the new registry entry
 
-## Intake / quota detail
+## Intake / reservation detail
 
 - Discord research placeholder uses status `awaiting-chain` +
   `terminalError: awaiting-chain-integration` so `processNextDiscordRequest`
   never claims it; promote clears that and sets `queued`
-- Integration attempt cap is separate from per-user research quota; joining an
-  in-flight slug reserves research quota but does not burn another attempt
+- Integration attempt cap (`max_attempts_per_utc_day`) is separate from Discord
+  research FIFO; joining an in-flight slug reserves an `awaiting-chain`
+  research slot but does not burn another integration attempt. Discord research
+  daily/queue-depth caps were removed in schema 16 (ADR 022)
 - Build model must be `cursor-grok-4.5-high` (validate with `agent models` —
   bare `cursor-grok-4.5` is not a CLI model id)
 

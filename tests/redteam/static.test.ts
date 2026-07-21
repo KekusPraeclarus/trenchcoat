@@ -138,6 +138,7 @@ describe("prop_inv_i4_inbox_writer_ownership", () => {
       "src/discord/tracking-intent.ts",
       "src/discord/tracking-match.ts",
       "src/discord/tracking-qualify.ts",
+      "src/discord/conversation-intent.ts",
     ]))
   })
 })

@@ -37,12 +37,21 @@ last_verified: 2026-07-21
   `chat.discord.model` defaults to `composer-2.5-fast` for the **initial
   research reply**; material watch updates use `composer-2.5` via a **host-side**
   update writer (not the deep-research agent). Tracking intent/match default to
-  `composer-2.5`; mention review defaults to `composer-2.5-fast`
+  `composer-2.5`; mention review defaults to `composer-2.5-fast`. Schema 16
+  removed Discord research daily/queue-depth caps — FIFO only
+- **Conversation** (ADR 022, schema 16 `chat.discord.conversation`, default
+  off): ask-mode over **main** `~/.trenchcoat/agent` (not Discord-isolated
+  workspace); addressing gate fail-closed (INV-D9); tracking `none` falls
+  through to conversation, tracking `failed` does not; research JSON block
+  host-validated, one synthesis hop; `max_research_per_turn` is an injection
+  bound. Enabling conversation means channel members can query main knowledge
 - State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
-- Does not use main `agent/.lock` or research queue
-- Config: schema 10+ `chat.discord.*` (disabled by default); schema 12 adds
+- Does not use main `agent/.lock` for Discord research (conversation report-copy
+  is the bounded host writer exception)
+- Config: schema 16+ `chat.discord.*` (disabled by default); schema 12 adds
   `chain_integration` for exact unknown `slug:address` host automation;
-  `chat.discord.tracking` for NL idea-tracking
+  `chat.discord.tracking` for NL idea-tracking; `conversation` +
+  `watch_expiry_reply_window_days` for chat + proactive watch renew
 - CLI: `tc listen discord`, `tc discord watchlist scan`,
   `tc discord chains run|status|retry|fail|continue`
 - Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
@@ -52,8 +61,10 @@ last_verified: 2026-07-21
   (`mainTrackEligible`, silent); `researchBrief` stored for update narration;
   validated `track` may promote to main watchlist (host-only, also silent in
   Discord replies). Idea-tracking may store an optional request `chain`
-  (RH→robinhood etc); cross-chain resolves fail closed (ADR 021)
-- Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy
+  (RH→robinhood etc); cross-chain resolves fail closed (ADR 021). Watch
+  subscriptions also get proactive expiry notices (same pattern as tracking)
+- Skills under `~/.trenchcoat/discord/agent/skills/` do not auto-sync on deploy;
+  conversation skill lives under main `agent/skills/discord-chat/`
 - Stuck queue: hung scrape holding `.worker.lock` — see discord-research.md ops
 - **Chain integration** (host lane, not the Discord agent): exact unknown
   `slug:address` → `~/.trenchcoat/discord/chain-integrations/` → kickstart
@@ -64,4 +75,5 @@ last_verified: 2026-07-21
   ADR 016, INV-D2/S26
 - See [architecture/discord-research.md](../architecture/discord-research.md),
   [architecture/discord-tracking.md](../architecture/discord-tracking.md),
-  ADR 010, ADR 012, ADR 018, ADR 019
+  [architecture/discord-conversation.md](../architecture/discord-conversation.md),
+  ADR 010, ADR 012, ADR 018, ADR 019, ADR 022

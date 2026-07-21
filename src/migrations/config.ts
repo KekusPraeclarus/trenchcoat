@@ -606,7 +606,7 @@ const WALLETS_CONVERGENCE_V15_DEFAULTS = Object.freeze({
 /** Schema 15: runner discovery + tracked-wallet convergence under wallets */
 export function migrateConfigToV15(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 15) return raw
+  if (record?.["schema"] === 15 || record?.["schema"] === 16) return raw
 
   const v14 = (
     record?.["schema"] === 14
@@ -638,6 +638,60 @@ export function migrateConfigToV15(raw: unknown): unknown {
       convergence: {
         ...WALLETS_CONVERGENCE_V15_DEFAULTS,
         ...prevConv,
+      },
+    },
+  }
+}
+
+const DISCORD_CONVERSATION_V16_DEFAULTS = Object.freeze({
+  enabled: false,
+  model: "composer-2.5",
+  classifier_model: "composer-2.5-fast",
+  idle_timeout_minutes: 30,
+  context_messages: 10,
+  channel_ids: [] as string[],
+  max_research_per_turn: 5,
+})
+
+/** Schema 16: drop Discord research caps; add conversation + watch expiry window */
+export function migrateConfigToV16(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 16) return raw
+
+  const v15 = (
+    record?.["schema"] === 15
+      ? record
+      : migrateConfigToV15(raw)
+  ) as Record<string, unknown>
+
+  const prevChat = (v15["chat"] ?? {}) as Record<string, unknown>
+  const prevDiscord = (prevChat["discord"] ?? {}) as Record<string, unknown>
+  const {
+    per_user_daily_cap: _userCap,
+    server_daily_cap: _serverCap,
+    max_active_per_user: _maxActive,
+    ...discordRest
+  } = prevDiscord
+  const prevConversation = (prevDiscord["conversation"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v15,
+    schema: 16,
+    chat: {
+      ...prevChat,
+      discord: {
+        ...discordRest,
+        watch_expiry_reply_window_days:
+          typeof prevDiscord["watch_expiry_reply_window_days"] === "number"
+            ? prevDiscord["watch_expiry_reply_window_days"]
+            : 7,
+        conversation: {
+          ...DISCORD_CONVERSATION_V16_DEFAULTS,
+          ...prevConversation,
+          channel_ids: Array.isArray(prevConversation["channel_ids"])
+            ? prevConversation["channel_ids"]
+            : DISCORD_CONVERSATION_V16_DEFAULTS.channel_ids,
+        },
       },
     },
   }

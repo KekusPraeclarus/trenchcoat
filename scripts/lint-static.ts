@@ -46,6 +46,13 @@ for (const file of files) {
   }
 
   if (
+    (rel.startsWith("src/discord/conversation") || rel === "src/discord/conversation.ts")
+    && /\bfetch\s*\(/.test(text)
+  ) {
+    failures.push(`${rel}: raw fetch in discord conversation layer violates INV-R4`)
+  }
+
+  if (
     rel.startsWith("src/collectors/")
     && /\bfetch\s*\(/.test(text)
     && !rel.endsWith("http.ts")

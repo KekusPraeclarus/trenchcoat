@@ -13,6 +13,8 @@ read_when:
 Private-guild research-only bot isolated from the main agent and from router
 webhook broadcasts (ADR 010). Watch update narration: ADR 012. Idea-tracking
 requests: [discord-tracking.md](discord-tracking.md) (ADR 018 / ADR 019, INV-D3–D8).
+Optional channel conversation over main workspace: [discord-conversation.md](discord-conversation.md)
+(ADR 022, INV-D9).
 
 ## Two Discord surfaces (do not conflate)
 
@@ -31,23 +33,27 @@ requests: [discord-tracking.md](discord-tracking.md) (ADR 018 / ADR 019, INV-D3�
   or a reply to the bot (see [discord-tracking.md](discord-tracking.md))
 - Research-only: no `/status`, exoneration, main watchlist commands, or broadcasts
 - **FIFO queue** — concurrent requests enqueue (`queued`); one runs at a time
-  under `.worker.lock`. Per-user depth capped by `max_active_per_user` (default 5);
-  excess gets a terminal queue-full error. Daily caps still apply on accept.
-  Tracking-origin research (`origin: "tracking"`) bypasses per-user caps but still
-  counts against the server daily cap; it is silent (no ✅, no terminal error
-  reply, no ordinary research reply) and only notifies via the gated tracking
-  alert path when qualification passes
+  under `.worker.lock`. No per-user depth or daily research caps (removed in
+  schema 16). Tracking-origin and conversation-origin research are silent (no
+  ordinary research reply); tracking notifies via the gated alert path when
+  qualification passes; conversation synthesizes an answer after linked runs
+  complete. See [discord-conversation.md](discord-conversation.md).
 - **Start signal** — ✅ (`white_check_mark`) reaction when research is claimed
-  (`queued` → `running`); 🫡 for successful tracking track/drop/extend/decline
+  (`queued` → `running`) for user-origin; conversation enqueues react once on
+  the member message; 🫡 for successful tracking track/drop/extend/decline
 - **Model** — `chat.discord.model` (default `composer-2.5-fast`) for the initial
   research reply only; six-hour watch updates use `composer-2.5` via a host-side
   update writer; idea-tracking intent/match use `chat.discord.tracking.*_model`
-  (default `composer-2.5`). Does not change Telegram / main orchestrator sessions.
-- **Final-only text replies** — no typing/progress messages; next bot message is
-  the result or one terminal error (quota / queue-full / bot-busy). Renewal ack
-  and tracking capacity/expiry notices are the non-result text replies
+  (default `composer-2.5`); conversation uses `chat.discord.conversation.model`.
+  Does not change Telegram / main orchestrator sessions.
+- **Final-only text replies** — no typing/progress messages for research; next
+  bot message is the result or one terminal error (bot-busy / market errors).
+  Conversation turns may fire a typing indicator. Renewal ack, tracking
+  capacity/expiry notices, and conversation replies are the non-result text
+  replies
 - Unrelated chatter, ticker-only, bots/webhooks, DMs, wrong guild/channel, and
-  edits are ignored silently unless they @mention/reply-to-bot for tracking
+  edits are ignored silently unless they @mention/reply-to-bot for tracking or
+  pass the conversation addressing gate when conversation is enabled
 
 ## Commands and scheduling
 
@@ -70,7 +76,8 @@ chains and bare CAs use the research path below.
 
 | Path | Role |
 |---|---|
-| `requests.json` | Intake, UTC quotas, delivery state (id = message snowflake) |
+| `requests.json` | Intake + delivery state (id = message snowflake); `quotaDay` retained for rollover/dedupe bookkeeping only — no daily research caps (ADR 022) |
+| `conversations.json` / `conversation-sessions.json` | Conversation research links + per-channel ask-mode session ids (ADR 022) |
 | `watchlist.json` | Canonical tokens + per-user subscriptions |
 | `observations.json` | Monitor baselines |
 | `deliveries.json` | Pending update deliveries |
@@ -86,8 +93,8 @@ Malformed state files are quarantined and the process stops (fail closed).
 1. `extractDiscordResearchIntent` (`src/discord/intent.ts`) — stricter than
    Telegram: CA required; shares extraction helpers via
    `src/chat/research-intent-core.ts`
-2. `acceptDiscordRequest` — quota + per-user queue depth; durable `queued` accept.
-   Daily caps charge queued/running/completed only (failures do not consume).
+2. `acceptDiscordRequest` — durable `queued` accept (idempotent by request id);
+   no per-user depth or daily research caps (schema 16 / ADR 022).
 3. `processNextDiscordRequest` — oldest queued → running under worker lock; ✅
 4. `runDiscordResearch` — resolve + collect + `runResearchPasses` (Discord model)
    under `discord/agent/`; **no** main queue, INDEX, or outbox from the agent.
@@ -199,12 +206,13 @@ used to force fallback and fight natural prose).
 
 ## Enablement
 
-1. `tc config migrate --write` (schema 10)
+1. `tc config migrate --write` (schema 16+)
 2. Set `chat.discord.enabled`, `guild_id`, `channel_ids` in config
-3. `DISCORD_RESEARCH_BOT_TOKEN` in `~/.trenchcoat/env` (mode 600; scrubbed from
+3. Optional: `chat.discord.conversation.enabled` for channel chat (ADR 022)
+4. `DISCORD_RESEARCH_BOT_TOKEN` in `~/.trenchcoat/env` (mode 600; scrubbed from
    Cursor child env)
-4. Developer Portal: Message Content intent; invite with View/Send/History/Embed only
-5. `./ops/install-launchd.sh` and kick `com.trenchcoat.listener`
+5. Developer Portal: Message Content intent; invite with View/Send/History/Embed only
+6. `./ops/install-launchd.sh` and kick `com.trenchcoat.listener`
 
 See [CONFIG.md](../CONFIG.md), [knowledge/discord.md](../knowledge/discord.md),
-INV-D1.
+[discord-conversation.md](discord-conversation.md), INV-D1 / INV-D9, ADR 010 / ADR 022.

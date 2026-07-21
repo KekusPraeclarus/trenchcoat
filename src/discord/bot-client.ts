@@ -30,6 +30,7 @@ export type DiscordRestClient = Readonly<{
     messageId: string
     emoji: string
   }>): Promise<void>
+  triggerTyping?(args: Readonly<{ channelId: string }>): Promise<void>
 }>
 
 const MAX_ATTEMPTS = 8
@@ -126,6 +127,16 @@ export function createDiscordRestClient(token: string): DiscordRestClient {
       )
       if (!response.ok && response.status !== 204) {
         throw new Error(`discord reaction failed: ${response.status}`)
+      }
+    },
+    async triggerTyping(args) {
+      const response = await discordFetch(
+        token,
+        "POST",
+        `/channels/${args.channelId}/typing`,
+      )
+      if (!response.ok && response.status !== 204) {
+        // typing is best-effort
       }
     },
   }
