@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { discordLayout } from "../../src/discord/paths.js"
 import { createDiscordStore, emptyTrackingFile } from "../../src/discord/store.js"
-import { deliverTrackingPing } from "../../src/discord/tracking-delivery.js"
+import { deliverTrackingAlert } from "../../src/discord/tracking-delivery.js"
 import { createOrGetDelivery } from "../../src/discord/tracking-state.js"
 import type { DiscordRestClient } from "../../src/discord/bot-client.js"
 
@@ -17,6 +17,7 @@ vi.mock("../../src/lib/config.js", () => ({
           enabled: true,
           intent_model: "composer-2.5",
           match_model: "composer-2.5",
+          mention_review_model: "composer-2.5-fast",
           max_active_per_user: 10,
           ttl_days: 30,
           expiry_bundle_hours: 48,
@@ -26,6 +27,7 @@ vi.mock("../../src/lib/config.js", () => ({
           match_max_attempts: 5,
           match_stale_running_ms: 900_000,
           retention_days: 35,
+          mention_review_blacklist_days: 7,
         },
       },
     },
@@ -59,13 +61,18 @@ describe("crash discord tracking", () => {
       const created = createOrGetDelivery({
         file: { ...emptyTrackingFile(), requests: [request] },
         trackingId: request.trackingId,
-        subject: "MIX",
+        subject: "base:0x6055706234dd0cc9965400296f2ca950941f6253",
         reason: "hit",
         batchId: "a".repeat(32),
         sourceKind: "list-scan",
         nowIso,
         request,
         needsResearch: false,
+        researchSummary: "Research body",
+        chain: "base",
+        tokenAddress: "0x6055706234dd0cc9965400296f2ca950941f6253",
+        shortLabel: "Privacy",
+        status: "qualified-pending",
       })
       // Simulate crash after marking sending
       const crashed = {
@@ -91,7 +98,7 @@ describe("crash discord tracking", () => {
         addReaction: async () => undefined,
       }
 
-      const result = await deliverTrackingPing({
+      const result = await deliverTrackingAlert({
         client,
         store,
         delivery: crashed.trackingDeliveries[0]!,

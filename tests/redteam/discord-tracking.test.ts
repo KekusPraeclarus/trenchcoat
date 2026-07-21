@@ -37,14 +37,49 @@ describe("redteam discord tracking", () => {
   })
 
   it("cannot select cross-user tracking ids via match output", () => {
+    const candidates = [{
+      provenance: "twitter:@x",
+      text: "talk of $OK and $RUG",
+    }]
     const hits = parseTrackingMatchOutput(JSON.stringify({
       matches: [
-        { trackingId: "trk-victim01", subject: "RUG", reason: "@everyone buy" },
-        { trackingId: "trk-owner001", subject: "OK", reason: "privacy mixer" },
+        {
+          trackingId: "trk-victim01",
+          candidateProvenance: "twitter:@x",
+          tokenQuery: "$RUG",
+          reason: "@everyone buy",
+        },
+        {
+          trackingId: "trk-owner001",
+          candidateProvenance: "twitter:@x",
+          tokenQuery: "$OK",
+          reason: "privacy mixer",
+        },
       ],
-    }), new Set(["trk-owner001"]), 10)
+    }), new Set(["trk-owner001"]), candidates, 10)
     expect(hits).toHaveLength(1)
     expect(hits[0]!.trackingId).toBe("trk-owner001")
+    expect(hits[0]!.tokenQuery).toBe("$OK")
+  })
+
+  it("rejects invented provenance and project-name-only tokenQuery", () => {
+    const candidates = [{ provenance: "twitter:@x", text: "watching privacy mixers" }]
+    expect(parseTrackingMatchOutput(JSON.stringify({
+      matches: [{
+        trackingId: "trk-owner001",
+        candidateProvenance: "forged",
+        tokenQuery: "$MIX",
+        reason: "hit",
+      }],
+    }), new Set(["trk-owner001"]), candidates, 10)).toEqual([])
+    expect(parseTrackingMatchOutput(JSON.stringify({
+      matches: [{
+        trackingId: "trk-owner001",
+        candidateProvenance: "twitter:@x",
+        tokenQuery: "Virtuals",
+        reason: "hit",
+      }],
+    }), new Set(["trk-owner001"]), candidates, 10)).toEqual([])
   })
 
   it("sanitizes role/everyone/channel/url injection from reasons", () => {

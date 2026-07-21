@@ -439,6 +439,7 @@
         "enabled": true,
         "intent_model": "composer-2.5",
         "match_model": "composer-2.5",
+        "mention_review_model": "composer-2.5-fast",
         "max_active_per_user": 10,
         "ttl_days": 30,
         "expiry_bundle_hours": 48,
@@ -447,7 +448,8 @@
         "expiry_reply_window_days": 7,
         "match_max_attempts": 5,
         "match_stale_running_ms": 900000,
-        "retention_days": 35
+        "retention_days": 35,
+        "mention_review_blacklist_days": 7
       }
     }
   },

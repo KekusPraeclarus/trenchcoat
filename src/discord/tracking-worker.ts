@@ -2,19 +2,28 @@ import { loadConfig } from "../lib/config.js"
 import { systemClock } from "../lib/clock.js"
 import { WorkspaceLock } from "../lib/lock.js"
 import { log } from "../lib/log.js"
+import { resolveResearchSubject } from "../orchestrator/research-collect.js"
 import { createDiscordRestClient } from "./bot-client.js"
 import { discordLayout } from "./paths.js"
 import { createDiscordStore } from "./store.js"
-import type { TrackingMatchBatch } from "./schemas.js"
-import { runTrackingMatch } from "./tracking-match.js"
-import { deliverTrackingPing } from "./tracking-delivery.js"
+import type { TrackingDeliveryRecord, TrackingMatchBatch } from "./schemas.js"
+import { runTrackingMatch, type TrackingMatchCandidate, type TrackingMatchHit } from "./tracking-match.js"
+import {
+  deliverTrackingAlert,
+  enqueueTrackingResearch,
+} from "./tracking-delivery.js"
+import { runTrackingMentionReview } from "./tracking-qualify.js"
 import {
   activeMatchableRequests,
+  appendUniqueMention,
   createOrGetDelivery,
+  isDeliveryBlacklisted,
   pruneTrackingFile,
   type TrackingConfigSlice,
 } from "./tracking-state.js"
+import { addDaysIso } from "./tracking-ids.js"
 import { resolveDiscordRepoRoot } from "./listener.js"
+import { findCandidateTextByProvenance } from "./tracking-token-query.js"
 
 let workerKicked = false
 
@@ -64,7 +73,7 @@ function trackingConfigSlice(): TrackingConfigSlice {
   }
 }
 
-function parseCandidates(digest: string): Array<{ provenance: string; text: string }> {
+function parseCandidates(digest: string): TrackingMatchCandidate[] {
   try {
     const parsed = JSON.parse(digest) as unknown
     if (!Array.isArray(parsed)) return []
@@ -82,6 +91,219 @@ function parseCandidates(digest: string): Array<{ provenance: string; text: stri
       }))
   } catch {
     return [{ provenance: "digest:raw", text: digest.slice(0, 2_000) }]
+  }
+}
+
+async function handleHit(args: Readonly<{
+  hit: TrackingMatchHit
+  batch: TrackingMatchBatch
+  candidates: readonly TrackingMatchCandidate[]
+  repoRoot: string
+  store: ReturnType<typeof createDiscordStore>
+  layout: ReturnType<typeof discordLayout>
+  nowIso: string
+  blacklistDays: number
+}>): Promise<void> {
+  const { hit, batch, candidates, repoRoot, store, layout, nowIso, blacklistDays } = args
+  const candidateText = findCandidateTextByProvenance(candidates, hit.candidateProvenance)
+  if (!candidateText) return
+
+  // Research-origin batches carry host qualification metadata
+  if (batch.sourceKind === "research" || batch.sourceKind === "discord-research") {
+    if (batch.mainTrackEligible !== true) return
+    const researchChain = batch.researchChain
+    const researchTokenAddress = batch.researchTokenAddress
+    const researchSummary = batch.researchSummary
+    if (!researchChain || !researchTokenAddress || !researchSummary) return
+
+    const locked = await withStoreLockRetry(layout.lock, async () => {
+      const file = store.loadTracking()
+      const request = file.requests.find((r) => r.trackingId === hit.trackingId)
+      if (!request || request.status !== "active") return undefined
+      const created = createOrGetDelivery({
+        file,
+        trackingId: hit.trackingId,
+        subject: `${researchChain}:${researchTokenAddress}`,
+        reason: hit.reason,
+        batchId: batch.batchId,
+        sourceKind: batch.sourceKind,
+        nowIso,
+        request,
+        needsResearch: false,
+        researchSummary,
+        tokenQuery: hit.tokenQuery,
+        candidateProvenance: hit.candidateProvenance,
+        chain: researchChain,
+        tokenAddress: researchTokenAddress,
+        shortLabel: request.shortLabel,
+        qualificationSource: "main-track",
+        status: "qualified-pending",
+      })
+      await store.saveTracking(created.file)
+      return created.delivery
+    })
+    if (!locked.ok || !locked.value) return
+    if (locked.value.status !== "qualified-pending") return
+    return
+  }
+
+  // Resolve tokenQuery → canonical identity via host quick search
+  const resolved = await resolveResearchSubject({
+    subject: hit.resolveSubject,
+  })
+  if (resolved.status !== "resolved") return
+  const identity = resolved.identity
+
+  const locked = await withStoreLockRetry(layout.lock, async () => {
+    let file = store.loadTracking()
+    const request = file.requests.find((r) => r.trackingId === hit.trackingId)
+    if (!request || request.status !== "active") return { action: "skip" as const }
+
+    const created = createOrGetDelivery({
+      file,
+      trackingId: hit.trackingId,
+      subject: `${identity.chain}:${identity.tokenAddress}`,
+      reason: hit.reason,
+      batchId: batch.batchId,
+      sourceKind: batch.sourceKind,
+      nowIso,
+      request,
+      needsResearch: true,
+      tokenQuery: hit.tokenQuery,
+      candidateProvenance: hit.candidateProvenance,
+      chain: identity.chain,
+      tokenAddress: identity.tokenAddress,
+      shortLabel: request.shortLabel,
+      status: "research-pending",
+    })
+    file = created.file
+    let delivery = created.delivery
+
+    if (isDeliveryBlacklisted(delivery, nowIso)) {
+      await store.saveTracking(file)
+      return { action: "skip" as const }
+    }
+
+    // Expiry of blacklist → restart initial research flow
+    if (
+      delivery.status === "suppressed"
+      && delivery.blacklistedUntil
+      && Date.parse(delivery.blacklistedUntil) <= Date.parse(nowIso)
+    ) {
+      delivery = {
+        ...delivery,
+        status: "research-pending",
+        blacklistedUntil: undefined,
+        researchEnqueued: false,
+        mentionItems: [],
+        qualificationSource: undefined,
+        updatedAt: nowIso,
+      }
+      const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === delivery.deliveryId)
+      if (idx >= 0) file.trackingDeliveries[idx] = delivery
+    }
+
+    if (delivery.status === "delivered" || delivery.status === "terminal") {
+      await store.saveTracking(file)
+      return { action: "skip" as const }
+    }
+
+    if (delivery.status === "awaiting-mentions") {
+      const appended = appendUniqueMention({
+        delivery,
+        provenance: hit.candidateProvenance,
+        text: candidateText,
+        nowIso,
+      })
+      delivery = appended.delivery
+      const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === delivery.deliveryId)
+      if (idx >= 0) file.trackingDeliveries[idx] = delivery
+      await store.saveTracking(file)
+      if (!appended.added) return { action: "skip" as const }
+      if (delivery.mentionItems.length < 3) return { action: "skip" as const }
+      return { action: "review" as const, delivery }
+    }
+
+    if (
+      delivery.status === "research-pending"
+      || delivery.status === "pending"
+      || delivery.status === "qualified-pending"
+      || delivery.status === "sending"
+    ) {
+      await store.saveTracking(file)
+      if (
+        (delivery.status === "research-pending" || delivery.status === "pending")
+        && !delivery.researchEnqueued
+      ) {
+        return { action: "research" as const, delivery }
+      }
+      return { action: "skip" as const }
+    }
+
+    if (created.created) {
+      await store.saveTracking(file)
+      return { action: "research" as const, delivery }
+    }
+
+    await store.saveTracking(file)
+    return { action: "skip" as const }
+  })
+
+  if (!locked.ok || !locked.value || locked.value.action === "skip") return
+
+  if (locked.value.action === "research") {
+    await enqueueTrackingResearch({
+      store,
+      delivery: locked.value.delivery,
+      repoRoot,
+      nowIso,
+    })
+    return
+  }
+
+  if (locked.value.action === "review") {
+    const delivery = locked.value.delivery
+    const review = await runTrackingMentionReview({
+      repoRoot,
+      delivery,
+      mentions: delivery.mentionItems.slice(-3),
+      nowIso,
+    })
+    await withStoreLockRetry(layout.lock, async () => {
+      const file = store.loadTracking()
+      const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === delivery.deliveryId)
+      if (idx < 0) return
+      const current = file.trackingDeliveries[idx]!
+      if (review.verdict === "reject") {
+        file.trackingDeliveries[idx] = {
+          ...current,
+          status: "suppressed",
+          blacklistedUntil: addDaysIso(nowIso, blacklistDays),
+          mentionItems: [],
+          updatedAt: nowIso,
+          lastError: review.reason.slice(0, 280),
+        }
+      } else {
+        file.trackingDeliveries[idx] = {
+          ...current,
+          status: "research-pending",
+          needsResearch: true,
+          researchEnqueued: false,
+          qualificationSource: "three-mention-review",
+          mentionItems: [],
+          updatedAt: nowIso,
+          lastError: undefined,
+        }
+      }
+      await store.saveTracking(file)
+    })
+    if (review.verdict === "approve") {
+      const fresh = store.loadTracking().trackingDeliveries
+        .find((d) => d.deliveryId === delivery.deliveryId)
+      if (fresh) {
+        await enqueueTrackingResearch({ store, delivery: fresh, repoRoot, nowIso })
+      }
+    }
   }
 }
 
@@ -105,6 +327,7 @@ export async function processTrackingBatches(args: Readonly<{
   const cfg = trackingConfigSlice()
   const maxAttempts = config.chat.discord.tracking.match_max_attempts
   const staleMs = config.chat.discord.tracking.match_stale_running_ms
+  const blacklistDays = config.chat.discord.tracking.mention_review_blacklist_days
   let processed = 0
   const limit = args.maxBatches ?? 8
 
@@ -181,35 +404,38 @@ export async function processTrackingBatches(args: Readonly<{
 
     try {
       const fileSnap = store.loadTracking()
+      const candidates = parseCandidates(batch.candidateDigest)
       const hits = await runTrackingMatch({
         repoRoot,
         file: fileSnap,
         batch,
-        candidates: parseCandidates(batch.candidateDigest),
+        candidates,
         nowIso,
       })
-      const needsResearch = batch.sourceKind === "list-scan"
-        || batch.sourceKind === "farcaster-scan"
+
+      for (const hit of hits) {
+        await handleHit({
+          hit,
+          batch,
+          candidates: batch.researchSummary
+            ? [
+              {
+                provenance: `research:${batch.researchSubject ?? batch.runId}`,
+                text: batch.researchSummary.slice(0, 2_000),
+              },
+              ...candidates,
+            ]
+            : candidates,
+          repoRoot,
+          store,
+          layout,
+          nowIso,
+          blacklistDays,
+        })
+      }
 
       await withStoreLockRetry(layout.lock, async () => {
-        let file = store.loadTracking()
-        for (const hit of hits) {
-          const request = file.requests.find((r) => r.trackingId === hit.trackingId)
-          if (!request || request.status !== "active") continue
-          const created = createOrGetDelivery({
-            file,
-            trackingId: hit.trackingId,
-            subject: hit.subject,
-            reason: hit.reason,
-            batchId: batch.batchId,
-            sourceKind: batch.sourceKind,
-            nowIso,
-            request,
-            needsResearch,
-            ...(batch.researchSummary ? { researchSummary: batch.researchSummary } : {}),
-          })
-          file = created.file
-        }
+        const file = store.loadTracking()
         const idx = file.matchBatches.findIndex((b) => b.batchId === batch.batchId)
         if (idx >= 0) {
           file.matchBatches[idx] = {
@@ -222,12 +448,6 @@ export async function processTrackingBatches(args: Readonly<{
         }
         await store.saveTracking(file)
       })
-
-      const deliveries = store.loadTracking().trackingDeliveries
-        .filter((d) => d.batchId === batch.batchId && d.status === "pending")
-      for (const delivery of deliveries) {
-        await deliverTrackingPing({ client, store, delivery, nowIso })
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "match failed"
       await withStoreLockRetry(layout.lock, async () => {
@@ -260,11 +480,23 @@ export async function processTrackingBatches(args: Readonly<{
     }
   }
 
-  const pendingDeliveries = store.loadTracking().trackingDeliveries
-    .filter((d) => d.status === "pending")
+  // Drain qualified alerts and research-pending enqueue leftovers
+  const pendingResearch = store.loadTracking().trackingDeliveries
+    .filter((d) => (
+      (d.status === "research-pending" || d.status === "pending")
+      && d.needsResearch
+      && !d.researchEnqueued
+    ))
+    .slice(0, 10)
+  for (const delivery of pendingResearch) {
+    await enqueueTrackingResearch({ store, delivery, repoRoot })
+  }
+
+  const qualified = store.loadTracking().trackingDeliveries
+    .filter((d) => d.status === "qualified-pending")
     .slice(0, 20)
-  for (const delivery of pendingDeliveries) {
-    await deliverTrackingPing({ client, store, delivery })
+  for (const delivery of qualified) {
+    await deliverTrackingAlert({ client, store, delivery })
   }
 
   return processed

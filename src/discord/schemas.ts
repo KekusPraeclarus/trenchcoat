@@ -38,9 +38,13 @@ export const DiscordRequestRecordSchema = z.object({
   chainIntegrationId: z.string().max(128).optional(),
   /** tracking-origin bypasses per-user caps; still counts server daily */
   origin: DiscordRequestOriginSchema.optional(),
-  /** When set, research reply threads under this ping message */
+  /** When set, research reply threads under this ping message (legacy; gated tracking no longer uses replies) */
   trackingPingMessageId: DiscordSnowflakeSchema.optional(),
   trackingId: z.string().regex(/^trk-[a-z0-9-]{8,64}$/u).optional(),
+  /** Links tracking-origin research back to the durable delivery record */
+  trackingDeliveryId: z.string().min(8).max(128).optional(),
+  trackingShortLabel: z.string().min(1).max(64).optional(),
+  trackingQualificationSource: z.enum(["main-track", "three-mention-review"]).optional(),
 })
 export type DiscordRequestRecord = z.infer<typeof DiscordRequestRecordSchema>
 
@@ -197,15 +201,36 @@ export const TrackingMatchBatchSchema = z.object({
   candidateDigest: z.string().min(1).max(64_000),
   researchSummary: z.string().max(8_000).optional(),
   researchSubject: z.string().max(256).optional(),
+  /** Host-computed for research-origin batches; missing ⇒ fail-closed notify */
+  mainTrackEligible: z.boolean().optional(),
+  researchChain: DiscordChainSchema.optional(),
+  researchTokenAddress: z.string().min(32).max(128).optional(),
 })
 export type TrackingMatchBatch = z.infer<typeof TrackingMatchBatchSchema>
 
 export const TrackingDeliveryStatusSchema = z.enum([
   "pending",
+  "research-pending",
+  "awaiting-mentions",
+  "qualified-pending",
+  "suppressed",
   "sending",
   "delivered",
   "terminal",
 ])
+
+export const TrackingQualificationSourceSchema = z.enum([
+  "main-track",
+  "three-mention-review",
+])
+
+export const TrackingMentionItemSchema = z.object({
+  provenance: z.string().min(1).max(256),
+  textHash: z.string().min(8).max(64),
+  text: z.string().min(1).max(2_000),
+  seenAt: IsoTimestampSchema,
+})
+export type TrackingMentionItem = z.infer<typeof TrackingMentionItemSchema>
 
 export const TrackingDeliveryRecordSchema = z.object({
   deliveryId: z.string().min(8).max(128),
@@ -227,11 +252,21 @@ export const TrackingDeliveryRecordSchema = z.object({
   lastError: z.string().max(280).optional(),
   batchId: z.string().min(8).max(128),
   sourceKind: TrackingMatchSourceKindSchema,
-  /** When true, enqueue tracking-origin research after ping */
+  /** When true, enqueue tracking-origin research (silent) */
   needsResearch: z.boolean().default(false),
   researchEnqueued: z.boolean().default(false),
   researchSummary: z.string().max(8_000).optional(),
   pingMessageId: DiscordSnowflakeSchema.optional(),
+  tokenQuery: z.string().min(1).max(256).optional(),
+  candidateProvenance: z.string().min(1).max(256).optional(),
+  chain: DiscordChainSchema.optional(),
+  tokenAddress: z.string().min(32).max(128).optional(),
+  shortLabel: z.string().min(1).max(64).optional(),
+  qualificationSource: TrackingQualificationSourceSchema.optional(),
+  blacklistedUntil: IsoTimestampSchema.optional(),
+  researchRequestId: DiscordSnowflakeSchema.optional(),
+  mentionItems: z.array(TrackingMentionItemSchema).max(20).default([]),
+  securityWarning: z.string().max(500).optional(),
 })
 export type TrackingDeliveryRecord = z.infer<typeof TrackingDeliveryRecordSchema>
 

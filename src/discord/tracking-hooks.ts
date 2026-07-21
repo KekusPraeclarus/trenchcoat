@@ -54,6 +54,9 @@ export async function enqueueTrackingMatchBatch(args: Readonly<{
   candidateDigest: string
   researchSummary?: string
   researchSubject?: string
+  researchChain?: string
+  researchTokenAddress?: string
+  mainTrackEligible?: boolean
   kick?: boolean
 }>): Promise<{ enqueued: boolean; batchId: string; duplicate?: boolean }> {
   const config = loadConfig()
@@ -94,6 +97,15 @@ export async function enqueueTrackingMatchBatch(args: Readonly<{
           : {}),
         ...(args.researchSubject
           ? { researchSubject: args.researchSubject.slice(0, 256) }
+          : {}),
+        ...(args.researchChain
+          ? { researchChain: args.researchChain as import("./schemas.js").TrackingMatchBatch["researchChain"] }
+          : {}),
+        ...(args.researchTokenAddress
+          ? { researchTokenAddress: args.researchTokenAddress.slice(0, 128) }
+          : {}),
+        ...(args.mainTrackEligible !== undefined
+          ? { mainTrackEligible: args.mainTrackEligible }
           : {}),
       })
       const duplicate = file.matchBatches.length === before

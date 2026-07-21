@@ -9,9 +9,11 @@ import {
   addHoursIso,
   isExpiredAt,
   isWithinHours,
+  mentionTextHash,
   newTrackingId,
   normalizeTrackingSubject,
   trackingDeliveryId,
+  trackingDeliveryIdFromIdentity,
 } from "./tracking-ids.js"
 import {
   renderCapacityMessage,
@@ -627,13 +629,29 @@ export function createOrGetDelivery(args: Readonly<{
   request: TrackingRequestRecord
   needsResearch: boolean
   researchSummary?: string
+  tokenQuery?: string
+  candidateProvenance?: string
+  chain?: string
+  tokenAddress?: string
+  shortLabel?: string
+  qualificationSource?: TrackingDeliveryRecord["qualificationSource"]
+  status?: TrackingDeliveryRecord["status"]
 }>): { file: DiscordTrackingFile; delivery: TrackingDeliveryRecord; created: boolean } {
-  const normalizedSubject = normalizeTrackingSubject(args.subject)
-  const deliveryId = trackingDeliveryId(args.trackingId, normalizedSubject)
+  const chain = args.chain
+  const tokenAddress = args.tokenAddress?.trim().toLowerCase()
+  const deliveryId = chain && tokenAddress
+    ? trackingDeliveryIdFromIdentity(args.trackingId, chain, tokenAddress)
+    : trackingDeliveryId(args.trackingId, normalizeTrackingSubject(args.subject))
+  const normalizedSubject = chain && tokenAddress
+    ? `${chain}:${tokenAddress}`
+    : normalizeTrackingSubject(args.subject)
+
   const existing = args.file.trackingDeliveries.find((d) => d.deliveryId === deliveryId)
   if (existing) {
     return { file: args.file, delivery: existing, created: false }
   }
+
+  // Only suppress when an alert was already delivered for this canonical token
   if (args.request.matchedSubjects.includes(normalizedSubject)) {
     const synthetic: TrackingDeliveryRecord = {
       deliveryId,
@@ -656,18 +674,24 @@ export function createOrGetDelivery(args: Readonly<{
       sourceKind: args.sourceKind,
       needsResearch: false,
       researchEnqueued: false,
+      mentionItems: [],
+      ...(chain ? { chain: chain as TrackingDeliveryRecord["chain"] } : {}),
+      ...(tokenAddress ? { tokenAddress } : {}),
+      ...(args.shortLabel ? { shortLabel: args.shortLabel.slice(0, 64) } : {}),
     }
     return { file: args.file, delivery: synthetic, created: false }
   }
 
   const reason = sanitizeTrackingReason(args.reason)
+  const status = args.status
+    ?? (args.needsResearch ? "research-pending" : "qualified-pending")
   const delivery: TrackingDeliveryRecord = {
     deliveryId,
     trackingId: args.trackingId,
     subject: args.subject.slice(0, 256),
     normalizedSubject,
     reason: reason.length > 0 ? reason : "a matching project",
-    status: "pending",
+    status,
     guildId: args.request.guildId,
     channelId: args.request.channelId,
     userId: args.request.userId,
@@ -682,28 +706,87 @@ export function createOrGetDelivery(args: Readonly<{
     sourceKind: args.sourceKind,
     needsResearch: args.needsResearch,
     researchEnqueued: false,
+    mentionItems: [],
     ...(args.researchSummary ? { researchSummary: args.researchSummary.slice(0, 8_000) } : {}),
+    ...(args.tokenQuery ? { tokenQuery: args.tokenQuery.slice(0, 256) } : {}),
+    ...(args.candidateProvenance
+      ? { candidateProvenance: args.candidateProvenance.slice(0, 256) }
+      : {}),
+    ...(chain ? { chain: chain as TrackingDeliveryRecord["chain"] } : {}),
+    ...(tokenAddress ? { tokenAddress } : {}),
+    ...(args.shortLabel
+      ? { shortLabel: args.shortLabel.slice(0, 64) }
+      : { shortLabel: args.request.shortLabel.slice(0, 64) }),
+    ...(args.qualificationSource ? { qualificationSource: args.qualificationSource } : {}),
   }
 
-  const requests = args.file.requests.map((r) => {
-    if (r.trackingId !== args.trackingId) return r
-    if (r.matchedSubjects.includes(normalizedSubject)) return r
-    return {
-      ...r,
-      matchedSubjects: [...r.matchedSubjects, normalizedSubject].slice(0, 500),
-      updatedAt: args.nowIso,
-    }
-  })
-
+  // matchedSubjects is updated only after a successful delivered alert
   return {
     file: {
       ...args.file,
-      requests,
       trackingDeliveries: [...args.file.trackingDeliveries, delivery],
     },
     delivery,
     created: true,
   }
+}
+
+export function markDeliveryMatchedSubject(args: Readonly<{
+  file: DiscordTrackingFile
+  trackingId: string
+  normalizedSubject: string
+  nowIso: string
+}>): DiscordTrackingFile {
+  return {
+    ...args.file,
+    requests: args.file.requests.map((r) => {
+      if (r.trackingId !== args.trackingId) return r
+      if (r.matchedSubjects.includes(args.normalizedSubject)) return r
+      return {
+        ...r,
+        matchedSubjects: [...r.matchedSubjects, args.normalizedSubject].slice(0, 500),
+        updatedAt: args.nowIso,
+      }
+    }),
+  }
+}
+
+export function appendUniqueMention(args: Readonly<{
+  delivery: TrackingDeliveryRecord
+  provenance: string
+  text: string
+  nowIso: string
+}>): { delivery: TrackingDeliveryRecord; added: boolean } {
+  const provenance = args.provenance.slice(0, 256)
+  const text = args.text.slice(0, 2_000)
+  const textHash = mentionTextHash(text)
+  if (
+    args.delivery.mentionItems.some((m) => (
+      m.provenance === provenance || m.textHash === textHash
+    ))
+  ) {
+    return { delivery: args.delivery, added: false }
+  }
+  const mentionItems = [
+    ...args.delivery.mentionItems,
+    { provenance, textHash, text, seenAt: args.nowIso },
+  ].slice(0, 20)
+  return {
+    delivery: {
+      ...args.delivery,
+      mentionItems,
+      updatedAt: args.nowIso,
+    },
+    added: true,
+  }
+}
+
+export function isDeliveryBlacklisted(
+  delivery: TrackingDeliveryRecord,
+  nowIso: string,
+): boolean {
+  if (!delivery.blacklistedUntil) return false
+  return Date.parse(delivery.blacklistedUntil) > Date.parse(nowIso)
 }
 
 export function requestsForExpiryNotice(

@@ -1,5 +1,5 @@
 ---
-description: Discord idea-tracking requests — NL intake, durable match batches, expiry, INV-D3–D8.
+description: Discord idea-tracking requests — NL intake, silent research-first qualification, INV-D3–D8.
 scope: module
 status: active
 last_verified: 2026-07-21
@@ -12,8 +12,11 @@ read_when:
 
 Users @mention or reply to the research bot to watch for ideas in natural
 language. Matches against X/FC scans and researched tickers (including FOMO
-origin) ping the user and attach research. State lives under
-`~/.trenchcoat/discord/tracking.json` (host-owned). Binding decision: **ADR 018**.
+origin) stay silent until a ticker/CA is host-validated, deep research
+resolves a canonical token, and qualification passes — then the bot posts a
+non-reply alert with the stored `shortLabel` and the full deep-research
+response. State lives under `~/.trenchcoat/discord/tracking.json` (host-owned).
+Binding decisions: **ADR 018** (intake/state), **ADR 019** (alert qualification).
 
 ## Config
 
@@ -22,6 +25,7 @@ origin) ping the user and attach research. State lives under
 | Key | Default | Role |
 |---|---|---|
 | `intent_model` / `match_model` | `composer-2.5` | Classifier + matcher |
+| `mention_review_model` | `composer-2.5-fast` | Three-mention reconsideration |
 | `max_active_per_user` | 10 | Cap per `(guildId, userId)` |
 | `ttl_days` | 30 | Active lifetime |
 | `expiry_bundle_hours` | 48 | Bundle window for expiry notices |
@@ -30,6 +34,7 @@ origin) ping the user and attach research. State lives under
 | `expiry_reply_window_days` | 7 | Reply window after notice |
 | `match_max_attempts` | 5 | Durable batch retries |
 | `retention_days` | 35 | Terminal batch/request prune |
+| `mention_review_blacklist_days` | 7 | Blacklist after rejected review |
 
 ## Intake priority
 
@@ -55,25 +60,50 @@ message within 24h activates.
 Mutations are pure transitions in `tracking-state.ts`, persisted under
 `layout.lock` via `createDiscordStore().saveTracking` only.
 
-## Matching
+## Matching and qualification
 
 Orchestrator (`list-scan`, `farcaster-scan`, `research`) and Discord research
 pump enqueue durable `matchBatches` via `enqueueTrackingMatchBatch` after
 sealed artifacts. Worker claims oldest-first, runs path-only
-`TRACKING_MATCH_PROMPT` over SnapshotWriter envelopes, allowlists ids, sanitizes
-reasons, creates idempotent `trackingDeliveries` keyed by
-`(trackingId, normalizedSubject)`.
+`TRACKING_MATCH_PROMPT` over SnapshotWriter envelopes.
 
-Parent runs never fail because of matching (INV-D6). Exhausted batches log an
-operator-visible warning.
+Match output is `{trackingId, candidateProvenance, tokenQuery, reason}`:
+- `candidateProvenance` must equal one host-supplied candidate provenance
+- `tokenQuery` must be a CA, `$TICKER`, or bare ticker that appears in that
+  candidate (project-name-only guesses fail closed)
+- Host resolves via `resolveResearchSubject`; empty/ambiguous/unsupported → silent
+
+**Initial scan path:** no Discord message. Durably enqueue tracking-origin deep
+research. Notify only when `mainTrackEligible === true`. Failures move the
+delivery to `awaiting-mentions`.
+
+**Three-mention reconsideration:** after non-qualification, accumulate three
+unique later provenance IDs (duplicate provenance and byte-normalized text
+count once). On the third, run `composer-2.5-fast` mention review. Reject →
+`blacklistedUntil = now + 7d`. Approve → one fresh deep research; alert may
+include a security hard-fail warning (watch subscribe / main promote still use
+existing gates).
+
+**Research-origin batches:** require host `mainTrackEligible === true` plus
+canonical identity; missing metadata fails closed.
 
 ## Delivery
 
-Host renders `<@user> I see talk of <reason>` with
-`allowed_mentions.users = [owner]`. Research-origin matches reuse the summary;
-X/FC matches enqueue `origin: "tracking"` research (bypasses per-user caps,
-still counts server daily). Ambiguous Discord sends are marked `terminal`
-without blind resend (INV-D7 PARTIAL).
+Qualified alerts use `sendChannelMessage` (never a reply to the original track
+request):
+
+```
+@user I found a token matching <shortLabel>
+
+<standard deep research response>
+```
+
+`shortLabel` is rendered as stored (sanitized). Only the first part mentions the
+owner (`allowed_mentions.users = [owner]`). Ambiguous Discord sends are marked
+`terminal` without blind resend (INV-D7 PARTIAL).
+
+Dedupe key is `(trackingId, chain, lowercase tokenAddress)`. `matchedSubjects`
+is updated only after a successful delivered alert.
 
 ## Expiry
 
@@ -89,8 +119,8 @@ all-or-nothing.
 | INV-D3 | Host-owned transitions + ownership scope | ENFORCED |
 | INV-D4 | Cap ≤10; expired never match | ENFORCED |
 | INV-D5 | Path-only composer-2.5; allowlist + sanitize | PARTIAL (live injection eval open) |
-| INV-D6 | Durable match batches; parent runs isolated | ENFORCED |
-| INV-D7 | Idempotent delivery; no blind ambiguous resend | PARTIAL (Discord API ambiguity) |
+| INV-D6 | Durable match batches; silent until qualified | ENFORCED |
+| INV-D7 | Idempotent canonical delivery; no blind ambiguous resend | PARTIAL (Discord API ambiguity) |
 | INV-D8 | Model quality thresholds | PARTIAL (opt-in live corpus) |
 
 ## Test map
@@ -111,5 +141,6 @@ recall, false-positive rate, safety failures (must be 0).
 ## References
 
 - ADR 018 — Discord idea tracking
+- ADR 019 — Gated Discord tracking alerts
 - ADR 010 — Discord research isolation
 - INV-D3–D8 in [INVARIANTS.md](../INVARIANTS.md)

@@ -40,12 +40,10 @@ or quotas. Matching must not fail or roll back parent `list-scan` /
   immediately. Success ack is 🫡 after commit (track/drop/extend/decline).
 - **Cap:** 10 active per `(guildId, userId)`, 30-day TTL. Over-cap →
   `pending-capacity` + list/drop dialogue; drop activates newest pending.
-- **Matching:** orchestrator and Discord research enqueue durable `matchBatches`
-  after sealed artifacts; a Discord tracking worker claims oldest-first.
-  Parent runs never fail because of matching. Hits produce host-rendered pings
-  with `allowed_mentions.users = [owner]` only; research-origin reuses summaries;
-  X/FC hits may enqueue `origin: "tracking"` research (bypasses per-user caps,
-  still counts server daily).
+- **Matching / alerts:** durable match batches per ADR 018; **alert qualification
+  and delivery** are amended by **ADR 019** (research-first, ticker/CA gate,
+  `mainTrackEligible`, three-mention reconsideration, non-reply `shortLabel`
+  alerts).
 - **Expiry:** monitor sweep bundles elapsed + next `<48h` (exact 48h excluded);
   one notice per cycle; NL extend/decline via the same classifier.
 - Invariants **INV-D3–D8** (D5/D7/D8 remain PARTIAL where live model quality or
@@ -77,6 +75,7 @@ or quotas. Matching must not fail or roll back parent `list-scan` /
 
 ## Follow-ups
 
+- Alert qualification / delivery tightened in **ADR 019**.
 - Run opt-in `tests/e2e/discord-tracking-model-live.test.ts` and archive metrics
   to support INV-D8 semantic claims.
 - Optional Discord message nonce reconciliation if the API surface becomes
@@ -87,5 +86,5 @@ or quotas. Matching must not fail or roll back parent `list-scan` /
 - [architecture/discord-tracking.md](../architecture/discord-tracking.md)
 - [architecture/discord-research.md](../architecture/discord-research.md)
 - ADR 010 (Discord research isolation), ADR 012 (watch update narration),
-  ADR 016 (chain integration)
+  ADR 016 (chain integration), **ADR 019 (gated alerts)**
 - INV-D1, INV-D3–D8 in [INVARIANTS.md](../INVARIANTS.md)

@@ -80,6 +80,9 @@ export async function acceptDiscordRequest(args: Readonly<{
   origin?: "user" | "tracking"
   trackingPingMessageId?: string
   trackingId?: string
+  trackingDeliveryId?: string
+  trackingShortLabel?: string
+  trackingQualificationSource?: "main-track" | "three-mention-review"
 }>): Promise<
   | { accepted: true; request: DiscordRequestRecord }
   | { accepted: false; terminal: string }
@@ -146,6 +149,15 @@ export async function acceptDiscordRequest(args: Readonly<{
         ? { trackingPingMessageId: args.trackingPingMessageId }
         : {}),
       ...(args.trackingId ? { trackingId: args.trackingId } : {}),
+      ...(args.trackingDeliveryId
+        ? { trackingDeliveryId: args.trackingDeliveryId }
+        : {}),
+      ...(args.trackingShortLabel
+        ? { trackingShortLabel: args.trackingShortLabel.slice(0, 64) }
+        : {}),
+      ...(args.trackingQualificationSource
+        ? { trackingQualificationSource: args.trackingQualificationSource }
+        : {}),
     }
     file.requests.push(request)
     file = recountDailyQuota(file, nowIso)
@@ -193,17 +205,21 @@ export async function processNextDiscordRequest(args: Readonly<{
     if (!request) return "idle"
 
     const client = createDiscordRestClient(args.token)
-    try {
-      await client.addReaction({
-        channelId: request.channelId,
-        messageId: request.messageId,
-        emoji: DISCORD_RESEARCH_STARTED_EMOJI,
-      })
-    } catch (error) {
-      log.warn("discord research-start reaction failed", {
-        messageId: request.messageId,
-        error: error instanceof Error ? error.message : "unknown",
-      })
+    const isTrackingOrigin = request.origin === "tracking"
+
+    if (!isTrackingOrigin) {
+      try {
+        await client.addReaction({
+          channelId: request.channelId,
+          messageId: request.messageId,
+          emoji: DISCORD_RESEARCH_STARTED_EMOJI,
+        })
+      } catch (error) {
+        log.warn("discord research-start reaction failed", {
+          messageId: request.messageId,
+          error: error instanceof Error ? error.message : "unknown",
+        })
+      }
     }
 
     const result = await runDiscordResearch({
@@ -217,6 +233,17 @@ export async function processNextDiscordRequest(args: Readonly<{
         provenance: ["discord:research"],
       },
     })
+
+    if (isTrackingOrigin) {
+      await finalizeTrackingOriginResearch({
+        store,
+        request,
+        result,
+        repoRoot: args.repoRoot,
+        token: args.token,
+      })
+      return "processed"
+    }
 
     if (result.status === "ambiguous" || result.status === "rejected") {
       await deliverTerminalError({
@@ -260,7 +287,7 @@ export async function processNextDiscordRequest(args: Readonly<{
     }
 
     // Idea-tracking match against completed Discord research (never fails the request)
-    if (request.origin !== "tracking" && reportText) {
+    if (reportText) {
       try {
         const digest = JSON.stringify([{
           provenance: `discord-research:${request.requestId}`,
@@ -273,6 +300,13 @@ export async function processNextDiscordRequest(args: Readonly<{
           candidateDigest: digest,
           researchSummary: reportText.slice(0, 8_000),
           researchSubject: request.subject,
+          ...(result.identity
+            ? {
+              researchChain: result.identity.chain,
+              researchTokenAddress: result.identity.tokenAddress,
+            }
+            : {}),
+          mainTrackEligible: Boolean(result.mainTrackEligible),
         })
       } catch (error) {
         log.warn("discord tracking enqueue after research failed", {
@@ -363,5 +397,192 @@ export async function processNextDiscordRequest(args: Readonly<{
     return "processed"
   } finally {
     worker.release()
+  }
+}
+
+async function finalizeTrackingOriginResearch(args: Readonly<{
+  store: ReturnType<typeof createDiscordStore>
+  request: DiscordRequestRecord
+  result: Awaited<ReturnType<typeof runDiscordResearch>>
+  repoRoot: string
+  token: string
+}>): Promise<void> {
+  const { store, request, result } = args
+  const layout = discordLayout()
+  const nowIso = systemClock.nowIso()
+  const deliveryId = request.trackingDeliveryId
+  const qualificationSource = request.trackingQualificationSource ?? "main-track"
+
+  // Mark the research request completed silently (no Discord error/reply)
+  await withStoreLockRetry(layout.lock, async () => {
+    let file = store.loadRequests()
+    const idx = file.requests.findIndex((r) => r.requestId === request.requestId)
+    if (idx < 0) return
+    file.requests[idx] = {
+      ...file.requests[idx]!,
+      status: result.status === "completed" ? "completed" : "failed",
+      updatedAt: nowIso,
+      ...(result.runId ? { runId: result.runId } : {}),
+      ...(result.status !== "completed"
+        ? { terminalError: (result.error ?? result.status).slice(0, 280) }
+        : {}),
+    }
+    file = recountDailyQuota(file, nowIso)
+    await store.saveRequests(file)
+  })
+
+  if (!deliveryId) return
+
+  const reportText = result.reportText ?? ""
+  const identity = result.identity
+  const mainTrackOk = Boolean(result.mainTrackEligible)
+  const threeMentionOk = qualificationSource === "three-mention-review"
+    && result.status === "completed"
+    && Boolean(identity)
+    && reportText.trim().length > 0
+
+  let shouldAlert = false
+  let securityWarning: string | undefined
+
+  if (result.status === "completed" && identity && reportText.trim()) {
+    if (mainTrackOk) {
+      shouldAlert = true
+    } else if (threeMentionOk) {
+      shouldAlert = true
+      if (result.securityHardFail || result.security?.hardFail) {
+        const flags = (result.security?.flags ?? []).slice(0, 8).join(", ")
+        securityWarning = [
+          `status=${result.security?.status ?? "hard-fail"}`,
+          flags ? `flags=${flags}` : undefined,
+        ].filter(Boolean).join("; ")
+      }
+    }
+  }
+
+  await withStoreLockRetry(layout.lock, async () => {
+    const file = store.loadTracking()
+    const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === deliveryId)
+    if (idx < 0) return
+    const current = file.trackingDeliveries[idx]!
+    if (current.status === "delivered" || current.status === "terminal") return
+
+    if (shouldAlert) {
+      file.trackingDeliveries[idx] = {
+        ...current,
+        status: "qualified-pending",
+        researchSummary: reportText.slice(0, 8_000),
+        shortLabel: request.trackingShortLabel ?? current.shortLabel ?? "tracked idea",
+        qualificationSource,
+        ...(identity
+          ? {
+            chain: identity.chain as typeof current.chain,
+            tokenAddress: identity.tokenAddress.toLowerCase(),
+            subject: `${identity.chain}:${identity.tokenAddress}`,
+            normalizedSubject: `${identity.chain}:${identity.tokenAddress.toLowerCase()}`,
+          }
+          : {}),
+        ...(securityWarning ? { securityWarning: securityWarning.slice(0, 500) } : {}),
+        updatedAt: nowIso,
+        lastError: undefined,
+      }
+    } else {
+      // Initial non-qualification → wait for three later unique mentions
+      file.trackingDeliveries[idx] = {
+        ...current,
+        status: "awaiting-mentions",
+        qualificationSource: undefined,
+        researchEnqueued: true,
+        ...(identity
+          ? {
+            chain: identity.chain as typeof current.chain,
+            tokenAddress: identity.tokenAddress.toLowerCase(),
+            subject: `${identity.chain}:${identity.tokenAddress}`,
+            normalizedSubject: `${identity.chain}:${identity.tokenAddress.toLowerCase()}`,
+          }
+          : {}),
+        updatedAt: nowIso,
+        lastError: (result.error ?? result.mainTrackSkipReason ?? "not-solid").slice(0, 280),
+      }
+    }
+    await store.saveTracking(file)
+  })
+
+  if (shouldAlert) {
+    try {
+      const { deliverTrackingAlert } = await import("./tracking-delivery.js")
+      const { createDiscordRestClient } = await import("./bot-client.js")
+      const delivery = store.loadTracking().trackingDeliveries
+        .find((d) => d.deliveryId === deliveryId)
+      if (delivery?.status === "qualified-pending") {
+        await deliverTrackingAlert({
+          client: createDiscordRestClient(args.token),
+          store,
+          delivery,
+          nowIso,
+        })
+      }
+    } catch (error) {
+      log.warn("tracking alert delivery after research failed", {
+        deliveryId,
+        error: error instanceof Error ? error.message : "unknown",
+      })
+    }
+  }
+
+  // Watch subscribe / main promote still use existing gates — never bypassed by three-mention path
+  if (
+    result.status === "completed"
+    && result.identity
+    && result.subscribeAllowed
+    && result.baseline
+    && !result.securityHardFail
+  ) {
+    try {
+      const baseline = result.baseline
+      const researchBrief = reportText ? extractResearchBrief(reportText) : undefined
+      await withStoreLockRetry(layout.lock, async () => {
+        let watch = store.loadWatchlist()
+        const sub = subscribeAfterResearch({
+          file: watch,
+          identity: result.identity!,
+          guildId: request.guildId,
+          userId: request.userId,
+          channelId: request.channelId,
+          messageId: request.messageId,
+          nowIso,
+          baseline,
+          ...(researchBrief ? { researchBrief } : {}),
+          securityHardFail: Boolean(result.securityHardFail),
+        })
+        if (sub.subscribed) {
+          await store.saveWatchlist(sub.file)
+          const obs = store.loadObservations()
+          obs.byToken[tokenKey(result.identity!.chain, result.identity!.tokenAddress)] = baseline
+          await store.saveObservations(obs)
+        }
+      })
+    } catch {
+      // silent
+    }
+  }
+
+  if (
+    result.mainTrackEligible
+    && result.identity
+    && result.runId
+    && result.security
+    && !result.securityHardFail
+  ) {
+    try {
+      await promoteDiscordTrackToMain({
+        discordAgentRoot: layout.agent,
+        discordArchiveRoot: layout.archive,
+        runId: result.runId,
+        identity: result.identity,
+        security: result.security,
+      })
+    } catch {
+      // silent
+    }
   }
 }

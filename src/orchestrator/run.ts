@@ -1822,6 +1822,33 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
 
     // Discord idea-tracking match enqueue (INV-D6) — never fails the parent run
     try {
+      let mainTrackEligible: boolean | undefined
+      let researchChain: string | undefined
+      let researchTokenAddress: string | undefined
+      if (job.name === "research" && collection.researchIdentity && researchDue) {
+        researchChain = collection.researchIdentity.chain
+        researchTokenAddress = collection.researchIdentity.tokenAddress
+        if (collection.researchSecurityHardFail) {
+          mainTrackEligible = false
+        } else {
+          try {
+            const { evaluateResearchSubscribe } = await import("./research-verdict.js")
+            const decision = evaluateResearchSubscribe({
+              agentRoot: opts.paths.agentRoot,
+              runId,
+              identity: collection.researchIdentity,
+              security: {
+                status: collection.researchSecurityHardFail ? "hard-fail" : "ok",
+                hardFail: Boolean(collection.researchSecurityHardFail),
+                flags: [],
+              },
+            })
+            mainTrackEligible = decision.subscribe
+          } catch {
+            mainTrackEligible = false
+          }
+        }
+      }
       await maybeEnqueueDiscordTracking({
         job: job.name,
         runId,
@@ -1831,6 +1858,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         ...(collection.researchResolution
           ? { researchResolution: collection.researchResolution }
           : {}),
+        ...(researchChain ? { researchChain } : {}),
+        ...(researchTokenAddress ? { researchTokenAddress } : {}),
+        ...(mainTrackEligible !== undefined ? { mainTrackEligible } : {}),
       })
     } catch (error) {
       log.warn("discord tracking enqueue skipped", {
@@ -1967,6 +1997,9 @@ async function maybeEnqueueDiscordTracking(args: Readonly<{
   archiveRoot: string
   researchDue?: Readonly<{ queueId: string; subject: string }>
   researchResolution?: string
+  researchChain?: string
+  researchTokenAddress?: string
+  mainTrackEligible?: boolean
 }>): Promise<void> {
   const sourceKind = args.job === "list-scan"
     ? "list-scan" as const
@@ -1980,6 +2013,10 @@ async function maybeEnqueueDiscordTracking(args: Readonly<{
   if (sourceKind === "research") {
     if (!args.researchDue) return
     if (["ambiguous", "empty", "unsupported-chain"].includes(args.researchResolution ?? "")) {
+      return
+    }
+    // Fail closed when qualification metadata is missing
+    if (args.mainTrackEligible !== true || !args.researchChain || !args.researchTokenAddress) {
       return
     }
     const summaryPath = join(args.agentRoot, "reports", "chat", `${args.runId}.md`)
@@ -2000,6 +2037,9 @@ async function maybeEnqueueDiscordTracking(args: Readonly<{
       candidateDigest: digest,
       researchSummary: summary.slice(0, 8_000),
       researchSubject: args.researchDue.subject,
+      researchChain: args.researchChain,
+      researchTokenAddress: args.researchTokenAddress,
+      mainTrackEligible: true,
     })
     return
   }

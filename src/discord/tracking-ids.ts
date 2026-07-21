@@ -29,6 +29,34 @@ export function trackingDeliveryId(trackingId: string, normalizedSubject: string
     .slice(0, 32)
 }
 
+/** Canonical alert key: trackingId + chain + lowercase token address */
+export function trackingCanonicalKey(
+  trackingId: string,
+  chain: string,
+  tokenAddress: string,
+): string {
+  return `${trackingId}|${chain}|${tokenAddress.trim().toLowerCase()}`
+}
+
+export function trackingDeliveryIdFromIdentity(
+  trackingId: string,
+  chain: string,
+  tokenAddress: string,
+): string {
+  return createHash("sha256")
+    .update(trackingCanonicalKey(trackingId, chain, tokenAddress))
+    .digest("hex")
+    .slice(0, 32)
+}
+
+export function normalizeMentionText(text: string): string {
+  return text.normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase().slice(0, 2_000)
+}
+
+export function mentionTextHash(text: string): string {
+  return createHash("sha256").update(normalizeMentionText(text)).digest("hex").slice(0, 24)
+}
+
 export function addDaysIso(iso: string, days: number): string {
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms)) throw new Error("invalid timestamp")

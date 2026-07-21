@@ -25,12 +25,19 @@ last_verified: 2026-07-21
 - Channel permissions: View Channels, Read Message History, Send Messages,
   Embed Links, Add Reactions
 - Research: no @mention required in allowed channels
-- Idea-tracking (ADR 018): **requires** @mention or reply-to-bot; ack 🫡;
-  state in `tracking.json`; default `chat.discord.tracking.enabled: true`
-- FIFO research queue (one runner); ✅ when claimed; `chat.discord.model`
-  defaults to `composer-2.5-fast` for the **initial research reply**; material
-  watch updates use `composer-2.5` via a **host-side** update writer (not the
-  deep-research agent). Tracking intent/match default to `composer-2.5`
+- Idea-tracking (ADR 018 / ADR 019): **requires** @mention or reply-to-bot;
+  ack 🫡; state in `tracking.json`; default `chat.discord.tracking.enabled: true`.
+  Every @mention/reply still runs the intent classifier; non-tracking chatter
+  should return `{"action":"none"}` (no state mutation, classifier cost only).
+  Alerts stay silent until ticker/CA + solid research qualify, then a non-reply
+  `@user I found a token matching <shortLabel>` plus full research (ADR 019).
+  Flipping the schema default does not override an explicit live
+  `~/.trenchcoat/config.json` value — set that too when enabling/disabling.
+- FIFO research queue (one runner); ✅ when claimed (user research only);
+  `chat.discord.model` defaults to `composer-2.5-fast` for the **initial
+  research reply**; material watch updates use `composer-2.5` via a **host-side**
+  update writer (not the deep-research agent). Tracking intent/match default to
+  `composer-2.5`; mention review defaults to `composer-2.5-fast`
 - State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
 - Does not use main `agent/.lock` or research queue
 - Config: schema 10+ `chat.discord.*` (disabled by default); schema 12 adds
@@ -55,4 +62,4 @@ last_verified: 2026-07-21
   ADR 016, INV-D2/S26
 - See [architecture/discord-research.md](../architecture/discord-research.md),
   [architecture/discord-tracking.md](../architecture/discord-tracking.md),
-  ADR 010, ADR 012, ADR 018
+  ADR 010, ADR 012, ADR 018, ADR 019

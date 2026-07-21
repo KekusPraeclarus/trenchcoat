@@ -26,6 +26,31 @@ export function renderTrackingPing(userId: string, reason: string): string {
   return `<@${userId}> I see talk of ${body}`
 }
 
+/** Gated tracking alert header — uses stored shortLabel as-is (sanitized) */
+export function renderTrackingFoundHeader(args: Readonly<{
+  userId: string
+  shortLabel: string
+}>): string {
+  const label = escapeDiscordLabel(args.shortLabel) || "your request"
+  return `<@${args.userId}> I found a token matching ${label}`
+}
+
+export function renderTrackingAlertBody(args: Readonly<{
+  userId: string
+  shortLabel: string
+  researchText: string
+  securityWarning?: string
+}>): string {
+  const header = renderTrackingFoundHeader({
+    userId: args.userId,
+    shortLabel: args.shortLabel,
+  })
+  const warning = args.securityWarning
+    ? `\n\n⚠️ Security warning: ${sanitizeTrackingReason(args.securityWarning, 400)}`
+    : ""
+  return `${header}${warning}\n\n${args.researchText}`.trim()
+}
+
 export function renderCapacityMessage(
   activeLabels: readonly string[],
   maxActive: number,

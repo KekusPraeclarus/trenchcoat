@@ -15,11 +15,15 @@ import {
 } from "./schemas.js"
 import { activeMatchableRequests } from "./tracking-state.js"
 import { sanitizeTrackingReason } from "./tracking-sanitize.js"
-import { normalizeTrackingSubject } from "./tracking-ids.js"
+import {
+  findCandidateTextByProvenance,
+  validateTokenQueryAgainstCandidate,
+} from "./tracking-token-query.js"
 
 const MatchItemSchema = z.object({
   trackingId: TrackingIdSchema,
-  subject: z.string().min(1).max(256),
+  candidateProvenance: z.string().min(1).max(256),
+  tokenQuery: z.string().min(1).max(256),
   reason: z.string().min(1).max(200),
 })
 
@@ -29,8 +33,11 @@ const MatchOutputSchema = z.object({
 
 export type TrackingMatchHit = Readonly<{
   trackingId: string
-  subject: string
+  candidateProvenance: string
+  tokenQuery: string
   reason: string
+  /** Resolved resolveSubject for research enqueue */
+  resolveSubject: string
 }>
 
 export type TrackingMatchCandidate = Readonly<{
@@ -49,6 +56,7 @@ export type TrackingMatchSessionRunner = (args: Readonly<{
 export function parseTrackingMatchOutput(
   raw: string,
   allowlist: ReadonlySet<string>,
+  candidates: readonly TrackingMatchCandidate[],
   maxMatches: number,
 ): TrackingMatchHit[] {
   const trimmed = raw.trim()
@@ -62,18 +70,32 @@ export function parseTrackingMatchOutput(
   const result = MatchOutputSchema.safeParse(parsed)
   if (!result.success) return []
 
+  const provenanceAllow = new Set(candidates.map((c) => c.provenance))
   const seen = new Set<string>()
   const hits: TrackingMatchHit[] = []
   for (const item of result.data.matches) {
     if (!allowlist.has(item.trackingId)) continue
-    const subject = item.subject.trim().slice(0, 256)
-    if (!subject) continue
+    const provenance = item.candidateProvenance.trim().slice(0, 256)
+    if (!provenance || !provenanceAllow.has(provenance)) continue
+    const candidateText = findCandidateTextByProvenance(candidates, provenance)
+    if (!candidateText) continue
+    const validated = validateTokenQueryAgainstCandidate({
+      tokenQuery: item.tokenQuery,
+      candidateText,
+    })
+    if (!validated) continue
     const reason = sanitizeTrackingReason(item.reason)
     if (!reason) continue
-    const key = `${item.trackingId}|${normalizeTrackingSubject(subject)}`
+    const key = `${item.trackingId}|${provenance}|${validated.resolveSubject.toLowerCase()}`
     if (seen.has(key)) continue
     seen.add(key)
-    hits.push({ trackingId: item.trackingId, subject, reason })
+    hits.push({
+      trackingId: item.trackingId,
+      candidateProvenance: provenance,
+      tokenQuery: validated.query,
+      reason,
+      resolveSubject: validated.resolveSubject,
+    })
     if (hits.length >= maxMatches) break
   }
   return hits
@@ -179,6 +201,10 @@ export async function runTrackingMatch(args: Readonly<{
     throw new Error("tracking match session failed")
   }
 
-  const maxMatches = Math.max(1, Math.min(500, args.candidates.length || 1))
-  return parseTrackingMatchOutput(session.text, allowlist, maxMatches)
+  const candidatesForParse: TrackingMatchCandidate[] = candidateItems.map((c) => ({
+    provenance: c.provenance,
+    text: c.text,
+  }))
+  const maxMatches = Math.max(1, Math.min(500, candidatesForParse.length || 1))
+  return parseTrackingMatchOutput(session.text, allowlist, candidatesForParse, maxMatches)
 }

@@ -431,19 +431,37 @@ describe("tracking match sanitize", () => {
 
   it("allowlists match output", () => {
     const allow = new Set(["trk-ok123456"])
+    const candidates = [{ provenance: "twitter:@x", text: "privacy $FOO and $BAR" }]
     const hits = parseTrackingMatchOutput(JSON.stringify({
       matches: [
-        { trackingId: "trk-ok123456", subject: "FOO", reason: "privacy <@1> https://x.com" },
-        { trackingId: "trk-evil99999", subject: "BAR", reason: "nope" },
-        { trackingId: "trk-ok123456", subject: "FOO", reason: "dup" },
+        {
+          trackingId: "trk-ok123456",
+          candidateProvenance: "twitter:@x",
+          tokenQuery: "$FOO",
+          reason: "privacy <@1> https://x.com",
+        },
+        {
+          trackingId: "trk-evil99999",
+          candidateProvenance: "twitter:@x",
+          tokenQuery: "$BAR",
+          reason: "nope",
+        },
+        {
+          trackingId: "trk-ok123456",
+          candidateProvenance: "twitter:@x",
+          tokenQuery: "$FOO",
+          reason: "dup",
+        },
       ],
-    }), allow, 10)
+    }), allow, candidates, 10)
     expect(hits).toHaveLength(1)
     expect(hits[0]!.reason).toBe("privacy")
+    expect(hits[0]!.tokenQuery).toBe("$FOO")
   })
 
   it("rejects malformed match JSON", () => {
-    expect(parseTrackingMatchOutput("not json", new Set(["trk-ok123456"]), 10)).toEqual([])
-    expect(parseTrackingMatchOutput('{"matches":[]}\nextra', new Set(["trk-ok123456"]), 10)).toEqual([])
+    const candidates = [{ provenance: "twitter:@x", text: "$FOO" }]
+    expect(parseTrackingMatchOutput("not json", new Set(["trk-ok123456"]), candidates, 10)).toEqual([])
+    expect(parseTrackingMatchOutput('{"matches":[]}\nextra', new Set(["trk-ok123456"]), candidates, 10)).toEqual([])
   })
 })

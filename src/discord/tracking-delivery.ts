@@ -7,7 +7,8 @@ import { chunkDiscordReply, partDeliveryKey } from "./render.js"
 import { discordLayout } from "./paths.js"
 import type { DiscordStore } from "./store.js"
 import type { TrackingDeliveryRecord } from "./schemas.js"
-import { renderTrackingPing } from "./tracking-sanitize.js"
+import { renderTrackingAlertBody } from "./tracking-sanitize.js"
+import { markDeliveryMatchedSubject } from "./tracking-state.js"
 
 async function withStoreLockRetry<T>(
   lockPath: string,
@@ -35,7 +36,90 @@ export function syntheticSnowflake(seed: string): string {
   return s.length >= 17 ? s.slice(0, 19) : s.padStart(17, "1")
 }
 
-export async function deliverTrackingPing(args: Readonly<{
+/** Enqueue silent tracking-origin research for a research-pending delivery */
+export async function enqueueTrackingResearch(args: Readonly<{
+  store: DiscordStore
+  delivery: TrackingDeliveryRecord
+  repoRoot: string
+  nowIso?: string
+}>): Promise<{ ok: boolean; delivery: TrackingDeliveryRecord }> {
+  const nowIso = args.nowIso ?? systemClock.nowIso()
+  const layout = discordLayout()
+  let delivery = args.delivery
+  if (delivery.researchEnqueued || delivery.status === "delivered" || delivery.status === "terminal") {
+    return { ok: true, delivery }
+  }
+  if (delivery.status !== "research-pending" && delivery.status !== "pending") {
+    return { ok: false, delivery }
+  }
+
+  try {
+    const { acceptDiscordRequest, processNextDiscordRequest } = await import("./pump.js")
+    const subject = delivery.chain && delivery.tokenAddress
+      ? `${delivery.chain}:${delivery.tokenAddress}`
+      : (delivery.tokenQuery ?? delivery.subject)
+    const accepted = await acceptDiscordRequest({
+      guildId: delivery.guildId,
+      channelId: delivery.channelId,
+      messageId: syntheticSnowflake(`trk-research:${delivery.deliveryId}`),
+      userId: delivery.userId,
+      subject,
+      ...(delivery.chain ? { chainHint: delivery.chain } : {}),
+      ...(delivery.tokenAddress ? { tokenHint: delivery.tokenAddress } : {}),
+      origin: "tracking",
+      trackingId: delivery.trackingId,
+      trackingDeliveryId: delivery.deliveryId,
+      trackingShortLabel: delivery.shortLabel ?? "tracked idea",
+      trackingQualificationSource: delivery.qualificationSource ?? "main-track",
+    })
+    const enqueued = ("accepted" in accepted && accepted.accepted)
+      || ("duplicate" in accepted)
+
+    const persisted = await withStoreLockRetry(layout.lock, async () => {
+      const file = args.store.loadTracking()
+      const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === delivery.deliveryId)
+      if (idx < 0) return delivery
+      const next: TrackingDeliveryRecord = {
+        ...file.trackingDeliveries[idx]!,
+        researchEnqueued: enqueued,
+        researchRequestId: syntheticSnowflake(`trk-research:${delivery.deliveryId}`),
+        updatedAt: nowIso,
+        ...(!enqueued ? { lastError: "research-enqueue-failed" } : {}),
+      }
+      file.trackingDeliveries[idx] = next
+      await args.store.saveTracking(file)
+      return next
+    })
+    delivery = persisted.ok ? persisted.value : delivery
+
+    if (enqueued && "accepted" in accepted && accepted.accepted) {
+      const token = process.env["DISCORD_RESEARCH_BOT_TOKEN"]
+      if (token) {
+        void processNextDiscordRequest({
+          repoRoot: args.repoRoot,
+          token,
+        }).catch((error) => {
+          log.warn("tracking research pump kick failed", {
+            error: error instanceof Error ? error.message : "unknown",
+          })
+        })
+      }
+    }
+    return { ok: enqueued, delivery }
+  } catch (error) {
+    log.warn("tracking research enqueue failed", {
+      deliveryId: delivery.deliveryId,
+      error: error instanceof Error ? error.message : "unknown",
+    })
+    return { ok: false, delivery }
+  }
+}
+
+/**
+ * Deliver a qualified tracking alert as channel messages (never a reply to the
+ * original tracking request). First part mentions only the owner.
+ */
+export async function deliverTrackingAlert(args: Readonly<{
   client: DiscordRestClient
   store: DiscordStore
   delivery: TrackingDeliveryRecord
@@ -48,15 +132,22 @@ export async function deliverTrackingPing(args: Readonly<{
   if (delivery.status === "delivered" || delivery.status === "terminal") {
     return { ok: true, delivery }
   }
+  if (delivery.status !== "qualified-pending" && delivery.status !== "sending") {
+    return { ok: false, delivery }
+  }
+  if (!delivery.researchSummary?.trim()) {
+    return { ok: false, delivery }
+  }
 
-  const pingText = renderTrackingPing(delivery.userId, delivery.reason)
-  const followParts = delivery.researchSummary
-    ? chunkDiscordReply(delivery.researchSummary)
-    : []
-  const parts = [pingText, ...followParts]
+  const body = renderTrackingAlertBody({
+    userId: delivery.userId,
+    shortLabel: delivery.shortLabel ?? "tracked idea",
+    researchText: delivery.researchSummary,
+    ...(delivery.securityWarning ? { securityWarning: delivery.securityWarning } : {}),
+  })
+  const parts = chunkDiscordReply(body)
   const delivered = new Set(delivery.deliveredPartKeys)
   const messageIds = [...delivery.discordMessageIds]
-  let pingMessageId = delivery.pingMessageId
 
   const markSending = await withStoreLockRetry(layout.lock, async () => {
     const file = args.store.loadTracking()
@@ -99,31 +190,13 @@ export async function deliverTrackingPing(args: Readonly<{
     const key = partDeliveryKey(delivery.deliveryId, i, content)
     if (delivered.has(key)) continue
     try {
-      let sent
-      try {
-        sent = await args.client.sendReply({
-          channelId: delivery.channelId,
-          content,
-          replyToMessageId: i === 0
-            ? delivery.anchorMessageId
-            : (pingMessageId ?? delivery.anchorMessageId),
-          mentionUserIds: i === 0 ? [delivery.userId] : [],
-        })
-      } catch (error) {
-        const err = error as Error & { unknownMessage?: boolean }
-        if (err.unknownMessage) {
-          sent = await args.client.sendChannelMessage({
-            channelId: delivery.channelId,
-            content,
-            mentionUserIds: [delivery.userId],
-          })
-        } else {
-          throw error
-        }
-      }
+      const sent = await args.client.sendChannelMessage({
+        channelId: delivery.channelId,
+        content,
+        mentionUserIds: i === 0 ? [delivery.userId] : [],
+      })
       delivered.add(key)
       messageIds.push(sent.messageId)
-      if (i === 0) pingMessageId = sent.messageId
 
       const persisted = await withStoreLockRetry(layout.lock, async () => {
         const file = args.store.loadTracking()
@@ -133,7 +206,6 @@ export async function deliverTrackingPing(args: Readonly<{
           ...file.trackingDeliveries[idx]!,
           deliveredPartKeys: [...delivered],
           discordMessageIds: [...messageIds],
-          ...(pingMessageId ? { pingMessageId } : {}),
           parts,
           updatedAt: nowIso,
         }
@@ -166,7 +238,7 @@ export async function deliverTrackingPing(args: Readonly<{
   }
 
   const completed = await withStoreLockRetry(layout.lock, async () => {
-    const file = args.store.loadTracking()
+    let file = args.store.loadTracking()
     const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === delivery.deliveryId)
     if (idx < 0) return delivery
     const next: TrackingDeliveryRecord = {
@@ -174,65 +246,32 @@ export async function deliverTrackingPing(args: Readonly<{
       status: "delivered",
       deliveredPartKeys: [...delivered],
       discordMessageIds: [...messageIds],
-      ...(pingMessageId ? { pingMessageId } : {}),
       parts,
       updatedAt: nowIso,
     }
     file.trackingDeliveries[idx] = next
+    file = markDeliveryMatchedSubject({
+      file,
+      trackingId: next.trackingId,
+      normalizedSubject: next.normalizedSubject,
+      nowIso,
+    })
     await args.store.saveTracking(file)
     return next
   })
   delivery = completed.ok ? completed.value : delivery
-
-  if (delivery.needsResearch && !delivery.researchEnqueued && !delivery.researchSummary) {
-    try {
-      const { acceptDiscordRequest } = await import("./pump.js")
-      const accepted = await acceptDiscordRequest({
-        guildId: delivery.guildId,
-        channelId: delivery.channelId,
-        messageId: syntheticSnowflake(`trk-research:${delivery.deliveryId}`),
-        userId: delivery.userId,
-        subject: delivery.subject,
-        origin: "tracking",
-        trackingPingMessageId: delivery.pingMessageId ?? delivery.anchorMessageId,
-        trackingId: delivery.trackingId,
-      })
-      const enqueued = ("accepted" in accepted && accepted.accepted)
-        || ("duplicate" in accepted)
-      await withStoreLockRetry(layout.lock, async () => {
-        const file = args.store.loadTracking()
-        const idx = file.trackingDeliveries.findIndex((d) => d.deliveryId === delivery.deliveryId)
-        if (idx < 0) return
-        file.trackingDeliveries[idx] = {
-          ...file.trackingDeliveries[idx]!,
-          researchEnqueued: enqueued,
-          updatedAt: systemClock.nowIso(),
-          ...(!enqueued ? { lastError: "research-enqueue-failed" } : {}),
-        }
-        await args.store.saveTracking(file)
-      })
-      if (enqueued && "accepted" in accepted && accepted.accepted) {
-        // Kick the research pump without creating a hard import cycle at module load
-        const { processNextDiscordRequest } = await import("./pump.js")
-        const token = process.env["DISCORD_RESEARCH_BOT_TOKEN"]
-        if (token) {
-          void processNextDiscordRequest({
-            repoRoot: process.cwd(),
-            token,
-          }).catch((error) => {
-            log.warn("tracking research pump kick failed", {
-              error: error instanceof Error ? error.message : "unknown",
-            })
-          })
-        }
-      }
-    } catch (error) {
-      log.warn("tracking research enqueue failed", {
-        deliveryId: delivery.deliveryId,
-        error: error instanceof Error ? error.message : "unknown",
-      })
-    }
-  }
-
   return { ok: true, delivery }
+}
+
+/** @deprecated Prefer deliverTrackingAlert — kept for crash tests transitioning statuses */
+export async function deliverTrackingPing(args: Readonly<{
+  client: DiscordRestClient
+  store: DiscordStore
+  delivery: TrackingDeliveryRecord
+  nowIso?: string
+}>): Promise<{ ok: true; delivery: TrackingDeliveryRecord } | { ok: false; delivery: TrackingDeliveryRecord; ambiguous?: boolean }> {
+  if (args.delivery.status === "qualified-pending" || args.delivery.status === "sending") {
+    return deliverTrackingAlert(args)
+  }
+  return { ok: false, delivery: args.delivery }
 }

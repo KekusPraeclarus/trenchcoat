@@ -137,6 +137,7 @@ describe("prop_inv_i4_inbox_writer_ownership", () => {
       "src/orchestrator/fomo-narrative-source-scan.ts",
       "src/discord/tracking-intent.ts",
       "src/discord/tracking-match.ts",
+      "src/discord/tracking-qualify.ts",
     ]))
   })
 })

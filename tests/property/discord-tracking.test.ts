@@ -12,7 +12,7 @@ import { emptyTrackingFile } from "../../src/discord/store.js"
 import { parseTrackingMatchOutput } from "../../src/discord/tracking-match.js"
 import { parseTrackingIntentOutput } from "../../src/discord/tracking-intent.js"
 import { sanitizeTrackingReason } from "../../src/discord/tracking-sanitize.js"
-import { isExpiredAt, isWithinHours, trackingDeliveryId } from "../../src/discord/tracking-ids.js"
+import { isExpiredAt, isWithinHours, trackingDeliveryIdFromIdentity } from "../../src/discord/tracking-ids.js"
 import { createOrGetDelivery } from "../../src/discord/tracking-state.js"
 import type { TrackingRequestRecord } from "../../src/discord/schemas.js"
 
@@ -113,11 +113,17 @@ describe("discord tracking properties", () => {
       if (intent) {
         expect(["track", "drop", "extend", "decline-extend", "none"]).toContain(intent.action)
       }
-      const hits = parseTrackingMatchOutput(raw, new Set(["trk-abcdef12"]), 5)
+      const hits = parseTrackingMatchOutput(
+        raw,
+        new Set(["trk-abcdef12"]),
+        [{ provenance: "twitter:@x", text: "talk of $ABC 0x6055706234Dd0CC9965400296f2Ca950941f6253" }],
+        5,
+      )
       for (const hit of hits) {
         expect(hit.trackingId).toBe("trk-abcdef12")
         expect(hit.reason).not.toMatch(/<@/u)
         expect(hit.reason).not.toMatch(/https?:\/\//iu)
+        expect(hit.candidateProvenance).toBe("twitter:@x")
       }
       const cleaned = sanitizeTrackingReason(raw)
       expect(cleaned).not.toMatch(/<@!?&\d/u)
@@ -201,6 +207,8 @@ describe("discord tracking properties", () => {
         nowIso: NOW,
         request,
         needsResearch: true,
+        chain: "base",
+        tokenAddress: "0x6055706234dd0cc9965400296f2ca950941f6253",
       })
       const second = createOrGetDelivery({
         file: first.file,
@@ -212,13 +220,21 @@ describe("discord tracking properties", () => {
         nowIso: NOW,
         request: first.file.requests[0]!,
         needsResearch: true,
+        chain: "base",
+        tokenAddress: "0x6055706234dd0cc9965400296f2ca950941f6253",
       })
       expect(second.created).toBe(false)
       expect(first.delivery.deliveryId).toBe(second.delivery.deliveryId)
       expect(first.delivery.deliveryId).toBe(
-        trackingDeliveryId(request.trackingId, first.delivery.normalizedSubject),
+        trackingDeliveryIdFromIdentity(
+          request.trackingId,
+          "base",
+          "0x6055706234dd0cc9965400296f2ca950941f6253",
+        ),
       )
       expect(first.file.trackingDeliveries).toHaveLength(1)
+      // Deduped by canonical identity; matchedSubjects deferred until delivered
+      expect(first.file.requests[0]!.matchedSubjects).toEqual([])
     }), { numRuns: 200 })
   })
 

@@ -12,7 +12,7 @@ read_when:
 
 Private-guild research-only bot isolated from the main agent and from router
 webhook broadcasts (ADR 010). Watch update narration: ADR 012. Idea-tracking
-requests: [discord-tracking.md](discord-tracking.md) (ADR 018, INV-D3–D8).
+requests: [discord-tracking.md](discord-tracking.md) (ADR 018 / ADR 019, INV-D3–D8).
 
 ## Two Discord surfaces (do not conflate)
 
@@ -34,7 +34,9 @@ requests: [discord-tracking.md](discord-tracking.md) (ADR 018, INV-D3–D8).
   under `.worker.lock`. Per-user depth capped by `max_active_per_user` (default 5);
   excess gets a terminal queue-full error. Daily caps still apply on accept.
   Tracking-origin research (`origin: "tracking"`) bypasses per-user caps but still
-  counts against the server daily cap
+  counts against the server daily cap; it is silent (no ✅, no terminal error
+  reply, no ordinary research reply) and only notifies via the gated tracking
+  alert path when qualification passes
 - **Start signal** — ✅ (`white_check_mark`) reaction when research is claimed
   (`queued` → `running`); 🫡 for successful tracking track/drop/extend/decline
 - **Model** — `chat.discord.model` (default `composer-2.5-fast`) for the initial

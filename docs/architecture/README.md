@@ -2,7 +2,7 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-21
 ---
 
 # Module docs
@@ -14,7 +14,7 @@ last_verified: 2026-07-20
 | [agent-workspace.md](agent-workspace.md) | The bot's instructions, skills, knowledge store (index, research, narratives, sources), state schemas + decision cards, decision weighting, outbox, sandbox config | anything under `agent/` |
 | [chat-agent.md](chat-agent.md) | Telegram bridge, confirmation-gated research, deep-research sub-agents | `src/chat/`, `src/orchestrator/research.ts`, `agent/skills/chat/`, `agent/skills/deep-research/` |
 | [discord-research.md](discord-research.md) | Private-guild Discord research bot (Gateway, isolated state, watch monitor) — **not** router webhook broadcasts | `src/discord/`, `chat.discord` config (schema 10+), ADR 010, ADR 012 |
-| [discord-tracking.md](discord-tracking.md) | NL idea-tracking requests, durable match batches, expiry, INV-D3–D8 | `src/discord/tracking-*.ts`, `chat.discord.tracking`, ADR 018 |
+| [discord-tracking.md](discord-tracking.md) | NL idea-tracking requests, durable match batches, gated research-first alerts, expiry, INV-D3–D8 | `src/discord/tracking-*.ts`, `chat.discord.tracking`, ADR 018, ADR 019 |
 | [discord-chain-integration.md](discord-chain-integration.md) | Host lane: unknown `slug:address` → research/build/gate/push/deploy → research FIFO | `src/chain-integration/`, schema 12 `chain_integration`, ADR 016 |
 | [incident-remediation.md](incident-remediation.md) | Hourly/weekly host incident remediation with Telegram high-risk approval and post-fix claim audit | `src/remediation/`, schema 14 `incident_remediation.revalidation`, ADR 017, INV-S27/S28 |
 | [chains.md](chains.md) | Chain registry, per-provider id mapping, fail-closed rule, new-chain flow (API-only, no RPC) | anything passing a chain id to an upstream API |
