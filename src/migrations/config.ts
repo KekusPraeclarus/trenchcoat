@@ -696,3 +696,46 @@ export function migrateConfigToV16(raw: unknown): unknown {
     },
   }
 }
+
+export const DISCORD_SUGGESTIONS_V17_DEFAULTS = Object.freeze({
+  enabled: false,
+  channel_ids: [] as string[],
+  classifier_model: "composer-2.5-fast",
+  max_new_incidents_per_scan: 3,
+  max_active_suggestion_incidents: 1,
+  forming_ttl_days: 7,
+  max_forming_rounds: 5,
+  ambient_thread_gap_ms: 900_000,
+  min_confidence: 0.7,
+})
+
+/** Schema 17: passive Discord suggestion intake under incident_remediation */
+export function migrateConfigToV17(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 17) return raw
+
+  const v16 = (
+    record?.["schema"] === 16
+      ? record
+      : migrateConfigToV16(raw)
+  ) as Record<string, unknown>
+
+  const prevIr = (v16["incident_remediation"] ?? {}) as Record<string, unknown>
+  const prevSuggestions = (prevIr["discord_suggestions"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v16,
+    schema: 17,
+    incident_remediation: {
+      ...prevIr,
+      discord_suggestions: {
+        ...DISCORD_SUGGESTIONS_V17_DEFAULTS,
+        ...prevSuggestions,
+        channel_ids: Array.isArray(prevSuggestions["channel_ids"])
+          ? prevSuggestions["channel_ids"]
+          : DISCORD_SUGGESTIONS_V17_DEFAULTS.channel_ids,
+        enabled: prevSuggestions["enabled"] === true,
+      },
+    },
+  }
+}

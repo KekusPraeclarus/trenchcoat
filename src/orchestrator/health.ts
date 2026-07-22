@@ -17,10 +17,7 @@ import {
   type BroadcastPipelineSnapshot,
 } from "./delivery.js"
 import type { JobName } from "./jobs.js"
-import {
-  X_BOT_HEALTH_ESCALATION_THRESHOLD,
-  xBotHealthEscalation,
-} from "./x-bot-health.js"
+import { xBotHealthEscalation } from "./x-bot-health.js"
 
 export const HEALTH_SNAPSHOT_SCHEMA = 1 as const
 
@@ -134,6 +131,14 @@ export type HealthFomoState = Readonly<{
   parallelOnly: true
 }>
 
+export type HealthFinding = Readonly<{
+  code: string
+  severity: "warn" | "error"
+  summary: string
+  component?: string
+  job?: string
+}>
+
 export type HealthSnapshot = Readonly<{
   schema: typeof HEALTH_SNAPSHOT_SCHEMA
   capturedAt: string
@@ -149,6 +154,7 @@ export type HealthSnapshot = Readonly<{
   router: BroadcastPipelineSnapshot
   deployment: HealthDeploymentState
   fomo: HealthFomoState
+  findings: readonly HealthFinding[]
   warnings: readonly string[]
 }>
 
@@ -531,11 +537,139 @@ function fomoState(): HealthFomoState {
   }
 }
 
-function buildWarnings(snapshot: Omit<HealthSnapshot, "warnings">): string[] {
-  const warnings: string[] = []
+/** Advisory cadence (seconds) for stale-job detection — 3× triggers a finding */
+export const JOB_CADENCE_SEC: Readonly<Partial<Record<JobName, number>>> = Object.freeze({
+  "chart-sweep": 3_600,
+  "watchlist-scan": 7_200,
+  "narrative-scan": 21_600,
+  research: 3_600,
+  "outcomes-settle": 21_600,
+  "delivery-retry": 900,
+  "wallet-discovery": 21_600,
+  "wallet-runner-discovery": 1_800,
+  "wallet-scan-solana": 300,
+  "wallet-scan-evm": 900,
+  "wallet-review": 86_400,
+  "source-list-review": 86_400,
+  "fc-source-review": 86_400,
+  review: 86_400,
+  audit: 604_800,
+})
+
+const LISTENER_HEARTBEAT_STALE_SEC = 15 * 60
+const MONITOR_HEARTBEAT_STALE_SEC = 7 * 3_600
+const INCOMPLETE_RUN_STUCK_MS = 2 * 3_600_000
+const RESEARCHING_STUCK_MS = 3 * 3_600_000
+
+function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">): HealthFinding[] {
+  const findings: HealthFinding[] = []
+  const push = (finding: HealthFinding) => {
+    findings.push(finding)
+  }
+
   if (snapshot.lock.stale) {
-    warnings.push(`stale workspace lock pid=${snapshot.lock.pid ?? "unknown"}`)
-  } else if (snapshot.lock.held) {
+    push({
+      code: "stale-lock",
+      severity: "error",
+      summary: `stale workspace lock pid=${snapshot.lock.pid ?? "unknown"}`,
+      component: "lock",
+    })
+  }
+
+  for (const run of snapshot.incompleteRuns) {
+    if (run.status !== "running") continue
+    const age = run.ageMs ?? 0
+    if (age >= INCOMPLETE_RUN_STUCK_MS) {
+      push({
+        code: "stuck-incomplete-run",
+        severity: "error",
+        summary: `incomplete run ${run.runId} age=${Math.floor(age / 60_000)}m`,
+        component: "runs",
+      })
+    }
+  }
+
+  for (const job of snapshot.jobs) {
+    const cadence = JOB_CADENCE_SEC[job.job]
+    if (!cadence || !job.lastSuccess) continue
+    const staleMs = cadence * 3 * 1_000
+    if (job.lastSuccess.ageMs > staleMs) {
+      // Skip if a more recent skip is expected (daily-cap etc.)
+      const recentSkip = job.lastSkip && job.lastSkip.ageMs < staleMs
+      if (recentSkip) continue
+      push({
+        code: "job-cadence-stale",
+        severity: "warn",
+        summary: `job ${job.job} last success age=${formatAge(job.lastSuccess.ageMs)} (>3x cadence)`,
+        component: "jobs",
+        job: job.job,
+      })
+    }
+    if (
+      job.lastFailure
+      && (!job.lastSuccess || job.lastFailure.ageMs < job.lastSuccess.ageMs)
+      && job.lastFailure.ageMs < staleMs
+    ) {
+      push({
+        code: "job-recent-failure",
+        severity: "warn",
+        summary: `job ${job.job} recent failure age=${formatAge(job.lastFailure.ageMs)}`,
+        component: "jobs",
+        job: job.job,
+      })
+    }
+  }
+
+  if (snapshot.x.blocked) {
+    push({
+      code: "x-bot-blocked",
+      severity: "error",
+      summary: `x bot health blocked consecutiveFailures=${snapshot.x.consecutiveFailures}`,
+      component: "x",
+    })
+  }
+  if (snapshot.farcaster.staleStreak >= 3) {
+    push({
+      code: "fc-stale-streak",
+      severity: "warn",
+      summary: `fc stale streak=${snapshot.farcaster.staleStreak}`,
+      component: "farcaster",
+    })
+  }
+  if (snapshot.router.ingress.failed > 0) {
+    push({
+      code: "router-ingress-failed",
+      severity: "error",
+      summary: `router ingress failed=${snapshot.router.ingress.failed}`,
+      component: "router",
+    })
+  }
+  if (snapshot.deployment.schemaMismatch) {
+    push({
+      code: "deploy-schema-mismatch",
+      severity: "error",
+      summary: "config/runtime schema mismatch",
+      component: "deploy",
+    })
+  }
+  if (!snapshot.deployment.manifestPresent) {
+    push({
+      code: "deploy-manifest-missing",
+      severity: "warn",
+      summary: "deployment.json missing",
+      component: "deploy",
+    })
+  }
+
+  return findings.slice(0, 64)
+}
+
+function buildWarnings(
+  snapshot: Omit<HealthSnapshot, "warnings" | "findings">,
+  findings: readonly HealthFinding[],
+): string[] {
+  const warnings: string[] = findings.map((f) => f.summary)
+  if (snapshot.lock.held && !snapshot.lock.stale) {
     warnings.push(`workspace lock held pid=${snapshot.lock.pid ?? "unknown"}`)
   }
 
@@ -544,7 +678,7 @@ function buildWarnings(snapshot: Omit<HealthSnapshot, "warnings">): string[] {
   if (abandoned.length > 0) {
     warnings.push(`abandoned runs=${abandoned.length}`)
   }
-  if (running.length > 0) {
+  if (running.length > 0 && !findings.some((f) => f.code === "stuck-incomplete-run")) {
     warnings.push(`incomplete runs=${running.length}`)
   }
 
@@ -560,15 +694,10 @@ function buildWarnings(snapshot: Omit<HealthSnapshot, "warnings">): string[] {
   if (snapshot.wallets.silent) {
     warnings.push("wallets silent (no tracking/candidate/probation)")
   }
-  if (snapshot.x.blocked) {
-    warnings.push(
-      `x bot health blocked consecutiveFailures=${snapshot.x.consecutiveFailures}`
-        + ` threshold=${X_BOT_HEALTH_ESCALATION_THRESHOLD}`,
-    )
-  } else if (snapshot.x.pendingActions > 0) {
+  if (snapshot.x.pendingActions > 0 && !snapshot.x.blocked) {
     warnings.push(`x pending actions=${snapshot.x.pendingActions}`)
   }
-  if (snapshot.farcaster.staleStreak > 0) {
+  if (snapshot.farcaster.staleStreak > 0 && snapshot.farcaster.staleStreak < 3) {
     warnings.push(
       `fc stale streak=${snapshot.farcaster.staleStreak}`
         + (snapshot.farcaster.lastFallbackUsed ? " fallbackUsed" : ""),
@@ -576,17 +705,6 @@ function buildWarnings(snapshot: Omit<HealthSnapshot, "warnings">): string[] {
   }
   if (snapshot.router.ingress.ingressPending > 0) {
     warnings.push(`router ingress pending=${snapshot.router.ingress.ingressPending}`)
-  }
-  if (snapshot.router.ingress.failed > 0) {
-    warnings.push(`router ingress failed=${snapshot.router.ingress.failed}`)
-  }
-  if (!snapshot.deployment.manifestPresent) {
-    warnings.push("deployment.json missing — re-run ops/install-launchd.sh")
-  } else if (snapshot.deployment.schemaMismatch) {
-    warnings.push(
-      `config/runtime schema mismatch config=${snapshot.deployment.configSchema}`
-        + ` runtime=${snapshot.deployment.manifestConfigSchema}`,
-    )
   }
   if (snapshot.deployment.sourceDirty === true) {
     warnings.push(
@@ -693,9 +811,66 @@ export async function buildHealthSnapshot(args: Readonly<{
     deployment,
     fomo,
   }
+  const findings = buildFindings(base)
+  // Discord heartbeats (optional — fail soft if discord state missing)
+  try {
+    const { loadDiscordStatus } = await import("../discord/status.js")
+    const discord = loadDiscordStatus(capturedAt)
+    if (discord.listenerHeartbeatAgeSec !== undefined
+      && discord.listenerHeartbeatAgeSec > LISTENER_HEARTBEAT_STALE_SEC
+    ) {
+      findings.push({
+        code: "discord-listener-heartbeat-stale",
+        severity: "error",
+        summary: `discord listener heartbeat age=${discord.listenerHeartbeatAgeSec}s`,
+        component: "discord",
+      })
+    }
+    if (discord.monitorHeartbeatAgeSec !== undefined
+      && discord.monitorHeartbeatAgeSec > MONITOR_HEARTBEAT_STALE_SEC
+    ) {
+      findings.push({
+        code: "discord-monitor-heartbeat-stale",
+        severity: "warn",
+        summary: `discord monitor heartbeat age=${discord.monitorHeartbeatAgeSec}s`,
+        component: "discord",
+      })
+    }
+  } catch {
+    // discord status optional
+  }
+
+  // Fixed-argv systemd probes (Linux only; never from external text)
+  if (process.platform === "linux") {
+    const units = [
+      "trenchcoat-router",
+      "trenchcoat-listener",
+      "trenchcoat-channels",
+      "trenchcoat-x-scan",
+    ] as const
+    const { spawnSync } = await import("node:child_process")
+    for (const unit of units) {
+      const result = spawnSync(
+        "systemctl",
+        ["--user", "is-active", `${unit}.service`],
+        { encoding: "utf8", timeout: 2_000 },
+      )
+      const state = (result.stdout ?? "").trim()
+      if (state && state !== "active") {
+        findings.push({
+          code: "systemd-unit-inactive",
+          severity: "error",
+          summary: `systemd unit ${unit} state=${state}`,
+          component: "systemd",
+        })
+      }
+    }
+  }
+
   return {
     ...base,
-    warnings: buildWarnings(base),
+    findings: findings.slice(0, 64),
+    warnings: buildWarnings(base, findings),
   }
 }
 
@@ -849,6 +1024,7 @@ export function toHealthJsonPayload(snapshot: HealthSnapshot): Readonly<Record<s
         : snapshot.deployment.sourceHash,
     },
     fomo: snapshot.fomo,
+    findings: snapshot.findings.slice(0, 64),
     warnings: snapshot.warnings.slice(0, 64),
   }
 }

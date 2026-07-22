@@ -65,7 +65,7 @@ Commands:
   listen [telegram|discord|channels|x-scan]
   discord watchlist scan
   discord chains run|status|retry|fail|continue
-  remediations scan|run|status|approve|defer|reject|retry|fail
+  remediations scan|run|status|suggestions|approve|defer|reject|retry|fail
   backup
   research <subject>
   auth twitter [--create-managed-list] [--headed]
@@ -363,6 +363,12 @@ async function cmdRemediations(rest: string[]): Promise<void> {
   const sub = rest[0]
   if (sub === "status") {
     console.log(JSON.stringify(remediationStatusSummary(), null, 2))
+    return
+  }
+  if (sub === "suggestions") {
+    const { listSuggestionLedger } = await import("./remediation/suggestions.js")
+    const ledger = listSuggestionLedger(createRemediationStore(remediationLayout()))
+    console.log(JSON.stringify(ledger, null, 2))
     return
   }
   if (sub === "scan") {

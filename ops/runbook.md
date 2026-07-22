@@ -53,7 +53,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
 | `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary |
-| `incident-remediate` | hourly (default **off** until `incident_remediation.enabled` + `schedule_enabled`) — scan health/logs, triage, gated fix/publish |
+| `incident-remediate` | hourly (default **off** until `incident_remediation.enabled` + `schedule_enabled`) — scan health findings/logs, passive Discord suggestions when `discord_suggestions.enabled`, triage, gated fix/publish |
 | `incident-remediate-weekly` | Monday 08:00 local (default **off**) — one deferred remediation; never feeds the policy harness |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
 | `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |
@@ -227,10 +227,14 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   (`tc discord chains run`). Recovery: `tc discord chains status|retry|fail`.
   During self-deploy the worker stays registered (not bootout) and drain treats
   `deploying` as idle-safe. See docs/architecture/discord-chain-integration.md.
-- **Incident remediation** (schema 13): hourly/weekly host lane; disabled by
-  default — enable `incident_remediation.enabled` + `schedule_enabled` after
-  dry canary (`tc remediations scan|status`). High-risk needs Telegram
-  `approve remediation <id>`. See docs/architecture/incident-remediation.md.
+- **Incident remediation** (schema 17 / ADR 017+025): hourly/weekly host lane;
+  disabled by default — enable `incident_remediation.enabled` +
+  `schedule_enabled` after dry canary (`tc remediations scan|status`). Schema
+  17 adds passive Discord suggestion intake (`discord_suggestions.enabled`,
+  optional `channel_ids`; empty uses `chat.discord.channel_ids`). Ledger:
+  `tc remediations suggestions`. Lane is silent on Discord; high-risk still
+  needs Telegram `approve remediation <id>`. Do not enable the mutation lane
+  for unrelated installs. See docs/architecture/incident-remediation.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that
   predate `scripts/scaffold-agent.ts` creating the file need a one-time copy

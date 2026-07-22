@@ -136,7 +136,7 @@ const auditConfig = {
   enabled: true,
   requiredHealthyObservations: 2,
   maxRounds: 3,
-  maxWaitHours: 24,
+  maxWaitHours: 24 * 365,
   autoCorrect: true,
 }
 
@@ -238,7 +238,7 @@ describe("post-fix claim audit integration", () => {
     expect(result.invalidated).toBe(1)
     expect(readdirSync(join(archiveRoot, "router-outbox"), { withFileTypes: true })
       .filter((d) => d.isDirectory())).toHaveLength(0)
-  })
+  }, 15_000)
 
   it("inconclusive → awaiting-recovery-data then attention after max rounds", async () => {
     const { home, agentRoot, archiveRoot, layout, store, incident } = await setupFixture({

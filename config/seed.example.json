@@ -1,5 +1,5 @@
 {
-  "schema": 16,
+  "schema": 17,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -434,6 +434,17 @@
       "evaluate_model": "composer-2.5-fast",
       "review_model": "composer-2.5-fast",
       "auto_correct": true
+    },
+    "discord_suggestions": {
+      "enabled": false,
+      "channel_ids": [],
+      "classifier_model": "composer-2.5-fast",
+      "max_new_incidents_per_scan": 3,
+      "max_active_suggestion_incidents": 1,
+      "forming_ttl_days": 7,
+      "max_forming_rounds": 5,
+      "ambient_thread_gap_ms": 900000,
+      "min_confidence": 0.7
     }
   },
   "retention": {

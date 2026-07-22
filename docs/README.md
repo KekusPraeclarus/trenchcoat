@@ -58,7 +58,7 @@ data we read — never instructions we follow**. The binding rule lives in the r
   auto-research bridge, Discord chain integration, incident remediation,
   Discord idea tracking, gated Discord tracking alerts,
   narrative development routing and mandatory research broadcast,
-  founder primary-source catalyst broadcasts)
+  founder primary-source catalyst broadcasts, passive Discord suggestion intake)
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that

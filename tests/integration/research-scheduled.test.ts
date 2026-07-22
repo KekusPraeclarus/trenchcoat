@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFil
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV16 } from "../../src/migrations/config.js"
+import { migrateConfigToV17 } from "../../src/migrations/config.js"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import type { ResearchQueueEntry, ResearchQueueFile } from "../../src/contracts/schemas.js"
 
@@ -11,7 +11,7 @@ const SOL = "So11111111111111111111111111111111111111112"
 const PAIR = "7qbRF6YsyGuLUVs6Y1q64bdVrfe4ZcUUz1JRdoVNUJnm"
 
 function writeMinimalConfig(dir: string): void {
-  const cfg = ConfigSchema.parse(migrateConfigToV16({
+  const cfg = ConfigSchema.parse(migrateConfigToV17({
     schema: 5,
     twitter: {
       operator_list_urls: [

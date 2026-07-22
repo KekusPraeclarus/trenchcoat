@@ -11,6 +11,8 @@ export type RemediationLayout = Readonly<{
   cursors: string
   deferred: string
   sourceHealthLedger: string
+  suggestions: string
+  suggestionEvidence: string
 }>
 
 export function remediationHome(home = join(homedir(), ".trenchcoat")): string {
@@ -31,6 +33,8 @@ export function remediationLayout(
     cursors: join(root, "cursors.json"),
     deferred: join(root, "deferred.json"),
     sourceHealthLedger: join(root, "source-health-ledger.json"),
+    suggestions: join(root, "suggestions.json"),
+    suggestionEvidence: join(root, "suggestion-evidence"),
   }
 }
 

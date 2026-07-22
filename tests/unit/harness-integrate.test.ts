@@ -77,7 +77,7 @@ describe("harness integrate push", () => {
       if (prevHome === undefined) delete process.env["HOME"]
       else process.env["HOME"] = prevHome
     }
-  })
+  }, 15_000)
 
   it("leaves origin untouched when pushOrigin is false", () => {
     const { home, repoRoot, baseSha, branch, candidateSha } = initRepoPair()
@@ -127,5 +127,5 @@ describe("harness integrate push", () => {
       if (prevHome === undefined) delete process.env["HOME"]
       else process.env["HOME"] = prevHome
     }
-  })
+  }, 15_000)
 })

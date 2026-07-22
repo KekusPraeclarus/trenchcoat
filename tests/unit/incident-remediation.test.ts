@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   migrateConfigToV13,
-  migrateConfigToV16,
+  migrateConfigToV17,
   INCIDENT_REMEDIATION_V13_DEFAULTS,
   INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,
 } from "../../src/migrations/config.js"
@@ -48,12 +48,12 @@ describe("incident remediation config", () => {
     expect(ir["triage_model"]).toBe(INCIDENT_REMEDIATION_V13_DEFAULTS.triage_model)
   })
 
-  it("migrates schema 13 → 16 with revalidation defaults", () => {
-    const migrated = migrateConfigToV16({
+  it("migrates schema 13 → 17 with revalidation and suggestions defaults", () => {
+    const migrated = migrateConfigToV17({
       schema: 13,
       incident_remediation: { ...INCIDENT_REMEDIATION_V13_DEFAULTS },
     }) as Record<string, unknown>
-    expect(migrated["schema"]).toBe(16)
+    expect(migrated["schema"]).toBe(17)
     const ir = migrated["incident_remediation"] as Record<string, unknown>
     const rev = ir["revalidation"] as Record<string, unknown>
     expect(rev["enabled"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.enabled)
@@ -62,17 +62,20 @@ describe("incident remediation config", () => {
     )
     expect(rev["max_rounds"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.max_rounds)
     expect(rev["auto_correct"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.auto_correct)
+    const ds = ir["discord_suggestions"] as Record<string, unknown>
+    expect(ds["enabled"]).toBe(false)
   })
 
   it("parses seed with incident_remediation disabled", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV16(seed))
-    expect(parsed.schema).toBe(16)
+    const parsed = ConfigSchema.parse(migrateConfigToV17(seed))
+    expect(parsed.schema).toBe(17)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.incident_remediation.schedule_enabled).toBe(false)
     expect(parsed.incident_remediation.revalidation.enabled).toBe(true)
+    expect(parsed.incident_remediation.discord_suggestions.enabled).toBe(false)
   })
 
   it("preserves explicit enabled true only when set", () => {

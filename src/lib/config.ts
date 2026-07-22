@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV16 } from "../migrations/config.js"
+import { migrateConfigToV17 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(16),
+  schema: z.literal(17),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -297,6 +297,27 @@ export const ConfigSchema = z.object({
       review_model: "composer-2.5-fast",
       auto_correct: true,
     }),
+    discord_suggestions: z.object({
+      enabled: z.boolean().default(false),
+      channel_ids: z.array(z.string().regex(/^\d{17,20}$/u)).max(20).default([]),
+      classifier_model: z.string().min(1).max(128).default("composer-2.5-fast"),
+      max_new_incidents_per_scan: z.number().int().min(0).max(10).default(3),
+      max_active_suggestion_incidents: z.number().int().min(0).max(5).default(1),
+      forming_ttl_days: z.number().int().min(1).max(30).default(7),
+      max_forming_rounds: z.number().int().min(1).max(20).default(5),
+      ambient_thread_gap_ms: z.number().int().min(60_000).max(3_600_000).default(900_000),
+      min_confidence: z.number().min(0).max(1).default(0.7),
+    }).default({
+      enabled: false,
+      channel_ids: [],
+      classifier_model: "composer-2.5-fast",
+      max_new_incidents_per_scan: 3,
+      max_active_suggestion_incidents: 1,
+      forming_ttl_days: 7,
+      max_forming_rounds: 5,
+      ambient_thread_gap_ms: 900_000,
+      min_confidence: 0.7,
+    }),
   }).default({
     enabled: false,
     schedule_enabled: false,
@@ -322,6 +343,17 @@ export const ConfigSchema = z.object({
       evaluate_model: "composer-2.5-fast",
       review_model: "composer-2.5-fast",
       auto_correct: true,
+    },
+    discord_suggestions: {
+      enabled: false,
+      channel_ids: [],
+      classifier_model: "composer-2.5-fast",
+      max_new_incidents_per_scan: 3,
+      max_active_suggestion_incidents: 1,
+      forming_ttl_days: 7,
+      max_forming_rounds: 5,
+      ambient_thread_gap_ms: 900_000,
+      min_confidence: 0.7,
     },
   }),
   wallets: z.object({
@@ -669,7 +701,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV16(raw))
+  return ConfigSchema.parse(migrateConfigToV17(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

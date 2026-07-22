@@ -42,8 +42,10 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **14** (post-fix claim revalidation under
-`incident_remediation.revalidation`, INV-S28 / ADR 017; prior schema **13** host
+Current schema is **17** (passive Discord suggestion intake under
+`incident_remediation.discord_suggestions`, INV-S27 / ADR 025; prior schema **16**
+drops Discord research caps and adds conversation; prior **14** post-fix claim
+revalidation under `incident_remediation.revalidation`, INV-S28 / ADR 017; prior schema **13** host
 `incident_remediation` lane; prior schema **12** Discord `chat.discord.chain_integration`
 host lane; prior schema **11** agent-gated harness defaults on, local integrate /
 deferred activation; prior schema **10** `chat.discord` private-guild research
@@ -51,7 +53,7 @@ bot section, plus prior schema **9** `fomo` web scrape section with `x_source_re
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v13 shapes via `migrateConfigToV14`.
+`loadConfig` migrates v1–v16 shapes via `migrateConfigToV17`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -253,7 +255,12 @@ for new installs; migration preserves explicit `enabled:false` /
 ### `incident_remediation` (schema 13+)
 
 Host-owned hourly/weekly ops remediation (ADR 017 / INV-S27). Defaults
-**disabled** for safe rollout. Schema **14** adds nested `revalidation`
+**disabled** for safe rollout. Schema **14** adds nested `revalidation`.
+Schema **17** adds nested `discord_suggestions` (ADR 025): passive conversation-thread
+scan of configured Discord channels for buildable suggestions. Defaults
+`discord_suggestions.enabled=false`. When enabled, requires parent
+`incident_remediation.enabled` and `DISCORD_RESEARCH_BOT_TOKEN`. Empty
+`channel_ids` uses `chat.discord.channel_ids`. CLI: `tc remediations suggestions`.
 (INV-S28 post-fix claim audit).
 
 | Field | Default | Role |
@@ -411,7 +418,8 @@ application is not wired yet — only wallets are applied today.
 | `tc listen x-scan` | Persistent X round-robin (FYP → lists, cursor stop, 5–30m between rounds); cursors under `~/.trenchcoat/x-scan/` |
 | `tc auth telegram-channels` | Scaffold GramJS session path under `~/.trenchcoat/telegram-session/` |
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
-| `tc status` | shared health snapshot (lock/runs/jobs/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
+| `tc status` | shared health snapshot (lock/runs/jobs/findings/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
+| `tc remediations scan\|run\|status\|suggestions\|approve\|…` | incident remediation lane (ADR 017/025) |
 
 ### `chat.discord` (schema 16+)
 

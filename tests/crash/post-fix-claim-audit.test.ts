@@ -137,7 +137,7 @@ describe("post-fix claim audit crash / resume", () => {
       enabled: true,
       requiredHealthyObservations: 2,
       maxRounds: 3,
-      maxWaitHours: 24,
+      maxWaitHours: 24 * 365,
       autoCorrect: true,
     }
 

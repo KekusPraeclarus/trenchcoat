@@ -76,6 +76,14 @@ chat remains separate ([chat-agent.md](chat-agent.md)).
 
 Also: `chat.discord.watch_expiry_reply_window_days` (default 7) for proactive watch renewal.
 
+## Suggestion intake (passive)
+
+A separate hourly path under incident remediation (ADR 025) may passively scan
+configured Discord channels for buildable product suggestions. It is not the
+conversational agent: no addressing gate, no replies, no reactions. Conversation
+threads (including bot/webhook context and reply-chain ancestors) are evidence
+only. See [incident-remediation.md](incident-remediation.md).
+
 ## References
 
 - ADR 022 — Discord conversational agent

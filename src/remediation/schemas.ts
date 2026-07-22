@@ -79,12 +79,28 @@ export type ReviewDecision = z.infer<typeof ReviewDecisionSchema>
 export const UntrustedEvidenceSchema = z.object({
   schema: z.literal(1),
   trust: z.literal("untrusted-external"),
-  kind: z.enum(["log-line", "journal", "skip", "health", "heartbeat", "other"]),
+  kind: z.enum([
+    "log-line",
+    "journal",
+    "skip",
+    "health",
+    "heartbeat",
+    "discord-suggestion",
+    "other",
+  ]),
   path: z.string().min(1).max(512).optional(),
   summary: z.string().min(1).max(500),
   capturedAt: z.string().min(1).max(64),
 })
 export type UntrustedEvidence = z.infer<typeof UntrustedEvidenceSchema>
+
+export const SuggestionCategorySchema = z.enum([
+  "bug-fix",
+  "small-feature",
+  "docs",
+  "ops-tuning",
+])
+export type SuggestionCategory = z.infer<typeof SuggestionCategorySchema>
 
 export const RemediationIncidentSchema = z.object({
   schema: z.literal(1),
@@ -98,6 +114,18 @@ export const RemediationIncidentSchema = z.object({
   errorClass: z.string().min(1).max(128).optional(),
   title: z.string().min(1).max(280),
   severity: z.enum(["info", "warn", "error"]).default("warn"),
+  origin: z.enum([
+    "health",
+    "log",
+    "skip",
+    "discord-suggestion",
+    "other",
+  ]).optional(),
+  suggestionThreadId: z.string().min(1).max(128).optional(),
+  extendsIncidentId: z.string().min(8).max(128).optional(),
+  suggestionCategory: SuggestionCategorySchema.optional(),
+  alternativesConsidered: z.array(z.string().max(200)).max(5).optional(),
+  recommendationRationale: z.string().max(500).optional(),
   triageVerdict: TriageVerdictSchema.optional(),
   triageReason: z.string().max(500).optional(),
   riskLevel: RiskLevelSchema.optional(),
@@ -157,6 +185,17 @@ export const RemediationCursorsFileSchema = z.object({
   logs: z.array(LogCursorSchema).max(128),
   lastTransactionName: z.string().max(256).optional(),
   lastSkipOffsets: z.record(z.string(), z.number().int().min(0)).default({}),
+  /** Per Discord channelId → last consumed message snowflake */
+  discordChannelCursors: z.record(z.string(), z.string().regex(/^\d{17,20}$/u)).default({}),
+  /** Pending page checkpoint before cursor advance (crash resume) */
+  discordScanCheckpoint: z.object({
+    channelId: z.string().regex(/^\d{17,20}$/u),
+    after: z.string().regex(/^\d{17,20}$/u).optional(),
+    lastMessageId: z.string().regex(/^\d{17,20}$/u).optional(),
+    updatedAt: z.string().min(1).max(64),
+  }).optional(),
+  suggestionClassifierFailures: z.number().int().min(0).max(10).default(0),
+  lastSuggestionDigestDay: z.string().max(16).optional(),
 })
 export type RemediationCursorsFile = z.infer<typeof RemediationCursorsFileSchema>
 
@@ -182,28 +221,32 @@ export const DiagnosisReportSchema = z.object({
   intendedBehavior: z.string().min(1).max(500),
   rootCause: z.string().min(1).max(1_000),
   reproduction: z.string().min(1).max(500),
-  affectedFiles: z.array(z.string().max(512)).min(1).max(32),
+  affectedFiles: z.array(z.string().max(512)).max(32).default([]),
   securityImplications: z.string().min(1).max(500),
   successCriteria: z.string().min(1).max(500),
   evidenceRefs: z.array(z.string().max(512)).max(32).default([]),
+  viable: z.boolean().optional(),
+  notViableReason: z.string().max(500).optional(),
 })
 export type DiagnosisReport = z.infer<typeof DiagnosisReportSchema>
 
 export const PatchProposalSchema = z.object({
   schema: z.literal(1),
   summary: z.string().min(1).max(500),
-  paths: z.array(z.string().min(1).max(512)).min(1).max(32),
+  paths: z.array(z.string().min(1).max(512)).max(32).default([]),
   perFileChanges: z.array(z.object({
     path: z.string().min(1).max(512),
     change: z.string().min(1).max(1_000),
-  })).min(1).max(32),
-  tests: z.array(z.string().max(280)).min(1).max(32),
+  })).max(32).default([]),
+  tests: z.array(z.string().max(280)).max(32).default([]),
   invariants: z.array(z.string().max(64)).max(32).default([]),
   docs: z.array(z.string().max(512)).max(16).default([]),
   typedMigration: z.string().max(280).optional(),
-  rollout: z.string().min(1).max(500),
-  smokeChecks: z.array(z.string().max(64)).min(1).max(16),
-  rollback: z.string().min(1).max(500),
+  rollout: z.string().max(500).default("n/a"),
+  smokeChecks: z.array(z.string().max(64)).max(16).default([]),
+  rollback: z.string().max(500).default("n/a"),
+  viable: z.boolean().optional(),
+  notViableReason: z.string().max(500).optional(),
 })
 export type PatchProposal = z.infer<typeof PatchProposalSchema>
 
@@ -296,3 +339,83 @@ export const ImpactWindowSchema = z.object({
   reason: z.string().max(280).optional(),
 })
 export type ImpactWindow = z.infer<typeof ImpactWindowSchema>
+
+export const SuggestionOutcomeSchema = z.enum([
+  "not-eligible",
+  "already-scanned",
+  "duplicate-suggestion",
+  "no-suggestion-signal",
+  "classifier-failed",
+  "classifier-exhausted",
+  "not-buildable",
+  "forming",
+  "formation-expired",
+  "suggestion-formed",
+  "out-of-scope",
+  "deny-surface",
+  "capacity",
+  "queued-waiting",
+  "duplicate-incident",
+  "queued",
+  "not-viable",
+  "built",
+])
+export type SuggestionOutcome = z.infer<typeof SuggestionOutcomeSchema>
+
+export const SuggestionLedgerEntrySchema = z.object({
+  schema: z.literal(1),
+  entryId: z.string().min(8).max(128),
+  threadId: z.string().min(1).max(128),
+  channelId: z.string().regex(/^\d{17,20}$/u),
+  contentFingerprint: z.string().min(8).max(64),
+  outcome: SuggestionOutcomeSchema,
+  reason: z.string().max(500).optional(),
+  humanMessageIds: z.array(z.string().regex(/^\d{17,20}$/u)).max(200).default([]),
+  allMessageIds: z.array(z.string().regex(/^\d{17,20}$/u)).max(400).default([]),
+  participantIds: z.array(z.string().regex(/^\d{17,20}$/u)).max(100).default([]),
+  category: SuggestionCategorySchema.optional(),
+  summary: z.string().max(500).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  alternativesConsidered: z.array(z.string().max(200)).max(5).optional(),
+  recommendationRationale: z.string().max(500).optional(),
+  formingNote: z.string().max(500).optional(),
+  formingRounds: z.number().int().min(0).max(20).default(0),
+  extendsIncidentId: z.string().min(8).max(128).optional(),
+  incidentId: z.string().min(8).max(128).optional(),
+  evidencePath: z.string().max(512).optional(),
+  createdAt: z.string().min(1).max(64),
+  updatedAt: z.string().min(1).max(64),
+  lastActivityAt: z.string().min(1).max(64),
+})
+export type SuggestionLedgerEntry = z.infer<typeof SuggestionLedgerEntrySchema>
+
+export const SuggestionLedgerFileSchema = z.object({
+  schema: z.literal(1),
+  entries: z.array(SuggestionLedgerEntrySchema).max(5_000),
+  queuedWaiting: z.array(z.object({
+    entryId: z.string().min(8).max(128),
+    enqueuedAt: z.string().min(1).max(64),
+  })).max(200).default([]),
+})
+export type SuggestionLedgerFile = z.infer<typeof SuggestionLedgerFileSchema>
+
+export const SuggestionClassifierThreadResultSchema = z.object({
+  threadId: z.string().min(1).max(128),
+  verdict: z.enum(["suggestion-formed", "forming", "not-buildable"]),
+  category: SuggestionCategorySchema.optional(),
+  summary: z.string().max(500).optional(),
+  contributingMessageIds: z.array(z.string().regex(/^\d{17,20}$/u)).max(50).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  alternativesConsidered: z.array(z.string().max(200)).max(5).optional(),
+  recommendationRationale: z.string().max(500).optional(),
+  formingNote: z.string().max(500).optional(),
+})
+export type SuggestionClassifierThreadResult = z.infer<
+  typeof SuggestionClassifierThreadResultSchema
+>
+
+export const SuggestionClassifierBatchSchema = z.object({
+  schema: z.literal(1),
+  threads: z.array(SuggestionClassifierThreadResultSchema).max(50),
+})
+export type SuggestionClassifierBatch = z.infer<typeof SuggestionClassifierBatchSchema>

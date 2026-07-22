@@ -31,6 +31,16 @@ export type DiscordRestClient = Readonly<{
     emoji: string
   }>): Promise<void>
   triggerTyping?(args: Readonly<{ channelId: string }>): Promise<void>
+  /** Paginated history newest-first; pass after snowflake for forward scan */
+  listChannelMessages?(args: Readonly<{
+    channelId: string
+    after?: string
+    limit?: number
+  }>): Promise<readonly DiscordHistoryMessage[]>
+  getMessage?(args: Readonly<{
+    channelId: string
+    messageId: string
+  }>): Promise<DiscordHistoryMessage | undefined>
 }>
 
 const MAX_ATTEMPTS = 8
@@ -48,7 +58,7 @@ function backoffMs(attempt: number, retryAfterSec?: number): number {
 
 async function discordFetch(
   token: string,
-  method: "POST" | "PUT",
+  method: "GET" | "POST" | "PUT",
   path: string,
   body?: Record<string, unknown>,
   attempt = 0,
@@ -76,6 +86,48 @@ async function discordFetch(
     return discordFetch(token, method, path, body, attempt + 1)
   }
   return response
+}
+
+export type DiscordHistoryMessage = Readonly<{
+  id: string
+  channelId: string
+  authorId: string
+  authorIsBot: boolean
+  authorIsWebhook: boolean
+  content: string
+  timestamp: string
+  referencedMessageId?: string
+}>
+
+const SNOWFLAKE_RE = /^\d{17,20}$/u
+
+function parseHistoryMessage(
+  channelId: string,
+  raw: Record<string, unknown>,
+): DiscordHistoryMessage | undefined {
+  const id = typeof raw["id"] === "string" ? raw["id"] : ""
+  if (!SNOWFLAKE_RE.test(id)) return undefined
+  const author = (raw["author"] ?? {}) as Record<string, unknown>
+  const authorId = typeof author["id"] === "string" ? author["id"] : ""
+  if (!SNOWFLAKE_RE.test(authorId)) return undefined
+  const content = typeof raw["content"] === "string" ? raw["content"] : ""
+  const timestamp = typeof raw["timestamp"] === "string" ? raw["timestamp"] : ""
+  if (!timestamp) return undefined
+  const reference = (raw["message_reference"] ?? {}) as Record<string, unknown>
+  const referencedMessageId = typeof reference["message_id"] === "string"
+    && SNOWFLAKE_RE.test(reference["message_id"])
+    ? reference["message_id"]
+    : undefined
+  return {
+    id,
+    channelId,
+    authorId,
+    authorIsBot: author["bot"] === true,
+    authorIsWebhook: typeof raw["webhook_id"] === "string" && raw["webhook_id"].length > 0,
+    content,
+    timestamp,
+    ...(referencedMessageId ? { referencedMessageId } : {}),
+  }
 }
 
 export function createDiscordRestClient(token: string): DiscordRestClient {
@@ -138,6 +190,53 @@ export function createDiscordRestClient(token: string): DiscordRestClient {
       if (!response.ok && response.status !== 204) {
         // typing is best-effort
       }
+    },
+    async listChannelMessages(args) {
+      if (!SNOWFLAKE_RE.test(args.channelId)) {
+        throw new Error("invalid channel id")
+      }
+      if (args.after !== undefined && !SNOWFLAKE_RE.test(args.after)) {
+        throw new Error("invalid after cursor")
+      }
+      const limit = Math.min(100, Math.max(1, args.limit ?? 100))
+      const params = new URLSearchParams({ limit: String(limit) })
+      if (args.after) params.set("after", args.after)
+      const response = await discordFetch(
+        token,
+        "GET",
+        `/channels/${args.channelId}/messages?${params.toString()}`,
+      )
+      if (!response.ok) {
+        throw new Error(`discord list messages failed: ${response.status}`)
+      }
+      const payload = await response.json() as unknown
+      if (!Array.isArray(payload)) return []
+      const messages: DiscordHistoryMessage[] = []
+      for (const item of payload) {
+        if (!item || typeof item !== "object") continue
+        const parsed = parseHistoryMessage(
+          args.channelId,
+          item as Record<string, unknown>,
+        )
+        if (parsed) messages.push(parsed)
+      }
+      return messages
+    },
+    async getMessage(args) {
+      if (!SNOWFLAKE_RE.test(args.channelId) || !SNOWFLAKE_RE.test(args.messageId)) {
+        return undefined
+      }
+      const response = await discordFetch(
+        token,
+        "GET",
+        `/channels/${args.channelId}/messages/${args.messageId}`,
+      )
+      if (response.status === 404) return undefined
+      if (!response.ok) {
+        throw new Error(`discord get message failed: ${response.status}`)
+      }
+      const payload = await response.json() as Record<string, unknown>
+      return parseHistoryMessage(args.channelId, payload)
     },
   }
 }

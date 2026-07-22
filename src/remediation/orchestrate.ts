@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
@@ -120,7 +120,11 @@ async function notifyOperator(text: string): Promise<void> {
 
 export async function scanRemediationIncidents(args: Readonly<{
   repoRoot: string
-}>): Promise<{ scanned: number; created: number }> {
+}>): Promise<{
+  scanned: number
+  created: number
+  suggestions?: Awaited<ReturnType<typeof import("./suggestions.js").scanDiscordSuggestions>>
+}> {
   const config = loadConfig()
   const ir = config.incident_remediation
   if (!ir.enabled) return { scanned: 0, created: 0 }
@@ -177,6 +181,16 @@ export async function scanRemediationIncidents(args: Readonly<{
     })
 
     if (incident.phase === "ignored") continue
+
+    // Critical health findings: notify operator without waiting for build
+    if (
+      candidate.severity === "error"
+      && (candidate.component === "health" || candidate.component === "systemd" || candidate.component === "discord")
+    ) {
+      await notifyOperator(
+        `remediation finding ${incident.incidentId}: ${incident.title.slice(0, 200)}`,
+      )
+    }
 
     const triage = await runTriageAgent({
       repoRoot: args.repoRoot,
@@ -249,7 +263,90 @@ export async function scanRemediationIncidents(args: Readonly<{
   }
 
   await store.save(file)
-  return { scanned: intake.candidates.length, created }
+
+  // Passive Discord suggestion scan (conversation-aware)
+  let suggestions: Awaited<ReturnType<typeof import("./suggestions.js").scanDiscordSuggestions>> | undefined
+  try {
+    const { scanDiscordSuggestions } = await import("./suggestions.js")
+    suggestions = await scanDiscordSuggestions({
+      store,
+      layout,
+      repoRoot: args.repoRoot,
+      nowIso,
+    })
+    await appendRemediationJournal(layout, "suggestions-scan", {
+      event: "suggestions-scan",
+      ...suggestions,
+    })
+    // Write artifacts for newly queued suggestion incidents
+    const after = store.load()
+    for (const incident of after.incidents) {
+      if (incident.origin !== "discord-suggestion") continue
+      if (incident.phase !== "triaged") continue
+      const artDir = incidentArtifactDir(layout, incident.incidentId)
+      mkdirSync(artDir, { recursive: true, mode: 0o700 })
+      const evidenceIndex = join(artDir, "evidence-index.json")
+      if (!existsSync(evidenceIndex)) {
+        await writeAtomicFileFsync(
+          evidenceIndex,
+          `${JSON.stringify({
+            schema: 1,
+            trust: "host-derived",
+            incidentId: incident.incidentId,
+            origin: "discord-suggestion",
+            evidencePaths: incident.evidencePaths,
+            category: incident.suggestionCategory,
+            extendsIncidentId: incident.extendsIncidentId,
+            alternativesConsidered: incident.alternativesConsidered,
+            recommendationRationale: incident.recommendationRationale,
+          }, null, 2)}\n`,
+          0o600,
+        )
+      }
+      const triagePath = join(artDir, "triage.json")
+      if (!existsSync(triagePath)) {
+        await writeAtomicFileFsync(
+          triagePath,
+          `${JSON.stringify({
+            schema: 1,
+            verdict: "attention-now",
+            reason: incident.triageReason ?? "discord-suggestion-formed",
+            confidence: 1,
+          }, null, 2)}\n`,
+          0o600,
+        )
+      }
+    }
+    // Daily digest line
+    const day = nowIso.slice(0, 10)
+    const cursors = store.loadCursors()
+    if (cursors.lastSuggestionDigestDay !== day) {
+      const ledger = store.loadSuggestions()
+      const todayEntries = ledger.entries.filter((e) => e.updatedAt.startsWith(day))
+      const noteworthy = todayEntries.filter((e) =>
+        e.outcome === "queued"
+        || e.outcome === "forming"
+        || e.outcome === "built"
+        || e.outcome === "queued-waiting",
+      )
+      if (noteworthy.length > 0) {
+        await notifyOperator(
+          `suggestion digest ${day}: ${noteworthy.map((e) => `${e.outcome}`).join(", ")} (${noteworthy.length})`,
+        )
+        await store.saveCursors({ ...cursors, lastSuggestionDigestDay: day })
+      }
+    }
+  } catch (error) {
+    log.warn("discord suggestion scan failed", {
+      detail: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  return {
+    scanned: intake.candidates.length,
+    created,
+    ...(suggestions ? { suggestions } : {}),
+  }
 }
 
 export async function runRemediationWorker(args: Readonly<{
@@ -370,6 +467,7 @@ async function runRemediationPhases(args: Readonly<{
   const config = loadConfig()
   const ir = config.incident_remediation
   const layout = remediationLayout()
+  const store = createRemediationStore(layout)
   const artDir = incidentArtifactDir(layout, args.incident.incidentId)
   mkdirSync(artDir, { recursive: true, mode: 0o700 })
   const archiveRoot = join(homedir(), ".trenchcoat", "archive")
@@ -407,6 +505,27 @@ async function runRemediationPhases(args: Readonly<{
       `${JSON.stringify(diag.report, null, 2)}\n`,
       0o600,
     )
+    if (diag.report.viable === false) {
+      const reason = (diag.report.notViableReason ?? "not-viable").slice(0, 500)
+      await setPhase("ignored", {
+        terminalError: `not-viable:${reason}`,
+        triageReason: reason,
+      })
+      if (record.origin === "discord-suggestion") {
+        const { markSuggestionNotViable } = await import("./suggestions.js")
+        const ledger = markSuggestionNotViable(
+          store.loadSuggestions(),
+          record.incidentId,
+          reason,
+          systemClock.nowIso(),
+        )
+        await store.saveSuggestions(ledger)
+      }
+      return
+    }
+    if (diag.report.affectedFiles.length === 0) {
+      throw new Error("diagnose:viable-without-affected-files")
+    }
     await setPhase("diagnosed")
   }
 
@@ -419,6 +538,31 @@ async function runRemediationPhases(args: Readonly<{
       model: ir.propose_model,
     })
     if (!prop.ok) throw new Error(`propose:${prop.reason}`)
+    if (prop.proposal.viable === false) {
+      const reason = (prop.proposal.notViableReason ?? "not-viable").slice(0, 500)
+      await writeAtomicFileFsync(
+        proposalPath,
+        `${JSON.stringify(prop.proposal, null, 2)}\n`,
+        0o600,
+      )
+      await setPhase("ignored", {
+        terminalError: `not-viable:${reason}`,
+      })
+      if (record.origin === "discord-suggestion") {
+        const { markSuggestionNotViable } = await import("./suggestions.js")
+        const ledger = markSuggestionNotViable(
+          store.loadSuggestions(),
+          record.incidentId,
+          reason,
+          systemClock.nowIso(),
+        )
+        await store.saveSuggestions(ledger)
+      }
+      return
+    }
+    if (prop.proposal.paths.length === 0) {
+      throw new Error("propose:viable-without-paths")
+    }
     const confinement = evaluateProposedPaths({
       paths: prop.proposal.paths,
       ...(prop.proposal.typedMigration
@@ -855,6 +999,15 @@ async function runRemediationPhases(args: Readonly<{
         : {}),
       ...(audit.detail ? { attentionReason: audit.detail } : {}),
     })
+    if (record.origin === "discord-suggestion") {
+      const { markSuggestionBuilt } = await import("./suggestions.js")
+      const ledger = markSuggestionBuilt(
+        store.loadSuggestions(),
+        record.incidentId,
+        systemClock.nowIso(),
+      )
+      await store.saveSuggestions(ledger)
+    }
     const deferred = store.loadDeferred()
     await store.saveDeferred({
       schema: 1,

@@ -37,6 +37,46 @@ const LOG_GLOBS = [
   "/tmp/trenchcoat.channels.err.log",
   "/tmp/trenchcoat.router.out.log",
   "/tmp/trenchcoat.router.err.log",
+  "/tmp/trenchcoat.chart-sweep.out.log",
+  "/tmp/trenchcoat.chart-sweep.err.log",
+  "/tmp/trenchcoat.watchlist-scan.out.log",
+  "/tmp/trenchcoat.watchlist-scan.err.log",
+  "/tmp/trenchcoat.narrative-scan.out.log",
+  "/tmp/trenchcoat.narrative-scan.err.log",
+  "/tmp/trenchcoat.research.out.log",
+  "/tmp/trenchcoat.research.err.log",
+  "/tmp/trenchcoat.review.out.log",
+  "/tmp/trenchcoat.review.err.log",
+  "/tmp/trenchcoat.audit.out.log",
+  "/tmp/trenchcoat.audit.err.log",
+  "/tmp/trenchcoat.outcomes-settle.out.log",
+  "/tmp/trenchcoat.outcomes-settle.err.log",
+  "/tmp/trenchcoat.delivery-retry.out.log",
+  "/tmp/trenchcoat.delivery-retry.err.log",
+  "/tmp/trenchcoat.wallet-discovery.out.log",
+  "/tmp/trenchcoat.wallet-discovery.err.log",
+  "/tmp/trenchcoat.wallet-runner-discovery.out.log",
+  "/tmp/trenchcoat.wallet-runner-discovery.err.log",
+  "/tmp/trenchcoat.wallet-scan-solana.out.log",
+  "/tmp/trenchcoat.wallet-scan-solana.err.log",
+  "/tmp/trenchcoat.wallet-scan-evm.out.log",
+  "/tmp/trenchcoat.wallet-scan-evm.err.log",
+  "/tmp/trenchcoat.wallet-review.out.log",
+  "/tmp/trenchcoat.wallet-review.err.log",
+  "/tmp/trenchcoat.source-list-review.out.log",
+  "/tmp/trenchcoat.source-list-review.err.log",
+  "/tmp/trenchcoat.fc-source-review.out.log",
+  "/tmp/trenchcoat.fc-source-review.err.log",
+  "/tmp/trenchcoat.fomo-trader-sync.out.log",
+  "/tmp/trenchcoat.fomo-trader-sync.err.log",
+  "/tmp/trenchcoat.fomo-signal-scan.out.log",
+  "/tmp/trenchcoat.fomo-signal-scan.err.log",
+  "/tmp/trenchcoat.incident-remediate.out.log",
+  "/tmp/trenchcoat.incident-remediate.err.log",
+  "/tmp/trenchcoat.discord-watchlist-scan.out.log",
+  "/tmp/trenchcoat.discord-watchlist-scan.err.log",
+  "/tmp/trenchcoat.harness-improve.out.log",
+  "/tmp/trenchcoat.harness-improve.err.log",
 ]
 
 const EXPECTED_SKIP_CODES = new Set([
@@ -205,17 +245,51 @@ export async function collectRemediationIntake(args: Readonly<{
   const { mkdirSync } = await import("node:fs")
   mkdirSync(args.layout.artifacts, { recursive: true, mode: 0o700 })
   const warnings = health.warnings.slice(0, 20)
+  const findings = health.findings.slice(0, 20)
   await writeAtomicFileFsync(
     healthPath,
     `${JSON.stringify({
       trust: "host-derived",
       capturedAt: args.nowIso,
       warnings,
+      findings,
     }, null, 2)}\n`,
     0o600,
   )
 
+  for (const finding of findings) {
+    const errorClass = classifyErrorClass(finding.summary)
+    const ignore = isDeterministicIgnore({ errorClass, message: finding.summary })
+    const fingerprint = stableIncidentFingerprint({
+      component: finding.component ?? "health",
+      errorClass: finding.code,
+      target: sha256Json({ summary: sanitizeSecretLike(finding.summary, 120) }).slice(0, 16),
+    })
+    if (seen.has(fingerprint)) continue
+    seen.add(fingerprint)
+    candidates.push({
+      fingerprint,
+      incidentId: shortIncidentId(fingerprint),
+      ...(finding.job ? { job: finding.job } : {}),
+      component: finding.component ?? "health",
+      errorClass: finding.code,
+      title: sanitizeSecretLike(finding.summary, 200),
+      severity: finding.severity === "error" ? "error" : "warn",
+      evidence: [{
+        schema: 1,
+        trust: "untrusted-external",
+        kind: "health",
+        path: healthPath,
+        summary: sanitizeSecretLike(finding.summary, 200),
+        capturedAt: args.nowIso,
+      }],
+      ...(ignore ? { deterministicIgnore: ignore } : {}),
+    })
+  }
+
+  // Legacy warning-only paths not already covered by findings
   for (const warning of warnings.slice(0, 10)) {
+    if (findings.some((f) => f.summary === warning)) continue
     const errorClass = classifyErrorClass(warning)
     const ignore = isDeterministicIgnore({ errorClass, message: warning })
     const fingerprint = stableIncidentFingerprint({
@@ -357,8 +431,16 @@ export async function collectRemediationIntake(args: Readonly<{
     schema: 1,
     logs: nextLogs,
     lastSkipOffsets: nextSkipOffsets,
+    discordChannelCursors: cursors.discordChannelCursors ?? {},
+    suggestionClassifierFailures: cursors.suggestionClassifierFailures ?? 0,
     ...(cursors.lastTransactionName
       ? { lastTransactionName: cursors.lastTransactionName }
+      : {}),
+    ...(cursors.discordScanCheckpoint
+      ? { discordScanCheckpoint: cursors.discordScanCheckpoint }
+      : {}),
+    ...(cursors.lastSuggestionDigestDay
+      ? { lastSuggestionDigestDay: cursors.lastSuggestionDigestDay }
       : {}),
   }
 
@@ -373,6 +455,13 @@ export function candidateToIncident(
   candidate: IntakeCandidate,
   nowIso: string,
 ): RemediationIncident {
+  const origin = candidate.component === "health"
+    ? "health" as const
+    : candidate.component === "log"
+      ? "log" as const
+      : candidate.component === "skip"
+        ? "skip" as const
+        : "other" as const
   return {
     schema: 1,
     incidentId: candidate.incidentId,
@@ -380,6 +469,7 @@ export function candidateToIncident(
     phase: "detected",
     createdAt: nowIso,
     updatedAt: nowIso,
+    origin,
     ...(candidate.job ? { job: candidate.job } : {}),
     ...(candidate.component ? { component: candidate.component } : {}),
     ...(candidate.errorClass ? { errorClass: candidate.errorClass } : {}),

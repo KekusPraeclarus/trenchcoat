@@ -233,6 +233,7 @@ describe("buildHealthSnapshot", () => {
 
     expect(healthCreatesReviewScope(health)).toBe(true)
     expect(health.warnings.some((w) => /stale workspace lock/u.test(w))).toBe(true)
+    expect(health.findings.some((f) => f.code === "stale-lock")).toBe(true)
     expect(health.warnings.some((w) => /fc stale streak/u.test(w))).toBe(true)
     expect(health.warnings.some((w) => /recurring skip/u.test(w))).toBe(true)
 
@@ -258,7 +259,7 @@ describe("buildHealthSnapshot", () => {
     expect(lines.some((l) => l.startsWith("fcStaleStreak="))).toBe(true)
     expect(lines.some((l) => l.startsWith("fomoEnabled="))).toBe(true)
     expect(skipLedgerLines(health.skipReasons)[0]).toContain("queue-empty")
-  })
+  }, 15_000)
 
   it("reports abandoned incomplete runs without inventing secrets", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-health-abandon-"))

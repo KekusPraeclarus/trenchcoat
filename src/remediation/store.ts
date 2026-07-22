@@ -8,11 +8,13 @@ import {
   RemediationIncidentSchema,
   RemediationsFileSchema,
   SourceHealthLedgerSchema,
+  SuggestionLedgerFileSchema,
   type DeferredQueueFile,
   type RemediationCursorsFile,
   type RemediationIncident,
   type RemediationsFile,
   type SourceHealthLedger,
+  type SuggestionLedgerFile,
 } from "./schemas.js"
 import { emptySourceHealthLedger } from "./source-health.js"
 
@@ -22,6 +24,7 @@ function ensureRoot(layout: RemediationLayout): void {
   mkdirSync(layout.root, { recursive: true, mode: 0o700 })
   mkdirSync(layout.artifacts, { recursive: true, mode: 0o700 })
   mkdirSync(layout.journal, { recursive: true, mode: 0o700 })
+  mkdirSync(layout.suggestionEvidence, { recursive: true, mode: 0o700 })
 }
 
 function quarantine(layout: RemediationLayout, name: string, raw: string): never {
@@ -47,6 +50,8 @@ export function emptyCursorsFile(): RemediationCursorsFile {
     schema: 1,
     logs: [],
     lastSkipOffsets: {},
+    discordChannelCursors: {},
+    suggestionClassifierFailures: 0,
   }
 }
 
@@ -54,6 +59,14 @@ export function emptyDeferredFile(): DeferredQueueFile {
   return {
     schema: 1,
     incidentIds: [],
+  }
+}
+
+export function emptySuggestionLedger(): SuggestionLedgerFile {
+  return {
+    schema: 1,
+    entries: [],
+    queuedWaiting: [],
   }
 }
 
@@ -67,6 +80,8 @@ export type RemediationStore = Readonly<{
   saveDeferred(file: DeferredQueueFile): Promise<void>
   loadSourceHealthLedger(): SourceHealthLedger
   saveSourceHealthLedger(file: SourceHealthLedger): Promise<void>
+  loadSuggestions(): SuggestionLedgerFile
+  saveSuggestions(file: SuggestionLedgerFile): Promise<void>
   findById(id: string): RemediationIncident | undefined
   findByFingerprint(fingerprint: string, activeOnly?: boolean): RemediationIncident | undefined
 }>
@@ -160,6 +175,28 @@ export function createRemediationStore(
       SourceHealthLedgerSchema.parse(file)
       await writeAtomicFileFsync(
         layout.sourceHealthLedger,
+        `${JSON.stringify(file, null, 2)}\n`,
+        0o600,
+      )
+    },
+    loadSuggestions() {
+      ensureRoot(layout)
+      if (!existsSync(layout.suggestions)) return emptySuggestionLedger()
+      let raw = ""
+      try {
+        raw = readFileSync(layout.suggestions, "utf8")
+        if (raw.length > MAX_FILE_BYTES) throw new Error("too large")
+        return SuggestionLedgerFileSchema.parse(JSON.parse(raw))
+      } catch (error) {
+        if (raw) quarantine(layout, "suggestions", raw)
+        throw error
+      }
+    },
+    async saveSuggestions(file) {
+      ensureRoot(layout)
+      SuggestionLedgerFileSchema.parse(file)
+      await writeAtomicFileFsync(
+        layout.suggestions,
         `${JSON.stringify(file, null, 2)}\n`,
         0o600,
       )

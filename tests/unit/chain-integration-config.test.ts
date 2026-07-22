@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { migrateConfigToV16 } from "../../src/migrations/config.js"
+import { migrateConfigToV17 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { readFileSync } from "node:fs"
 
@@ -10,14 +10,14 @@ const seed = JSON.parse(
   readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
 )
 
-describe("config schema 16 via chain_integration migration", () => {
-  it("migrates schema 11 → 16 with chain_integration defaults", () => {
+describe("config schema 17 via chain_integration migration", () => {
+  it("migrates schema 11 → 17 with chain_integration defaults", () => {
     const raw = { ...seed, schema: 11 }
     delete (raw as { chat?: { discord?: { chain_integration?: unknown } } })
       .chat?.discord?.chain_integration
-    const migrated = migrateConfigToV16(raw)
+    const migrated = migrateConfigToV17(raw)
     const parsed = ConfigSchema.parse(migrated)
-    expect(parsed.schema).toBe(16)
+    expect(parsed.schema).toBe(17)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.chat.discord.chain_integration.enabled).toBe(true)
     expect(parsed.chat.discord.chain_integration.max_attempts_per_utc_day).toBe(3)
@@ -36,7 +36,7 @@ describe("config schema 16 via chain_integration migration", () => {
         },
       },
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV16(raw))
+    const parsed = ConfigSchema.parse(migrateConfigToV17(raw))
     expect(parsed.chat.discord.chain_integration.enabled).toBe(false)
     expect(parsed.chat.discord.chain_integration.max_attempts_per_utc_day).toBe(1)
   })

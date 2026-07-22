@@ -2,31 +2,56 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 ---
 
 # Incident remediation
 
 Separate from the weekly decision-policy harness (INV-S24) and Discord chain
-integration (INV-S26). See [ADR 017](../adr/017-incident-remediation.md).
+integration (INV-S26). See [ADR 017](../adr/017-incident-remediation.md) and
+[ADR 025](../adr/025-discord-suggestion-intake.md).
 
 ## Flow
 
-1. **Scan** — bounded deltas: health snapshot, skip journals, structured
-   `/tmp/trenchcoat.*.{out,err}.log` lines (inode/size cursors).
+1. **Scan** — bounded deltas: health snapshot **findings** (cadence/heartbeat/stuck-run/systemd), skip journals, structured `/tmp/trenchcoat.*.{out,err}.log` lines (inode/size cursors), and passive Discord suggestion threads when `discord_suggestions.enabled`.
 2. **Fingerprint** — stable id from job/error-class/component/target (not raw
    timestamps/text). Evidence stored as untrusted envelopes; prompts get paths only.
 3. **Triage** — `composer-2.5-fast` → `ignore | attention-now | defer-weekly`.
    Host may downgrade `attention-now`, never upgrade past evidence floors.
+   Discord suggestions enter already-triaged as `attention-now` after host gates.
 4. **Immediate** — diagnose → propose → pre-review → risk/approval → build in
    isolated worktree → post-diff review → gates (`test:all`) → ff-only push →
-   deploy → smoke → revert+`runtime.prev` on failure.
+   deploy → smoke → revert+`runtime.prev` on failure. Diagnose/propose may return
+   typed `not-viable` (host closes the incident).
 5. **Weekly** — Monday 08:00 local; revalidate deferred queue; at most one item.
 6. **Post-fix claim audit (INV-S28)** — after deploy health/smoke, set an
    integrity hold on affected jobs; wait for configured healthy source
    observations from the deployed commit; revalidate typed market claims in the
    conservative impact window; append-only supersede invalidated state; stage
    one destination-aware `finding.correction` per incident (no harness/canary).
+
+## Discord suggestions (schema 17)
+
+Passive conversation-aware intake (`incident_remediation.discord_suggestions`):
+
+| Field | Default | Role |
+| --- | --- | --- |
+| `enabled` | `false` | Master switch (also requires parent `enabled`) |
+| `channel_ids` | `[]` | Empty → use `chat.discord.channel_ids` |
+| `classifier_model` | `composer-2.5-fast` | Batch thread classifier |
+| `max_new_incidents_per_scan` | `3` | Cap newly queued suggestion incidents |
+| `max_active_suggestion_incidents` | `1` | Concurrent suggestion-origin active cap |
+| `forming_ttl_days` | `7` | Idle expiry for incomplete ideas |
+| `max_forming_rounds` | `5` | Max re-form attempts before not-buildable |
+| `ambient_thread_gap_ms` | `900000` | Non-reply messages within this gap share a thread |
+| `min_confidence` | `0.7` | Below → downgrade to `forming` |
+
+Unit of analysis is a **thread** (reply chain + ambient window), not a single
+message. Bot/webhook messages are context-only. Reply ancestors may extend
+context beyond the scan window. Early fingerprint dedupe runs before the model;
+extensions of previously **built** suggestions proceed as `extends:`. Ledger:
+`~/.trenchcoat/remediations/suggestions.json`. CLI: `tc remediations suggestions`.
+Silent on Discord (no replies/reactions).
 
 ## Post-fix revalidation
 
