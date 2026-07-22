@@ -2,7 +2,7 @@
 description: Provider knowledge — Discord webhook fanout (router) and Gateway research bot (isolated).
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 ---
 
 # Discord
@@ -57,7 +57,13 @@ last_verified: 2026-07-21
 - Chat reply target: one message — `<TICKER> research` + TL;DR / X / Web / Read
   (~≤1800 chars); multipart has no `1/n` labels
 - Watch baseline = dossier evidence (no post-reply Dex/security/X re-collect);
-  subscribe only when research yields a validated track verdict
+  subscribe only when research yields a validated **`track`** verdict (ADR 021).
+  Invalid proposal verdicts (`watch`, `pass`, …) fail load → tracking deliveries
+  stay `verdict-missing` and must not be treated as qualified alerts.
+- **Watch updates ≠ tracking alerts.** Six-hour material watch updates are
+  host-narrated channel posts for subscribed tokens (ADR 012). Idea-tracking
+  initial alerts (ADR 019) stay silent until `mainTrackEligible`; a watch-update
+  post does not mean tracking qualified the token.
   (`mainTrackEligible`, silent); `researchBrief` stored for update narration;
   validated `track` may promote to main watchlist (host-only, also silent in
   Discord replies). Idea-tracking may store an optional request `chain`

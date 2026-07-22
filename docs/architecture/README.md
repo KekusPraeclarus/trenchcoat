@@ -2,7 +2,7 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 ---
 
 # Module docs

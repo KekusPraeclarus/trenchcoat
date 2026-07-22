@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -39,8 +39,8 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `farcaster-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
 | `source-list-review` | daily (`RunAtLoad` + 24h) and after sealed audit | lagged source-score epoch + managed-list membership; writes `sources.json` scores for settled callers | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
 | `fc-source-review` | daily (`RunAtLoad` + 24h) | lagged `fc_*` source-score + follow-graph sync; writes `sources.json` for settled FC callers | **no agent** — promote/demote then Neynar follow/unfollow |
-| `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new slug **or stage-change** → outbox (`narrative-emergence` / `narrative-fade` / `rotation`; same-stage re-sightings host-rejected — except `narrative-development`, which broadcasts a genuinely new in-meta update (product catalyst, rotation name-set change) without a stage change and is rejected only when it repeats a same-subject broadcast within 48h (`narrative-development.ts`); rotation host-rejected when market-blind; single-platform rotation/sentiment-collapse capped at `watch` and labeled `X-only` / `Farcaster-only`) |
-| `research` | on queue (research-queue.md), daily cap from config; also `tc research` / Telegram confirm | market data + security + bounded X + Farcaster token search (+ optional Tavily web search on operator path) | verdict (track / ignore / revisit) + research file with sentiment/popularity section, sources cited |
+| `narrative-scan` | every 6h | sealed complete list-scan/FC archive reuse + CoinGecko trending with Dex/Gecko fallback (live≤6h / stale≤24h; **degraded** when market-blind; skip if no usable evidence) | agent proposes `reports/<run-id>/narrative-proposals.jsonl`; host merges into the integrity-protected `state/narratives/log.jsonl`, bridges new/peaking narratives to bounded research queue candidates, then prunes entries older than `narratives.retention_days` (default 14) and reconciles `INDEX.md`; new slug, stage change, notable concrete same-stage development, or founder/protocol primary-source catalyst → outbox. Same-stage `narrative-emergence`/`rotation` claims are compatibility-routed through development novelty dedupe so a misclassified catalyst is not dropped; pure stage restatements remain rejected. Developments include catalysts, revenue/usage changes, material tape, identity/security risks, and names/leaders moving; founder primary-source catalysts (founder/CEO/protocol official/official channel announcing material product/wallet/protocol/ecosystem changes) must broadcast without CT-cluster or stage-shift prerequisites; recent accepted repeats are rejected. Rotation remains host-rejected when market-blind; single-platform rotation/sentiment-collapse is capped at `watch` and labeled `X-only` / `Farcaster-only`) |
+| `research` | on queue (research-queue.md), daily cap from config; also `tc research` / Telegram confirm | market data + security + bounded X + Farcaster token search (+ optional Tavily web search on operator path) | exact verdict (`track` / `drop` / `ignore` / `revisit`) + research file; every completed resolved dossier with a clear trade/watch/avoid conclusion proposes one positive or negative market broadcast |
 | `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
 | `review` | daily 07:00 | sealed report manifests (path-only) + pending alpha + watchlist/macro + **host health snapshot** + skip-ledger counts; scope also from empty queues / silent wallets / stale FC / recurring skips | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
@@ -445,6 +445,35 @@ staged router events.
   to `/v1/events`; loopback HTTP is allowed. Severity `lifecycle` (wallet
   add/drop) skips Discord market budget and is never distilled
 - Send failures never fail the run; durable fanout retries with dead-letter visibility
+
+### Broadcast audit (proposals vs fanout)
+
+Chat recall and agent `chat-summary` list what the model **proposed** to broadcast.
+They are not delivery receipts. When operators report "digest said X but nothing
+landed on TG/Discord", trace in this order:
+
+1. **`agent/outbox/<run-id>.json`** — did the agent write a proposal?
+2. **`archive/runs/<run-id>/broadcast-rejects.json`** (or run report reject list)
+   — mechanical gate (`narrative-unchanged-stage`, development repeat,
+   status-quo filler), worthiness (`worthiness:…`), schema/ref/platform failures.
+3. **`archive/transactions/<run-id>.json`** and router delivery rows — did a
+   `finding.broadcast` event stage and reach Telegram/Discord?
+
+When operators report a **missed narrative** (nothing in digest either), do **not**
+assume collectors failed. Grep sealed `archive/runs/<job>-*/inbox/` for the
+catalyst text or provenance first. Empty outbox + agent notes like "incremental
+sentiment" / "no stage delta" while the inbox holds a founder primary-source
+post is an **agent judgment miss** ([ADR 024](../adr/024-founder-primary-source-broadcast.md)),
+not a timeline miss. Founder/protocol primary-source catalysts must be proposed
+by skills even without CT cluster or stage shift; that rule is skill-enforced —
+the host never invents market text when outbox is omitted (INV-B2). Also check
+failed/`collected`/`--skip-agent` runs: no agent session means no proposal.
+
+Worthiness repeat checks use **accepted** router deliveries only ([ADR 014](../adr/014-broadcast-worthiness.md),
+[ADR 023](../adr/023-narrative-development-and-research-broadcast.md)); narrative
+log stage and agent notes do not prove prior fanout. From the desktop, prefer
+`./ops/remote.sh` ad-hoc grep or `sync` then inspect `.trenchcoat-remote/archive/`
+— do not ask the operator to paste logs when SSH is available.
 
 ## Design patterns
 

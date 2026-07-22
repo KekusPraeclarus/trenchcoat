@@ -2,7 +2,7 @@
 description: ADR — Host composer-2.5-fast worthiness gate approves or rejects agent market broadcasts before stage.
 scope: project
 status: accepted
-last_verified: 2026-07-20
+last_verified: 2026-07-22
 ---
 
 # ADR 014 — Broadcast worthiness review
@@ -28,6 +28,16 @@ surviving proposal, without letting the host invent market broadcast copy.
   by default). Configurable; fail-closed when enabled.
 - Agent still authors `text` / `auditClaim` (INV-B2: host never invents market
   broadcast text). The fast model only approves or rejects.
+- The model receives a trusted list of recent accepted broadcasts. Only that
+  list may support an "already broadcast" rejection; status-quo narrative state
+  and untrusted agent notes are not delivery history.
+- Completed resolved deep research with a clear trade, watch, or avoid takeaway
+  is worthy even when the conclusion is negative.
+- Founder / protocol primary-source catalysts (founder, CEO, protocol official,
+  or official project channel announcing a material product, wallet, protocol,
+  ecosystem, or distribution catalyst) are worthy on first sighting — never
+  reject as "incremental sentiment" or "no stage delta" when absent from
+  accepted-broadcast-history.
 - Session error, malformed JSON, missing runner, or `worth:false` → reject with
   a `worthiness:…` receipt in `broadcast-rejects.json`; never stage.
 - Applies to **all** jobs that ingest `finding.broadcast`, not streaming-only.
@@ -61,3 +71,11 @@ surviving proposal, without letting the host invent market broadcast copy.
 - Optional: archive worthiness approve reasons alongside reject receipts for
   operator tuning.
 - Optional: Telegram daily/hourly count ledger if worthiness alone under-filters.
+
+## Related
+
+- [ADR 023](023-narrative-development-and-research-broadcast.md) — loads accepted
+  router receipts for worthiness repeat checks; same-stage narrative routing and
+  mandatory research outbox.
+- [ADR 024](024-founder-primary-source-broadcast.md) — founder primary-source
+  catalysts are worthy on first sighting.

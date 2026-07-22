@@ -94,6 +94,7 @@ import {
 } from "./narrative-log.js"
 import { bridgeNarrativeTickers } from "./narrative-bridge.js"
 import { statusQuoNarratives } from "./narrative-stage-dedupe.js"
+import { extractBroadcastClaimsFromArchive } from "./market-claims.js"
 import { validateAndEnqueueResearchCandidates } from "./research-candidates.js"
 import {
   DEFAULT_TELEGRAM_ALPHA_DISAMBIG_MODEL,
@@ -574,13 +575,13 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ? `If you retained durable knowledge from alpha-queue/, write reports/${runId}/alpha-digest.json as {schema:1,runId,proposedAt,entries:[{provenance,channel,messageId,contentHash,records:[{path,contentHash}]}]} — entries only (never items; never narrative slug/status fields). contentHash values are sha256: hex of exact on-disk bytes for alpha-queue/<channel>/<messageId>.json and each state/… record you wrote. Host purges only byte-verified entries (INV-Q1); wrong shape purges nothing. Propose any operator broadcast only in outbox/${runId}.json as {schema:1,items:[{severity,text,refs,auditClaim}]} — never a top-level broadcasts key or bare text; text ≤280 chars; refs must be state/… or inbox/${runId}/… paths that already exist as frozen regular files (host rejects traversal, cross-run, missing, and mutable refs). The host validates and applies both.`
           : "",
         job.name === "narrative-scan"
-          ? `Propose narrative log updates only in reports/${runId}/narrative-proposals.jsonl (one JSON object per line: slug, title, firstSeen, lastSeen, evidence, stage, optional tickers). Never write state/narratives/ directly — the host merges proposals after schema validation. Add tickers only when the evidence explicitly names them. Update lastSeen/stage for known slugs; append only genuinely new narratives. Propose one outbox broadcast per newly appended slug OR per stage change (emerging↔peaking↔fading) — never for same-stage re-sightings. Do not restate known heat in outbox text or chat-summary (e.g. omit "RH still peaking" when the log already says peaking).`
+          ? `Propose narrative log updates only in reports/${runId}/narrative-proposals.jsonl (one JSON object per line: slug, title, firstSeen, lastSeen, evidence, stage, optional tickers). Never write state/narratives/ directly — the host merges proposals after schema validation. Add tickers only when the evidence explicitly names them. Update lastSeen/stage for known slugs; append only genuinely new narratives. Propose an outbox broadcast for each new slug, stage change, or notable concrete same-stage development such as a catalyst, revenue/usage change, material tape move, identity/security risk, or names/leaders moving. Use narrative-development for same-stage updates and omit pure status-quo re-sightings. Do not restate known heat in outbox text or chat-summary (e.g. omit "RH still peaking" when the log already says peaking).`
             + (collection.collectionStatus === "degraded" || collection.marketBlind
               ? " Market attention degraded this run (see narrative-collection-status / narrative-trending). Do not claim capital rotation without category evidence; fallback boosts are not rotation confirmation."
               : "")
           : "",
         job.name === "list-scan" || job.name === "farcaster-scan"
-          ? "When broadcasting or writing chat-summary context, omit narratives whose stage is unchanged in state/narratives/log.jsonl — mention heat only when it drops or increases."
+          ? "When broadcasting or writing chat-summary context, omit pure status-quo heat. Same-stage narratives remain broadcastable for notable concrete catalysts, revenue/usage changes, material tape moves, identity/security risks, or names/leaders moving; use narrative-development without restating the stage."
           : "",
         job.name === "fomo-x-source-review"
           ? `Follow skills/fomo-x-source-review/SKILL.md. Write only reports/${runId}/fomo-x-classification.json. Cite sealed post IDs from inbox/${runId}/x-source-manifest.json only. Never mutate state/ or follow accounts.`
@@ -1566,6 +1567,22 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     })()
     const ingestNowIso = systemClock.nowIso()
     const unchangedStages = statusQuoNarratives(narrativeLogBefore, narrativeLogAfter)
+    const recentBroadcasts = extractBroadcastClaimsFromArchive({
+      layout,
+      startExclusive: new Date(
+        Date.parse(ingestNowIso) - 48 * 3_600_000,
+      ).toISOString(),
+      endInclusive: ingestNowIso,
+      acceptedOnly: true,
+    })
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .slice(0, 20)
+      .map((claim) => ({
+        occurredAt: claim.occurredAt,
+        subject: claim.subject,
+        summary: claim.summary,
+        destinations: claim.destinations,
+      }))
     const worthinessCfg = broadcast.worthiness
     const worthinessRunSession = worthinessCfg.enabled
       ? async (sessionArgs: Readonly<{ prompt: string; message: string }>) => {
@@ -1614,6 +1631,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
               : {}),
             ...(collection.marketBlind ? { marketBlind: true } : {}),
             ...(unchangedStages.length > 0 ? { statusQuoStages: unchangedStages } : {}),
+            ...(recentBroadcasts.length > 0 ? { recentBroadcasts } : {}),
             ...(agentNotes ? { agentNotes } : {}),
           },
         },

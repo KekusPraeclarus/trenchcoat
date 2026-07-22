@@ -2,7 +2,7 @@
 description: Discord chain-integration lane — durable intake, multi-model build, clean gates, fast-forward publish, deploy, announce, research handoff.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-22
 read_when:
   - Editing src/chain-integration/ or chat.discord.chain_integration config.
   - Debugging Discord unknown-chain automation, deploy self-survival, or recovery CLI.

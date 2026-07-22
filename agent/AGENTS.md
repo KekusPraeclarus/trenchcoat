@@ -78,10 +78,20 @@ ingress). Known `verificationRule` values include `narrative.emergence`,
 `narrative.fade`, `narrative.development`, `rotation`, `token.up.72h`,
 `token.down.72h`, `sentiment.collapse`.
 
-For a genuinely new update inside a narrative already in `state/narratives/log.jsonl`
-(major product/ecosystem catalyst, or the trending name set inside a rotation
+For any notable concrete update inside a narrative already in
+`state/narratives/log.jsonl` (product/ecosystem catalyst, revenue or usage
+change, material mcap/tape move, identity/security risk, or names/leaders
 moving), use `type: "narrative-development"` with `direction: "rotation"`,
 `verificationRule: "narrative.development"`, subject = the narrative slug. Do not
 restate the narrative's stage in `text`, and only propose when the catalyst or
-name set is new — the host rejects developments that repeat a recent broadcast on
-the same narrative.
+update is new — the host rejects developments that repeat a recent accepted
+broadcast on the same narrative.
+
+**Founder / protocol primary-source catalysts must broadcast.** When sealed
+inbox evidence includes a founder, CEO, protocol official, or official project
+channel announcing a material product, wallet, protocol, ecosystem, or
+distribution catalyst, write one outbox item in that run — do not wait for CT
+cluster convergence or an existing narrative stage shift. Open a new
+`narrative-emergence` slug when none matches (honour prior tickers / rebrands);
+use `narrative-development` when a matching slug already exists. Empty outbox is
+fine only for ordinary noise, never for a founder primary-source catalyst.

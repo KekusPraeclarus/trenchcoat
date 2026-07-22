@@ -2,7 +2,7 @@
 description: Research queue lifecycle - how candidates from scans, narrative transitions, new-pool feed, alpha digestion, and chat become bounded research runs. Schema, dedupe, priority, revisit handling, expiry.
 scope: module
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 read_when:
   - Editing candidate enqueueing, the research job trigger, narrative bridge, or revisit/expiry handling.
 ---
@@ -125,9 +125,12 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   allowlisted-channel message: verbatim CA, or cashtag + chain-hint resolution
   (DexScreener + optional `composer-2.5-fast` disambiguation). Cap 3/run;
   `clusterCount: 1`. Ambiguous shortlists park without launching research.
-  `scheduleResearchDrain` runs after accepted enqueues. Research may propose
-  market outbox when solid; telegram-alpha prefers empty outbox. See
-  [ADR 015](../adr/015-telegram-alpha-research.md)
+  `scheduleResearchDrain` runs after accepted enqueues. Completed resolved
+  research with a clear trade, watch, or avoid conclusion proposes one market
+  outbox item, including negative findings; ambiguous evidence stays silent. See
+  [ADR 015](../adr/015-telegram-alpha-research.md) and
+  [ADR 023](../adr/023-narrative-development-and-research-broadcast.md) (general
+  `research` job now shares the same mandatory-outbox rule)
 - **Fomo signal bridge** — `fomo-signal-scan` may enqueue `trigger: "social"`
   entries from feed/alerts/derived convergence when config + FAFO gates pass and
   `shadow_mode=false`. Canonical resolution is required before enqueue; cluster

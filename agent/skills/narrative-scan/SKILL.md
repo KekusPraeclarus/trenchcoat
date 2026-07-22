@@ -56,17 +56,25 @@ Only include slugs that actually changed or are new this run — do not re-emit
 untouched entries. The host prunes any line whose `lastSeen` is older than 14 days.
 Do not invent historical entries to backfill the log.
 
-## Broadcast (new slug or heat change only)
+## Broadcast
 
-Propose one outbox item in `outbox/<run-id>.json` when either:
+Propose one outbox item in `outbox/<run-id>.json` when any of:
 
 1. You append a **new** slug (absent from the log at run start), or
-2. An existing slug's **stage changes** this run (`emerging` ↔ `peaking` ↔ `fading`)
+2. An existing slug's **stage changes** this run (`emerging` ↔ `peaking` ↔ `fading`), or
+3. An existing slug gets a notable concrete development described below, or
+4. Sealed inbox evidence (social **or** market attention) carries a **founder /
+   protocol primary-source catalyst** — a founder, CEO, protocol official, or
+   official project channel announcing a material product, wallet, protocol,
+   ecosystem, or distribution catalyst (including CG/market lines that name a
+   rebranded L1/token with prior identity, e.g. Gram prev Toncoin). Open a new
+   slug if absent; do not wait for multi-author CT cluster or a stage shift.
 
-Do **not** broadcast for same-stage re-sightings (`lastSeen` only). Do **not**
+Do **not** broadcast pure same-stage re-sightings (`lastSeen` only). Do **not**
 restate known heat in outbox `text` or chat-summary bullets — if the log already
 says peaking, omit "still peaking" / "bumped to peaking on this scan". Mention
-heat only when it drops or increases.
+heat only when it drops or increases; describe a same-stage development by what
+actually changed.
 
 Outbox shape (required — host rejects `broadcasts` or bare `text`):
 
@@ -104,12 +112,16 @@ required with a known `verificationRule`.
   `inbox/<run-id>/…` evidence that supports the claim. Do not invent refs or cite
   other runs.
 - Subject = the slug. Cite evidence provenance in the report, not inside `text`.
-- In-meta development: when a narrative already in the log gets a genuinely new
-  update without a stage change — major product/ecosystem catalyst, or the
-  rotation's trending name set moving — propose `type: "narrative-development"`,
+- In-meta development: when a narrative already in the log gets any notable
+  concrete update without a stage change — product/ecosystem catalyst, revenue
+  or usage change, material mcap/tape move, identity/security risk, or
+  names/leaders moving — propose `type: "narrative-development"`,
   `direction: "rotation"`, `verificationRule: "narrative.development"`, subject
-  = the slug. Never restate the stage in `text`; host rejects developments that
-  repeat names/catalysts broadcast in the last 48h.
+  = the slug. Never restate the stage in `text`; host rejects only repeats of
+  recent accepted broadcasts.
+- Founder primary-source catalysts are never "incremental sentiment": always
+  propose the log line **and** the outbox item in the same run. Severity at
+  least `watch`; prefer `notable` for blue-chip founders or billion-user scale.
 
 ### Market-blind (host may mark degraded)
 
@@ -136,7 +148,8 @@ If nothing new appeared, write an empty items list or omit the outbox file.
 2. `reports/<run-id>/narrative-proposals.jsonl` — proposed log changes (new or
    updated slugs only); host validates and merges into `state/narratives/log.jsonl`.
    Never write the log directly.
-3. `outbox/<run-id>.json` — only when a new slug or stage change was proposed
+3. `outbox/<run-id>.json` — when a new slug, stage change, notable development,
+   or founder primary-source catalyst was proposed
 4. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A
    context. Never write `reports/chat/` directly — the host always renders it.
    Context bullets must not restate unchanged narrative stages.

@@ -84,12 +84,12 @@ describe("assertNarrativeBroadcastAllowed", () => {
     },
   }
 
-  it("rejects unchanged-stage emergence", () => {
+  it("routes unchanged-stage emergence through development dedupe", () => {
     expect(assertNarrativeBroadcastAllowed({
       item,
       logBefore: [RH],
       logAfter: [RH],
-    })).toEqual({ ok: false, reason: "narrative-unchanged-stage" })
+    })).toEqual({ ok: true, sameStageDevelopment: true })
   })
 
   it("allows heat decrease via fade", () => {

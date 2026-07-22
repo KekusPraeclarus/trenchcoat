@@ -12,12 +12,16 @@ Scan Farcaster for-you + operator channels and train the feed with likes.
 
 1. `reports/<run-id>/agent.md` — brief narrative/sentiment notes and candidates
 2. `reports/<run-id>/fc-engagement.json` — your like choices only
-3. Optional operator broadcasts in `outbox/<run-id>.json` — `refs` must be
+3. Operator broadcasts in `outbox/<run-id>.json` — `refs` must be
    `state/…` or same-run `inbox/<run-id>/…` frozen evidence (e.g. for-you /
    channel snapshots). Prefer citing the fresh inbox files that support the claim;
    the host canonicalizes same-run inbox refs to sealed archive paths. Read
    `state/narratives/log.jsonl` first: do not restate known narrative stages;
-   mention heat only when it drops or increases.
+   mention heat only when it drops or increases. **Founder / protocol
+   primary-source catalysts must broadcast** in the same run (new
+   `narrative-emergence` or `narrative-development` on a matching slug) — do not
+   wait for CT cluster or stage shift; empty outbox is fine only for ordinary
+   noise.
 4. Optional `reports/<run-id>/research-candidates.json` — at most three host-enqueued
    research nominations when a canonical `chain` + `tokenAddress` appears verbatim
    in sealed same-run inbox evidence and ≥2 independent authors/clusters support it.

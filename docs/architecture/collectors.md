@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-22
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.

@@ -20,23 +20,34 @@ Scan FYP + operator discovery lists and curate the feed with likes/follows.
 
 1. `reports/<run-id>/agent.md` — brief narrative/sentiment notes and candidates
 2. `reports/<run-id>/x-engagement.json` — your like/follow/unfollow choices
-3. Optional operator broadcasts in `outbox/<run-id>.json` — cite fresh evidence with
+3. Operator broadcasts in `outbox/<run-id>.json` — cite fresh evidence with
    `refs` under `state/…` **or** same-run `inbox/<run-id>/…` (e.g.
-   `inbox/<run-id>/twitter-fyp.json`). Do not drop inbox evidence refs to “fix”
+   `inbox/<run-id>/twitter-home-fyp.json`). Do not drop inbox evidence refs to “fix”
    validation; the host freezes them into sealed archive refs. Rejected shapes:
    traversal, other runs' inboxes, missing files, symlinks, `reports/`, `outbox/`.
    Read `state/narratives/log.jsonl` first: do **not** restate a narrative's known
-   stage (e.g. omit "RH still peaking" when it is already peaking).    Mention heat
+   stage (e.g. omit "RH still peaking" when it is already peaking). Mention heat
    only when it drops or increases; host rejects status-quo stage restatements.
-   A genuinely new development inside a known narrative is broadcastable even
-   without a stage change: a major product/ecosystem catalyst (e.g. a chain
-   founder announcement) or the rotation's trending name set moving (new tickers
-   entering, leaders changing). Use `auditClaim.type: "narrative-development"`,
+   Any notable concrete development inside a known narrative is broadcastable
+   without a stage change: product/ecosystem catalysts, revenue or usage changes,
+   material mcap/tape moves, identity/security risks, or names/leaders moving.
+   Use `auditClaim.type: "narrative-development"`,
    `direction: "rotation"`, `verificationRule: "narrative.development"`, subject
-   = the narrative slug — and skip it when the names/catalyst already went out
-   (host rejects repeats within 48h).
-   Prefer proposing only when clearly actionable — the host runs a separate
-   worthiness review before staging; empty outbox is fine.
+   = the narrative slug — and skip it only when the same update already went out
+   (host rejects repeats of recent accepted broadcasts).
+   **Founder / protocol primary-source catalysts (must broadcast):** when this
+   run's sealed inbox includes a post from a clearly identifiable founder, CEO,
+   protocol official account, or official project channel announcing a material
+   product, wallet, protocol, ecosystem, or distribution catalyst, write exactly
+   one outbox item in **this** run. Do not wait for a multi-author CT cluster or
+   an existing narrative stage shift. If no matching slug is in the log, open it
+   as `narrative-emergence` with a stable kebab slug and `stage` framing at
+   emerging (honour prior tickers / rebrands in evidence, e.g. Gram prev Toncoin).
+   If a matching slug exists, use `narrative-development`. Cite the primary-source
+   inbox file in `refs`. Severity at least `watch`; prefer `notable` for
+   blue-chip founders or billion-user scale claims. Empty outbox is fine only for
+   ordinary feed noise — never when a founder primary-source catalyst is in the
+   inbox. Host worthiness still gates fanout.
 4. Optional `reports/<run-id>/research-candidates.json` — at most three host-enqueued
    research nominations when a canonical `chain` + `tokenAddress` appears verbatim
    in sealed same-run inbox evidence and ≥2 independent authors/clusters support it.

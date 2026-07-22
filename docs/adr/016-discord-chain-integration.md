@@ -2,7 +2,7 @@
 description: ADR — Discord may enqueue a host-owned chain-integration lane that mutates additive chain manifests and deploys after deterministic gates.
 scope: project
 status: accepted
-last_verified: 2026-07-20
+last_verified: 2026-07-22
 ---
 
 # ADR 016 — Discord-triggered host chain integration

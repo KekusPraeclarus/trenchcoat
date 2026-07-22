@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { RouterEvent } from "../../src/contracts/schemas.js"
+import { ensureArchive, runArchiveDir } from "../../src/lib/archive.js"
 import {
   broadcastClaimId,
   claimsInImpactWindow,
   decisionClaimId,
   emptyMarketClaimIndex,
   emptyMarketClaimValidityIndex,
+  extractBroadcastClaimsFromArchive,
   isClaimIgnoredByValidity,
   narrativeClaimId,
   recordFromBroadcastEvent,
@@ -162,6 +167,40 @@ describe("recordFromBroadcastEvent", () => {
         },
       },
     })).toBeUndefined()
+  })
+})
+
+describe("extractBroadcastClaimsFromArchive", () => {
+  it("requires an accepted ingress receipt in acceptedOnly mode", async () => {
+    const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-claims-")))
+    const event = broadcastEvent({
+      channels: {
+        telegram: { text: "SOL moved" },
+        discord: { text: "SOL moved" },
+      },
+    })
+    const outbox = join(layout.routerOutbox, event.runId)
+    mkdirSync(outbox, { recursive: true })
+    writeFileSync(join(outbox, "event.json"), `${JSON.stringify(event)}\n`)
+
+    const query = {
+      layout,
+      startExclusive: "2026-07-21T00:00:00.000Z",
+      endInclusive: "2026-07-21T03:00:00.000Z",
+      acceptedOnly: true,
+    } as const
+    expect(extractBroadcastClaimsFromArchive(query)).toEqual([])
+
+    const runDir = runArchiveDir(layout, event.runId)
+    mkdirSync(runDir, { recursive: true })
+    writeFileSync(join(runDir, "delivery-receipts.json"), `${JSON.stringify({
+      receipts: [{ eventId: event.eventId, status: "accepted" }],
+    })}\n`)
+
+    expect(extractBroadcastClaimsFromArchive(query)[0]?.destinations).toEqual([
+      "telegram",
+      "discord",
+    ])
   })
 })
 

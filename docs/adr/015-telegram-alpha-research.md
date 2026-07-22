@@ -2,7 +2,7 @@
 description: ADR — Allowlisted telegram-alpha channels enqueue research on a single CA or ticker; research may broadcast when solid.
 scope: project
 status: accepted
-last_verified: 2026-07-20
+last_verified: 2026-07-22
 ---
 
 # ADR 015 — Telegram alpha auto-research bridge
@@ -34,8 +34,10 @@ to the Discord webhook (still gated by worthiness + Discord budget).
     confidence ≥60 → `model-confirmed`; else park `ambiguous`.
   - Cap 3 enqueues/run; skip watchlist/queue dupes; receipt archived.
 - **`scheduleResearchDrain`** when any enqueue is accepted.
-- **Research** may write `outbox/<run-id>.json` when solid; telegram-alpha
-  prefers empty outbox (research owns notify). Host never invents market text
+- **Research** writes one `outbox/<run-id>.json` item for every completed,
+  resolved dossier with a clear trade, watch, or avoid takeaway, including
+  negative conclusions. It omits outbox only for unresolved/ambiguous identity
+  or evidence too weak for a bounded conclusion. Host never invents market text
   (INV-B2 / ADR 014 worthiness still applies).
 - List-scan / farcaster-scan **keep** the ≥2-author bar — this bridge is
   separate and limited to operator-allowlisted TG alpha channels.
@@ -62,3 +64,9 @@ to the Discord webhook (still gated by worthiness + Discord budget).
 
 - Optional: capture TG preview image URLs for chart-vs-CA matching.
 - Optional: surface telegram-alpha-research receipts in chat-report facts.
+
+## Related
+
+- [ADR 023](023-narrative-development-and-research-broadcast.md) — general `research`
+  job now shares the mandatory resolved-dossier outbox rule introduced here for
+  telegram-alpha.

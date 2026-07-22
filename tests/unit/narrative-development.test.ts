@@ -108,6 +108,28 @@ describe("assertNarrativeDevelopmentAllowed", () => {
     expect(res).toEqual({ ok: true })
   })
 
+  it("dedupes legacy same-stage emergence claims as developments", () => {
+    const item: BroadcastItem = {
+      ...development("PONS protocol revenue jumped to $169K while FDV held $26M"),
+      auditClaim: {
+        type: "narrative-emergence",
+        subject: "rh-chain-meme-rotation",
+        direction: "up",
+        horizonHours: 72,
+        verificationRule: "narrative.emergence",
+      },
+    }
+    expect(assertNarrativeDevelopmentAllowed({
+      item,
+      narrativeLog: [RH],
+      recentClaims: [
+        priorClaim("PONS founder follow pushed the token toward $40M", "2026-07-21T10:00:00.000Z"),
+      ],
+      nowIso: NOW,
+      sameStageDevelopment: true,
+    })).toEqual({ ok: true })
+  })
+
   it("rejects a repeat of a recent development on the same subject", () => {
     const res = assertNarrativeDevelopmentAllowed({
       item: development("vlad agent trading catalyst on rh, $CASHCAT leading"),

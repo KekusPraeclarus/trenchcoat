@@ -21,6 +21,8 @@ Always write `reports/<run-id>/decision-proposals.json` as a full
 `DecisionProposalFile` (`schema`/`runId`/`proposedAt` + proposals with `card` +
 `provenanceIds`). Include `card.projectClassification`
 (`memecoin` | `utility` | `infrastructure` | `unknown`).
+`card.verdict` must be exactly `track`, `drop`, `ignore`, or `revisit`; never
+`pass` or `watch`. Resolved subjects must include the canonical `card.identity`.
 
 **Mint risk is contextual, not automatic hard-fail.** Scanner `mintable` /
 `mint-authority` flags are cautions. Weigh capped emissions, PoW/reward
@@ -53,11 +55,10 @@ Skip empty sections. Add Market / Security / Risk only when material and not
 already in TL;DR. Extra short sections OK if genuinely useful. No run-id meta,
 "(untrusted)" labels, tables, or mermaid.
 
-### Market broadcast (optional)
+### Market broadcast
 
-When the dossier is solid enough to notify operators (track-worthy thesis,
-notable security/market finding with sealed evidence), optionally write
-`outbox/<run-id>.json`:
+Every completed, resolved dossier with a clear trade, watch, or avoid takeaway
+must write exactly one `outbox/<run-id>.json`, including negative conclusions:
 
 ```json
 {
@@ -79,6 +80,9 @@ notable security/market finding with sealed evidence), optionally write
 }
 ```
 
-Skip outbox when thin, ambiguous, hard-fail, or nothing new. Host worthiness
-still gates Discord webhook delivery. Never invent CAs or refs.
+Use `token-up` for a track/upside thesis and `token-down` for drop/ignore,
+failed thesis, cooked tape/socials, identity risk, or a material security
+finding. Omit outbox only when identity is unresolved/ambiguous or evidence
+cannot support even a bounded conclusion. Host worthiness still gates fanout.
+Never invent CAs or refs.
 

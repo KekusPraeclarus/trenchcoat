@@ -111,6 +111,52 @@ describe("narrative broadcast staging", () => {
     expect(report.rejects[0]?.reason).toMatch(/narrative-unchanged-stage|status-quo-narrative-stage/)
   })
 
+  it("allows a notable same-stage development with a legacy emergence claim", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narr-development-"))
+    const agentRoot = join(root, "agent")
+    const layout = await ensureArchive(join(root, "archive"))
+    mkdirSync(join(agentRoot, "outbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+    const prior = {
+      slug: "pons-launchpad-attention",
+      title: "PONS launchpad attention",
+      firstSeen: NOW,
+      lastSeen: NOW,
+      evidence: ["twitter:@alice:1"],
+      stage: "emerging" as const,
+    }
+    writeFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), `${JSON.stringify(prior)}\n`)
+    writeFileSync(
+      join(agentRoot, "outbox", `${RUN_ID}.json`),
+      `${JSON.stringify({
+        schema: 1,
+        items: [{
+          severity: "notable",
+          text: "PONS protocol revenue hit $169K in 24h while FDV held near $26M",
+          refs: ["state/narratives/log.jsonl"],
+          auditClaim: {
+            type: "narrative-emergence",
+            subject: "pons-launchpad-attention",
+            direction: "up",
+            horizonHours: 72,
+            verificationRule: "narrative.emergence",
+          },
+        }],
+      }, null, 2)}\n`,
+    )
+
+    const report = await ingestOutbox({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      narrativeLogBefore: [prior],
+      narrativeLogAfter: [prior],
+    })
+    expect(report.staged).toBe(1)
+    expect(report.rejected).toBe(0)
+  })
+
   it("allows a broadcast when narrative heat changes", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-narr-heat-"))
     const agentRoot = join(root, "agent")

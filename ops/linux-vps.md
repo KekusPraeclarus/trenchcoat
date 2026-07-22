@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -167,11 +167,33 @@ With secrets set and `.github/workflows/deploy-vps.yml` on `main`:
 3. Confirm the Action is green and `tc status` shows the new commit in
    deployment provenance
 
+## Live access from desktop
+
+**Code and docs:** this git checkout on the Mac (kept up to date with
+`main`). Do not SSH to read `src/` or `docs/`.
+
+**Live runtime data and logs only:** programming agents (and operators) use
+`ops/remote.sh` — SSH **out** only (`Host YOUR_SSH_HOST` in `~/.ssh/config`).
+Binding rule: `.cursor/rules/live-vps.mdc`.
+
+```bash
+# From the repo on the Mac
+./ops/remote.sh health                 # healthz + KeepAlives + status
+./ops/remote.sh status                 # any trenchcoat CLI args
+./ops/remote.sh -- 'tail -50 /tmp/trenchcoat.x-scan.err.log'
+./ops/remote.sh sync                   # non-secret state → .trenchcoat-remote/
+```
+
+`sync` pulls `config.json`, `agent/state/`, `agent/reports/` (≤2 MiB files), and
+a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
+Override host with `TRENCHCOAT_SSH_HOST`.
+
 ## Ops cheat sheet
 
 | Task | Command |
 |---|---|
-| Manual deploy | `~/bin/trenchcoat-deploy` |
+| Live health (from Mac) | `./ops/remote.sh health` |
+| Manual deploy (on VPS) | `~/bin/trenchcoat-deploy` |
 | Logs | `/tmp/trenchcoat.*.log` |
 | Restart KeepAlive | `systemctl --user restart trenchcoat-router` (etc.) |
 | Timers | `systemctl --user list-timers 'trenchcoat-*'` |

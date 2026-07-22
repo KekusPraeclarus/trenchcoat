@@ -2,7 +2,7 @@
 description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
   - You are about to add a dependency, data source, or change the harness/model routing.
@@ -44,9 +44,13 @@ lean: minimum tokens for undiminished results.
    `state/narratives/log.jsonl` (slug, stage, first/last seen, evidence). The log
    is host-owned/integrity-protected: the bot proposes updates in
    `reports/<run-id>/narrative-proposals.jsonl` and the host schema-merges them.
-   New slugs or stage changes get a short `narrative-emergence` /
-   `narrative-fade` (or `rotation`) broadcast; same-stage re-sightings only
-   refresh the log. Host prunes entries older than
+   New slugs, stage changes, notable concrete same-stage developments, and
+   founder/protocol primary-source catalysts (material product/wallet/protocol
+   announcements from founder/CEO/protocol official/official channel — no
+   CT-cluster or stage-shift prerequisite) get a short broadcast; pure
+   same-stage re-sightings only refresh the log. Host
+   compatibility-routes misclassified same-stage emergence claims through
+   development novelty dedupe. Host prunes entries older than
    `narratives.retention_days` (default 14) after each `narrative-scan`.
 5. **Chart analysis** — OHLCV from GeckoTerminal; deterministic indicators computed
    by collectors (RSI, volume z-score, breakouts, EMA structure); LLM interprets,
@@ -375,8 +379,11 @@ Accepted quality improvements beyond the base flow, in adoption order. Items
     every threshold (audit-metrics.md).
 13. **Narrative lifecycle stages** — `emerging → peaking → fading` on each
     `log.jsonl` entry (optional richer notes in `narratives/<slug>.md`);
-    broadcast fires on **new slug append** or **stage change** (heat up/down);
-    same-stage re-sightings stay silent (host-enforced). Rotation = capital
+    broadcast fires on **new slug append**, **stage change** (heat up/down), a
+    notable concrete same-stage development, or a **founder/protocol
+    primary-source catalyst** (no CT-cluster or stage-shift prerequisite);
+    pure re-sightings stay silent.
+    Rotation = capital
     leaving a fading narrative for an emerging one → canonical `urgent`.
 14. **Regime-stratified scorecards (v1.5)** — hit rate and calibration split by
     macro regime (Fear & Greed + chain-benchmark volatility percentile) once

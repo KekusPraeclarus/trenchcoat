@@ -126,7 +126,7 @@ export function assertNarrativeBroadcastAllowed(args: Readonly<{
   item: BroadcastItem
   logBefore: readonly NarrativeLogEntry[]
   logAfter?: readonly NarrativeLogEntry[]
-}>): { ok: true } | { ok: false; reason: string } {
+}>): { ok: true; sameStageDevelopment?: true } | { ok: false; reason: string } {
   const claim = args.item.auditClaim
   if (!NARRATIVE_CLAIM_TYPES.has(claim.type)) return { ok: true }
 
@@ -151,6 +151,10 @@ export function assertNarrativeBroadcastAllowed(args: Readonly<{
     && after?.stage === "peaking"
   ) {
     return { ok: true }
+  }
+
+  if (claim.type === "narrative-emergence" || claim.type === "rotation") {
+    return { ok: true, sameStageDevelopment: true }
   }
 
   return { ok: false, reason: "narrative-unchanged-stage" }

@@ -24,6 +24,12 @@ export type WorthinessContext = Readonly<{
   collectionStatus?: string
   marketBlind?: boolean
   statusQuoStages?: readonly StageKnown[]
+  recentBroadcasts?: ReadonlyArray<Readonly<{
+    occurredAt: string
+    subject: string
+    summary: string
+    destinations: readonly ("telegram" | "discord")[]
+  }>>
   /** Optional agent.md excerpt — treated as untrusted color, not authority */
   agentNotes?: string
 }>
@@ -43,6 +49,17 @@ function stageList(stages: readonly StageKnown[] | undefined): string {
     .slice(0, 24)
     .map((entry) => `${deslugNarrativeLabel(entry.slug)}=${entry.stage}`)
     .join(", ")
+  return mapped.length > 0 ? mapped : "(none)"
+}
+
+function broadcastList(broadcasts: WorthinessContext["recentBroadcasts"]): string {
+  const mapped = (broadcasts ?? [])
+    .slice(0, 20)
+    .map((entry) => {
+      const summary = entry.summary.trim().replace(/\s+/gu, " ").slice(0, 180)
+      return `${entry.occurredAt} ${entry.subject} [${entry.destinations.join(",")}]: ${summary}`
+    })
+    .join("\n")
   return mapped.length > 0 ? mapped : "(none)"
 }
 
@@ -71,6 +88,7 @@ export function worthinessUserMessage(args: Readonly<{
     `collectionStatus: ${args.context.collectionStatus ?? "unknown"}`,
     `marketBlind: ${args.context.marketBlind === true ? "true" : "false"}`,
     `statusQuoStages: ${stageList(args.context.statusQuoStages)}`,
+    `<accepted-broadcast-history>\n${broadcastList(args.context.recentBroadcasts)}\n</accepted-broadcast-history>`,
     `severity: ${args.item.severity}`,
     `auditClaim: ${claimLine(args.item)}`,
     `refs: ${args.item.refs.join(", ") || "(none)"}`,

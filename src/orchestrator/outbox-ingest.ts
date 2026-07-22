@@ -28,6 +28,7 @@ import {
   loadIntegrityHold,
 } from "../remediation/integrity-hold.js"
 import {
+  extractBroadcastClaimsFromArchive,
   loadMarketClaimIndex,
   recordFromBroadcastEvent,
   saveMarketClaimIndex,
@@ -121,6 +122,14 @@ export async function ingestOutbox(args: Readonly<{
   const worthinessEnabled = args.worthiness?.enabled === true
   const worthinessStatusQuo: readonly StageKnown[] =
     args.worthiness?.context.statusQuoStages ?? statusQuo
+  const recentAcceptedClaims = extractBroadcastClaimsFromArchive({
+    layout: args.layout,
+    startExclusive: new Date(
+      Date.parse(args.nowIso) - 48 * 3_600_000,
+    ).toISOString(),
+    endInclusive: args.nowIso,
+    acceptedOnly: true,
+  })
 
   const reject = (reason: string, itemHash?: `sha256:${string}`): void => {
     rejects.push(itemHash ? { reason, itemHash } : { reason })
@@ -191,8 +200,9 @@ export async function ingestOutbox(args: Readonly<{
     const developmentGate = assertNarrativeDevelopmentAllowed({
       item,
       narrativeLog: logAfter ?? logBefore,
-      recentClaims: claimIndex.claims,
+      recentClaims: recentAcceptedClaims,
       nowIso: args.nowIso,
+      ...(stageGate.sameStageDevelopment ? { sameStageDevelopment: true } : {}),
     })
     if (!developmentGate.ok) {
       reject(developmentGate.reason, rawHash)

@@ -29,6 +29,9 @@ Disposable deep research sub-session for operator chat / on-demand research.
    clusters, countercase, gate, projectClassification
    (memecoin|utility|infrastructure|unknown), optional mintAssessment
    {active,justified,rationale}, optional identity }, provenanceIds }] }`.
+   `card.verdict` must be exactly `track`, `drop`, `ignore`, or `revisit`.
+   Never emit `pass` or `watch`. A resolved subject must include `card.identity`
+   matching the host-supplied chain, address, and symbol.
    Mintable / mint-authority scanner flags are cautions — judge emissions,
    reward mechanics, and controls; host still blocks track for mintable
    memecoins or missing classification. Never invent shapes like
@@ -76,12 +79,17 @@ no "Agent context" or "(untrusted)" labels.
 
 Plain markdown. No tables. No mermaid.
 
-## Market broadcast (optional)
+## Market broadcast
 
-When the dossier is solid enough to notify operators, optionally write
-`outbox/<run-id>.json` as `{schema:1,items:[{severity,text,refs,auditClaim}]}`
-(text ≤280; frozen `inbox/`/`state/` refs). Skip when thin, ambiguous,
-hard-fail, or nothing new. Host worthiness still gates Discord.
+For every completed, resolved dossier with a clear trade or watch
+takeaway, write exactly one `outbox/<run-id>.json` item as
+`{schema:1,items:[{severity,text,refs,auditClaim}]}` regardless of verdict.
+Use `token-up` for a track/upside thesis. Use `token-down` for drop/ignore,
+failed thesis, cooked tape/socials, identity risk, or a material security
+finding. Text ≤280 chars; refs must be frozen `inbox/`/`state/` paths.
+
+Omit outbox only when identity is unresolved/ambiguous or evidence cannot
+support even a bounded conclusion. Host worthiness still gates fanout.
 
 ## Voice
 

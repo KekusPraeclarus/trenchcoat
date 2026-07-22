@@ -2,7 +2,7 @@
 description: The runtime agent's workspace - instructions, skills, knowledge store (index, research, narratives, sources), alpha queue, outbox, sandbox config. Everything under agent/ is edited as artifact, read as data.
 scope: module
 status: draft
-last_verified: 2026-07-20
+last_verified: 2026-07-22
 read_when:
   - Authoring or editing anything under agent/ (bot instructions, skills, knowledge store schema, sandbox.json).
 do_not_read_when:
@@ -142,10 +142,14 @@ structured state, markdown for prose knowledge, one index for retrieval.
   `twitter:@handle` provenances into `state/x-narrative-sources.json`;
   `pruneNarrativeLog` then purges any entry whose `lastSeen` is older than
   `config.narratives.retention_days` (default 14) and collapses duplicate slugs.
-  Outbox broadcasts fire on a newly appended slug **or** a stage change
-  (`emerging`/`peaking`/`fading`); same-stage re-sightings stay silent. Host
-  ingest rejects unchanged-stage claims and text that restates known heat
-  (`narrative-stage-dedupe.ts`).
+  Outbox broadcasts fire on a newly appended slug, a stage change, a notable
+  concrete same-stage development, or a founder/protocol primary-source catalyst
+  (material product/wallet/protocol/ecosystem announcement from a founder, CEO,
+  protocol official, or official project channel — no CT-cluster or stage-shift
+  prerequisite). Pure re-sightings stay silent. Host ingest
+  compatibility-routes same-stage emergence/rotation claims through development
+  novelty dedupe, while rejecting text that only restates known heat
+  (`narrative-stage-dedupe.ts`, `narrative-development.ts`).
 - **`narratives/<slug>.md`** — optional richer notes for a narrative the bot
   wants to keep prose on (stage/sentiment/prevailing frontmatter). Not
   required for the rolling log or broadcast path.

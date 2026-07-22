@@ -51,9 +51,12 @@ export function assertNarrativeDevelopmentAllowed(args: Readonly<{
   narrativeLog: readonly NarrativeLogEntry[]
   recentClaims: readonly MarketClaimRecord[]
   nowIso: string
+  sameStageDevelopment?: boolean
 }>): { ok: true } | { ok: false; reason: string } {
   const claim = args.item.auditClaim
-  if (claim.type !== "narrative-development") return { ok: true }
+  const isDevelopment = claim.type === "narrative-development"
+    || args.sameStageDevelopment === true
+  if (!isDevelopment) return { ok: true }
 
   const subject = claim.subject.trim().toLowerCase()
   const known = args.narrativeLog.some((entry) => entry.slug === subject)

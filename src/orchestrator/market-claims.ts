@@ -272,12 +272,14 @@ export function claimsInImpactWindow(args: Readonly<{
 
 /**
  * Scan archive router-outbox + delivery receipts for broadcast claims.
- * Conservative: includes all finding.broadcast events in the time window.
+ * Conservative by default: includes all finding.broadcast events in the time
+ * window. acceptedOnly requires an accepted/duplicate router ingress receipt.
  */
 export function extractBroadcastClaimsFromArchive(args: Readonly<{
   layout: ArchiveLayout
   startExclusive: string
   endInclusive: string
+  acceptedOnly?: boolean
 }>): MarketClaimRecord[] {
   const outboxRoot = args.layout.routerOutbox
   if (!existsSync(outboxRoot)) return []
@@ -320,14 +322,16 @@ export function extractBroadcastClaimsFromArchive(args: Readonly<{
               }
             }
           } catch {
-            destinations.push("telegram", "discord")
+            if (!args.acceptedOnly) destinations.push("telegram", "discord")
           }
-        } else {
+        } else if (!args.acceptedOnly) {
           destinations.push("telegram", "discord")
         }
 
         const record = recordFromBroadcastEvent({ event, destinations })
-        if (record) claims.push(record)
+        if (record && (!args.acceptedOnly || record.destinations.length > 0)) {
+          claims.push(record)
+        }
       } catch {
         // skip malformed
       }
