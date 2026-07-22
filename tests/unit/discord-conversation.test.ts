@@ -79,6 +79,19 @@ describe("discord conversation", () => {
     expect(cleaned.startsWith("**$KARMA")).toBe(true)
   })
 
+  it("keeps conversational acknowledgments and corrections", () => {
+    const reply = [
+      "Good catch on the migration — I'll verify the KARMA v1→v2 CA story in the knowledge store before updating the take.",
+      "Fair pushback — that was sloppy framing on my end.",
+      "",
+      "**$KARMA didn't have random CA confusion. It migrated.**",
+    ].join("\n")
+    const cleaned = sanitizeConversationReply(reply)
+    expect(cleaned).toContain("Good catch on the migration")
+    expect(cleaned).toContain("Fair pushback")
+    expect(cleaned).toContain("**$KARMA didn't have random CA confusion")
+  })
+
   it("keeps member-facing research status lines", () => {
     const cleaned = sanitizeConversationReply(
       "Digging into $KARMA & $WALLET — back in a bit.",

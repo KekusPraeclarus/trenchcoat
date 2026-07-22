@@ -67,7 +67,8 @@ export function buildDiscordConversationPrompt(
     "Host-only retrieval (never mention in the reply): read state/INDEX.md first; prefer state/, reports/, and reports/chat/.",
     "Answer from the knowledge store when it suffices. Do not invent tokens, scores, or CAs.",
     "If research is needed, one short member-facing status line only, then the research JSON fence from the skill.",
-    "Your entire reply is member-facing answer text only — no process, plans, skills, tools, INDEX, or reading/pulling/checking narration.",
+    "Never narrate host mechanics (skills, tools, INDEX, state/inbox/report paths, pull context).",
+    "Conversational acknowledgments and corrections are welcome — own a miss, update the take, engage the member.",
     "Never cite workspace paths, report filenames, operator commands, or Telegram.",
     "Never emit Discord @mentions — the host controls mentions.",
     `Member id (opaque): ${authorUserId}`,
@@ -182,7 +183,8 @@ export function validateConversationResearchSubject(
   return { subject: normalized }
 }
 
-/** Leading chunks that narrate retrieval/process — never member-facing */
+/** Leading chunks that narrate host mechanics — never member-facing.
+ * Conversational acknowledgments/corrections stay (even if they mention verifying). */
 const PROCESS_PREAMBLE_RE = new RegExp(
   [
     "\\b(?:discord\\s+)?(?:chat\\s+)?skill\\b",
@@ -190,8 +192,6 @@ const PROCESS_PREAMBLE_RE = new RegExp(
     "\\bindex\\.md\\b",
     "\\bstate\\s+index\\b",
     "\\bstate\\/",
-    "\\bknowledge\\s+store\\b",
-    "\\bworkspace\\b",
     "\\binbox\\/",
     "\\breports\\/(?:chat\\/)?",
     "\\bpull(?:ing)?\\s+context\\b",
@@ -208,7 +208,9 @@ function isProcessPreambleChunk(chunk: string): boolean {
   const text = chunk.trim()
   if (!text || text.length > 280) return false
   if (!PROCESS_PREAMBLE_RE.test(text)) return false
-  return PROCESS_START_RE.test(text) || text.split(/\s+/u).length <= 24
+  // Only drop pure mechanics narration, not conversational substance that
+  // happens to mention verifying or updating a take.
+  return PROCESS_START_RE.test(text) || text.split(/\s+/u).length <= 18
 }
 
 /** Drop leading process/meta narration before member delivery */
@@ -754,7 +756,8 @@ export async function maybeSynthesizeConversation(args: Readonly<{
     "Synthesize an answer to the member question using the research chat reports below.",
     "Host-only retrieval (never mention in the reply): read only the listed report paths.",
     "Do not emit a research JSON block — synthesis cannot enqueue more research.",
-    "Your entire reply is member-facing answer text only — no process, plans, skills, tools, INDEX, or reading/pulling/checking narration.",
+    "Never narrate host mechanics (skills, tools, INDEX, state/inbox/report paths, pull context).",
+    "Conversational acknowledgments and corrections are welcome — own a miss, update the take, engage the member.",
     "Never cite workspace paths in the reply.",
     "Host status lines (trusted):",
     ...statusLines.map((l) => `- ${l}`),
