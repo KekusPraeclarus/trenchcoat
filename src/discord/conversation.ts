@@ -64,9 +64,10 @@ export function buildDiscordConversationPrompt(
   return [
     "Follow skills/discord-chat/SKILL.md.",
     "You are trenchcoat in a dedicated Discord research channel.",
-    "Read state/INDEX.md first. Prefer state/, reports/, and reports/chat/.",
+    "Host-only retrieval (never mention in the reply): read state/INDEX.md first; prefer state/, reports/, and reports/chat/.",
     "Answer from the knowledge store when it suffices. Do not invent tokens, scores, or CAs.",
-    "If research is needed, say it is underway briefly and end with the research JSON fence from the skill.",
+    "If research is needed, one short member-facing status line only, then the research JSON fence from the skill.",
+    "Your entire reply is member-facing answer text only — no process, plans, skills, tools, INDEX, or reading/pulling/checking narration.",
     "Never cite workspace paths, report filenames, operator commands, or Telegram.",
     "Never emit Discord @mentions — the host controls mentions.",
     `Member id (opaque): ${authorUserId}`,
@@ -181,8 +182,60 @@ export function validateConversationResearchSubject(
   return { subject: normalized }
 }
 
+/** Leading chunks that narrate retrieval/process — never member-facing */
+const PROCESS_PREAMBLE_RE = new RegExp(
+  [
+    "\\b(?:discord\\s+)?(?:chat\\s+)?skill\\b",
+    "\\bskills\\/",
+    "\\bindex\\.md\\b",
+    "\\bstate\\s+index\\b",
+    "\\bstate\\/",
+    "\\bknowledge\\s+store\\b",
+    "\\bworkspace\\b",
+    "\\binbox\\/",
+    "\\breports\\/(?:chat\\/)?",
+    "\\bpull(?:ing)?\\s+context\\b",
+    "\\bread(?:ing)?\\s+(?:the\\s+)?(?:state|index|files|reports)\\b",
+    "\\bcheck(?:ing)?\\s+(?:the\\s+)?(?:state|index|files|reports)\\b",
+  ].join("|"),
+  "iu",
+)
+
+const PROCESS_START_RE =
+  /^(?:i(?:'ll| will| am|'m(?:\s+going\s+to)?)?|let me|gonna|first[, ]|before i|reading|checking|pulling|following)\b/iu
+
+function isProcessPreambleChunk(chunk: string): boolean {
+  const text = chunk.trim()
+  if (!text || text.length > 280) return false
+  if (!PROCESS_PREAMBLE_RE.test(text)) return false
+  return PROCESS_START_RE.test(text) || text.split(/\s+/u).length <= 24
+}
+
+/** Drop leading process/meta narration before member delivery */
+export function stripProcessPreamble(text: string): string {
+  let out = text.trim()
+  for (let i = 0; i < 6; i += 1) {
+    if (!out) return out
+    const paragraphs = out.split(/\n\s*\n/u)
+    const first = paragraphs[0]!.trim()
+    const lines = first.split("\n")
+    let drop = 0
+    while (drop < lines.length && isProcessPreambleChunk(lines[drop]!)) {
+      drop += 1
+    }
+    if (drop === 0 && isProcessPreambleChunk(first)) {
+      out = paragraphs.slice(1).join("\n\n").trim()
+      continue
+    }
+    if (drop === 0) break
+    const restFirst = lines.slice(drop).join("\n").trim()
+    out = [restFirst, ...paragraphs.slice(1)].filter(Boolean).join("\n\n").trim()
+  }
+  return out
+}
+
 export function sanitizeConversationReply(text: string): string {
-  return stripLocalWorkspaceRefs(text)
+  return stripProcessPreamble(stripLocalWorkspaceRefs(text))
     .replace(/<@!?\d+>/gu, "")
     .replace(/@everyone/giu, "")
     .replace(/@here/giu, "")
@@ -699,7 +752,9 @@ export async function maybeSynthesizeConversation(args: Readonly<{
   const synthesisPrompt = [
     "Follow skills/discord-chat/SKILL.md.",
     "Synthesize an answer to the member question using the research chat reports below.",
-    "Read only the listed report paths. Do not emit a research JSON block — synthesis cannot enqueue more research.",
+    "Host-only retrieval (never mention in the reply): read only the listed report paths.",
+    "Do not emit a research JSON block — synthesis cannot enqueue more research.",
+    "Your entire reply is member-facing answer text only — no process, plans, skills, tools, INDEX, or reading/pulling/checking narration.",
     "Never cite workspace paths in the reply.",
     "Host status lines (trusted):",
     ...statusLines.map((l) => `- ${l}`),

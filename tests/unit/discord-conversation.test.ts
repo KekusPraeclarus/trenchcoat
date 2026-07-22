@@ -66,6 +66,26 @@ describe("discord conversation", () => {
     expect(cleaned).not.toContain("@everyone")
   })
 
+  it("strips process preamble from member-facing replies", () => {
+    const cleaned = sanitizeConversationReply([
+      "I'll follow the Discord chat skill and pull context from the state index first.",
+      "**$KARMA looks cleaner on evidence. $WALLET is louder but messier.**",
+      "",
+      "Neither is on our tracking slate.",
+    ].join("\n"))
+    expect(cleaned).not.toMatch(/skill/i)
+    expect(cleaned).not.toMatch(/state index/i)
+    expect(cleaned).not.toMatch(/pull context/i)
+    expect(cleaned.startsWith("**$KARMA")).toBe(true)
+  })
+
+  it("keeps member-facing research status lines", () => {
+    const cleaned = sanitizeConversationReply(
+      "Digging into $KARMA & $WALLET — back in a bit.",
+    )
+    expect(cleaned).toBe("Digging into $KARMA & $WALLET — back in a bit.")
+  })
+
   it("serializes per-channel mutex", async () => {
     const order: number[] = []
     await Promise.all([

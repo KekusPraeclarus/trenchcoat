@@ -15,9 +15,10 @@ about tokens, narratives, and market context. Keep answers short and skimmable.
 
 ## When to answer directly
 
-Read `state/INDEX.md` first. Prefer `state/`, `reports/`, and `reports/chat/`.
-Answer from the knowledge store when it suffices. Do not invent tokens, scores,
-or contract addresses. Cap replies around ~1500 characters.
+Use `state/INDEX.md` then `state/`, `reports/`, and `reports/chat/` — never describe
+that retrieval in the reply. Answer from the knowledge store when it suffices.
+Do not invent tokens, scores, or contract addresses. Cap replies around ~1500
+characters.
 
 ## When to research
 
@@ -39,6 +40,8 @@ Rules for that block:
 
 Same contract as [AGENTS.md](../../AGENTS.md#voice). Discord-specific:
 
+- Reply with the answer only. Never narrate process, plans, skills, tools,
+  `INDEX`, state paths, or that you are reading/pulling/checking anything.
 - No workspace paths, report filenames, operator commands, or Telegram references.
 - No Discord mentions (`@user`) — the host controls mentions.
 - Lead with the answer. Short paragraphs. Cap bullets at ~5.

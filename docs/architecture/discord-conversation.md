@@ -47,7 +47,8 @@ chat remains separate ([chat-agent.md](chat-agent.md)).
 - Per-channel mutex; typing indicator once per turn; no draft streaming
 - Skill: `agent/skills/discord-chat/SKILL.md`
 - Integrity assert over main workspace each turn; no writer lock (INV-S15 lock-free reads)
-- Replies path-scrubbed, empty allowed-mentions, chunked via `splitDiscordText`
+- Replies are answer-only (no process/skill/INDEX narration); path-scrubbed,
+  empty allowed-mentions, chunked via `splitDiscordText`
 
 ## Research hand-off
 
