@@ -715,7 +715,7 @@ async function cmdListenTelegram(): Promise<void> {
       const hostHandled = trimmed.startsWith("/status")
         || trimmed.startsWith("/start")
         || /^(undock|confirm)\s+\S+/iu.test(trimmed)
-        || /^(approve|defer|reject)\s+remediation\s+\S+/iu.test(trimmed)
+        || /^(approve|defer|reject)\s+remediation\b/iu.test(trimmed)
         || /^\/?remediations?\b/iu.test(trimmed)
         || /^(confirm|yes|y|do\s+it|go\s+ahead|approved?|cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu.test(trimmed)
         || /^[1-5]\s*$/u.test(trimmed)

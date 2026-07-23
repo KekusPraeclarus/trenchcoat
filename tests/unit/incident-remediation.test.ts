@@ -258,10 +258,22 @@ describe("approval", () => {
       action: "approve",
       incidentId: "rem-abc",
     })
+    expect(parseRemediationCommand("approve remediation Rem 92da03a5713e")).toEqual({
+      action: "approve",
+      incidentId: "rem-92da03a5713e",
+    })
+    expect(parseRemediationCommand("approve remediation Rem 4b6d9126a855")).toEqual({
+      action: "approve",
+      incidentId: "rem-4b6d9126a855",
+    })
     expect(parseRemediationCommand("/remediations")?.action).toBe("list")
     expect(parseForwardedRemediationIntent("I will approve rem-abcdef012345 now")).toEqual({
       action: "approve",
       incidentId: "rem-abcdef012345",
+    })
+    expect(parseForwardedRemediationIntent("Approval noted — Rem 92da03a5713e")).toEqual({
+      action: "approve",
+      incidentId: "rem-92da03a5713e",
     })
   })
 })

@@ -62,10 +62,12 @@ message. Bot/webhook messages are context-only. Reply ancestors may extend
 context beyond the scan window. Early fingerprint dedupe runs before the model;
 extensions of previously **built** suggestions proceed as `extends:`. Ledger:
 `~/.trenchcoat/remediations/suggestions.json`. CLI: `tc remediations suggestions`.
-Silent on Discord (no replies/reactions). Telegram digests / failure alerts use
-host-composed copy (outcome labels + sanitized summaries / incident title +
-stage explanation), optionally polished by `composer-2.5`; raw Discord text
-never enters the message.
+Silent on Discord (no replies/reactions). Telegram digests / failure alerts /
+high-risk approval cards use host-composed plain-language copy (optionally
+polished by `composer-2.5` in an assistant voice); approval cards always end
+with exact `approve|defer|reject remediation rem-…` lines. Host normalizes
+Telegram typos (`Rem 92da…` → `rem-92da…`) so approvals apply before chat.
+Raw Discord text never enters the message.
 
 ## Post-fix revalidation
 
@@ -95,7 +97,8 @@ automatic correction. Historical manual FYP corrections are not backfilled.
 
 ## Operator surface
 
-- Telegram: `approve|defer|reject remediation <id>`, `/remediations`, `remediation <id>`
+- Telegram: `approve|defer|reject remediation rem-<id>` (hyphen required; host
+  also accepts `Rem <hex>` typos), `/remediations`, `remediation <id>`
 - CLI: `tc remediations scan|run|status|approve|defer|reject|retry|fail`
 - Config: `incident_remediation.enabled` + `schedule_enabled` (both default false);
   post-fix audit via nested `revalidation` (schema 14, INV-S28)

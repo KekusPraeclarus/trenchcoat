@@ -1,4 +1,5 @@
 import { runOneShotSession } from "../orchestrator/session.js"
+import { renderApprovalMessage } from "./approval.js"
 import { sanitizeSecretLike } from "./sanitize.js"
 import type { RemediationIncident, SuggestionLedgerEntry } from "./schemas.js"
 
@@ -110,15 +111,26 @@ function stripFences(text: string): string {
 
 async function polishOperatorNote(args: Readonly<{
   repoRoot: string
-  kind: "suggestion-digest" | "remediation-failure"
+  kind: "suggestion-digest" | "remediation-failure" | "remediation-approval"
   hostText: string
   facts: Readonly<Record<string, unknown>>
+  requireCommandLines?: readonly string[]
 }>): Promise<string> {
   const prompt = [
-    "Rewrite the host operator note into a clearer Telegram message.",
-    "Use ONLY the host facts JSON and host draft. Do not invent incidents, outcomes, or causes.",
+    args.kind === "remediation-approval"
+      ? "Rewrite the host remediation approval card into a short operator Telegram note in a clear first-person assistant voice (you are briefing the operator)."
+      : "Rewrite the host operator note into a clearer Telegram message.",
+    "Use ONLY the host facts JSON and host draft. Do not invent incidents, outcomes, paths, or causes.",
     "Plain text only. No markdown fences. No Discord quotes. No secrets or file contents.",
-    "Keep every incident id and outcome meaning. Max 900 characters.",
+    args.kind === "remediation-approval"
+      ? [
+        "Lead with what broke and what the proposed fix does in plain language (2–4 short sentences).",
+        "Mention risk level and that build starts only after exact approve.",
+        "Keep every rem-… incident id unchanged.",
+        "End by pasting the three exact command lines from the host draft VERBATIM (approve/defer/reject) — do not rephrase, wrap, or drop the hyphen.",
+        "Max 1,100 characters including the command lines.",
+      ].join(" ")
+      : "Keep every incident id and outcome meaning. Max 900 characters.",
     "",
     `kind=${args.kind}`,
     `hostDraft=<<`,
@@ -140,10 +152,14 @@ async function polishOperatorNote(args: Readonly<{
   }
   const polished = clipMessage(stripFences(session.text), OPERATOR_NOTIFY_MAX)
   if (polished.length < 40) return args.hostText
-  // Keep incident ids if the host draft named any
   const ids = args.hostText.match(/rem-[a-f0-9]{8,}/giu) ?? []
   for (const id of ids) {
     if (!polished.includes(id)) return args.hostText
+  }
+  if (args.requireCommandLines) {
+    for (const line of args.requireCommandLines) {
+      if (!polished.includes(line)) return args.hostText
+    }
   }
   return polished
 }
@@ -205,6 +221,86 @@ export async function renderRemediationFailure(args: Readonly<{
         phase: args.incident.phase,
         detail: clipLine(args.detail, 280),
         explanation: explainFailureDetail(args.detail),
+      },
+    })
+  } catch {
+    return hostText
+  }
+}
+
+/** Deterministic high-risk approval card (no model). */
+export function renderRemediationApprovalHost(args: Readonly<{
+  incident: RemediationIncident
+  diagnosisSummary: string
+  proposalSummary: string
+  paths: readonly string[]
+  tests: readonly string[]
+  invariants: readonly string[]
+  rollout: string
+  rollback: string
+}>): string {
+  return renderApprovalMessage({
+    incident: args.incident,
+    diagnosisSummary: args.diagnosisSummary,
+    proposalSummary: args.proposalSummary,
+    paths: args.paths,
+    tests: args.tests,
+    invariants: args.invariants,
+    rollout: args.rollout,
+    rollback: args.rollback,
+  })
+}
+
+export async function renderRemediationApproval(args: Readonly<{
+  repoRoot: string
+  incident: RemediationIncident
+  diagnosisSummary: string
+  proposalSummary: string
+  paths: readonly string[]
+  tests: readonly string[]
+  invariants: readonly string[]
+  rollout: string
+  rollback: string
+  polish?: boolean
+}>): Promise<string> {
+  const hostText = renderRemediationApprovalHost({
+    incident: args.incident,
+    diagnosisSummary: args.diagnosisSummary,
+    proposalSummary: args.proposalSummary,
+    paths: args.paths,
+    tests: args.tests,
+    invariants: args.invariants,
+    rollout: args.rollout,
+    rollback: args.rollback,
+  })
+  const id = args.incident.incidentId
+  const commandLines = [
+    `approve remediation ${id}`,
+    `defer remediation ${id}`,
+    `reject remediation ${id}`,
+  ] as const
+  if (args.polish === false) return hostText
+  try {
+    return await polishOperatorNote({
+      repoRoot: args.repoRoot,
+      kind: "remediation-approval",
+      hostText,
+      requireCommandLines: commandLines,
+      facts: {
+        incidentId: id,
+        title: clipLine(args.incident.title, SUMMARY_MAX),
+        risk: args.incident.riskLevel ?? "high",
+        origin: args.incident.origin ?? null,
+        diagnosis: clipLine(args.diagnosisSummary, 280),
+        proposal: clipLine(args.proposalSummary, 280),
+        paths: args.paths.slice(0, 12),
+        tests: args.tests.slice(0, 8).map((t) => clipLine(t, 80)),
+        invariants: args.invariants.slice(0, 8),
+        rollout: clipLine(args.rollout, 160),
+        rollback: clipLine(args.rollback, 160),
+        expires: args.incident.approvalExpiresAt ?? null,
+        proposalHash: args.incident.proposalHash ?? null,
+        commands: [...commandLines],
       },
     })
   } catch {

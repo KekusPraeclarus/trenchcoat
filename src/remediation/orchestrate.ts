@@ -22,7 +22,6 @@ import {
   approvalExpiryIso,
   parseRemediationCommand,
   proposalContentHash,
-  renderApprovalMessage,
 } from "./approval.js"
 import { evaluateProposedPaths, evaluateWorktreeConfinement, pathsMateriallyExpanded } from "./confinement.js"
 import { runRemediationGates, runSmokeChecks, selectSmokeChecks } from "./gates.js"
@@ -639,9 +638,12 @@ async function runRemediationPhases(args: Readonly<{
       const diagnosis = JSON.parse(
         await import("node:fs").then((fs) => fs.readFileSync(diagnosisPath, "utf8")),
       ) as { rootCause?: string }
-      await notifyOperator(renderApprovalMessage({
+      const { renderRemediationApproval } = await import("./operator-notify.js")
+      await notifyOperator(await renderRemediationApproval({
+        repoRoot: args.repoRoot,
         incident: { ...record, approvalExpiresAt: expires, proposalHash: record.proposalHash },
         diagnosisSummary: diagnosis.rootCause ?? record.title,
+        proposalSummary: proposal.summary,
         paths: proposal.paths,
         tests: proposal.tests,
         invariants: proposal.invariants,

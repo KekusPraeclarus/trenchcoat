@@ -102,6 +102,21 @@ export function applyApprovalCommand(args: Readonly<{
   }
 }
 
+/**
+ * Normalize operator-typed incident ids so Telegram typos still hit the host
+ * parser: `Rem 92da…`, `rem_92da…`, `REM-92da…` → `rem-92da…`.
+ */
+export function normalizeRemediationIncidentId(raw: string): string | null {
+  const cleaned = raw.trim().replace(/^["'`]+|["'`]+$/gu, "")
+  const exact = /^rem-([a-z0-9]{3,64})$/iu.exec(cleaned)
+  if (exact?.[1]) return `rem-${exact[1]!.toLowerCase()}`
+  const spaced = /^rem[\s_]+([a-z0-9]{3,64})$/iu.exec(cleaned)
+  if (spaced?.[1]) return `rem-${spaced[1]!.toLowerCase()}`
+  const embedded = /\brem[\s_-]+([a-z0-9]{8,64})\b/iu.exec(cleaned)
+  if (embedded?.[1]) return `rem-${embedded[1]!.toLowerCase()}`
+  return null
+}
+
 export function renderApprovalMessage(args: Readonly<{
   incident: RemediationIncident
   diagnosisSummary: string
@@ -110,29 +125,32 @@ export function renderApprovalMessage(args: Readonly<{
   invariants: readonly string[]
   rollout: string
   rollback: string
+  proposalSummary?: string
 }>): string {
+  const id = args.incident.incidentId
   const lines = [
-    `remediation approval required: ${args.incident.incidentId}`,
-    `severity: ${args.incident.severity}`,
-    `title: ${args.incident.title}`,
-    `risk: ${args.incident.riskLevel ?? "high"}`,
-    `degradation: ${args.incident.component ?? args.incident.job ?? "unknown"}`,
+    `Needs your approval — ${args.incident.riskLevel ?? "high"} risk remediation`,
+    `Id: ${id}`,
+    `Title: ${args.incident.title}`,
     "",
-    `diagnosis: ${args.diagnosisSummary.slice(0, 400)}`,
+    `What happened: ${args.diagnosisSummary.slice(0, 400)}`,
     "",
-    `files: ${args.paths.join(", ")}`,
-    `tests: ${args.tests.join("; ").slice(0, 300)}`,
-    `invariants: ${args.invariants.join(", ") || "none listed"}`,
-    `rollout: ${args.rollout.slice(0, 280)}`,
-    `rollback: ${args.rollback.slice(0, 280)}`,
+    args.proposalSummary
+      ? `Proposed fix: ${args.proposalSummary.slice(0, 400)}`
+      : null,
+    `Touches: ${args.paths.slice(0, 8).join(", ")}${args.paths.length > 8 ? ` (+${args.paths.length - 8} more)` : ""}`,
+    `Tests: ${args.tests.join("; ").slice(0, 280) || "none listed"}`,
+    `Rollout: ${args.rollout.slice(0, 220)}`,
+    `Rollback: ${args.rollback.slice(0, 220)}`,
     "",
+    `Expires: ${args.incident.approvalExpiresAt ?? "?"}`,
     `proposalHash: ${args.incident.proposalHash ?? "?"}`,
-    `expires: ${args.incident.approvalExpiresAt ?? "?"}`,
     "",
-    `approve remediation ${args.incident.incidentId}`,
-    `defer remediation ${args.incident.incidentId}`,
-    `reject remediation ${args.incident.incidentId}`,
-  ]
+    "Reply with exactly one line (keep the hyphen in the id):",
+    `approve remediation ${id}`,
+    `defer remediation ${id}`,
+    `reject remediation ${id}`,
+  ].filter((line): line is string => line !== null)
   return lines.join("\n")
 }
 
@@ -144,14 +162,21 @@ export function parseRemediationCommand(text: string): {
   if (/^\/?remediations$/iu.test(trimmed)) {
     return { action: "list" }
   }
-  const status = /^\/?remediation\s+(\S+)$/iu.exec(trimmed)
-  if (status?.[1]) return { action: "status", incidentId: status[1] }
-  const approve = /^approve\s+remediation\s+(\S+)$/iu.exec(trimmed)
-  if (approve?.[1]) return { action: "approve", incidentId: approve[1] }
-  const defer = /^defer\s+remediation\s+(\S+)$/iu.exec(trimmed)
-  if (defer?.[1]) return { action: "defer", incidentId: defer[1] }
-  const reject = /^reject\s+remediation\s+(\S+)$/iu.exec(trimmed)
-  if (reject?.[1]) return { action: "reject", incidentId: reject[1] }
+  const actionCmd = /^(approve|defer|reject)\s+remediation\s+(.+)$/iu.exec(trimmed)
+  if (actionCmd?.[1] && actionCmd[2]) {
+    const incidentId = normalizeRemediationIncidentId(actionCmd[2])
+    if (incidentId) {
+      return {
+        action: actionCmd[1].toLowerCase() as ApprovalAction,
+        incidentId,
+      }
+    }
+  }
+  const status = /^\/?remediation\s+(.+)$/iu.exec(trimmed)
+  if (status?.[1]) {
+    const incidentId = normalizeRemediationIncidentId(status[1])
+    if (incidentId) return { action: "status", incidentId }
+  }
   return null
 }
 
@@ -160,10 +185,17 @@ export function parseForwardedRemediationIntent(text: string): {
   action: ApprovalAction
   incidentId: string
 } | null {
-  const m = /\b(approve|defer|reject)\b[\s\S]{0,40}?\b(rem-[a-f0-9]{8,})\b/iu.exec(text)
-  if (!m) return null
-  return {
-    action: m[1]!.toLowerCase() as ApprovalAction,
-    incidentId: m[2]!,
+  const approve = /\bapprov(?:e|al|ed)\b[\s\S]{0,100}?\brem[\s_-]*([a-f0-9]{8,})\b/iu.exec(text)
+  if (approve?.[1]) {
+    return { action: "approve", incidentId: `rem-${approve[1].toLowerCase()}` }
   }
+  const defer = /\bdefer(?:red|ral)?\b[\s\S]{0,100}?\brem[\s_-]*([a-f0-9]{8,})\b/iu.exec(text)
+  if (defer?.[1]) {
+    return { action: "defer", incidentId: `rem-${defer[1].toLowerCase()}` }
+  }
+  const reject = /\breject(?:ed|ion)?\b[\s\S]{0,100}?\brem[\s_-]*([a-f0-9]{8,})\b/iu.exec(text)
+  if (reject?.[1]) {
+    return { action: "reject", incidentId: `rem-${reject[1].toLowerCase()}` }
+  }
+  return null
 }

@@ -17,14 +17,18 @@ Cursor session glitch.
 
 ## Decision
 
-1. Host-compose suggestion digests and remediation failure alerts from
-   sanitized ledger/incident fields (outcome labels, category, summary or
-   forming note, incident id, stage explanation).
-2. Optionally polish that host draft with `composer-2.5` (ask mode, sandbox);
-   fail closed to the host text if the session fails, invents ids, or returns
+1. Host-compose suggestion digests, remediation failure alerts, and high-risk
+   approval cards from sanitized ledger/incident fields (plain-language
+   what-happened / proposed-fix, outcome labels, incident id, stage explanation).
+2. Optionally polish that host draft with `composer-2.5` (ask mode, sandbox) in
+   a short assistant voice; fail closed to the host text if the session fails,
+   invents ids, drops required approve/defer/reject command lines, or returns
    empty/short output.
 3. Never put raw Discord message bodies into Telegram — only host-validated
    summaries already scrubbed for secrets.
+4. Operator approve/defer/reject commands are host-parsed before chat. Incident
+   ids normalize common Telegram typos (`Rem 92da…` → `rem-92da…`) so approvals
+   cannot fall through to the general chat agent as “noted” without applying.
 
 ## Consequences
 

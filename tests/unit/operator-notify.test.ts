@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  renderRemediationApprovalHost,
   renderRemediationFailureHost,
   renderSuggestionDigestHost,
 } from "../../src/remediation/operator-notify.js"
@@ -83,5 +84,40 @@ describe("operator-notify", () => {
     expect(text).toContain("Propose")
     expect(text).toMatch(/no usable output|session failed/iu)
     expect(text).toContain("not rejected")
+  })
+
+  it("renders approval cards with plain-language sections and exact commands", () => {
+    const incident: RemediationIncident = {
+      schema: 1,
+      incidentId: "rem-92da03a5713e",
+      fingerprint: "fp-test-approval-01",
+      phase: "awaiting-approval",
+      createdAt: "2026-07-22T21:08:23.068Z",
+      updatedAt: "2026-07-23T13:01:17.149Z",
+      title: "RAIL vs VEIL comparison failed due to research lock conflicts",
+      severity: "info",
+      attemptCount: 0,
+      originMoveRebuilds: 0,
+      evidencePaths: [],
+      origin: "discord-suggestion",
+      riskLevel: "high",
+      proposalHash: "sha256:test",
+      approvalExpiresAt: "2026-07-24T13:01:17.148Z",
+    }
+    const text = renderRemediationApprovalHost({
+      incident,
+      diagnosisSummary: "Discord report-copy lost the agent workspace lock race.",
+      proposalSummary: "Hold the lock longer and re-kick synthesis when research finishes.",
+      paths: ["src/discord/conversation.ts", "docs/architecture/discord-conversation.md"],
+      tests: ["unit: discord conversation lock"],
+      invariants: ["INV-S15"],
+      rollout: "monitor comparison threads",
+      rollback: "revert conversation hooks",
+    })
+    expect(text).toContain("Needs your approval")
+    expect(text).toContain("What happened:")
+    expect(text).toContain("Proposed fix:")
+    expect(text).toContain("approve remediation rem-92da03a5713e")
+    expect(text).toContain("keep the hyphen")
   })
 })
