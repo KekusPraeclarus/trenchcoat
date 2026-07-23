@@ -387,7 +387,7 @@ application is not wired yet — only wallets are applied today.
 
 | Command | Behaviour |
 |---|---|
-| `tc run <job>` | run one job (cron entry point); refuses if the workspace writer lock is held. Jobs include `list-scan`, `farcaster-scan`, `source-list-review`, `fc-source-review`, `wallet-discovery`, `wallet-scan-solana`, `wallet-scan-evm`, `wallet-review`, `harness-improve`, plus the scan/research/audit set in orchestrator.md |
+| `tc run <job>` | run one job (cron entry point); agent-mutating jobs refuse if the workspace writer lock is held (exit 3). Improvement jobs (`harness-improve`, `incident-remediate`, `incident-remediate-weekly`) skip that lock (INV-S15). Jobs include `list-scan`, `farcaster-scan`, scans/research/audit, wallets, plus harness/remediation |
 | `tc config validate` | migrate+parse config in memory; no write |
 | `tc config migrate --write` | persist schema-8 migration to `~/.trenchcoat/config.json` |
 | `tc watchlist remove <chain:token> --subject <symbol> --reason <text>` | host removal of ignored/revisit/dropped entries; reconciles `state/INDEX.md` |

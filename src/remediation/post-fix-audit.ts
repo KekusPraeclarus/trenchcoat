@@ -7,6 +7,7 @@ import { mkdirSync, existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ensureArchive } from "../lib/archive.js"
 import { systemClock } from "../lib/clock.js"
+import { withAgentWorkspaceLock } from "../lib/lock.js"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
 import { Outbox } from "../lib/outbox.js"
 import {
@@ -201,7 +202,9 @@ export async function runPostFixClaimAudit(args: Readonly<{
   for (const claim of fromArchive) {
     index = upsertMarketClaim(index, claim)
   }
-  await saveMarketClaimIndex(args.agentRoot, index)
+  await withAgentWorkspaceLock(args.agentRoot, async () => {
+    await saveMarketClaimIndex(args.agentRoot, index)
+  })
 
   const windowClaims = claimsInImpactWindow({
     claims: index.claims,
@@ -357,13 +360,15 @@ export async function runPostFixClaimAudit(args: Readonly<{
     }
   }
 
-  const reconcile = await reconcileInvalidatedClaims({
-    agentRoot: args.agentRoot,
-    incidentId: args.incident.incidentId,
-    nowIso,
-    claims: windowClaims,
-    results,
-  })
+  const reconcile = await withAgentWorkspaceLock(args.agentRoot, async () =>
+    reconcileInvalidatedClaims({
+      agentRoot: args.agentRoot,
+      incidentId: args.incident.incidentId,
+      nowIso,
+      claims: windowClaims,
+      results,
+    }),
+  )
   await writeAtomicFileFsync(
     join(artDir, "reconcile.json"),
     `${JSON.stringify(reconcile, null, 2)}\n`,

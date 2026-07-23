@@ -54,7 +54,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
 | `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary |
-| `incident-remediate` | hourly (default **off** until `incident_remediation.enabled` + `schedule_enabled`) — scan health findings/logs, passive Discord suggestions when `discord_suggestions.enabled`, triage, gated fix/publish |
+| `incident-remediate` | hourly (default **off** until `incident_remediation.enabled` + `schedule_enabled`) — scan health findings/logs, passive Discord suggestions when `discord_suggestions.enabled`, triage, gated fix/publish; **skips agent workspace lock** so scans cannot starve it |
 | `incident-remediate-weekly` | Monday 08:00 local (default **off**) — one deferred remediation; never feeds the policy harness |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
 | `listener` (KeepAlive) | always — operator Telegram DMs + Discord research when `chat.discord.enabled` (`tc listen`) |

@@ -1,8 +1,10 @@
 #!/bin/sh
 # Run a trenchcoat job with bounded workspace-lock / deploy-pause retries.
 # Exit 3 from `tc run` means the writer lock is held (INV-S15) or deploy pause
-# is active — keep retrying. While ~/.trenchcoat/deploy-pause.json exists, do
-# not burn attempt budget (jobs resume as soon as upgrade clears the pause).
+# is active — keep retrying. Improvement jobs (`harness-improve`,
+# `incident-remediate*`) skip the agent lock; exit 3 for them is deploy-pause
+# only. While ~/.trenchcoat/deploy-pause.json exists, do not burn attempt budget
+# (jobs resume as soon as upgrade clears the pause).
 # Usage: run-with-lock-retry.sh <job-name> [extra tc args...]
 set -eu
 

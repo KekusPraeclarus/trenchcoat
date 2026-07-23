@@ -83,7 +83,9 @@ development sealed scorecard, and requires protected metrics not to regress.
 
 `isAgentIdle` is true when nothing is mid-flight: live workspace lock (non-stale),
 running incomplete archive runs, research `researching>0`, Telegram research
-`running`, or Discord locks/running requests. Abandoned runs and backlog depth
+`running`, or Discord locks/running requests. `harness-improve` itself does
+**not** take `agent/.lock` (INV-S15 exemption) so continuous scans cannot starve
+it. Abandoned runs and backlog depth
 do **not** block idle — they would hang redeploys forever on a busy host.
 `wait-idle` first fails orphaned incomplete journals (pre-seal + no lock + ≥30m,
 or any running ≥6h) so SIGTERM zombies cannot block forever.

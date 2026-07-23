@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { WorkspaceLock, agentLockPath } from "../lib/lock.js"
+import { WorkspaceLock, agentLockPath, jobRequiresAgentWorkspaceLock } from "../lib/lock.js"
 import { isDeployPaused, noteDeferredJob } from "../lib/deploy-pause.js"
 import { createRunId } from "../lib/run-id.js"
 import {
@@ -189,8 +189,10 @@ async function persistJournal(
   store: JournalStore,
   agentRoot: string,
   journal: RunJournal,
+  mirrorToAgent = true,
 ): Promise<void> {
   await store.save(journal)
+  if (!mirrorToAgent) return
   await store.mirrorToAgent?.(agentRoot, journal)
 }
 
@@ -200,9 +202,10 @@ async function advance(
   journal: RunJournal,
   phase: RunPhase,
   payload: unknown,
+  mirrorToAgent = true,
 ): Promise<RunJournal> {
   const next = advanceRunJournal(journal, phase, sha256Json(payload as never))
-  await persistJournal(store, agentRoot, next)
+  await persistJournal(store, agentRoot, next, mirrorToAgent)
   return next
 }
 
@@ -247,8 +250,10 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
   }
 
-  const lock = new WorkspaceLock(agentLockPath(opts.paths.agentRoot))
-  if (!lock.tryAcquire()) {
+  const lock = jobRequiresAgentWorkspaceLock(job.name)
+    ? new WorkspaceLock(agentLockPath(opts.paths.agentRoot))
+    : null
+  if (lock && !lock.tryAcquire()) {
     log.error("workspace lock held")
     return {
       runId: "none",
@@ -256,6 +261,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       exitCode: 3,
     }
   }
+  // Improvement lanes keep journals archive-only so they never contend on agent/reports
+  const mirrorJournalToAgent = jobRequiresAgentWorkspaceLock(job.name)
 
   let journal: RunJournal | undefined
   let store: JournalStore | undefined
@@ -279,7 +286,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             message: `interrupted by ${signal}`,
             failedAt: systemClock.nowIso(),
           })
-          await persistJournal(store, opts.paths.agentRoot, failed)
+          await persistJournal(store, opts.paths.agentRoot, failed, mirrorJournalToAgent)
           if (archive) {
             finalizeChatReportRunStatus({
               agentRoot: opts.paths.agentRoot,
@@ -296,7 +303,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         })
       } finally {
         try {
-          lock.release()
+          lock?.release()
         } catch {
           // already released
         }
@@ -363,11 +370,13 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
 
     archive = await ensureArchive(opts.paths.archiveRoot)
     const layout = archive
-    await migrateGenericNarrativeResearchQueue({
-      agentRoot: opts.paths.agentRoot,
-      archiveRoot: opts.paths.archiveRoot,
-      nowIso: systemClock.nowIso(),
-    })
+    if (mirrorJournalToAgent) {
+      await migrateGenericNarrativeResearchQueue({
+        agentRoot: opts.paths.agentRoot,
+        archiveRoot: opts.paths.archiveRoot,
+        nowIso: systemClock.nowIso(),
+      })
+    }
     store = createJournalStore(layout)
 
     let runId: string
@@ -394,7 +403,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     } else {
       runId = createRunId(job.name)
       journal = createRunJournal(runId)
-      await persistJournal(store, opts.paths.agentRoot, journal)
+      await persistJournal(store, opts.paths.agentRoot, journal, mirrorJournalToAgent)
     }
 
     const runDir = runArchiveDir(layout, runId)
@@ -477,6 +486,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       journal,
       "collected",
       { ...collectPayload, collection },
+      mirrorJournalToAgent,
     )
 
     // Freeze the run's inputs into the authoritative archive before the agent session can
@@ -523,7 +533,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
     const integrityBeforeAgent = captureIntegritySnapshot(opts.paths.agentRoot)
     const researchBeforeReview = job.name === "review" ? hashResearchDir(opts.paths.agentRoot) : undefined
-    const reportDir = join(opts.paths.agentRoot, "reports", runId)
+    const reportDir = mirrorJournalToAgent
+      ? join(opts.paths.agentRoot, "reports", runId)
+      : join(runDir, "host-reports")
     mkdirSync(reportDir, { recursive: true })
     let agentPayload: Record<string, unknown> = { skipped: skipAgent }
     if (!skipAgent) {
@@ -650,7 +662,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         )
       }
     }
-    journal = await advance(store, opts.paths.agentRoot, journal, "agent-checked", agentPayload)
+    journal = await advance(store, opts.paths.agentRoot, journal, "agent-checked", agentPayload, mirrorJournalToAgent)
 
     // integrity-checked
     assertAgentIntegrity(opts.paths.agentRoot, integrityBeforeAgent)
@@ -660,7 +672,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       ledgerUnchanged: true,
       instructionsUnchanged: true,
     }
-    journal = await advance(store, opts.paths.agentRoot, journal, "integrity-checked", integrity)
+    journal = await advance(store, opts.paths.agentRoot, journal, "integrity-checked", integrity, mirrorJournalToAgent)
 
     let indexReconcileReport: unknown
     if (job.name === "review" && researchBeforeReview !== undefined) {
@@ -1510,7 +1522,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       },
       ...(platformNotes.length > 0 ? { platformNotes } : {}),
     }
-    journal = await advance(store, opts.paths.agentRoot, journal, "host-prepared", hostPrepared)
+    journal = await advance(store, opts.paths.agentRoot, journal, "host-prepared", hostPrepared, mirrorJournalToAgent)
 
     // Verifier runs against the planned watchlist delta before any proposal commit
     const verifierReport = await runPostRunVerifier({
@@ -1539,7 +1551,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         occurredAt: systemClock.nowIso(),
       })
       // Fail closed before commit/seal/purge/egress — watchlist/ledger/decisions unchanged
-      await persistJournal(store, opts.paths.agentRoot, journal)
+      await persistJournal(store, opts.paths.agentRoot, journal, mirrorJournalToAgent)
       log.error("run halted after verifier failure", { runId, failed: failed.join(",") })
       return { runId, journal, exitCode: 2 }
     }
@@ -1607,7 +1619,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     if (!hasSideEffect(journal, sealKey)) {
       journal = recordSideEffect(journal, sealKey, sealHash)
     }
-    journal = await advance(store, opts.paths.agentRoot, journal, "committed", { sealHash })
+    journal = await advance(store, opts.paths.agentRoot, journal, "committed", { sealHash }, mirrorJournalToAgent)
     }
 
     // alpha-purged — validate the agent's alpha digest and purge only byte-verified messages
@@ -1631,7 +1643,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     if (!hasSideEffect(journal, purgeKey)) {
       journal = recordSideEffect(journal, purgeKey, sha256Json(digest))
     }
-    journal = await advance(store, opts.paths.agentRoot, journal, "alpha-purged", digest)
+    journal = await advance(store, opts.paths.agentRoot, journal, "alpha-purged", digest, mirrorJournalToAgent)
     }
 
     // events-staged — ingest validated broadcast proposals, then deliver when a router is
@@ -1900,30 +1912,50 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ...(chatSummary.hostOnly !== undefined ? { hostOnly: chatSummary.hostOnly } : {}),
         },
       } : {}),
-    })
+    }, mirrorJournalToAgent)
     }
     }
 
     if (journal.phase === "events-staged") {
     // Workspace retention — agent inbox + chat reports only; never archive/
-    const retentionCfg = (() => {
-      try {
-        return loadConfig().retention
-      } catch {
-        return { inbox_archive_days: 30, chat_reports_days: 30, run_archive_days: 90 }
+    // Improvement lanes never hold the agent lock, so they must not prune agent trees.
+    const retentionReport = mirrorJournalToAgent
+      ? retainWorkspaceArtifacts({
+        agentRoot: opts.paths.agentRoot,
+        inboxMaxAgeDays: (() => {
+          try {
+            return loadConfig().retention.inbox_archive_days
+          } catch {
+            return 30
+          }
+        })(),
+        chatReportsMaxAgeDays: (() => {
+          try {
+            return loadConfig().retention.chat_reports_days
+          } catch {
+            return 30
+          }
+        })(),
+      })
+      : {
+        inboxRemoved: [] as string[],
+        chatReportsRemoved: [] as string[],
       }
-    })()
-    const retentionReport = retainWorkspaceArtifacts({
-      agentRoot: opts.paths.agentRoot,
-      inboxMaxAgeDays: retentionCfg.inbox_archive_days,
-      chatReportsMaxAgeDays: retentionCfg.chat_reports_days,
-    })
-    const reportDir = join(opts.paths.agentRoot, "reports", runId)
-    mkdirSync(reportDir, { recursive: true })
-    writeFileSync(
-      join(reportDir, "workspace-retention.json"),
-      `${JSON.stringify(retentionReport, null, 2)}\n`,
-    )
+    if (mirrorJournalToAgent) {
+      const reportDir = join(opts.paths.agentRoot, "reports", runId)
+      mkdirSync(reportDir, { recursive: true })
+      writeFileSync(
+        join(reportDir, "workspace-retention.json"),
+        `${JSON.stringify(retentionReport, null, 2)}\n`,
+      )
+    } else {
+      const hostReports = join(runDir, "host-reports")
+      mkdirSync(hostReports, { recursive: true })
+      writeFileSync(
+        join(hostReports, "workspace-retention.json"),
+        `${JSON.stringify({ skipped: "agent-lock-exempt", ...retentionReport }, null, 2)}\n`,
+      )
+    }
 
     // complete
     journal = await advance(store, opts.paths.agentRoot, journal, "complete", {
@@ -1932,8 +1964,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         inboxRemoved: retentionReport.inboxRemoved.length,
         chatReportsRemoved: retentionReport.chatReportsRemoved.length,
       },
-    })
-    await persistJournal(store, opts.paths.agentRoot, journal)
+    }, mirrorJournalToAgent)
+    await persistJournal(store, opts.paths.agentRoot, journal, mirrorJournalToAgent)
     finalizeChatReportRunStatus({
       agentRoot: opts.paths.agentRoot,
       layout,
@@ -2042,7 +2074,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           message,
           failedAt: systemClock.nowIso(),
         })
-        await persistJournal(store, opts.paths.agentRoot, journal)
+        await persistJournal(store, opts.paths.agentRoot, journal, mirrorJournalToAgent)
         if (archive) {
           finalizeChatReportRunStatus({
             agentRoot: opts.paths.agentRoot,
@@ -2073,7 +2105,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
   } finally {
     process.off("SIGTERM", onSignal)
     process.off("SIGINT", onSignal)
-    if (!signalHandled) lock.release()
+    if (!signalHandled) lock?.release()
     if (drainResearchAfter && job.name !== "research") {
       scheduleResearchDrain(opts.paths)
     }

@@ -2,7 +2,11 @@ import { mkdtempSync, cpSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { agentLockPath, WorkspaceLock } from "../../src/lib/lock.js"
+import {
+  agentLockPath,
+  jobRequiresAgentWorkspaceLock,
+  WorkspaceLock,
+} from "../../src/lib/lock.js"
 import { runJob } from "../../src/orchestrator/run.js"
 
 describe("run loop locking", () => {
@@ -21,6 +25,30 @@ describe("run loop locking", () => {
         skipAgent: true,
         dryCollect: true,
       })).resolves.toMatchObject({ exitCode: 3 })
+    } finally {
+      lock.release()
+    }
+  })
+
+  it("lets improvement jobs run while the agent workspace lock is held", async () => {
+    expect(jobRequiresAgentWorkspaceLock("incident-remediate")).toBe(false)
+    expect(jobRequiresAgentWorkspaceLock("harness-improve")).toBe(false)
+    expect(jobRequiresAgentWorkspaceLock("list-scan")).toBe(true)
+
+    const root = mkdtempSync(join(tmpdir(), "trenchcoat-improve-"))
+    const agentRoot = join(root, "agent")
+    cpSync(join(process.cwd(), "agent"), agentRoot, { recursive: true })
+    mkdirSync(join(root, "archive"), { recursive: true })
+    const lock = new WorkspaceLock(agentLockPath(agentRoot))
+    expect(lock.tryAcquire()).toBe(true)
+
+    try {
+      await expect(runJob({
+        job: "incident-remediate",
+        paths: { agentRoot, archiveRoot: join(root, "archive") },
+        skipAgent: true,
+        dryCollect: true,
+      })).resolves.toMatchObject({ exitCode: 0 })
     } finally {
       lock.release()
     }

@@ -116,15 +116,19 @@ decision state.
 One writer at a time, two levels:
 
 - **Workspace writer lock** (`agent/.lock` + `.lock.owner`, O_EXCL PID-file via
-  `src/lib/lock.ts`) — acquired first by `runJob`. `tc run` exits 3 if held.
-  Target: also held by chat research sub-agents and recovery for their full
-  duration (INV-S15 PARTIAL until those paths share the lock).
+  `src/lib/lock.ts`) — acquired first by `runJob` for **agent-mutating** jobs.
+  `tc run` exits 3 if held. Chat research sub-agents and recovery share this
+  lock for their full duration (INV-S15).   **Exempt:** `harness-improve`,
+  `incident-remediate`, and `incident-remediate-weekly` never take this lock
+  (own remediations/harness + repo-mutation confinement; [ADR 027](../adr/027-improvement-lanes-skip-agent-lock.md)) so continuous scans
+  cannot starve improvement.
 - **Job-level guard** — the CLI additionally refuses to start a job whose
   previous run is still live, so a slow job can't stack on itself.
 
 Chat *reads* (the conversational session answering from INDEX/reports) take no
-lock — they tolerate a mid-run snapshot of state. Anything that writes state
-must go through the writer lock (INV-S15).
+lock — they tolerate a mid-run snapshot of state. Agent state writes must go
+through the writer lock (INV-S15), except the improvement-lane exemptions
+above.
 
 ## Run idempotency and crash consistency
 

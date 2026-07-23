@@ -11,6 +11,12 @@ Separate from the weekly decision-policy harness (INV-S24) and Discord chain
 integration (INV-S26). See [ADR 017](../adr/017-incident-remediation.md) and
 [ADR 025](../adr/025-discord-suggestion-intake.md).
 
+**Agent workspace lock:** `incident-remediate` / `incident-remediate-weekly` are
+**not** agent-mutating jobs (INV-S15 / [ADR 027](../adr/027-improvement-lanes-skip-agent-lock.md)).
+They never take `agent/.lock`, so continuous scans cannot starve the lane.
+Confinement is remediations/ locks + repo mutation lock; rare post-fix
+claim-index writes take a brief agent lock only for that mutation.
+
 ## Flow
 
 1. **Scan** — bounded deltas: health snapshot **findings** (cadence/heartbeat/stuck-run/systemd), skip journals, structured `/tmp/trenchcoat.*.{out,err}.log` lines (inode/size cursors), and passive Discord suggestion threads when `discord_suggestions.enabled`.
