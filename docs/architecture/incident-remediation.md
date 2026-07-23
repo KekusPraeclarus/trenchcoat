@@ -66,7 +66,8 @@ Silent on Discord (no replies/reactions). Telegram digests / failure alerts /
 high-risk approval cards use host-composed plain-language copy (optionally
 polished by `composer-2.5` in an assistant voice); approval cards always end
 with exact `approve|defer|reject remediation rem-…` lines. Host normalizes
-Telegram typos (`Rem 92da…` → `rem-92da…`) so approvals apply before chat.
+Telegram typos (`Rem 92da…` → `rem-92da…`) so approvals apply before chat
+([ADR 030](../adr/030-host-authoritative-remediation-approvals.md)).
 Raw Discord text never enters the message.
 
 ## Post-fix revalidation

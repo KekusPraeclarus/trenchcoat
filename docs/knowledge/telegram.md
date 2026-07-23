@@ -20,13 +20,13 @@ last_verified: 2026-07-23
   covering every active narrative in one message (same hard cap). Discord stays a
   run-scoped **own** bottom-line distill (at most one Discord payload per run —
   never a reuse of the TG topic text)
-- **Incident remediation operator alerts** (ADR 025/028): daily suggestion digest,
+- **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,
   remediation failure lines, and high-risk approval cards are host-composed
   (plain-language what/why + sanitized summaries), optionally polished by
   `composer-2.5` in an assistant voice. Approval cards always end with exact
   `approve|defer|reject remediation rem-…` lines (hyphen required). Host
-  normalizes common typos (`Rem 92da…` → `rem-92da…`) so approvals apply before
-  chat. Raw Discord text never enters these messages.
+  normalizes common typos (`Rem 92da…` → `rem-92da…`) and applies approvals
+  before chat (ADR 030). Raw Discord text never enters these messages.
 - Fanout + operator sends convert markdown → HTML, deslug kebab narrative
   labels (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`), and scrub leaked
   hour tokens (`72h` → `the next few days`) — natural watch prose (`this week`,

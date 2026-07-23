@@ -1104,11 +1104,28 @@ export async function handleRemediationChatCommand(args: Readonly<{
   }
 
   if (decision.action === "approve" && args.repoRoot) {
-    // Resume asynchronously-ish: kick worker
-    void runRemediationWorker({
-      repoRoot: args.repoRoot,
-      incidentId: incident.incidentId,
-    }).catch(() => undefined)
+    // Detached child so Telegram listener / CLI approve return without holding
+    // the Node event loop for the whole build (ADR 030).
+    const { spawn } = await import("node:child_process")
+    const cliEntry = process.argv[1]
+    if (cliEntry) {
+      const child = spawn(
+        process.execPath,
+        [cliEntry, "remediations", "run", incident.incidentId],
+        {
+          detached: true,
+          stdio: "ignore",
+          cwd: args.repoRoot,
+          env: process.env,
+        },
+      )
+      child.unref()
+    } else {
+      void runRemediationWorker({
+        repoRoot: args.repoRoot,
+        incidentId: incident.incidentId,
+      }).catch(() => undefined)
+    }
   }
 
   return `remediation ${incident.incidentId} ${decision.action}d`

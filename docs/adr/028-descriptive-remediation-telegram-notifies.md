@@ -26,9 +26,9 @@ Cursor session glitch.
    empty/short output.
 3. Never put raw Discord message bodies into Telegram — only host-validated
    summaries already scrubbed for secrets.
-4. Operator approve/defer/reject commands are host-parsed before chat. Incident
-   ids normalize common Telegram typos (`Rem 92da…` → `rem-92da…`) so approvals
-   cannot fall through to the general chat agent as “noted” without applying.
+4. Operator approve/defer/reject commands are host-parsed before chat with
+   incident-id normalization — binding detail in
+   [ADR 030](030-host-authoritative-remediation-approvals.md).
 
 ## Consequences
 

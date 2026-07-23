@@ -228,14 +228,17 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   (`tc discord chains run`). Recovery: `tc discord chains status|retry|fail`.
   During self-deploy the worker stays registered (not bootout) and drain treats
   `deploying` as idle-safe. See docs/architecture/discord-chain-integration.md.
-- Incident remediation (schema 17+ / ADR 017+025+027+028): hourly/weekly host
+- Incident remediation (schema 17+ / ADR 017+025+027+028+030): hourly/weekly host
   lane. Enable `incident_remediation.enabled` + `schedule_enabled` after dry
   canary. Discord suggestions: `discord_suggestions.enabled` (+ optional
   `channel_ids`). Improvement jobs skip `agent/.lock` (ADR 027) so scans cannot
-  starve remediations. Operator Telegram digests/failures are descriptive
-  (ADR 028). Recovery: `tc remediations status|suggestions|retry|scan|run` and
-  `approve remediation <id>` for high-risk. See
-  docs/architecture/incident-remediation.md.
+  starve remediations. Operator Telegram digests/failures/approval cards are
+  descriptive (ADR 028); approve commands are host-parsed with id normalization
+  so `Rem 92da…` typos still land (ADR 030). Recovery:
+  `tc remediations status|suggestions|retry|scan|run` and
+  `approve remediation rem-<id>` (or `tc remediations approve rem-<id>` on the
+  VPS). Post-approve build is kicked as a detached `remediations run` child.
+  See docs/architecture/incident-remediation.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that
   predate `scripts/scaffold-agent.ts` creating the file need a one-time copy
