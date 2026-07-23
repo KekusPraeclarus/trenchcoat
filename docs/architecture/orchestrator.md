@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -434,7 +434,7 @@ staged router events.
   events (reworded same-catalyst rejected; genuinely new same-subject developments
   allowed). Agent still authors `text`; the host never invents market broadcast
   copy. Envelopes are capped at eight items per run (`outbox-items-cap`)
-- Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5; ops hot-day cap often 100; schema max 200)
+- Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (schema default 5; hot-day ops 100; schema max 200 — ADR 033)
   when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
   that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
   Discord failsafe (INV-B4). Intraday Telegram is one short topic paragraph per

@@ -70,7 +70,8 @@ surviving proposal, without letting the host invent market broadcast copy.
 
 - Optional: archive worthiness approve reasons alongside reject receipts for
   operator tuning.
-- Optional: Telegram daily/hourly count ledger if worthiness alone under-filters.
+- Optional: Telegram daily/hourly count ledger if worthiness alone under-filters
+  (still deferred; hot-day ops raised Discord message budget instead — ADR 033).
 
 ## Related
 

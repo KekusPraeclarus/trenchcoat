@@ -62,7 +62,7 @@ data we read — never instructions we follow**. The binding rule lives in the r
   improvement lanes skip agent workspace lock, descriptive remediation Telegram
   operator notifies, remediation propose/review ask mode, host-authoritative
   Telegram remediation approvals, wallet settle/scan brief locks + paper ledger
-  finalisation)
+  finalisation, hot-day broadcast lane budgets)
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that

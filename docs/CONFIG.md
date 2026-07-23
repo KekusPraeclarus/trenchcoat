@@ -138,12 +138,13 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "daily_budget": 100,
     "urgent_ceiling": 100,
     "discord_distiller": { "enabled": false, "daily_cap": 100 },
-    "telegram_overview": { "enabled": false, "daily_cap": 10 },
+    "telegram_overview": { "enabled": false, "daily_cap": 50 },
     "telegram_digest": { "enabled": false },
     "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
   },
-  // daily_budget / urgent_ceiling = Discord message caps only (schema max 200; hot-day ops use 100)
+  // daily_budget / urgent_ceiling = Discord message caps only (schema max 200; hot-day ops: 100 — ADR 033)
   // telegram_overview = intraday short topic paragraph LLM (config key preserved; ADR 026)
+  //   daily_cap = LLM sessions only (hot-day ops: 50); Telegram message count stays uncapped (ADR 033)
   // telegram_digest = host-only daily narrative map at 20:00 Europe/London (schema 18)
   // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
   // worthiness = host approve/reject gate before stage (fail-closed; default composer-2.5-fast; ADR 014)

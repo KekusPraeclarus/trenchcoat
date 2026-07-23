@@ -2,7 +2,7 @@
 description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-23
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -49,7 +49,7 @@ the router process, broadcasts never fan out. SQLite lives at
 | Durability | SQLite WAL: events, destination snapshots, deliveries, attempts, nonces, idempotency tombstones |
 | Ingress codes | `202` new event, `200` exact duplicate (same eventId + payload hash), `409` eventId/payload conflict (incident log) |
 | Fanout | At-least-once to Telegram and Discord. Providers have no idempotency primitive; ambiguous timeouts record duplicate risk |
-| Lanes | Discord `finding.broadcast` consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render; Telegram is uncapped after validation; `wallet.lifecycle` and `finding.correction` never spend Discord market budget |
+| Lanes | Discord `finding.broadcast` consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render (hot-day ops 100/100, ADR 033); Telegram is uncapped by message count after validation (`telegram_overview.daily_cap` = LLM sessions only, ops 50); `wallet.lifecycle` and `finding.correction` never spend Discord market budget |
 | Text ownership | Lifecycle one-liners are host-rendered from trusted reason codes/metrics. LLM prose is never forwarded. Correction copy is host-rendered from sealed revalidation artifacts (INV-S28) |
 
 ## Event shapes
