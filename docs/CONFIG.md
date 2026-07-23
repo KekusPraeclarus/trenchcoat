@@ -272,7 +272,7 @@ scan of configured Discord channels for buildable suggestions. Defaults
 | `schedule_enabled` | `false` | Allow launchd hourly/weekly jobs |
 | `hourly_interval_s` | `3600` | Hourly scan cadence |
 | `triage_model` / `diagnose_model` / `review_model` | `composer-2.5-fast` | Read-only agent models |
-| `propose_model` / `build_model` | `cursor-grok-4.5-high` | Plan/build models |
+| `propose_model` / `build_model` | `cursor-grok-4.5-high` | Propose (ask mode, ADR 029) / build models |
 | `max_active` | `1` | One active remediation |
 | `max_immediate_builds_per_utc_day` | `2` | Daily build cap |
 | `max_origin_move_rebuilds` | `1` | Rebuilds when origin moves |

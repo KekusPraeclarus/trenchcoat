@@ -43,10 +43,11 @@ const DIAGNOSE_PROMPT = [
 
 const PROPOSE_PROMPT = [
   "You propose an exact bounded patch for a trenchcoat incident.",
-  "Read ONLY the host-supplied diagnosis path below. Plan mode — do not edit files.",
+  "Read ONLY the host-supplied diagnosis path below. Ask mode — do not edit files.",
   "Return ONE JSON PatchProposal:",
   "{ schema:1, summary, paths[], perFileChanges[{path,change}], tests[], invariants[], docs[], typedMigration?, rollout, smokeChecks[], rollback, viable?, notViableReason? }",
   "paths must be exact repo-relative files. Prefer minimal diffs. Include matching tests and docs when behaviour changes.",
+  "invariants[] and smokeChecks[] entries must each be ≤64 characters (short ids/labels only).",
   "Set viable=false with notViableReason when no safe bounded patch exists.",
   "Do not propose edits under src/remediation/, secrets, .env, agent/, or archive/.",
 ].join("\n")

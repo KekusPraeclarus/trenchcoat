@@ -27,8 +27,10 @@ claim-index writes take a brief agent lock only for that mutation.
    Discord suggestions enter already-triaged as `attention-now` after host gates.
 4. **Immediate** — diagnose → propose → pre-review → risk/approval → build in
    isolated worktree → post-diff review → gates (`test:all`) → ff-only push →
-   deploy → smoke → revert+`runtime.prev` on failure. Diagnose/propose may return
-   typed `not-viable` (host closes the incident).
+   deploy → smoke → revert+`runtime.prev` on failure. Diagnose/propose/review
+   Cursor sessions use **ask** mode ([ADR 029](../adr/029-remediation-propose-ask-mode.md));
+   diagnose/propose may return typed `not-viable` (host closes the incident).
+   Distinguish `propose:session failed` (infra) from `pre-review-reject` (product).
 5. **Weekly** — Monday 08:00 local; revalidate deferred queue; at most one item.
 6. **Post-fix claim audit (INV-S28)** — after deploy health/smoke, set an
    integrity hold on affected jobs; wait for configured healthy source
