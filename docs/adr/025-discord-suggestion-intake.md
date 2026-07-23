@@ -31,4 +31,5 @@ Raw Discord text never enters prompts, diffs, commit messages, or logs — only 
 - Config schema 17 adds `incident_remediation.discord_suggestions` (default disabled).
 - Health snapshot gains structured `findings` (cadence, heartbeats, systemd units, stuck runs) consumed by remediation intake.
 - Ledger at `~/.trenchcoat/remediations/suggestions.json`; CLI `tc remediations suggestions`.
+- Telegram digests/failures are host-descriptive (labels + sanitized summaries), optionally polished by `composer-2.5`.
 - INV-S24 unchanged. INV-S27 gains Discord-suggestion origin with the same confinement and deny surfaces.

@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-07-23
 ---
 
 # Telegram
@@ -20,6 +20,10 @@ last_verified: 2026-07-20
   covering every active narrative in one message (same hard cap). Discord stays a
   run-scoped **own** bottom-line distill (at most one Discord payload per run —
   never a reuse of the TG topic text)
+- **Incident remediation operator alerts** (ADR 025/028): daily suggestion digest
+  and remediation failure lines are host-composed (readable outcome labels +
+  sanitized summaries / incident title + stage explanation), optionally polished
+  by `composer-2.5`. Raw Discord text never enters these messages.
 - Fanout + operator sends convert markdown → HTML, deslug kebab narrative
   labels (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`), and scrub leaked
   hour tokens (`72h` → `the next few days`) — natural watch prose (`this week`,

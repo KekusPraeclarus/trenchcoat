@@ -57,7 +57,10 @@ message. Bot/webhook messages are context-only. Reply ancestors may extend
 context beyond the scan window. Early fingerprint dedupe runs before the model;
 extensions of previously **built** suggestions proceed as `extends:`. Ledger:
 `~/.trenchcoat/remediations/suggestions.json`. CLI: `tc remediations suggestions`.
-Silent on Discord (no replies/reactions).
+Silent on Discord (no replies/reactions). Telegram digests / failure alerts use
+host-composed copy (outcome labels + sanitized summaries / incident title +
+stage explanation), optionally polished by `composer-2.5`; raw Discord text
+never enters the message.
 
 ## Post-fix revalidation
 

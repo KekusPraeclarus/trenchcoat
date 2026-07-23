@@ -330,9 +330,12 @@ export async function scanRemediationIncidents(args: Readonly<{
         || e.outcome === "queued-waiting",
       )
       if (noteworthy.length > 0) {
-        await notifyOperator(
-          `suggestion digest ${day}: ${noteworthy.map((e) => `${e.outcome}`).join(", ")} (${noteworthy.length})`,
-        )
+        const { renderSuggestionDigest } = await import("./operator-notify.js")
+        await notifyOperator(await renderSuggestionDigest({
+          repoRoot: args.repoRoot,
+          day,
+          entries: noteworthy,
+        }))
         await store.saveCursors({ ...cursors, lastSuggestionDigestDay: day })
       }
     }
@@ -451,7 +454,14 @@ export async function runRemediationWorker(args: Readonly<{
         event: "failed",
         reason: detail.slice(0, 280),
       })
-      await notifyOperator(`remediation failed ${record.incidentId}: ${detail.slice(0, 280)}`)
+      {
+        const { renderRemediationFailure } = await import("./operator-notify.js")
+        await notifyOperator(await renderRemediationFailure({
+          repoRoot: args.repoRoot,
+          incident: record,
+          detail,
+        }))
+      }
       return { ok: false, detail }
     }
   } finally {
