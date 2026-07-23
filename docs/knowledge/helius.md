@@ -23,5 +23,11 @@ last_verified: 2026-07-21
   semantics for forward scans (`wallet-scan-tip` cursors)
 - Verified buys require target-mint gain **and** native/allowlisted quote
   spend by the signer (`extractSolanaVerifiedBuysFromTransaction`)
+- Verified sells require target-mint decrease **and** quote gain
+  (`extractSolanaVerifiedSellsFromTransaction`) for FIFO copy-trade settlement
 - Hard exclusions call `getAccountInfo` (executable → `program`); incomplete
   evidence holds the sighting instead of excluding
+- **Fomo never feeds wallet tracking.** Leaderboard `address` / `evmAddress`
+  are profile ids, not trading wallets (`getAccountInfo` often null). Do not
+  nominate them into `wallets.json`. Fomo feed trades score via
+  `fomo-trader-scores.json` only (`fomo-trader-sync` / `fomo-signal-scan`, ADR 032).

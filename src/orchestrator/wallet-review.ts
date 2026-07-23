@@ -6,6 +6,7 @@ import { StateStore } from "../lib/state.js"
 import { Outbox } from "../lib/outbox.js"
 import { systemClock } from "../lib/clock.js"
 import { sha256Json } from "../lib/canonical-json.js"
+import { withAgentWorkspaceLock } from "../lib/lock.js"
 import {
   WalletBuyOutcomeSchema,
   type WalletBuyOutcome,
@@ -87,6 +88,10 @@ export async function scoreWalletVote(args: Readonly<{
   }
 }
 
+/**
+ * Host wallet review: archive outcome reads are unlocked; wallets.json RMW and
+ * lifecycle outbox staging hold a brief agent lock (ADR 027).
+ */
 export async function runWalletReview(args: Readonly<{
   agentRoot: string
   archiveRoot: string
@@ -95,120 +100,130 @@ export async function runWalletReview(args: Readonly<{
   blockExternalEffects?: boolean
   runSession?: (prompt: string, card: unknown) => Promise<unknown>
   hardExclusionSubjects?: ReadonlyMap<string, ExclusionSubject>
+  /** When false, skip withAgentWorkspaceLock (caller already holds agent lock) */
+  acquireLock?: boolean
 }>): Promise<WalletReviewReport> {
   const config = loadConfig()
   const store = new StateStore(join(args.agentRoot, "state"))
   const archive = await ensureArchive(args.archiveRoot)
   const nowIso = systemClock.nowIso()
   const scoreCutoff = nowIso
-  const file = store.loadWallets()
   const outcomes = loadWalletBuyOutcomes(args.archiveRoot)
   const detWeight = config.wallets.deterministic_weight
   const llmWeight = config.wallets.llm_weight
   const voterPromptHash = sha256Json({ prompt: WALLET_VOTER_PROMPT })
+  const acquireLock = args.acquireLock !== false
 
-  const performances = new Map(
-    file.wallets.map((wallet) => [
-      wallet.walletId,
-      aggregateWalletPerformance(wallet.walletId, outcomes, scoreCutoff, nowIso),
-    ]),
-  )
-
-  const llmScores = new Map<string, number>()
-  const voteArchives: WalletVoteArchive[] = []
-  for (const wallet of file.wallets) {
-    const perf = performances.get(wallet.walletId)
-    if (!perf) continue
-    const evidenceCard = {
-      walletId: wallet.walletId,
-      chain: wallet.chain,
-      address: wallet.address,
-      status: wallet.status,
-      performance: perf,
-    }
-    const vote = await scoreWalletVote({
-      evidenceCard,
-      ...(args.runSession ? { runSession: args.runSession } : {}),
-    })
-    llmScores.set(wallet.walletId, vote.score)
-    const deterministic = deterministicWalletScore(performanceToEvidence(perf))
-    const blended = blendWalletScores(deterministic, vote.score, detWeight, llmWeight)
-    voteArchives.push({
-      walletId: wallet.walletId,
-      evidenceCardHash: sha256Json(evidenceCard as never),
-      voterPromptHash,
-      rawOutput: vote.rawOutput,
-      parsedScore: vote.score,
-      reasonCode: vote.reasonCode,
-      deterministic,
-      llmWeight,
-      detWeight,
-      contribution: llmWeight * (vote.score / 100),
-      blended,
-    })
-  }
-
-  const hardExclusions = new Map<string, HardExclusion>()
-  const subjects = new Map<string, ExclusionSubject>(
-    exclusionSubjectsFromEvidence(file.exclusions ?? []),
-  )
-  if (args.hardExclusionSubjects) {
-    for (const [id, subject] of args.hardExclusionSubjects) subjects.set(id, subject)
-  }
-  for (const wallet of file.wallets) {
-    const subject = subjects.get(wallet.walletId)
-    if (!subject) continue
-    const reason = classifyHardExclusion(subject)
-    if (reason) hardExclusions.set(wallet.walletId, reason)
-  }
-
-  const result = reviewWalletLifecycle({
-    file,
-    performances,
-    llmScores,
-    hardExclusions,
-    epochId: args.runId,
-    nowIso,
-    thresholds: {
-      max_transitions_per_review: config.wallets.max_transitions_per_review,
-      deterministic_weight: detWeight,
-      llm_weight: llmWeight,
-      promotion: config.wallets.promotion,
-      drop: config.wallets.drop,
-    },
-  })
-
-  let staged = 0
-  if (!args.dryRun) {
-    await store.saveWallets(result.file)
-    await writeJsonRecord(
-      join(archive.wallets, `${args.runId}-review.json`),
-      {
-        schema: 1,
-        runId: args.runId,
-        scoreCutoff,
-        applied: result.applied,
-        queued: result.queued.map((t) => t.transitionId),
-        voterPromptHash,
-        votes: voteArchives,
-      } as never,
+  const run = async (): Promise<WalletReviewReport> => {
+    const file = store.loadWallets()
+    const performances = new Map(
+      file.wallets.map((wallet) => [
+        wallet.walletId,
+        aggregateWalletPerformance(wallet.walletId, outcomes, scoreCutoff, nowIso),
+      ]),
     )
 
-    if (!args.blockExternalEffects) {
-      const outbox = new Outbox(join(archive.routerOutbox, args.runId))
-      for (const transition of result.applied) {
-        await outbox.stage(transitionToRouterEvent(transition))
-        staged += 1
+    const llmScores = new Map<string, number>()
+    const voteArchives: WalletVoteArchive[] = []
+    for (const wallet of file.wallets) {
+      const perf = performances.get(wallet.walletId)
+      if (!perf) continue
+      const evidenceCard = {
+        walletId: wallet.walletId,
+        chain: wallet.chain,
+        address: wallet.address,
+        status: wallet.status,
+        performance: perf,
       }
+      const vote = await scoreWalletVote({
+        evidenceCard,
+        ...(args.runSession ? { runSession: args.runSession } : {}),
+      })
+      llmScores.set(wallet.walletId, vote.score)
+      const deterministic = deterministicWalletScore(performanceToEvidence(perf))
+      const blended = blendWalletScores(deterministic, vote.score, detWeight, llmWeight)
+      voteArchives.push({
+        walletId: wallet.walletId,
+        evidenceCardHash: sha256Json(evidenceCard as never),
+        voterPromptHash,
+        rawOutput: vote.rawOutput,
+        parsedScore: vote.score,
+        reasonCode: vote.reasonCode,
+        deterministic,
+        llmWeight,
+        detWeight,
+        contribution: llmWeight * (vote.score / 100),
+        blended,
+      })
+    }
+
+    const hardExclusions = new Map<string, HardExclusion>()
+    const subjects = new Map<string, ExclusionSubject>(
+      exclusionSubjectsFromEvidence(file.exclusions ?? []),
+    )
+    if (args.hardExclusionSubjects) {
+      for (const [id, subject] of args.hardExclusionSubjects) subjects.set(id, subject)
+    }
+    for (const wallet of file.wallets) {
+      const subject = subjects.get(wallet.walletId)
+      if (!subject) continue
+      const reason = classifyHardExclusion(subject)
+      if (reason) hardExclusions.set(wallet.walletId, reason)
+    }
+
+    const result = reviewWalletLifecycle({
+      file,
+      performances,
+      llmScores,
+      hardExclusions,
+      epochId: args.runId,
+      nowIso,
+      thresholds: {
+        max_transitions_per_review: config.wallets.max_transitions_per_review,
+        deterministic_weight: detWeight,
+        llm_weight: llmWeight,
+        promotion: config.wallets.promotion,
+        drop: config.wallets.drop,
+      },
+    })
+
+    let staged = 0
+    if (!args.dryRun) {
+      await store.saveWallets(result.file)
+      await writeJsonRecord(
+        join(archive.wallets, `${args.runId}-review.json`),
+        {
+          schema: 1,
+          runId: args.runId,
+          scoreCutoff,
+          applied: result.applied,
+          queued: result.queued.map((t) => t.transitionId),
+          voterPromptHash,
+          votes: voteArchives,
+        } as never,
+      )
+
+      if (!args.blockExternalEffects) {
+        const outbox = new Outbox(join(archive.routerOutbox, args.runId))
+        for (const transition of result.applied) {
+          await outbox.stage(transitionToRouterEvent(transition))
+          staged += 1
+        }
+      }
+    }
+
+    return {
+      runId: args.runId,
+      reviewed: file.wallets.length,
+      applied: result.applied.length,
+      queued: result.queued.length,
+      staged,
+      blockedExternal: Boolean(args.blockExternalEffects),
     }
   }
 
-  return {
-    runId: args.runId,
-    reviewed: file.wallets.length,
-    applied: result.applied.length,
-    queued: result.queued.length,
-    staged,
-    blockedExternal: Boolean(args.blockExternalEffects),
+  if (acquireLock) {
+    return withAgentWorkspaceLock(args.agentRoot, run)
   }
+  return run()
 }

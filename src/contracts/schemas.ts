@@ -900,15 +900,27 @@ export const WalletScanCursorSchema = z.object({
 })
 export type WalletScanCursor = z.infer<typeof WalletScanCursorSchema>
 
+export const WalletTradeSideSchema = z.enum(["buy", "sell"])
+export type WalletTradeSide = z.infer<typeof WalletTradeSideSchema>
+
 export const WalletBuyOutcomeSchema = z.object({
   schema: z.literal(1),
   eventId: SafeIdSchema,
   walletId: SafeIdSchema,
   chain: ChainSlugSchema,
   tokenAddress: AddressSchema,
+  /** Trade timestamp (buy or sell). Name kept for archive compatibility */
   boughtAt: IsoTimestampSchema,
+  side: WalletTradeSideSchema.optional(),
   settledAt: IsoTimestampSchema.optional(),
+  /** @deprecated Horizon diagnostic — copy-trade scoring uses realizedReturn */
   excessReturn72h: z.number().optional(),
+  /** FIFO copy-trade realized return (exitOpen/entryOpen − 1) */
+  realizedReturn: z.number().optional(),
+  linkedBuyEventId: SafeIdSchema.optional(),
+  holdHours: z.number().optional(),
+  tokenAmountRaw: z.string().max(78).optional(),
+  quoteAmountRaw: z.string().max(78).optional(),
   leadTimeHours: z.number().optional(),
   maxDrawdown: z.number().min(0).max(1).optional(),
   rug: z.boolean().default(false),
@@ -920,6 +932,41 @@ export const WalletBuyOutcomeSchema = z.object({
   walletStatusAtEvent: WalletStatusSchema.optional(),
 })
 export type WalletBuyOutcome = z.infer<typeof WalletBuyOutcomeSchema>
+
+/** Fomo feed trade (handle-keyed; never enters wallets.json) */
+export const FomoTradeOutcomeSchema = z.object({
+  schema: z.literal(1),
+  eventId: SafeIdSchema,
+  handle: z.string().min(1).max(64),
+  chain: ChainSlugSchema,
+  tokenAddress: AddressSchema,
+  side: WalletTradeSideSchema,
+  tradedAt: IsoTimestampSchema,
+  settledAt: IsoTimestampSchema.optional(),
+  realizedReturn: z.number().optional(),
+  linkedBuyEventId: SafeIdSchema.optional(),
+  holdHours: z.number().optional(),
+  usdAmount: z.number().nonnegative().optional(),
+  symbol: z.string().max(32).optional(),
+})
+export type FomoTradeOutcome = z.infer<typeof FomoTradeOutcomeSchema>
+
+export const FomoTraderScoreSchema = z.object({
+  handle: z.string().min(1).max(64),
+  settledTrades: z.number().int().nonnegative(),
+  hits: z.number().int().nonnegative(),
+  hitMean: z.number().min(0).max(1),
+  medianRealized: z.number(),
+  scoreCutoff: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+})
+export type FomoTraderScore = z.infer<typeof FomoTraderScoreSchema>
+
+export const FomoTraderScoresFileSchema = z.object({
+  schema: z.literal(1),
+  traders: z.array(FomoTraderScoreSchema).max(10_000),
+})
+export type FomoTraderScoresFile = z.infer<typeof FomoTraderScoresFileSchema>
 
 export const WalletPerformanceSchema = z.object({
   effectiveBuys: z.number().int().nonnegative(),
@@ -1073,6 +1120,8 @@ export const OutcomeObservationSchema = z.object({
   benchmarkReturn: z.number().optional(),
   excessReturn: z.number().optional(),
   rawReturn: z.number().optional(),
+  peakTs: IsoTimestampSchema.optional(),
+  peakPrice: z.number().positive().optional(),
   marketBlobHash: Sha256Schema.optional(),
   exclusionReason: z.string().max(280).optional(),
   observedAt: IsoTimestampSchema,

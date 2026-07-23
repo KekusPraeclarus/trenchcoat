@@ -3,8 +3,9 @@ import { join } from "node:path"
 import type { ArchiveLayout } from "../lib/archive.js"
 import type { SourceCallOutcome } from "../sources/outcomes.js"
 import { OutcomeObservationSchema } from "../contracts/schemas.js"
+import { PEAK_HORIZON_HOURS } from "./observations.js"
 
-/** Load sealed source-call outcomes from archive for lifecycle review */
+/** Load sealed source-call outcomes from archive for lifecycle review (peak headline) */
 export function loadSourceCallOutcomes(
   layout: ArchiveLayout,
 ): SourceCallOutcome[] {
@@ -19,6 +20,11 @@ export function loadSourceCallOutcomes(
         JSON.parse(readFileSync(join(dir, file), "utf8")),
       )
       if (obs.status !== "complete" && obs.status !== "terminal-loss") continue
+      const isPeak = obs.observationSpecVersion >= 2
+        || obs.horizonHours === PEAK_HORIZON_HOURS
+      const isLegacy72 = obs.horizonHours === 72
+      if (!isPeak && !isLegacy72) continue
+      const returnValue = obs.excessReturn
       out.push({
         eventId: `${obs.subjectId}:${obs.horizonHours}`,
         sourceId: obs.subjectId.includes(":")
@@ -27,8 +33,10 @@ export function loadSourceCallOutcomes(
         tokenId: obs.subjectId,
         mentionedAt: obs.eventTs,
         settledAt: obs.observedAt,
-        ...(obs.horizonHours === 72 && obs.excessReturn !== undefined
-          ? { excessReturn72h: obs.excessReturn }
+        ...(returnValue !== undefined
+          ? isPeak
+            ? { peakReturn: returnValue }
+            : { excessReturn72h: returnValue }
           : {}),
         rug: obs.status === "terminal-loss",
       })

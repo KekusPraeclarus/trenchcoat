@@ -44,7 +44,7 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
 | `review` | daily 07:00 | sealed report manifests (path-only) + pending alpha + watchlist/macro + **host health snapshot** + skip-ledger counts; scope also from empty queues / silent wallets / stale FC / recurring skips | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
-| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | mature source-call + wallet-buy observations | **no agent** — resumable settlement writers |
+| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | peak source-call settle + wallet/Fomo FIFO copy-trade + horizon diagnostics + ledger entry finalisation | **no agent** — resumable settlement writers (ADR 031/032) |
 | `wallet-discovery` | every 6h | watchlist token identities → Helius/Infura/Robinhood early buyers | host stages `candidate` wallets + cursors; evidence-only agent reads frozen snapshot |
 | `wallet-runner-discovery` | every 30m (off/shadow by default) | Gecko fresh pools → DexScreener identity + closed 6h metrics → verified buyers | host writes `state/wallet-runners.json`; registers `new-pools` candidates after recurrence; ADR 020 |
 | `wallet-scan-solana` | every 5m | Helius finalized wallet actions | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
@@ -118,17 +118,18 @@ One writer at a time, two levels:
 - **Workspace writer lock** (`agent/.lock` + `.lock.owner`, O_EXCL PID-file via
   `src/lib/lock.ts`) — acquired first by `runJob` for **agent-mutating** jobs.
   `tc run` exits 3 if held. Chat research sub-agents and recovery share this
-  lock for their full duration (INV-S15).   **Exempt:** `harness-improve`,
-  `incident-remediate`, and `incident-remediate-weekly` never take this lock
-  (own remediations/harness + repo-mutation confinement; [ADR 027](../adr/027-improvement-lanes-skip-agent-lock.md)) so continuous scans
-  cannot starve improvement.
+  lock for their full duration (INV-S15). **Exempt (ADR 027 + ADR 031):**
+  `harness-improve`, `incident-remediate`, `incident-remediate-weekly`,
+  `outcomes-settle`, `wallet-scan-solana`, `wallet-scan-evm`, and
+  `wallet-review` never take a full-job hold — improvement lanes use their own
+  confinement; wallet settle/scan/review run provider I/O unlocked and take a
+  brief `withAgentWorkspaceLock` only for `wallets.json` / ledger RMW.
 - **Job-level guard** — the CLI additionally refuses to start a job whose
   previous run is still live, so a slow job can't stack on itself.
 
 Chat *reads* (the conversational session answering from INDEX/reports) take no
 lock — they tolerate a mid-run snapshot of state. Agent state writes must go
-through the writer lock (INV-S15), except the improvement-lane exemptions
-above.
+through the writer lock (INV-S15), except the brief-RMW exemptions above.
 
 ## Run idempotency and crash consistency
 
@@ -544,7 +545,8 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/proposals.ts` — host-validated decision proposals (INV-S23)
 - `src/orchestrator/gate-evidence.ts` — archive-then-live security gate receipts
 - `src/orchestrator/market-bars.ts` — live DexScreener/GeckoTerminal BarProviders
-- `src/orchestrator/outcomes-settle.ts` — mature source-call + wallet-buy settlement + ledger entry finalisation
+- `src/orchestrator/outcomes-settle.ts` — peak shills + wallet/Fomo copy-trade + horizon diagnostics + ledger entry finalisation (ADR 031/032)
+- `src/orchestrator/settle-source-peaks.ts` / `settle-wallet-copy-trades.ts` / `settle-fomo-copy-trades.ts` — ADR 032 settlers
 - `src/orchestrator/settle-ledger.ts` — entry-pending → open at first post-decision bar
 - `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
   calibration, source attribution (ledger marking via outcomes-settle)

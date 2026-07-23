@@ -121,6 +121,7 @@ import {
 import {
   createLiveSourceBarProvider,
   createLiveWalletBarProvider,
+  createLiveIdentityBarProvider,
 } from "./market-bars.js"
 import {
   ChatSummaryReceiptSchema,
@@ -142,6 +143,8 @@ const HOST_ONLY_JOBS = new Set([
   "delivery-retry",
   "telegram-digest",
   "wallet-review",
+  "wallet-scan-solana",
+  "wallet-scan-evm",
   "harness-improve",
   "incident-remediate",
   "incident-remediate-weekly",
@@ -1022,8 +1025,10 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       outcomesReport = await runOutcomesSettle({
         layout: layout,
         nowIso,
+        agentRoot: opts.paths.agentRoot,
         sourceBars: createLiveSourceBarProvider(fetch, () => nowIso),
         walletBars: createLiveWalletBarProvider(fetch, () => nowIso),
+        identityBars: createLiveIdentityBarProvider(fetch, () => nowIso),
       })
       writeFileSync(
         join(reportDir, "outcomes-settle.json"),

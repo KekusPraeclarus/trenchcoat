@@ -21,7 +21,8 @@ Binding decision: [ADR 004](../adr/004-dynamic-x-list-lifecycle.md).
 **Current limit:** `runSourceListReview` loads archive `source-call` outcomes when
 present (`src/orchestrator/sources.ts` via `source-list.ts`), applies lagged
 scores into `sources.json` for candidates with `settledCalls > 0`, and runs on
-launchd daily (`RunAtLoad` + 24h) plus after a sealed audit. Empty archives still
+launchd daily (`RunAtLoad` + 24h) plus after a sealed audit. Headline settlement
+is peak% from entry (quiet 6h / 14d force; ADR 032). Empty archives still
 yield no promotions (INV-S21). Prefer `tc source-list review --dry-run` until
 sealed outcomes accumulate.
 
@@ -149,7 +150,7 @@ CLI: `tc source-list review --dry-run` (no state/X writes),
 ## Default gates (config-tunable)
 
 **Promote** (probation or re-add after cooldown): ≥10 eligible calls, ≥5 tokens,
-≥80% settled coverage, hit mean ≥60%, Wilson 95% LB ≥45%, median 72h excess ≥5%,
+≥80% settled coverage, hit mean ≥60%, Wilson 95% LB ≥45%, median peak excess ≥5%,
 rug ≤10%, last eligible call within 14 days.
 
 **Demote** (managed): hard dock immediately; else idle ≥30d; rug >25% with ≥4

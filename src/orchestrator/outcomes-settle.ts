@@ -1,5 +1,9 @@
 import { type ArchiveLayout } from "../lib/archive.js"
-import { type SourceCallEvent, type WalletBuyOutcome } from "../contracts/schemas.js"
+import {
+  type CanonicalIdentity,
+  type SourceCallEvent,
+  type WalletBuyOutcome,
+} from "../contracts/schemas.js"
 import { type BarProvider, type BenchmarkProvider } from "./observations.js"
 import {
   runSettleSourceCalls,
@@ -7,27 +11,43 @@ import {
   DEFAULT_SETTLEMENT_HOURS,
   type SourceSettleReport,
 } from "./settle-source-calls.js"
+import { runSettleSourcePeaks, type SourcePeakSettleReport } from "./settle-source-peaks.js"
 import { runSettleWalletBuys, type WalletSettleReport } from "./settle-wallet-buys.js"
+import {
+  runSettleWalletCopyTrades,
+  type WalletCopyTradeSettleReport,
+} from "./settle-wallet-copy-trades.js"
+import {
+  runSettleFomoCopyTrades,
+  type FomoCopyTradeSettleReport,
+} from "./settle-fomo-copy-trades.js"
+import { runLedgerSettle, type LedgerSettleReport } from "./settle-ledger.js"
 
 export type OutcomesSettleReport = Readonly<{
   sourceCalls: SourceSettleReport
+  sourcePeaks: SourcePeakSettleReport
   walletBuys: WalletSettleReport
+  walletCopyTrades: WalletCopyTradeSettleReport
+  fomoCopyTrades: FomoCopyTradeSettleReport
+  ledger?: LedgerSettleReport
 }>
 
 /**
- * Journal-friendly driver: settle every mature source call and wallet buy into immutable
- * outcome observations. Pure over its inputs and injected pricing, registers no job, and is
- * safe to re-run (both settlers skip already-complete observations).
+ * Journal-friendly driver: horizon diagnostics, peak shill settlement, wallet
+ * copy-trade + Fomo feed copy-trade, then paper ledger entry finalisation.
+ * Archive settlers are lock-free; ledger RMW uses a brief agent lock when agentRoot is set.
  */
 export async function runOutcomesSettle(args: Readonly<{
   layout: ArchiveLayout
   nowIso: string
+  agentRoot?: string
   horizons?: readonly number[]
   settlementHours?: number
   sourceBars?: BarProvider<SourceCallEvent>
   sourceBenchmark?: BenchmarkProvider<SourceCallEvent>
   walletBars?: BarProvider<WalletBuyOutcome>
   walletBenchmark?: BenchmarkProvider<WalletBuyOutcome>
+  identityBars?: BarProvider<CanonicalIdentity>
   feeBpsPerSide?: number
 }>): Promise<OutcomesSettleReport> {
   const horizons = args.horizons ?? DEFAULT_HORIZONS
@@ -43,6 +63,13 @@ export async function runOutcomesSettle(args: Readonly<{
     ...(args.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.feeBpsPerSide } : {}),
   })
 
+  const sourcePeaks = await runSettleSourcePeaks({
+    layout: args.layout,
+    nowIso: args.nowIso,
+    ...(args.sourceBars ? { loadBars: args.sourceBars } : {}),
+    ...(args.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.feeBpsPerSide } : {}),
+  })
+
   const walletBuys = await runSettleWalletBuys({
     layout: args.layout,
     nowIso: args.nowIso,
@@ -53,5 +80,59 @@ export async function runOutcomesSettle(args: Readonly<{
     ...(args.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.feeBpsPerSide } : {}),
   })
 
-  return { sourceCalls, walletBuys }
+  const walletCopyTrades = await runSettleWalletCopyTrades({
+    layout: args.layout,
+    nowIso: args.nowIso,
+    ...(args.walletBars ? { loadBars: args.walletBars } : {}),
+    ...(args.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.feeBpsPerSide } : {}),
+  })
+
+  const fomoCopyTrades = await runSettleFomoCopyTrades({
+    layout: args.layout,
+    nowIso: args.nowIso,
+    ...(args.agentRoot ? { agentRoot: args.agentRoot } : {}),
+    ...(args.walletBars
+      ? {
+          loadBars: async (
+            token: Readonly<{ chain: string; tokenAddress: string }>,
+            horizonHours: number,
+          ) => {
+            const synthetic: WalletBuyOutcome = {
+              schema: 1,
+              eventId: "fomo_bar",
+              walletId: `fomo:${token.tokenAddress}`,
+              chain: token.chain as WalletBuyOutcome["chain"],
+              tokenAddress: token.tokenAddress,
+              boughtAt: args.nowIso,
+              finalized: true,
+              removed: false,
+              priceable: true,
+              rug: false,
+              side: "buy",
+            }
+            return args.walletBars!(synthetic, horizonHours)
+          },
+        }
+      : {}),
+    ...(args.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.feeBpsPerSide } : {}),
+  })
+
+  let ledger: LedgerSettleReport | undefined
+  if (args.agentRoot) {
+    ledger = await runLedgerSettle({
+      agentRoot: args.agentRoot,
+      layout: args.layout,
+      nowIso: args.nowIso,
+      ...(args.identityBars ? { loadBars: args.identityBars } : {}),
+    })
+  }
+
+  return {
+    sourceCalls,
+    sourcePeaks,
+    walletBuys,
+    walletCopyTrades,
+    fomoCopyTrades,
+    ...(ledger ? { ledger } : {}),
+  }
 }

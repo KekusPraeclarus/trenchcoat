@@ -2,14 +2,19 @@ import { openSync, closeSync, mkdirSync, writeFileSync, unlinkSync, existsSync, 
 import { dirname, join } from "node:path"
 
 /**
- * Jobs that never take the main agent workspace writer lock (INV-S15).
- * They use their own stores/locks (remediations/, harness worktrees, repo
- * mutation lock) so continuous scans cannot starve improvement flows.
+ * Jobs that never take the full-job agent workspace writer lock (INV-S15).
+ * Improvement lanes use remediations/harness/repo-mutation confinement (ADR 027).
+ * Wallet scan/settle/review release the critical section for provider I/O and
+ * take a brief `withAgentWorkspaceLock` only for agent-state RMW (ADR 031).
  */
 export const AGENT_LOCK_EXEMPT_JOBS = Object.freeze(new Set([
   "harness-improve",
   "incident-remediate",
   "incident-remediate-weekly",
+  "outcomes-settle",
+  "wallet-scan-solana",
+  "wallet-scan-evm",
+  "wallet-review",
 ]))
 
 export function jobRequiresAgentWorkspaceLock(job: string): boolean {

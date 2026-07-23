@@ -78,10 +78,11 @@ function nativeLamports(tx: object, owner: string): { pre: bigint; post: bigint 
   }
 }
 
-function quoteLoss(
+function quoteDelta(
   tx: object,
   owner: string,
   quote: SolanaQuoteAssets,
+  direction: "loss" | "gain",
 ): { asset: string; amountRaw: string } | undefined {
   const allow = allowlistSet(quote)
   const meta = Reflect.get(tx, "meta") as Record<string, unknown> | undefined
@@ -94,8 +95,6 @@ function quoteLoss(
   ])
   for (const mint of mints) {
     if (!mint || !allow.has(mint)) continue
-    const preBal = balancesForMint(pre, mint).get(owner) ?? 0n
-    // balancesForMint is case-sensitive on mint; re-scan with case-insensitive
     let preAmt = 0n
     let postAmt = 0n
     for (const row of pre) {
@@ -110,18 +109,59 @@ function quoteLoss(
       const ui = row["uiTokenAmount"] as Record<string, unknown> | undefined
       postAmt += BigInt(String(ui?.["amount"] ?? "0"))
     }
-    void preBal
-    if (postAmt < preAmt) {
+    if (direction === "loss" && postAmt < preAmt) {
       return { asset: mint, amountRaw: (preAmt - postAmt).toString() }
+    }
+    if (direction === "gain" && postAmt > preAmt) {
+      return { asset: mint, amountRaw: (postAmt - preAmt).toString() }
     }
   }
   if (quote.acceptNative) {
     const { pre: preLamports, post: postLamports } = nativeLamports(tx, owner)
-    if (postLamports < preLamports) {
+    if (direction === "loss" && postLamports < preLamports) {
       return { asset: "native", amountRaw: (preLamports - postLamports).toString() }
+    }
+    if (direction === "gain" && postLamports > preLamports) {
+      return { asset: "native", amountRaw: (postLamports - preLamports).toString() }
     }
   }
   return undefined
+}
+
+function quoteLoss(
+  tx: object,
+  owner: string,
+  quote: SolanaQuoteAssets,
+): { asset: string; amountRaw: string } | undefined {
+  return quoteDelta(tx, owner, quote, "loss")
+}
+
+function quoteGain(
+  tx: object,
+  owner: string,
+  quote: SolanaQuoteAssets,
+): { asset: string; amountRaw: string } | undefined {
+  return quoteDelta(tx, owner, quote, "gain")
+}
+
+function solanaTxMeta(tx: unknown): Readonly<{
+  meta: Record<string, unknown>
+  sig: string
+  ts: number
+  slotNum: number
+}> | undefined {
+  if (!tx || typeof tx !== "object") return undefined
+  const meta = Reflect.get(tx, "meta") as Record<string, unknown> | undefined
+  if (!meta || meta["err"]) return undefined
+  const tr = Reflect.get(tx, "transaction")
+  const sigs = tr && typeof tr === "object" ? Reflect.get(tr as object, "signatures") : undefined
+  const sig = Array.isArray(sigs) && typeof sigs[0] === "string" ? sigs[0] : ""
+  const blockTime = Reflect.get(tx, "blockTime")
+  const slot = Reflect.get(tx, "slot")
+  const ts = typeof blockTime === "number" ? blockTime * 1_000 : undefined
+  const slotNum = typeof slot === "number" ? slot : 0
+  if (ts === undefined || ts <= 0) return undefined
+  return { meta, sig, ts, slotNum }
 }
 
 /** Extract verified swap-buys: target mint gain + quote spend by signer/owner */
@@ -130,18 +170,9 @@ export function extractSolanaVerifiedBuysFromTransaction(
   tokenMint: string,
   quote: SolanaQuoteAssets,
 ): WalletProviderAction[] {
-  if (!tx || typeof tx !== "object") return []
-  const meta = Reflect.get(tx, "meta") as Record<string, unknown> | undefined
-  if (!meta || meta["err"]) return []
-  const tr = Reflect.get(tx, "transaction")
-  const sigs = tr && typeof tr === "object" ? Reflect.get(tr as object, "signatures") : undefined
-  const sig = Array.isArray(sigs) && typeof sigs[0] === "string" ? sigs[0] : ""
-  const blockTime = Reflect.get(tx, "blockTime")
-  const slot = Reflect.get(tx, "slot")
-  const ts = typeof blockTime === "number" ? blockTime * 1_000 : undefined
-  const slotNum = typeof slot === "number" ? slot : 0
-  if (ts === undefined || ts <= 0) return []
-
+  const parsed = solanaTxMeta(tx)
+  if (!parsed) return []
+  const { meta, sig, ts, slotNum } = parsed
   const pre = (meta["preTokenBalances"] as Array<Record<string, unknown>> | undefined) ?? []
   const post = (meta["postTokenBalances"] as Array<Record<string, unknown>> | undefined) ?? []
   const preByOwner = balancesForMint(pre, tokenMint)
@@ -151,7 +182,6 @@ export function extractSolanaVerifiedBuysFromTransaction(
   for (const [owner, postAmount] of postByOwner) {
     const preAmount = preByOwner.get(owner) ?? 0n
     if (postAmount <= preAmount) continue
-    // Prefer signer match; allow owner === signer for ATA ownership
     if (signer && owner !== signer) continue
     const spent = quoteLoss(tx as object, owner, quote)
     if (!spent) continue
@@ -162,11 +192,52 @@ export function extractSolanaVerifiedBuysFromTransaction(
       timestamp: ts,
       finalized: true,
       priceable: true,
-      providerEventId: `${sig || "unknown"}:${tokenMint}:${owner}`,
+      providerEventId: `${sig || "unknown"}:${tokenMint}:${owner}:buy`,
       blockOrSlot: slotNum,
       classification: "swap-buy",
       tokenReceivedRaw: received.toString(),
       quoteSpent: spent,
+      ...(signer ? { txSender: signer } : {}),
+    })
+  }
+  return out
+}
+
+/** Extract verified swap-sells: target mint decrease + quote gain by signer/owner */
+export function extractSolanaVerifiedSellsFromTransaction(
+  tx: unknown,
+  tokenMint: string,
+  quote: SolanaQuoteAssets,
+): WalletProviderAction[] {
+  const parsed = solanaTxMeta(tx)
+  if (!parsed) return []
+  const { meta, sig, ts, slotNum } = parsed
+  const pre = (meta["preTokenBalances"] as Array<Record<string, unknown>> | undefined) ?? []
+  const post = (meta["postTokenBalances"] as Array<Record<string, unknown>> | undefined) ?? []
+  const preByOwner = balancesForMint(pre, tokenMint)
+  const postByOwner = balancesForMint(post, tokenMint)
+  const signer = signerFromTx(tx as object)
+  const out: WalletProviderAction[] = []
+  const owners = new Set([...preByOwner.keys(), ...postByOwner.keys()])
+  for (const owner of owners) {
+    const preAmount = preByOwner.get(owner) ?? 0n
+    const postAmount = postByOwner.get(owner) ?? 0n
+    if (postAmount >= preAmount) continue
+    if (signer && owner !== signer) continue
+    const gained = quoteGain(tx as object, owner, quote)
+    if (!gained) continue
+    const sold = preAmount - postAmount
+    out.push({
+      walletAddress: owner,
+      tokenAddress: tokenMint,
+      timestamp: ts,
+      finalized: true,
+      priceable: true,
+      providerEventId: `${sig || "unknown"}:${tokenMint}:${owner}:sell`,
+      blockOrSlot: slotNum,
+      classification: "swap-sell",
+      tokenSoldRaw: sold.toString(),
+      quoteSpent: gained,
       ...(signer ? { txSender: signer } : {}),
     })
   }
@@ -275,6 +346,10 @@ export async function listSolanaWalletActions(args: Readonly<{
       if (!mint) continue
       if (allow.has(mint.toLowerCase())) continue
       for (const action of extractSolanaVerifiedBuysFromTransaction(tx, mint, args.quoteAssets)) {
+        if (action.walletAddress !== args.walletAddress) continue
+        actions.push(action)
+      }
+      for (const action of extractSolanaVerifiedSellsFromTransaction(tx, mint, args.quoteAssets)) {
         if (action.walletAddress !== args.walletAddress) continue
         actions.push(action)
       }

@@ -8,6 +8,8 @@ import { applyFeeBps, excessReturn } from "./audit-math.js"
 export type PriceBar = Readonly<{
   ts: string
   open: number
+  /** Candle high when available (peak settlement) */
+  high?: number
   finalized: boolean
 }>
 
@@ -37,13 +39,22 @@ export type MaterializeInput = Readonly<{
 }>
 
 const HOUR_MS = 3_600_000
+export const PEAK_QUIET_HOURS = 6
+export const PEAK_MAX_WAIT_DAYS = 14
+/** Archive path key for peak settlements (observationSpecVersion 2) */
+export const PEAK_HORIZON_HOURS = 1
 
 function priceable(bar: PriceBar): boolean {
   return bar.finalized && Number.isFinite(bar.open) && bar.open > 0
 }
 
+function barHigh(bar: PriceBar): number {
+  if (bar.high !== undefined && Number.isFinite(bar.high) && bar.high > 0) return bar.high
+  return bar.open
+}
+
 /** finalized bars as ledger observations so P0 selection matches firstEligibleObservation */
-function finalizedObservations(bars: readonly PriceBar[]): Observation[] {
+export function observationsFromBars(bars: readonly PriceBar[]): Observation[] {
   return bars
     .filter(priceable)
     .map((bar) => ({
@@ -53,11 +64,162 @@ function finalizedObservations(bars: readonly PriceBar[]): Observation[] {
     }))
 }
 
+function finalizedObservations(bars: readonly PriceBar[]): Observation[] {
+  return observationsFromBars(bars)
+}
+
 /** earliest finalized eligible bar at or after cutoff (horizon leg) */
 function firstAtOrAfter(observations: readonly Observation[], cutoffMs: number): Observation | undefined {
   return observations
     .filter((o) => Date.parse(o.ts) >= cutoffMs)
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))[0]
+}
+
+export type PeakFromEntry = Readonly<{
+  entryOpen: number
+  entryTs: string
+  peakHigh: number
+  peakTs: string
+  peakReturn: number
+}>
+
+/** Max high after entry open among finalized bars strictly after eventTs */
+export function peakFromEntry(
+  bars: readonly PriceBar[],
+  eventTs: string,
+): PeakFromEntry | undefined {
+  const entry = firstEligibleObservation(eventTs, observationsFromBars(bars))
+  if (!entry) return undefined
+  const entryMs = Date.parse(entry.ts)
+  let peakHigh = entry.open
+  let peakTs = entry.ts
+  for (const bar of bars) {
+    if (!priceable(bar)) continue
+    const ts = Date.parse(bar.ts)
+    if (!(ts > entryMs)) continue
+    const high = barHigh(bar)
+    if (high > peakHigh) {
+      peakHigh = high
+      peakTs = bar.ts
+    }
+  }
+  return {
+    entryOpen: entry.open,
+    entryTs: entry.ts,
+    peakHigh,
+    peakTs,
+    peakReturn: peakHigh / entry.open - 1,
+  }
+}
+
+export function lastHighTs(bars: readonly PriceBar[], afterTs: string): string | undefined {
+  const afterMs = Date.parse(afterTs)
+  let best: string | undefined
+  let bestHigh = -Infinity
+  for (const bar of bars) {
+    if (!priceable(bar)) continue
+    const ts = Date.parse(bar.ts)
+    if (!(ts > afterMs)) continue
+    const high = barHigh(bar)
+    if (high > bestHigh || (high === bestHigh && (!best || ts > Date.parse(best)))) {
+      bestHigh = high
+      best = bar.ts
+    }
+  }
+  return best
+}
+
+/** True when a new high landed within quietHours of now */
+export function isStillSending(
+  bars: readonly PriceBar[],
+  entryTs: string,
+  nowIso: string,
+  quietHours = PEAK_QUIET_HOURS,
+): boolean {
+  const last = lastHighTs(bars, entryTs)
+  if (!last) return false
+  const quietMs = quietHours * HOUR_MS
+  return Date.parse(nowIso) - Date.parse(last) < quietMs
+}
+
+export type MaterializePeakInput = Readonly<{
+  subjectType: OutcomeObservation["subjectType"]
+  subjectId: string
+  eventTs: string
+  bars: readonly PriceBar[]
+  observedAt: string
+  quietHours?: number
+  maxWaitDays?: number
+  feeBpsPerSide?: number
+}>
+
+/**
+ * Peak-from-entry settlement for shill quality. Defers while chart is still
+ * making highs within quietHours; force-completes after maxWaitDays.
+ */
+export function materializePeakObservation(input: MaterializePeakInput): OutcomeObservation {
+  const eventMs = Date.parse(input.eventTs)
+  if (!Number.isFinite(eventMs)) throw new TypeError("Invalid eventTs")
+  const nowMs = Date.parse(input.observedAt)
+  const quietHours = input.quietHours ?? PEAK_QUIET_HOURS
+  const maxWaitDays = input.maxWaitDays ?? PEAK_MAX_WAIT_DAYS
+  const maxWaitMs = maxWaitDays * 86_400_000
+
+  const base = {
+    schema: 1 as const,
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+    horizonHours: PEAK_HORIZON_HOURS,
+    observationSpecVersion: 2,
+    eventTs: input.eventTs,
+    observedAt: input.observedAt,
+  }
+
+  const peak = peakFromEntry(input.bars, input.eventTs)
+  if (!peak) {
+    const retryable = input.bars.some((bar) => (
+      !bar.finalized
+      && Number.isFinite(bar.open)
+      && bar.open > 0
+      && Date.parse(bar.ts) > eventMs
+    ))
+    return OutcomeObservationSchema.parse({
+      ...base,
+      status: retryable ? "provider-pending" : "censored",
+      exclusionReason: retryable
+        ? "missing p0: unfinalized bars present, retry pending"
+        : "missing p0: no eligible finalized bars",
+    })
+  }
+
+  const forced = nowMs - eventMs >= maxWaitMs
+  const sending = isStillSending(input.bars, peak.entryTs, input.observedAt, quietHours)
+  if (sending && !forced) {
+    return OutcomeObservationSchema.parse({
+      ...base,
+      status: "provider-pending",
+      exclusionReason: `still-sending: new high within ${quietHours}h`,
+      targetPrice: peak.peakHigh,
+      rawReturn: peak.peakReturn,
+      excessReturn: peak.peakReturn,
+      peakTs: peak.peakTs,
+      peakPrice: peak.peakHigh,
+    })
+  }
+
+  const raw = peak.peakReturn
+  const costAdjusted = input.feeBpsPerSide !== undefined
+    ? applyFeeBps(raw, input.feeBpsPerSide)
+    : raw
+  return OutcomeObservationSchema.parse({
+    ...base,
+    status: "complete",
+    targetPrice: peak.peakHigh,
+    rawReturn: raw,
+    excessReturn: costAdjusted,
+    peakTs: peak.peakTs,
+    peakPrice: peak.peakHigh,
+  })
 }
 
 /**
@@ -122,4 +284,22 @@ export function materializeObservation(input: MaterializeInput): OutcomeObservat
       retryable ? "unfinalized bars present, retry pending" : "no eligible finalized bars"
     }`,
   })
+}
+
+/** Open-to-open return between two event timestamps (copy-trade legs) */
+export function materializeCopyTradeReturn(args: Readonly<{
+  bars: readonly PriceBar[]
+  entryTs: string
+  exitTs: string
+  feeBpsPerSide?: number
+}>): number | undefined {
+  const obs = observationsFromBars(args.bars)
+  const entry = firstEligibleObservation(args.entryTs, obs)
+  const exit = firstEligibleObservation(args.exitTs, obs)
+  if (!entry || !exit) return undefined
+  if (Date.parse(exit.ts) <= Date.parse(entry.ts)) return undefined
+  const raw = exit.open / entry.open - 1
+  return args.feeBpsPerSide !== undefined
+    ? applyFeeBps(raw, args.feeBpsPerSide)
+    : raw
 }

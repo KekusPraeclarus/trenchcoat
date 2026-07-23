@@ -444,4 +444,77 @@ describe("host decision proposals", () => {
     expect(result.rejected).toBe(1)
     expect(result.receipts[0]?.rejectReason).toBe("mintable-missing-classification")
   })
+
+  it("cancels entry-pending ledger positions on drop", async () => {
+    const { agentRoot, runId } = fixtureRoot()
+    const state = new StateStore(join(agentRoot, "state"))
+    await state.saveLedger({
+      schema: 1,
+      positions: [{
+        schema: 1,
+        positionId: "pos-d-track",
+        decisionId: "d-track",
+        identity,
+        status: "entry-pending",
+        openedAt: "2026-07-16T12:00:00.000Z",
+      }],
+    })
+    await state.saveWatchlist({
+      schema: 1,
+      entries: [{
+        schema: 1,
+        identity,
+        status: "tracking",
+        addedAt: "2026-07-16T12:00:00.000Z",
+        updatedAt: "2026-07-16T12:00:00.000Z",
+        lastDecisionId: "d-track",
+      }],
+    })
+    const file: DecisionProposalFile = {
+      schema: 1,
+      runId,
+      proposedAt: "2026-07-16T13:00:00.000Z",
+      proposals: [{
+        schema: 1,
+        proposalId: "p-drop",
+        runId,
+        proposedAt: "2026-07-16T13:00:00.000Z",
+        card: {
+          decisionId: "d-drop",
+          runId,
+          decisionTs: "2026-07-16T13:00:00.000Z",
+          verdict: "drop",
+          identity,
+          thesis: "invalidated",
+          horizonHours: 72,
+          invalidation: "thesis broken",
+          drivers: ["social"],
+          confidence: 70,
+          signalUse: {},
+          sources: ["twitter:@a"],
+          clusters: 1,
+          countercase: "n/a",
+          gate: "pass",
+        },
+        provenanceIds: ["twitter:@a"],
+        externalEffects: [],
+      }],
+    }
+    writeFileSync(
+      join(agentRoot, "reports", runId, "decision-proposals.json"),
+      `${JSON.stringify(file, null, 2)}\n`,
+    )
+    const result = await applyDecisionProposals({
+      agentRoot,
+      runId,
+      state,
+      nowIso: "2026-07-16T13:01:00.000Z",
+      policyVersion: "baseline",
+      assignment: "baseline",
+      blockExternalEffects: false,
+    })
+    expect(result.accepted).toBe(1)
+    expect(state.loadLedger().positions[0]?.status).toBe("censored")
+    expect(state.loadLedger().positions[0]?.closedAt).toBe("2026-07-16T13:01:00.000Z")
+  })
 })

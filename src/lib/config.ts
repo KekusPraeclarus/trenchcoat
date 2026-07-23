@@ -366,6 +366,7 @@ export const ConfigSchema = z.object({
     discovery_interval_hours: z.number().int().default(6),
     solana_scan_minutes: z.number().int().default(5),
     evm_scan_minutes: z.number().int().default(15),
+    max_wallets_per_scan: z.number().int().min(1).max(500).default(5),
     max_transitions_per_review: z.number().int().default(20),
     promotion: z.object({
       min_effective_buys: z.number().int().default(15),

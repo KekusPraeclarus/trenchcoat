@@ -44,7 +44,7 @@ describe("wallet discovery loop integration", () => {
       tokenAddress: SOL,
       boughtAt: `2026-07-1${i}T00:00:00.000Z`,
       settledAt: `2026-07-1${i + 1}T00:00:00.000Z`,
-      excessReturn72h: 0.35,
+      realizedReturn: 0.35,
       leadTimeHours: 5,
       maxDrawdown: 0.05,
       rug: false,

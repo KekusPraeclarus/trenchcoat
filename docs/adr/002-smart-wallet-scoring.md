@@ -41,3 +41,9 @@ archives per-vote `evidenceCardHash`, `voterPromptHash`, bounded raw output,
 parsed score, and contribution to `archive/wallets/<runId>-review.json`.
 `wallet-review` stages `wallet.lifecycle` router events unless canary-blocked
 (INV-S20 PARTIAL — live E2E still gated on provider keys).
+
+## Implementation note (2026-07-23)
+
+Wallet performance inputs are FIFO copy-trade `realizedReturn` values
+(ADR 032), not fixed-horizon excess. Scoring blend weights and the bounded LLM
+vote are unchanged.

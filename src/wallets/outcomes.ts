@@ -2,6 +2,10 @@ import { wilsonLowerBound } from "../orchestrator/audit-math.js"
 import type { WalletBuyOutcome, WalletPerformance } from "../contracts/schemas.js"
 import type { WalletEvidence } from "./scoring.js"
 
+function isBuy(outcome: WalletBuyOutcome): boolean {
+  return (outcome.side ?? "buy") === "buy"
+}
+
 export function aggregateWalletPerformance(
   walletId: string,
   outcomes: readonly WalletBuyOutcome[],
@@ -14,6 +18,7 @@ export function aggregateWalletPerformance(
   const deduped = new Map<string, WalletBuyOutcome>()
   for (const outcome of outcomes) {
     if (outcome.walletId !== walletId) continue
+    if (!isBuy(outcome)) continue
     if (!outcome.finalized || outcome.removed || !outcome.priceable) continue
     if (Date.parse(outcome.boughtAt) >= cutoffMs) continue
     if (!deduped.has(outcome.eventId)) deduped.set(outcome.eventId, outcome)
@@ -23,11 +28,11 @@ export function aggregateWalletPerformance(
   const settled = eligible.filter((outcome) => (
     outcome.settledAt !== undefined
     && Date.parse(outcome.settledAt) <= cutoffMs
-    && outcome.excessReturn72h !== undefined
+    && outcome.realizedReturn !== undefined
   ))
-  const hits = settled.filter((outcome) => outcome.excessReturn72h! >= 0.20)
+  const hits = settled.filter((outcome) => outcome.realizedReturn! >= 0.20)
   const excess = settled
-    .map((outcome) => outcome.excessReturn72h!)
+    .map((outcome) => outcome.realizedReturn!)
     .sort((left, right) => left - right)
   const rugCount = settled.filter((outcome) => outcome.rug).length
   const leadTimes = settled

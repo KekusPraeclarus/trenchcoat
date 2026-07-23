@@ -9,6 +9,7 @@ import {
   WatchlistFileSchema,
   WalletsFileSchema,
   WalletRunnersFileSchema,
+  FomoTraderScoresFileSchema,
   XEngagementFileSchema,
   XBotHealthSchema,
   FcEngagementFileSchema,
@@ -21,6 +22,7 @@ import {
   type WatchlistFile,
   type WalletsFile,
   type WalletRunnersFile,
+  type FomoTraderScoresFile,
   type XEngagementFile,
   type XBotHealth,
   type FcEngagementFile,
@@ -59,6 +61,7 @@ export class StateStore {
   walletsPath(): string { return join(this.stateDir, "wallets.json") }
   walletRunnersPath(): string { return join(this.stateDir, "wallet-runners.json") }
   xSourceNominationsPath(): string { return join(this.stateDir, "x-source-nominations.json") }
+  fomoTraderScoresPath(): string { return join(this.stateDir, "fomo-trader-scores.json") }
   xNarrativeSourcesPath(): string { return join(this.stateDir, "x-narrative-sources.json") }
   decisionsPath(): string { return join(this.stateDir, "decisions.md") }
   scorecardPath(): string { return join(this.stateDir, "scorecard.json") }
@@ -288,6 +291,21 @@ export class StateStore {
 
   async saveXSourceNominations(file: XSourceNominationsFile): Promise<void> {
     await writeAtomicFile(this.xSourceNominationsPath(), `${JSON.stringify(file, null, 2)}\n`)
+  }
+
+  loadFomoTraderScores(): FomoTraderScoresFile {
+    return readOrDefault(
+      this.fomoTraderScoresPath(),
+      (v) => FomoTraderScoresFileSchema.parse(v),
+      { schema: 1, traders: [] },
+    )
+  }
+
+  async saveFomoTraderScores(file: FomoTraderScoresFile): Promise<void> {
+    await writeAtomicFile(
+      this.fomoTraderScoresPath(),
+      `${JSON.stringify(FomoTraderScoresFileSchema.parse(file), null, 2)}\n`,
+    )
   }
 
   loadXNarrativeSources(): NarrativeSourcesFile {

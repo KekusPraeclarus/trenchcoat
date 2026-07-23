@@ -214,6 +214,27 @@ function quoteSpendEvidence(
   return undefined
 }
 
+function quoteReceiveEvidence(
+  receipt: CachedReceipt,
+  seller: string,
+  quote: EvmQuoteAssets,
+): { asset: string; amountRaw: string } | undefined {
+  const sellerLc = seller.toLowerCase()
+  const allow = allowlistSet(quote)
+  for (const log of receipt.logs) {
+    if (!log.address) continue
+    const token = normalizeEvmAddress(log.address).toLowerCase()
+    if (!allow.has(token)) continue
+    const decoded = decodeErc20Transfer(log)
+    if (!decoded || decoded.removed) continue
+    if (decoded.to.toLowerCase() !== sellerLc) continue
+    if (isZeroAddress(decoded.from)) continue
+    if (decoded.value <= 0n) continue
+    return { asset: normalizeEvmAddress(log.address), amountRaw: decoded.value.toString() }
+  }
+  return undefined
+}
+
 async function getNativeValueSpent(
   opts: EvmClientOptions,
   txHash: string,
@@ -226,6 +247,17 @@ async function getNativeValueSpent(
   if (!tx?.from || !tx.value) return undefined
   if (normalizeEvmAddress(tx.from).toLowerCase() !== sender.toLowerCase()) return undefined
   return BigInt(tx.value)
+}
+
+function tokenLogMeta(tokenLog: EvmLog): { blockNumber: number; logIndex: number } | undefined {
+  const blockNumber = tokenLog.blockNumber
+    ? Number.parseInt(tokenLog.blockNumber, 16)
+    : NaN
+  if (!Number.isFinite(blockNumber)) return undefined
+  const logIndex = tokenLog.logIndex
+    ? Number.parseInt(tokenLog.logIndex, 16)
+    : 0
+  return { blockNumber, logIndex }
 }
 
 function classifyVerifiedBuy(args: Readonly<{
@@ -245,29 +277,23 @@ function classifyVerifiedBuy(args: Readonly<{
   if (args.decodedValue <= 0n) return undefined
   const buyer = normalizeEvmAddress(args.buyer)
   if (args.decodedTo.toLowerCase() !== buyer.toLowerCase()) return undefined
-  // Buyer must be the transaction sender for swap-buy classification
   if (args.receipt.from.toLowerCase() !== buyer.toLowerCase()) return undefined
 
   const quoteSpend = quoteSpendEvidence(args.receipt, buyer, args.quote)
   const nativeOk = args.quote.acceptNative && (args.nativeSpent ?? 0n) > 0n
   if (!quoteSpend && !nativeOk) return undefined
 
-  const blockNumber = args.tokenLog.blockNumber
-    ? Number.parseInt(args.tokenLog.blockNumber, 16)
-    : NaN
-  if (!Number.isFinite(blockNumber)) return undefined
-  const logIndex = args.tokenLog.logIndex
-    ? Number.parseInt(args.tokenLog.logIndex, 16)
-    : 0
+  const meta = tokenLogMeta(args.tokenLog)
+  if (!meta) return undefined
   return {
     walletAddress: buyer,
     tokenAddress: normalizeEvmAddress(args.tokenAddress),
-    timestamp: 0, // filled by caller after block lookup
+    timestamp: 0,
     finalized: !args.tokenLog.removed,
     removed: Boolean(args.tokenLog.removed),
     priceable: true,
-    providerEventId: `${args.tokenLog.transactionHash}:${logIndex}`,
-    blockOrSlot: blockNumber,
+    providerEventId: `${args.tokenLog.transactionHash}:${meta.logIndex}:buy`,
+    blockOrSlot: meta.blockNumber,
     classification: "swap-buy",
     tokenReceivedRaw: args.decodedValue.toString(),
     txSender: args.receipt.from,
@@ -276,6 +302,48 @@ function classifyVerifiedBuy(args: Readonly<{
       : nativeOk
         ? { quoteSpent: { asset: "native", amountRaw: String(args.nativeSpent) } }
         : {}),
+  }
+}
+
+/** Outbound target token from tx sender + quote received */
+function classifyVerifiedSell(args: Readonly<{
+  tokenAddress: string
+  seller: string
+  receipt: CachedReceipt
+  tokenLog: EvmLog
+  decodedTo: string
+  decodedFrom: string
+  decodedValue: bigint
+  quote: EvmQuoteAssets
+}>): WalletProviderAction | undefined {
+  if (args.receipt.status !== "0x1") return undefined
+  if (isZeroAddress(args.decodedFrom) || isZeroAddress(args.decodedTo)) return undefined
+  if (args.decodedFrom.toLowerCase() === args.decodedTo.toLowerCase()) return undefined
+  if (args.decodedValue <= 0n) return undefined
+  const seller = normalizeEvmAddress(args.seller)
+  if (args.decodedFrom.toLowerCase() !== seller.toLowerCase()) return undefined
+  if (args.receipt.from.toLowerCase() !== seller.toLowerCase()) return undefined
+
+  const quoteRecv = quoteReceiveEvidence(args.receipt, seller, args.quote)
+  if (!quoteRecv && !args.quote.acceptNative) return undefined
+  // Native receive is hard to prove from receipt alone; require allowlisted quote in
+  if (!quoteRecv) return undefined
+
+  const meta = tokenLogMeta(args.tokenLog)
+  if (!meta) return undefined
+  return {
+    walletAddress: seller,
+    tokenAddress: normalizeEvmAddress(args.tokenAddress),
+    timestamp: 0,
+    finalized: !args.tokenLog.removed,
+    removed: Boolean(args.tokenLog.removed),
+    priceable: true,
+    providerEventId: `${args.tokenLog.transactionHash}:${meta.logIndex}:sell`,
+    blockOrSlot: meta.blockNumber,
+    classification: "swap-sell",
+    tokenSoldRaw: args.decodedValue.toString(),
+    quoteSpent: quoteRecv,
+    txSender: args.receipt.from,
   }
 }
 
@@ -381,26 +449,44 @@ export async function listEvmWalletActions(args: Readonly<{
   for (const log of logs) {
     const decoded = decodeErc20Transfer(log)
     if (!decoded) continue
-    if (decoded.to.toLowerCase() !== wallet.toLowerCase()) continue
-    if (isZeroAddress(decoded.from)) continue
+    const walletLc = wallet.toLowerCase()
+    const isBuy = decoded.to.toLowerCase() === walletLc
+    const isSell = decoded.from.toLowerCase() === walletLc
+    if (!isBuy && !isSell) continue
+    if (isBuy && isZeroAddress(decoded.from)) continue
+    if (isSell && isZeroAddress(decoded.to)) continue
     const token = log.address ? normalizeEvmAddress(log.address) : args.tokenAddress
     if (!token) continue
     const receipt = await getReceipt(args.client, log.transactionHash, cache)
     if (!receipt) continue
-    const nativeSpent = args.quoteAssets.acceptNative
-      ? await getNativeValueSpent(args.client, log.transactionHash, receipt.from)
-      : undefined
-    const action = classifyVerifiedBuy({
-      tokenAddress: token,
-      buyer: wallet,
-      receipt,
-      tokenLog: log,
-      decodedTo: decoded.to,
-      decodedFrom: decoded.from,
-      decodedValue: decoded.value,
-      quote: args.quoteAssets,
-      ...(nativeSpent !== undefined ? { nativeSpent } : {}),
-    })
+    let action: WalletProviderAction | undefined
+    if (isBuy) {
+      const nativeSpent = args.quoteAssets.acceptNative
+        ? await getNativeValueSpent(args.client, log.transactionHash, receipt.from)
+        : undefined
+      action = classifyVerifiedBuy({
+        tokenAddress: token,
+        buyer: wallet,
+        receipt,
+        tokenLog: log,
+        decodedTo: decoded.to,
+        decodedFrom: decoded.from,
+        decodedValue: decoded.value,
+        quote: args.quoteAssets,
+        ...(nativeSpent !== undefined ? { nativeSpent } : {}),
+      })
+    } else {
+      action = classifyVerifiedSell({
+        tokenAddress: token,
+        seller: wallet,
+        receipt,
+        tokenLog: log,
+        decodedTo: decoded.to,
+        decodedFrom: decoded.from,
+        decodedValue: decoded.value,
+        quote: args.quoteAssets,
+      })
+    }
     if (!action) continue
     const ts = await getBlockTimestampMs(args.client, action.blockOrSlot, cache)
     if (ts === undefined) continue

@@ -35,6 +35,7 @@ export function deriveWalletBuyConvergence(
   const byToken = new Map<string, WalletBuyOutcome[]>()
 
   for (const outcome of outcomes) {
+    if ((outcome.side ?? "buy") !== "buy") continue
     if (!outcome.finalized || outcome.removed || !outcome.priceable) continue
     if (outcome.walletStatusAtEvent !== "tracking") continue
     if (opts.nativeOrWrap?.(outcome.tokenAddress)) continue

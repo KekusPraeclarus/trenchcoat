@@ -108,6 +108,7 @@ export async function runSettleWalletBuys(args: Readonly<{
     const updated = new Map<string, WalletBuyOutcome>()
 
     for (const outcome of batch.outcomes) {
+      if ((outcome.side ?? "buy") === "sell") continue
       let headline: OutcomeObservation | undefined
       for (const horizonHours of horizons) {
         if (!isMature(outcome.boughtAt, horizonHours, settlementHours, nowMs)) continue

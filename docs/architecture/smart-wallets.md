@@ -2,7 +2,7 @@
 description: Smart-wallet discovery, deterministic scoring, bounded LLM vote, promotion/drop hysteresis, and mandatory lifecycle router events.
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-23
 read_when:
   - Editing wallet collectors, scoring, lifecycle transitions, or wallet router events
 ---
@@ -42,10 +42,10 @@ No signing libraries. No transaction submission. Read-only codecs only (INV-A1).
    `state/wallet-runners.json`.
 4. **`wallet-scan-solana` / `wallet-scan-evm`** — host performs incremental
    finalized action scans with separate tip/backfill cursors for candidates
-   (30-day backfill); archives buy outcomes under
-   `archive/outcomes/wallet-buy-*.json` with `providerEventId` and
-   `walletStatusAtEvent`. After each scan, host may derive tracked-wallet
-   convergence.
+   (30-day backfill); archives verified **buy and sell** outcomes under
+   `archive/outcomes/wallet-buy-*.json` (`side`, `providerEventId`,
+   `walletStatusAtEvent`). After each scan, host may derive tracked-wallet
+   convergence from buys only.
 5. **Hard exclusions** — absolute and non-overridable by the LLM vote
    (`src/wallets/exclusions.ts`): contracts, programs, routers/pools/bridges/
    CEX/team/deployer, wash/self-transfer, security-failed tokens, failed txs,
@@ -74,11 +74,23 @@ mutating queue/router state.
 |---|---|
 | `wallet-discovery` | `wallets.discovery_interval_hours` (6h) |
 | `wallet-runner-discovery` | `wallets.runner_discovery.interval_minutes` (30m) |
-| `wallet-scan-solana` | `wallets.solana_scan_minutes` (5m) |
-| `wallet-scan-evm` | `wallets.evm_scan_minutes` (15m) |
-| `wallet-review` | after scans / daily |
+| `wallet-scan-solana` | `wallets.solana_scan_minutes` (5m); ≤`max_wallets_per_scan` (5) per tick |
+| `wallet-scan-evm` | `wallets.evm_scan_minutes` (15m); same per-run cap |
+| `wallet-review` | daily |
+
+`wallet-scan-*`, `wallet-review`, and `outcomes-settle` are **agent-lock exempt**
+at the job wrapper ([ADR 027](../adr/027-improvement-lanes-skip-agent-lock.md),
+[ADR 031](../adr/031-wallet-settle-brief-locks-and-ledger.md)). Provider I/O and
+archive settlement run unlocked; `wallets.json` / ledger RMW uses a brief
+`withAgentWorkspaceLock`. Scans are host-only (no Cursor session). Round-robin
+prefers wallets with the oldest cursors so backfill progresses under the
+per-run cap.
 
 ## Scoring
+
+Hits and median excess use **FIFO copy-trade `realizedReturn`** (buy bar →
+sell bar; open buys unsettled). Horizon 72h fields may still be archived as
+diagnostics ([ADR 032](../adr/032-peak-and-copy-trade-metrics.md)).
 
 ```text
 deterministic =
@@ -99,7 +111,9 @@ router prose, or exceed 20% influence.
 Runtime research agents may treat wallet signals as token evidence only. They
 cannot nominate, score, add, or drop wallets.
 
-See ADR 002 for scoring and ADR 020 for runner discovery / convergence.
+See ADR 002 for scoring blend, ADR 020 for runner discovery / convergence,
+ADR 031 for settle/scan lock model + paper ledger finalisation, and ADR 032
+for copy-trade settlement.
 
 ## Implementation map
 

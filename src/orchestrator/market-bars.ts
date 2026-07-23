@@ -10,7 +10,7 @@ import {
   fetchClosedOhlcvPages,
   type FetchLike,
 } from "../collectors/market/geckoterminal.js"
-import type { SourceCallEvent, WalletBuyOutcome } from "../contracts/schemas.js"
+import type { SourceCallEvent, WalletBuyOutcome, CanonicalIdentity } from "../contracts/schemas.js"
 import type { BarProvider, PriceBar } from "./observations.js"
 
 const MAX_OHLCV_PAGES = 8
@@ -87,11 +87,12 @@ async function resolvePool(
 }
 
 function candlesToBars(
-  candles: readonly { startTime: number; open: number }[],
+  candles: readonly { startTime: number; open: number; high?: number }[],
 ): readonly PriceBar[] {
   return candles.map((c) => ({
     ts: new Date(c.startTime * 1000).toISOString(),
     open: c.open,
+    ...(c.high !== undefined && Number.isFinite(c.high) ? { high: c.high } : {}),
     finalized: true,
   }))
 }
@@ -125,6 +126,7 @@ async function loadBarsForToken(
     const needHours = Math.max(horizonHours + 24, 48)
     const needCandles = Math.ceil((needHours * 60) / 5) + 12
     const limit = Math.min(CANDLES_PER_PAGE, Math.max(100, needCandles))
+    const maxPages = needHours >= 168 ? 24 : MAX_OHLCV_PAGES
     const candles = await fetchClosedOhlcvPages(
       fetcher,
       {
@@ -134,7 +136,7 @@ async function loadBarsForToken(
         limit,
       },
       asOf,
-      MAX_OHLCV_PAGES,
+      maxPages,
     )
     return candlesToBars(candles)
   } catch {
@@ -177,6 +179,24 @@ export function createLiveWalletBarProvider(
       outcome.tokenAddress,
       [chain],
       undefined,
+      nowIso(),
+      horizonHours,
+    )
+  }
+}
+
+export function createLiveIdentityBarProvider(
+  fetcher: FetchLike = fetch,
+  nowIso: () => string = () => new Date().toISOString(),
+): BarProvider<CanonicalIdentity> {
+  return async (identity, horizonHours) => {
+    const chain = getChain(identity.chain)
+    if (!chain) return []
+    return loadBarsForToken(
+      fetcher,
+      identity.tokenAddress,
+      [chain],
+      identity.pairAddress,
       nowIso(),
       horizonHours,
     )

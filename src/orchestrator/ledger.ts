@@ -53,6 +53,17 @@ export function markExitPending(position: LedgerPosition): LedgerPosition {
   return { ...position, status: "exit-pending" }
 }
 
+/** Drop before a fill — never invent an entry price */
+export function cancelEntryPending(
+  position: LedgerPosition,
+  closedAt: string,
+): LedgerPosition {
+  if (position.status !== "entry-pending") {
+    throw new Error("Position is not entry-pending")
+  }
+  return { ...position, status: "censored", closedAt }
+}
+
 export function finalizeExit(
   position: LedgerPosition,
   observation: Observation,

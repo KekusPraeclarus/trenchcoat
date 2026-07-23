@@ -54,3 +54,6 @@ worktrees, or git under the repo mutation lock.
 
 - After deploy: `tc remediations retry` for failed suggestion incidents and
   `tc remediations scan|run` to admit `queued-waiting` capacity backlog.
+- Wallet settle/scan/review brief-lock + paper ledger finalisation →
+  [ADR 031](031-wallet-settle-brief-locks-and-ledger.md) (extends this pattern;
+  not a blanket host-only exemption).

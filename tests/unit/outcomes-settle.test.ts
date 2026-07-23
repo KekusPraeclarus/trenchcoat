@@ -64,7 +64,10 @@ describe("runOutcomesSettle", () => {
     })
 
     expect(report.sourceCalls.complete).toBe(1)
+    expect(report.sourcePeaks.written).toBeGreaterThanOrEqual(1)
     expect(report.walletBuys.complete).toBe(1)
     expect(report.walletBuys.buysUpdated).toBe(1)
+    expect(report.walletCopyTrades).toBeDefined()
+    expect(report.fomoCopyTrades).toBeDefined()
   })
 })

@@ -12,6 +12,9 @@ export type SourceCallOutcome = Readonly<{
   tokenId: string
   mentionedAt: string
   settledAt?: string
+  /** Peak return from entry (headline for source quality) */
+  peakReturn?: number
+  /** @deprecated Prefer peakReturn — retained for old 72h horizon archives */
   excessReturn72h?: number
   rug: boolean
 }>
@@ -33,14 +36,18 @@ export function aggregateSourcePerformance(
   }
 
   const eligible = [...deduped.values()]
-  const settled = eligible.filter((outcome) => (
-    outcome.settledAt !== undefined
-    && Date.parse(outcome.settledAt) <= cutoffMs
-    && outcome.excessReturn72h !== undefined
-  ))
-  const hits = settled.filter((outcome) => outcome.excessReturn72h! >= 0.20)
+  const settled = eligible.filter((outcome) => {
+    const ret = outcome.peakReturn ?? outcome.excessReturn72h
+    return (
+      outcome.settledAt !== undefined
+      && Date.parse(outcome.settledAt) <= cutoffMs
+      && ret !== undefined
+    )
+  })
+  const returnOf = (o: SourceCallOutcome): number => o.peakReturn ?? o.excessReturn72h!
+  const hits = settled.filter((outcome) => returnOf(outcome) >= 0.20)
   const excess = settled
-    .map((outcome) => outcome.excessReturn72h!)
+    .map((outcome) => returnOf(outcome))
     .sort((left, right) => left - right)
   const rugCount = settled.filter((outcome) => outcome.rug).length
 
@@ -48,7 +55,7 @@ export function aggregateSourcePerformance(
   for (const outcome of settled) {
     scoreState = observeHit(
       scoreState,
-      outcome.excessReturn72h! >= 0.20,
+      returnOf(outcome) >= 0.20,
       Date.parse(outcome.settledAt!),
     )
   }

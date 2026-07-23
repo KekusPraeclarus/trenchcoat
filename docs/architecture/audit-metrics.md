@@ -206,10 +206,10 @@ match plus an explicit positive-call pattern from a deterministic, versioned,
 negation-aware parser. Warnings, neutral mentions, copied items, and uncertain
 stance are excluded; parser coverage and exclusions are scorecard metrics.
 
-Each eligible event is priced from its own mention timestamp at the standard
-horizons, deduped by source/identity/window and independence cluster. Per-source
-quality is a 30-day-half-life decayed hit rate with a neutral Beta prior of
-strength 10. Event weight at the epoch cutoff is
+Each eligible event is priced as **peak% from entry** (no new high for 6h, or
+force-settle at 14d; hit ≥ +20%). Fixed horizons may still be archived as
+diagnostics. Per-source quality is a 30-day-half-life decayed hit rate with a
+neutral Beta prior of strength 10. Event weight at the epoch cutoff is
 `w = 2 ^ (−age_days / 30)`, and
 `score = (5 + Σ(w × hit)) / (10 + Σw)`. The prior
 prevents one lucky call from creating an elite source. Score, decayed effective
@@ -217,7 +217,7 @@ sample size, and 95% interval are persisted; scan weighting remains near neutral
 while uncertainty is high. It is applied with the one-cycle lag
 (snapshot-archive.md). Rug-dock penalties and adjacency remain separate and are
 never averaged away by good calls. Model-authored citations and classifier
-outputs never participate in source score writes (INV-S12).
+outputs never participate in source score writes (INV-S12). See ADR 032.
 
 ## Disambiguation grading (resolution log — designed)
 

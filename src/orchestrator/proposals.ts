@@ -15,7 +15,7 @@ import {
   type WatchlistStatus,
   type LedgerFile,
 } from "../contracts/schemas.js"
-import { openEntryPending, markExitPending, upsertPosition } from "./ledger.js"
+import { openEntryPending, markExitPending, cancelEntryPending, upsertPosition } from "./ledger.js"
 import { mintTrackBlockReason } from "../collectors/market/security.js"
 import { archiveAcceptedDecisionBundle } from "./decision-bundle.js"
 
@@ -377,19 +377,26 @@ export async function applyDecisionProposals(
     }
 
     if (proposal.card.verdict === "drop") {
+      const identity = proposal.card.identity
+      const matchIdentity = (p: typeof ledger.positions[number]): boolean => (
+        Boolean(identity)
+        && p.identity.chain === identity!.chain
+        && p.identity.tokenAddress === identity!.tokenAddress
+      )
       const open = ledger.positions.find((p) => (
         p.decisionId !== proposal.card.decisionId
-        && proposal.card.identity
-        && p.identity.chain === proposal.card.identity.chain
-        && p.identity.tokenAddress === proposal.card.identity.tokenAddress
+        && matchIdentity(p)
         && p.status === "open"
-      )) ?? ledger.positions.find((p) => (
-        p.status === "open"
-        && proposal.card.identity
-        && p.identity.tokenAddress === proposal.card.identity.tokenAddress
-      ))
+      )) ?? ledger.positions.find((p) => p.status === "open" && matchIdentity(p))
       if (open) {
         ledger = upsertPosition(ledger, markExitPending(open))
+      } else {
+        const pending = ledger.positions.find((p) => (
+          p.status === "entry-pending" && matchIdentity(p)
+        ))
+        if (pending) {
+          ledger = upsertPosition(ledger, cancelEntryPending(pending, opts.nowIso))
+        }
       }
     }
 

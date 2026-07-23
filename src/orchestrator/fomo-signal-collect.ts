@@ -30,6 +30,9 @@ import type { CollectionSummary } from "./collect.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { isNativeOrWrapMint } from "../lib/native-mints.js"
+import { writeJsonRecord, ensureArchive } from "../lib/archive.js"
+import { sha256Json } from "../lib/canonical-json.js"
+import { ChainSlugSchema, type FomoTradeOutcome } from "../contracts/schemas.js"
 
 function expiryIso(nowIso: string, days: number): string {
   return new Date(Date.parse(nowIso) + days * 86_400_000).toISOString()
@@ -199,10 +202,38 @@ export async function collectFomoSignalScan(args: Readonly<{
       if (since && Date.parse(trade.eventAt) <= Date.parse(since)) return false
       return true
     })
+
+    const archivedTrades: FomoTradeOutcome[] = []
     for (const trade of acceptedTrades) {
       observations.push({ kind: "trade", record: trade })
       if (!latestEventAt || Date.parse(trade.eventAt) > Date.parse(latestEventAt)) {
         latestEventAt = trade.eventAt
+      }
+      const chainParsed = ChainSlugSchema.safeParse(trade.chain)
+      if (
+        (trade.action === "buy" || trade.action === "sell")
+        && trade.handle
+        && chainParsed.success
+        && trade.tokenAddress
+      ) {
+        const eventId = `ft_${sha256Json({
+          handle: trade.handle,
+          chain: chainParsed.data,
+          token: trade.tokenAddress,
+          side: trade.action,
+          ts: trade.eventAt,
+        }).slice("sha256:".length).slice(0, 28)}`
+        archivedTrades.push({
+          schema: 1,
+          eventId,
+          handle: trade.handle.toLowerCase(),
+          chain: chainParsed.data,
+          tokenAddress: trade.tokenAddress,
+          side: trade.action,
+          tradedAt: trade.eventAt,
+          ...(trade.usdAmount !== undefined ? { usdAmount: trade.usdAmount } : {}),
+          ...(trade.symbol ? { symbol: trade.symbol } : {}),
+        })
       }
       if (
         trade.action === "buy"
@@ -225,6 +256,13 @@ export async function collectFomoSignalScan(args: Readonly<{
             + ` usd=${trade.usdAmount} eventAt=${trade.eventAt}`,
         )
       }
+    }
+    if (archivedTrades.length > 0) {
+      const archive = await ensureArchive(args.archiveRoot)
+      await writeJsonRecord(
+        join(archive.outcomes, `fomo-trade-${args.runId}.json`),
+        { schema: 1, runId: args.runId, outcomes: archivedTrades } as never,
+      )
     }
 
     if (config.fomo.signal_scan.convergence) {
