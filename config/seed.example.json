@@ -200,11 +200,11 @@
     }
   },
   "broadcast": {
-    "daily_budget": 5,
-    "urgent_ceiling": 10,
+    "daily_budget": 100,
+    "urgent_ceiling": 100,
     "discord_distiller": {
       "enabled": true,
-      "daily_cap": 10
+      "daily_cap": 100
     },
     "telegram_overview": {
       "enabled": true,

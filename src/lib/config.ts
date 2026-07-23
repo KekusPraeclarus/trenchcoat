@@ -156,16 +156,16 @@ export const ConfigSchema = z.object({
   }),
   broadcast: z.object({
     // Discord-only daily message budget (Telegram is uncapped after schema validation)
-    daily_budget: z.number().int().min(0).max(50).default(5),
-    urgent_ceiling: z.number().int().min(1).max(100).default(10),
+    daily_budget: z.number().int().min(0).max(200).default(5),
+    urgent_ceiling: z.number().int().min(1).max(200).default(10),
     discord_distiller: z.object({
       enabled: z.boolean().default(false),
-      daily_cap: z.number().int().min(0).max(50).default(10),
+      daily_cap: z.number().int().min(0).max(200).default(10),
     }).default({ enabled: false, daily_cap: 10 }),
     // Telegram topic deep-dive LLM (shares distill session counter with Discord)
     telegram_overview: z.object({
       enabled: z.boolean().default(false),
-      daily_cap: z.number().int().min(0).max(50).default(10),
+      daily_cap: z.number().int().min(0).max(200).default(10),
     }).default({ enabled: false, daily_cap: 10 }),
     // Host-only daily Telegram narrative map (20:00 Europe/London)
     telegram_digest: z.object({

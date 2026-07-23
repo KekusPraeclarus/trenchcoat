@@ -434,7 +434,7 @@ staged router events.
   events (reworded same-catalyst rejected; genuinely new same-subject developments
   allowed). Agent still authors `text`; the host never invents market broadcast
   copy. Envelopes are capped at eight items per run (`outbox-items-cap`)
-- Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5)
+- Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5; ops hot-day cap often 100; schema max 200)
   when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
   that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
   Discord failsafe (INV-B4). Intraday Telegram is one short topic paragraph per

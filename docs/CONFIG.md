@@ -135,14 +135,14 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     // farcaster_search: watchlist-scan only; operator/queue research dossiers skip FC
   },
   "broadcast": {
-    "daily_budget": 5,
-    "urgent_ceiling": 10,
-    "discord_distiller": { "enabled": false, "daily_cap": 10 },
+    "daily_budget": 100,
+    "urgent_ceiling": 100,
+    "discord_distiller": { "enabled": false, "daily_cap": 100 },
     "telegram_overview": { "enabled": false, "daily_cap": 10 },
     "telegram_digest": { "enabled": false },
     "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
   },
-  // daily_budget / urgent_ceiling = Discord message caps only
+  // daily_budget / urgent_ceiling = Discord message caps only (schema max 200; hot-day ops use 100)
   // telegram_overview = intraday short topic paragraph LLM (config key preserved; ADR 026)
   // telegram_digest = host-only daily narrative map at 20:00 Europe/London (schema 18)
   // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
