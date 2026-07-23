@@ -48,6 +48,7 @@ const PROPOSE_PROMPT = [
   "{ schema:1, summary, paths[], perFileChanges[{path,change}], tests[], invariants[], docs[], typedMigration?, rollout, smokeChecks[], rollback, viable?, notViableReason? }",
   "paths must be exact repo-relative files. Prefer minimal diffs. Include matching tests and docs when behaviour changes.",
   "invariants[] and smokeChecks[] entries must each be ≤64 characters (short ids/labels only).",
+  "summary/rollout/rollback/notViableReason must each be ≤500 characters.",
   "When priorPreReviewPath is set, treat that review as binding: address every concern, or set viable=false with notViableReason.",
   "Set viable=false with notViableReason when no safe bounded patch exists.",
   "Do not propose edits under src/remediation/, secrets, .env, agent/, or archive/.",

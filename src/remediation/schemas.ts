@@ -232,22 +232,22 @@ export type DiagnosisReport = z.infer<typeof DiagnosisReportSchema>
 
 export const PatchProposalSchema = z.object({
   schema: z.literal(1),
-  summary: z.string().min(1).max(500),
+  // Host-truncate: propose models often emit prose past short-field bounds
+  summary: z.string().min(1).transform((s) => s.slice(0, 500)),
   paths: z.array(z.string().min(1).max(512)).max(32).default([]),
   perFileChanges: z.array(z.object({
     path: z.string().min(1).max(512),
     change: z.string().min(1).max(1_000),
   })).max(32).default([]),
   tests: z.array(z.string().max(280)).max(32).default([]),
-  // Host-truncate: propose models often emit prose labels past the short-id bound
   invariants: z.array(z.string().transform((s) => s.slice(0, 64))).max(32).default([]),
   docs: z.array(z.string().max(512)).max(16).default([]),
   typedMigration: z.string().max(280).optional(),
-  rollout: z.string().max(500).default("n/a"),
+  rollout: z.string().transform((s) => s.slice(0, 500)).default("n/a"),
   smokeChecks: z.array(z.string().transform((s) => s.slice(0, 64))).max(16).default([]),
-  rollback: z.string().max(500).default("n/a"),
+  rollback: z.string().transform((s) => s.slice(0, 500)).default("n/a"),
   viable: z.boolean().optional(),
-  notViableReason: z.string().max(500).optional(),
+  notViableReason: z.string().transform((s) => s.slice(0, 500)).optional(),
 })
 export type PatchProposal = z.infer<typeof PatchProposalSchema>
 

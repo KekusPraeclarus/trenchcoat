@@ -44,8 +44,9 @@ in an isolated worktree under the repo mutation lock.
 ## Follow-ups
 
 - Ask-mode change shipped in `7bba58a`.
-- Host truncates verbose `invariants` / `smokeChecks` to 64 chars on parse;
-  propose prompt states the short-id bound.
+- Host truncates verbose proposal string fields on parse (`summary`/`rollout`/
+  `rollback`/`notViableReason` ≤500; `invariants`/`smokeChecks` ≤64); propose
+  prompt states those bounds.
 - On retry after `pre-review-reject` / `revise`, propose receives
   `priorPreReviewPath` (existing `pre-review.json`) and must address every
   concern or set `viable=false` — blind retries without that feedback loop
