@@ -192,7 +192,7 @@ describe("review collector", () => {
       runId: "list-scan-2026-07-17T00-00-00-000Z",
       job: "list-scan",
       createdAt: "2026-07-17T00:00:00.000Z",
-      reportBody: `# list-scan\n\n${secret}\n`,
+      reportBody: `# list-scan\n\n## Market read\n\nShort update.\n\n${secret}\n`,
     })
     mkdirSync(join(agentRoot, "alpha-queue", "alpha"), { recursive: true })
     writeFileSync(join(agentRoot, "alpha-queue", "alpha", "msg-1.json"), "{}\n")
@@ -229,6 +229,7 @@ describe("review collector", () => {
 
     expect(result.skipAgent).toBe(false)
     expect(result.snapshotNames).toContain("review-reports-manifest")
+    expect(result.snapshotNames).toContain("review-reports-summary")
     expect(result.snapshotNames).toContain("review-alpha-manifest")
     expect(result.snapshotNames).toContain("review-watchlist-snapshot")
     expect(result.snapshotNames).toContain("review-macro-snapshot")
@@ -237,6 +238,17 @@ describe("review collector", () => {
     const reportsManifest = readFileSync(join(inboxDir, "review-reports-manifest.json"), "utf8")
     expect(reportsManifest).toContain("reports/list-scan-2026-07-17T00-00-00-000Z/agent.md")
     expect(reportsManifest).not.toContain(secret)
+
+    const reportsSummary = readFileSync(join(inboxDir, "review-reports-summary.json"), "utf8")
+    expect(reportsSummary).toContain("runId=list-scan-2026-07-17T00-00-00-000Z")
+    expect(reportsSummary).toContain("bullet=Market read")
+    expect(reportsSummary).not.toContain(secret)
+    const summaryJson = JSON.parse(reportsSummary) as {
+      items: Array<{ text: string }>
+    }
+    const bulletLine = summaryJson.items.find((item) => item.text.includes("bullet="))?.text ?? ""
+    const bullet = bulletLine.replace(/^.*bullet=/u, "")
+    expect([...bullet].length).toBeLessThanOrEqual(280)
 
     const alphaManifest = readFileSync(join(inboxDir, "review-alpha-manifest.json"), "utf8")
     expect(alphaManifest).toContain("alpha-queue/alpha/msg-1.json")

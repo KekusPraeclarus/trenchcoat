@@ -3,6 +3,7 @@ import {
   DISCORD_TEXT_MAX,
   distillUserMessage,
   renderDailyDigestCompactFallback,
+  resolveDistillLlmCap,
   runDiscordDistiller,
   runTelegramTopicDistiller,
   telegramTopicUserMessage,
@@ -175,6 +176,61 @@ describe("runDiscordDistiller", () => {
       reason: "session-error",
       used: 1,
     })
+  })
+
+  it("fails closed on llm-budget-fraction without launching a session", async () => {
+    let launched = 0
+    const result = await runDiscordDistiller({
+      reportText: "# report",
+      fallbackText: "fallback line",
+      dailyCap: 10,
+      usedToday: 5,
+      enabled: true,
+      budgetFraction: {
+        llmBudgetFraction: 0.5,
+        hotDayLlmBudgetFraction: 0.25,
+        hotDayMinStagedEvents: 20,
+        stagedEventsThisRun: 3,
+      },
+      runSession: async () => {
+        launched += 1
+        return "should not run"
+      },
+    })
+    expect(launched).toBe(0)
+    expect(result).toMatchObject({
+      text: "fallback line",
+      usedFallback: true,
+      reason: "llm-budget-fraction",
+      capExhausted: false,
+    })
+  })
+
+  it("uses hot-day fraction when staged events meet the threshold", () => {
+    expect(resolveDistillLlmCap({
+      dailyCap: 10,
+      usedToday: 2,
+      budgetFraction: {
+        llmBudgetFraction: 0.5,
+        hotDayLlmBudgetFraction: 0.25,
+        hotDayMinStagedEvents: 20,
+        stagedEventsThisRun: 25,
+      },
+    })).toEqual({
+      ok: false,
+      reason: "llm-budget-fraction",
+      capExhausted: false,
+    })
+    expect(resolveDistillLlmCap({
+      dailyCap: 10,
+      usedToday: 2,
+      budgetFraction: {
+        llmBudgetFraction: 0.5,
+        hotDayLlmBudgetFraction: 0.25,
+        hotDayMinStagedEvents: 20,
+        stagedEventsThisRun: 5,
+      },
+    })).toEqual({ ok: true })
   })
 
   it("frames distill input with auditClaim and unchangedStages", () => {
@@ -420,6 +476,44 @@ describe("daily digest rendering", () => {
     }
   })
 
+  it("omits quiet narratives and never invents a no-development filler", () => {
+    const rendered = renderDailyDigestCompactFallback({
+      londonDate: "2026-07-18",
+      narratives: [{
+        slug: "rh-chain-meme-rotation",
+        stage: "peaking",
+        tickers: ["RH"],
+        lastSeen: "2026-07-18T12:00:00.000Z",
+      }, {
+        slug: "base-trust-collapse",
+        stage: "fading",
+        tickers: [],
+        lastSeen: "2026-07-17T12:00:00.000Z",
+      }],
+      developmentsBySlug: {
+        "rh-chain-meme-rotation": "Wallet lore catalyst printed.",
+        "base-trust-collapse": "",
+      },
+    })
+    expect(rendered).toContain("RH Chain Meme Rotation")
+    expect(rendered).toContain("Wallet lore catalyst printed.")
+    expect(rendered).not.toContain("Base Trust Collapse")
+    expect(rendered).not.toContain("No host-approved development")
+  })
+
+  it("returns null when there are no window developments", () => {
+    expect(renderDailyDigestCompactFallback({
+      londonDate: "2026-07-18",
+      narratives: [{
+        slug: "base-trust-collapse",
+        stage: "fading",
+        tickers: [],
+        lastSeen: "2026-07-17T12:00:00.000Z",
+      }],
+      developmentsBySlug: { "base-trust-collapse": "" },
+    })).toBeNull()
+  })
+
   it("returns null when mandatory headers alone exceed the cap", () => {
     const narratives = Array.from({ length: 80 }, (_, index) => ({
       slug: `very-long-narrative-label-number-${index}`,
@@ -430,7 +524,9 @@ describe("daily digest rendering", () => {
     expect(renderDailyDigestCompactFallback({
       londonDate: "2026-07-18",
       narratives,
-      developmentsBySlug: {},
+      developmentsBySlug: Object.fromEntries(
+        narratives.map((entry) => [entry.slug, "moved"]),
+      ),
     })).toBeNull()
   })
 })

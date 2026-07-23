@@ -42,7 +42,10 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **17** (passive Discord suggestion intake under
+Current schema is **20** (Discord `chat.discord.wallet_signals` confluence —
+ADR 035; prior schema **19** token-cost host gates: distill LLM budget fractions,
+chat turn/prompt caps — ADR 034; prior schema **18** daily Telegram narrative
+digest under `broadcast.telegram_digest`; prior schema **17** (passive Discord suggestion intake under
 `incident_remediation.discord_suggestions`, INV-S27 / ADR 025; prior schema **16**
 drops Discord research caps and adds conversation; prior **14** post-fix claim
 revalidation under `incident_remediation.revalidation`, INV-S28 / ADR 017; prior schema **13** host
@@ -53,7 +56,7 @@ bot section, plus prior schema **9** `fomo` web scrape section with `x_source_re
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v16 shapes via `migrateConfigToV17`.
+`loadConfig` migrates v1–v19 shapes via `migrateConfigToV20`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -137,14 +140,17 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
   "broadcast": {
     "daily_budget": 100,
     "urgent_ceiling": 100,
-    "discord_distiller": { "enabled": false, "daily_cap": 100 },
-    "telegram_overview": { "enabled": false, "daily_cap": 50 },
+    "discord_distiller": { "enabled": false, "daily_cap": 100, "llm_budget_fraction": 0.5, "hot_day_llm_budget_fraction": 0.25 },
+    "telegram_overview": { "enabled": false, "daily_cap": 50, "llm_budget_fraction": 0.5, "hot_day_llm_budget_fraction": 0.25 },
     "telegram_digest": { "enabled": false },
+    "hot_day_min_staged_events": 20,
     "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
   },
   // daily_budget / urgent_ceiling = Discord message caps only (schema max 200; hot-day ops: 100 — ADR 033)
   // telegram_overview = intraday short topic paragraph LLM (config key preserved; ADR 026)
   //   daily_cap = LLM sessions only (hot-day ops: 50); Telegram message count stays uncapped (ADR 033)
+  //   llm_budget_fraction = fraction of daily_cap that may open an LLM distill session (rest use event.text; ADR 034)
+  //   hot_day_llm_budget_fraction = tighter fraction when staged events this run ≥ hot_day_min_staged_events
   // telegram_digest = host-only daily narrative map at 20:00 Europe/London (schema 18)
   // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
   // worthiness = host approve/reject gate before stage (fail-closed; default composer-2.5-fast; ADR 014)
@@ -447,8 +453,24 @@ State lives under `~/.trenchcoat/discord/` — see
 Opt-in channel conversation (`enabled` default false). Ask-mode sessions over
 the main agent workspace; addressing gate + agent-triggered research with
 synthesis. Defaults: `model` `composer-2.5`, `classifier_model`
-`composer-2.5-fast`, `idle_timeout_minutes` 30, `context_messages` 10,
-`channel_ids` `[]` (all research channels), `max_research_per_turn` 5.
+`composer-2.5-fast`, `idle_timeout_minutes` 30, `turn_count_max` 40 (schema 19),
+`context_messages` 10, `channel_ids` `[]` (all research channels),
+`max_research_per_turn` 5.
+
+Telegram operator chat (schema 19): `turn_count_max` 40, `max_prompt_chars`
+12000 — rotate Cursor chat when turn count or prompt char estimate exceeds
+these (idle timeout 30m unchanged).
+
+### `chat.discord.wallet_signals` (schema 20)
+
+Read-only Discord wallet-alert confluence (ADR 035). Default `enabled` false;
+seed example enables with Solana + EVM channel IDs and `shadow_mode` true.
+When enabled: Discord must be enabled, `guild_id` set, 1–20 unique
+`channel_ids` **disjoint** from research `channel_ids`. Keys:
+`scan_interval_minutes` 5, `max_message_age_hours` 6, `actor_dedupe_ttl_minutes`
+15, `convergence` / `sell_pressure` (`enabled`, `window_minutes` 60,
+`min_actors` 3), `max_enqueues_per_day` 3. See
+[architecture/discord-wallet-signals.md](architecture/discord-wallet-signals.md).
 
 ### `chat.discord.chain_integration` (schema 12)
 

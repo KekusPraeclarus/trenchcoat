@@ -41,6 +41,7 @@ export type DiscordRestClient = Readonly<{
     channelId: string
     messageId: string
   }>): Promise<DiscordHistoryMessage | undefined>
+  getBotUserId?(): Promise<string | undefined>
 }>
 
 const MAX_ATTEMPTS = 8
@@ -88,15 +89,22 @@ async function discordFetch(
   return response
 }
 
+export type DiscordHistoryEmbed = Readonly<{
+  description?: string
+  color?: number
+}>
+
 export type DiscordHistoryMessage = Readonly<{
   id: string
   channelId: string
   authorId: string
+  authorUsername?: string
   authorIsBot: boolean
   authorIsWebhook: boolean
   content: string
   timestamp: string
   referencedMessageId?: string
+  embeds?: readonly DiscordHistoryEmbed[]
 }>
 
 const SNOWFLAKE_RE = /^\d{17,20}$/u
@@ -110,6 +118,7 @@ function parseHistoryMessage(
   const author = (raw["author"] ?? {}) as Record<string, unknown>
   const authorId = typeof author["id"] === "string" ? author["id"] : ""
   if (!SNOWFLAKE_RE.test(authorId)) return undefined
+  const authorUsername = typeof author["username"] === "string" ? author["username"] : undefined
   const content = typeof raw["content"] === "string" ? raw["content"] : ""
   const timestamp = typeof raw["timestamp"] === "string" ? raw["timestamp"] : ""
   if (!timestamp) return undefined
@@ -118,15 +127,34 @@ function parseHistoryMessage(
     && SNOWFLAKE_RE.test(reference["message_id"])
     ? reference["message_id"]
     : undefined
+  const embedsRaw = Array.isArray(raw["embeds"]) ? raw["embeds"] : []
+  const embeds: DiscordHistoryEmbed[] = []
+  for (const embed of embedsRaw) {
+    if (!embed || typeof embed !== "object") continue
+    const record = embed as Record<string, unknown>
+    const description = typeof record["description"] === "string"
+      ? record["description"]
+      : undefined
+    const color = typeof record["color"] === "number" && Number.isFinite(record["color"])
+      ? record["color"]
+      : undefined
+    if (description === undefined && color === undefined) continue
+    embeds.push({
+      ...(description !== undefined ? { description } : {}),
+      ...(color !== undefined ? { color } : {}),
+    })
+  }
   return {
     id,
     channelId,
     authorId,
+    ...(authorUsername ? { authorUsername } : {}),
     authorIsBot: author["bot"] === true,
     authorIsWebhook: typeof raw["webhook_id"] === "string" && raw["webhook_id"].length > 0,
     content,
     timestamp,
     ...(referencedMessageId ? { referencedMessageId } : {}),
+    ...(embeds.length > 0 ? { embeds } : {}),
   }
 }
 
@@ -237,6 +265,14 @@ export function createDiscordRestClient(token: string): DiscordRestClient {
       }
       const payload = await response.json() as Record<string, unknown>
       return parseHistoryMessage(args.channelId, payload)
+    },
+    async getBotUserId() {
+      const response = await discordFetch(token, "GET", "/users/@me")
+      if (!response.ok) return undefined
+      const payload = await response.json() as { id?: string }
+      return typeof payload.id === "string" && SNOWFLAKE_RE.test(payload.id)
+        ? payload.id
+        : undefined
     },
   }
 }

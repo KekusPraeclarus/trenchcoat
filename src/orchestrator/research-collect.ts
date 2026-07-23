@@ -21,6 +21,10 @@ import {
   type FomoObservation,
 } from "../collectors/fomo/observations.js"
 import { freshnessFromIso } from "../collectors/fomo/freshness.js"
+import {
+  liveTokenEvents,
+  loadObservationCache as loadDiscordWalletObservationCache,
+} from "../collectors/discord-wallet/observations.js"
 
 const FOMO_CONTEXT_JSON_MAX = 1_500
 
@@ -107,6 +111,90 @@ async function writeFomoContextSnapshot(args: Readonly<{
       }],
     }).catch(() => undefined)
     return "fomo-context"
+  }
+}
+
+async function writeDiscordWalletContextSnapshot(args: Readonly<{
+  writer: SnapshotWriter
+  runId: string
+  identity: CanonicalIdentity
+  fetchedAt: string
+  archiveRoot: string
+}>): Promise<string | undefined> {
+  const config = loadConfig()
+  if (!config.chat.discord.wallet_signals.enabled) return undefined
+
+  try {
+    const cache = loadDiscordWalletObservationCache(args.archiveRoot)
+    const live = cache
+      ? liveTokenEvents(
+        cache,
+        args.identity.chain,
+        args.identity.tokenAddress,
+        args.fetchedAt,
+      )
+      : []
+
+    const items = live.map((event, index) => {
+      const ageSec = Math.max(
+        0,
+        Math.floor((Date.parse(args.fetchedAt) - Date.parse(event.receivedAt)) / 1_000),
+      )
+      return {
+        provenance: `${args.runId}:discord-wallet-context:${event.side}:${index}`,
+        text: [
+          `kind=${event.side}`,
+          `actor=${event.actor}`,
+          `side=${event.side}`,
+          event.tokenContract ? `token=${event.tokenContract}` : undefined,
+          event.amountUsd ? `amountUsd=${event.amountUsd}` : undefined,
+          `confidence=${event.confidence}`,
+          `observedAt=${event.receivedAt}`,
+        ].filter(Boolean).join(" "),
+        ts: event.receivedAt,
+        ageSec,
+        freshnessTier: "live" as const,
+        dedupeKey: `${event.channelId}:${event.messageId}`,
+      }
+    })
+
+    if (items.length === 0) {
+      await args.writer.writeInbox(args.runId, "discord-wallet-context", {
+        source: "host.discord-wallet-observation-cache",
+        fetchedAt: args.fetchedAt,
+        trust: "untrusted-external",
+        items: [{
+          provenance: `${args.runId}:discord-wallet-context:status`,
+          text: "kind=status status=empty-or-unavailable",
+          ts: args.fetchedAt,
+          ageSec: 0,
+          freshnessTier: "live",
+        }],
+      })
+      return "discord-wallet-context"
+    }
+
+    await args.writer.writeInbox(args.runId, "discord-wallet-context", {
+      source: "host.discord-wallet-observation-cache",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items,
+    })
+    return "discord-wallet-context"
+  } catch {
+    await args.writer.writeInbox(args.runId, "discord-wallet-context", {
+      source: "host.discord-wallet-observation-cache",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${args.runId}:discord-wallet-context:status`,
+        text: "kind=status status=cache-unavailable",
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    }).catch(() => undefined)
+    return "discord-wallet-context"
   }
 }
 
@@ -622,6 +710,16 @@ export async function collectResearchDossier(args: Readonly<{
     })
     : Promise.resolve(undefined)
 
+  const discordWalletPromise = args.archiveRoot
+    ? writeDiscordWalletContextSnapshot({
+      writer: args.writer,
+      runId: args.runId,
+      identity: args.identity,
+      fetchedAt: args.fetchedAt,
+      archiveRoot: args.archiveRoot,
+    })
+    : Promise.resolve(undefined)
+
   const twitterPromise = (async (): Promise<{
     names: string[]
     popularity?: TwitterPopularitySummary
@@ -678,15 +776,17 @@ export async function collectResearchDossier(args: Readonly<{
     }
   })()
 
-  const [market, fomoName, twitterBranch] = await Promise.all([
+  const [market, fomoName, discordWalletName, twitterBranch] = await Promise.all([
     marketPromise,
     fomoPromise,
+    discordWalletPromise,
     twitterPromise,
   ])
 
-  // Deterministic order after settle: market/security, fomo, twitter
+  // Deterministic order after settle: market/security, fomo, discord-wallet, twitter
   snapshotNames.push(...market.names)
   if (fomoName) snapshotNames.push(fomoName)
+  if (discordWalletName) snapshotNames.push(discordWalletName)
   snapshotNames.push(...twitterBranch.names)
 
   return {

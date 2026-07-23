@@ -36,6 +36,7 @@ describe("chat session store", () => {
       cursorChatId: "abc-123-def-4567890",
       lastActivityAt: "2026-07-16T12:00:00.000Z",
       telegramUserId: "99",
+      turnCount: 0,
     })
     const loaded = store.load()
     expect(loaded?.cursorChatId).toBe("abc-123-def-4567890")
@@ -61,6 +62,8 @@ describe("chat turn runner", () => {
       agentRoot: dir,
       telegramUserId: "42",
       idleTimeoutMinutes: 30,
+      turnCountMax: 40,
+      maxPromptChars: 12_000,
       store,
       createChat: async () => {
         creates += 1
@@ -83,8 +86,10 @@ describe("chat turn runner", () => {
     ])
     const persisted = JSON.parse(readFileSync(join(dir, "chat-session.json"), "utf8")) as {
       cursorChatId: string
+      turnCount: number
     }
     expect(persisted.cursorChatId).toBe("11111111-2222-3333-4444-555555555555")
+    expect(persisted.turnCount).toBe(2)
   })
 
   it("rotates the cursor chat after idle timeout", async () => {
@@ -94,12 +99,15 @@ describe("chat turn runner", () => {
       cursorChatId: "old-chat-id-00000000",
       lastActivityAt: "2026-07-16T10:00:00.000Z",
       telegramUserId: "42",
+      turnCount: 0,
     })
     let creates = 0
     const runTurn = createChatTurnRunner({
       agentRoot: dir,
       telegramUserId: "42",
       idleTimeoutMinutes: 30,
+      turnCountMax: 40,
+      maxPromptChars: 12_000,
       store,
       createChat: async () => {
         creates += 1
@@ -120,12 +128,15 @@ describe("chat turn runner", () => {
       cursorChatId: "prior-chat-id-000000",
       lastActivityAt: "2026-07-16T10:00:00.000Z",
       telegramUserId: "42",
+      turnCount: 0,
     })
     const resumes: string[] = []
     const runTurn = createChatTurnRunner({
       agentRoot: dir,
       telegramUserId: "42",
       idleTimeoutMinutes: 30,
+      turnCountMax: 40,
+      maxPromptChars: 12_000,
       store,
       createChat: async () => {
         throw new Error("cursor cli timed out after 90000ms")
@@ -139,6 +150,66 @@ describe("chat turn runner", () => {
     expect(await runTurn("Any social / fomo updates?")).toBe("still answered")
     expect(resumes).toEqual(["prior-chat-id-000000"])
     expect(store.load()?.cursorChatId).toBe("prior-chat-id-000000")
+    expect(store.load()?.turnCount).toBe(1)
+  })
+
+  it("rotates the cursor chat after turn_count_max", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-chat-"))
+    const store = fileChatSessionStore(join(dir, "chat-session.json"))
+    store.save({
+      cursorChatId: "old-chat-id-00000000",
+      lastActivityAt: "2026-07-16T20:00:00.000Z",
+      telegramUserId: "42",
+      turnCount: 40,
+    })
+    let creates = 0
+    const runTurn = createChatTurnRunner({
+      agentRoot: dir,
+      telegramUserId: "42",
+      idleTimeoutMinutes: 30,
+      turnCountMax: 40,
+      maxPromptChars: 12_000,
+      store,
+      createChat: async () => {
+        creates += 1
+        return "new-chat-id-22222222"
+      },
+      runSession: async () => ({ status: "finished", text: "rotated" }),
+      nowIso: () => "2026-07-16T20:05:00.000Z",
+    })
+    expect(await runTurn("ping")).toBe("rotated")
+    expect(creates).toBe(1)
+    expect(store.load()?.cursorChatId).toBe("new-chat-id-22222222")
+    expect(store.load()?.turnCount).toBe(1)
+  })
+
+  it("rotates when the built prompt exceeds max_prompt_chars", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-chat-"))
+    const store = fileChatSessionStore(join(dir, "chat-session.json"))
+    store.save({
+      cursorChatId: "old-chat-id-00000000",
+      lastActivityAt: "2026-07-16T20:00:00.000Z",
+      telegramUserId: "42",
+      turnCount: 1,
+    })
+    let creates = 0
+    const runTurn = createChatTurnRunner({
+      agentRoot: dir,
+      telegramUserId: "42",
+      idleTimeoutMinutes: 30,
+      turnCountMax: 40,
+      maxPromptChars: 80,
+      store,
+      createChat: async () => {
+        creates += 1
+        return "new-chat-id-33333333"
+      },
+      runSession: async () => ({ status: "finished", text: "fresh" }),
+      nowIso: () => "2026-07-16T20:05:00.000Z",
+    })
+    expect(await runTurn("please summarize everything we know about the market")).toBe("fresh")
+    expect(creates).toBe(1)
+    expect(store.load()?.cursorChatId).toBe("new-chat-id-33333333")
   })
 })
 

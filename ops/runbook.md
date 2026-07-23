@@ -43,6 +43,7 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `research` | Immediate drain when social/narrative/fomo enqueue; hourly cron remains as backstop |
 | `fomo-trader-sync` | every 6h (host-only; skips unless `fomo.enabled` + gates) |
 | `fomo-signal-scan` | every 20m (host-only; skips unless `fomo.enabled` + gates) |
+| `discord-wallet-signal-scan` | every 5m (host-only REST poll; skips unless `chat.discord.wallet_signals.enabled`; requires `DISCORD_RESEARCH_BOT_TOKEN` + Read Message History on configured channels; never Send; ship with `shadow_mode: true`, flip to `false` after parse verification on VPS) |
 | `fomo-x-source-review` | every 6h (one nomination; requires `fomo.x_source_review.enabled`) |
 | `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
 | `narrative-source-review` | daily (promote/demote + gated follow) |
@@ -305,9 +306,11 @@ predeploy backup only when migration itself corrupted host state.
 - **Daily Telegram digest** — VPS systemd timer `trenchcoat-job-telegram-digest`
   at 20:00 Europe/London (`broadcast.telegram_digest.enabled`). Inspect
   `archive/telegram-digests/<London-date>.json` for `prepared` /
-  `no-active-narratives` / `capacity-exceeded`. Retries reuse the immutable
+  `no-active-narratives` / `no-window-developments` / `capacity-exceeded`.
+  Quiet actives (no host-approved Telegram development in the window) are
+  omitted from the map — absence is the signal. Retries reuse the immutable
   event (same `eventId` / payload). Capacity overflow fails the job with a run
-  incident — never omits narratives silently. Manual: `trenchcoat run telegram-digest`
+  incident — never silent truncate. Manual: `trenchcoat run telegram-digest`
   (Linux). Do **not** load a Mac launchd timer while the VPS is production.
 - **Adding a Telegram channel** — add to `~/.trenchcoat/config.json` under
   `telegram_channels` with `mode: "preview"` (preferred). Restart

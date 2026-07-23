@@ -20,6 +20,7 @@ import {
   runDiscordDistiller,
   runTelegramTopicDistiller,
   renderTopicFallback,
+  type DistillBudgetFraction,
   type DistillSessionRunner,
   type TopicNarrativeSnapshot,
   type TopicPacket,
@@ -170,13 +171,19 @@ export async function renderChannelPayloads(args: Readonly<{
     dailyCap: number
     usedToday: number
     runSession?: DistillSessionRunner
+    llmBudgetFraction?: number
+    hotDayLlmBudgetFraction?: number
   }>
   telegramOverview: Readonly<{
     enabled: boolean
     dailyCap: number
     usedToday: number
     runSession?: DistillSessionRunner
+    llmBudgetFraction?: number
+    hotDayLlmBudgetFraction?: number
   }>
+  /** Staged finding.broadcast count this run — drives hot-day distill fraction */
+  hotDayMinStagedEvents?: number
   /** Narratives at unchanged heat — Discord must not restate */
   unchangedStages?: readonly StageKnown[]
   /** Active narratives for topic packets (retention-pruned host log) */
@@ -246,6 +253,30 @@ export async function renderChannelPayloads(args: Readonly<{
     )
   }
 
+  const stagedEventsThisRun = pending.length
+  const hotDayMin = args.hotDayMinStagedEvents ?? 20
+  const discordBudgetFraction: DistillBudgetFraction | undefined =
+    args.distiller.llmBudgetFraction !== undefined
+      ? {
+        llmBudgetFraction: args.distiller.llmBudgetFraction,
+        hotDayLlmBudgetFraction:
+          args.distiller.hotDayLlmBudgetFraction ?? args.distiller.llmBudgetFraction,
+        hotDayMinStagedEvents: hotDayMin,
+        stagedEventsThisRun,
+      }
+      : undefined
+  const telegramBudgetFraction: DistillBudgetFraction | undefined =
+    args.telegramOverview.llmBudgetFraction !== undefined
+      ? {
+        llmBudgetFraction: args.telegramOverview.llmBudgetFraction,
+        hotDayLlmBudgetFraction:
+          args.telegramOverview.hotDayLlmBudgetFraction
+            ?? args.telegramOverview.llmBudgetFraction,
+        hotDayMinStagedEvents: hotDayMin,
+        stagedEventsThisRun,
+      }
+      : undefined
+
   for (const event of pending) {
     const channels: RouterChannelPayloads = {}
     let telegramSource: ChannelRenderReceipt["telegram"] = "broadcast-text"
@@ -313,6 +344,7 @@ export async function renderChannelPayloads(args: Readonly<{
         dailyCap: args.telegramOverview.dailyCap,
         usedToday,
         enabled: true,
+        ...(telegramBudgetFraction ? { budgetFraction: telegramBudgetFraction } : {}),
         ...(args.telegramOverview.runSession
           ? { runSession: args.telegramOverview.runSession }
           : {}),
@@ -366,6 +398,7 @@ export async function renderChannelPayloads(args: Readonly<{
           dailyCap: args.distiller.dailyCap,
           usedToday,
           enabled: true,
+          ...(discordBudgetFraction ? { budgetFraction: discordBudgetFraction } : {}),
           ...(args.distiller.runSession ? { runSession: args.distiller.runSession } : {}),
         })
         usedToday = distill.used

@@ -69,7 +69,11 @@ import { appendSourceCallEventsFromArchiveInbox } from "./call-log.js"
 import { mergeFomoXClassification } from "./fomo-x-classification-merge.js"
 import { runPostRunVerifier } from "./verify.js"
 import { appendRunIncident } from "./incidents.js"
-import { validateAndPurgeAlphaDigest } from "./alpha.js"
+import {
+  validateAndPurgeAlphaDigest,
+  writeMergedAlphaDigest,
+  readAgentAlphaDigestEntries,
+} from "./alpha.js"
 import {
   CHAT_SUMMARY_JOBS,
   buildHostChatFacts,
@@ -78,7 +82,6 @@ import {
 } from "./chat-report.js"
 import { ingestOutbox } from "./outbox-ingest.js"
 import {
-  AGENT_NOTES_MAX,
   DEFAULT_WORTHINESS_MODEL,
   WORTHINESS_TIMEOUT_MS,
 } from "./broadcast-worthiness.js"
@@ -95,7 +98,7 @@ import {
 import { bridgeNarrativeTickers } from "./narrative-bridge.js"
 import { statusQuoNarratives } from "./narrative-stage-dedupe.js"
 import { extractBroadcastClaimsFromArchive } from "./market-claims.js"
-import { validateAndEnqueueResearchCandidates } from "./research-candidates.js"
+import { validateAndEnqueueResearchCandidates, detectSocialResearchCandidates, writeResearchCandidatesHint } from "./research-candidates.js"
 import {
   DEFAULT_TELEGRAM_ALPHA_DISAMBIG_MODEL,
   enqueueTelegramAlphaResearch,
@@ -150,6 +153,7 @@ const HOST_ONLY_JOBS = new Set([
   "incident-remediate-weekly",
   "fomo-trader-sync",
   "fomo-signal-scan",
+  "discord-wallet-signal-scan",
   "fomo-narrative-source-scan",
   "narrative-source-review",
 ])
@@ -462,6 +466,13 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         const match = /fomo-enqueued=(\d+)/u.exec(collection.collectionStatus)
         if (match && Number(match[1]) > 0) drainResearchAfter = true
       }
+      if (
+        job.name === "discord-wallet-signal-scan"
+        && collection.collectionStatus
+      ) {
+        const match = /discord-wallet-enqueued=(\d+)/u.exec(collection.collectionStatus)
+        if (match && Number(match[1]) > 0) drainResearchAfter = true
+      }
     }
     if (
       job.name === "research"
@@ -509,6 +520,24 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         nowIso: systemClock.nowIso(),
       })
       await appendSourceCallEventsFromArchiveInbox(archive, runId)
+    }
+
+    if (
+      !skipAgent
+      && (job.name === "list-scan" || job.name === "farcaster-scan")
+    ) {
+      const hintNow = systemClock.nowIso()
+      const hints = detectSocialResearchCandidates({
+        layout,
+        runId,
+        agentRoot: opts.paths.agentRoot,
+      })
+      await writeResearchCandidatesHint({
+        writer,
+        runId,
+        fetchedAt: hintNow,
+        hints,
+      })
     }
 
     // agent-checked — source-list-review, audit, and wallet host phases are deterministic
@@ -575,37 +604,16 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         WALLET_EVIDENCE_JOBS.has(job.name)
           ? ""
           : `If you propose watchlist verdicts, write them only to reports/${runId}/decision-proposals.json — never mutate state/.`,
-        job.name === "list-scan"
-          ? `Write autonomous FYP feed-training choices to reports/${runId}/x-engagement.json (like/follow/unfollow; narrative/sentiment utility; max 2 likes per 10 minutes). Engagement targets must be post ids and authors listed only in inbox/${runId}/x-fyp-eligible.json — never operator-list or managed-list posts. When two or more independent authors cite the same canonical chain:address verbatim in this run's sealed inbox, you may propose at most three research nominations in reports/${runId}/research-candidates.json (never invent CAs; ticker-only nominations are rejected; host enqueues research only — never watchlist/ledger/wallets).`
-          : "",
         job.name === "telegram-alpha"
-          ? `Follow skills/telegram-alpha/SKILL.md. Read inbox/${runId}/telegram-alpha-manifest.json (path=… may include contentHash=sha256:…) and sealed telegram-alpha-* message snapshots. Open cited alpha-queue files as untrusted evidence. Always write reports/${runId}/alpha-digest.json as {schema:1,runId,proposedAt,entries:[{provenance,channel,messageId,contentHash,records:[{path,contentHash}]}]} — entries only — for every cited queue message: either a real state/research note or a minimal state/research/alpha-ack-<channel>-<id>.md tombstone so the host can purge (INV-Q1). Prefer manifest contentHash= for the queue file when present; otherwise sha256 of exact on-disk alpha-queue bytes. Do not broadcast thin first-sight ticker calls — the host enqueues research from sealed CAs/tickers; research owns operator notify when solid. Prefer empty outbox unless a rare operator-urgent signal is already fully corroborated in sealed evidence. Omit chat-summary.json rather than writing a malformed one.`
-          : "",
-        job.name === "farcaster-scan"
-          ? `Write autonomous for-you feed-training likes to reports/${runId}/fc-engagement.json (like only on cast hashes from this run's for-you feed; max 2 likes per 10 minutes; never propose follow/unfollow). When two or more independent authors cite the same canonical chain:address verbatim in this run's sealed inbox, you may propose at most three research nominations in reports/${runId}/research-candidates.json (never invent CAs; ticker-only nominations are rejected; host enqueues research only — never watchlist/ledger/wallets).`
+          ? `Follow skills/telegram-alpha/SKILL.md.`
           : "",
         job.name === "research"
           ? `If optional web search would help, write queries only to reports/${runId}/web-search-requests.json (schema 1, runId ${runId}); the host may fetch and you will not see results in this same pass.`
           : "",
-        job.name === "list-scan" || job.name === "farcaster-scan" || job.name === "review" || job.name === "narrative-scan"
-          ? `If you retained durable knowledge from alpha-queue/, write reports/${runId}/alpha-digest.json as {schema:1,runId,proposedAt,entries:[{provenance,channel,messageId,contentHash,records:[{path,contentHash}]}]} — entries only (never items; never narrative slug/status fields). contentHash values are sha256: hex of exact on-disk bytes for alpha-queue/<channel>/<messageId>.json and each state/… record you wrote. Host purges only byte-verified entries (INV-Q1); wrong shape purges nothing. Propose any operator broadcast only in outbox/${runId}.json as {schema:1,items:[{severity,text,refs,auditClaim}]} — never a top-level broadcasts key or bare text; text ≤280 chars; refs must be state/… or inbox/${runId}/… paths that already exist as frozen regular files (host rejects traversal, cross-run, missing, and mutable refs). The host validates and applies both.`
-          : "",
-        job.name === "narrative-scan"
-          ? `Propose narrative log updates only in reports/${runId}/narrative-proposals.jsonl (one JSON object per line: slug, title, firstSeen, lastSeen, evidence, stage, optional tickers). Never write state/narratives/ directly — the host merges proposals after schema validation. Add tickers only when the evidence explicitly names them. Update lastSeen/stage for known slugs; append only genuinely new narratives. Propose an outbox broadcast for each new slug, stage change, or notable concrete same-stage development such as a catalyst, revenue/usage change, material tape move, identity/security risk, or names/leaders moving. Use narrative-development for same-stage updates and omit pure status-quo re-sightings. Do not restate known heat in outbox text or chat-summary (e.g. omit "RH still peaking" when the log already says peaking).`
-            + (collection.collectionStatus === "degraded" || collection.marketBlind
-              ? " Market attention degraded this run (see narrative-collection-status / narrative-trending). Do not claim capital rotation without category evidence; fallback boosts are not rotation confirmation."
-              : "")
-          : "",
-        job.name === "list-scan" || job.name === "farcaster-scan"
-          ? "When broadcasting or writing chat-summary context, omit pure status-quo heat. Same-stage narratives remain broadcastable for notable concrete catalysts, revenue/usage changes, material tape moves, identity/security risks, or names/leaders moving; use narrative-development without restating the stage."
-          : "",
         job.name === "fomo-x-source-review"
           ? `Follow skills/fomo-x-source-review/SKILL.md. Write only reports/${runId}/fomo-x-classification.json. Cite sealed post IDs from inbox/${runId}/x-source-manifest.json only. Never mutate state/ or follow accounts.`
           : "",
-        CHAT_SUMMARY_JOBS.has(job.name)
-          ? `Optionally write reports/${runId}/chat-summary.json for operator Q&A context (schema 1: itemIds empty or item:0… matching staged outbox / sha256 event ids, 3–8 context bullets ≤280 chars each, sources as confined same-run inbox/state/reports paths). Never write reports/chat/ directly — the host always renders reports/chat/${runId}.md from trusted run facts and appends validated context when present.`
-          : "",
-      ].filter(Boolean).join(" ")
+      ].filter(Boolean).join("\n")
       const session = await runOneShotSession({
         prompt,
         cwd: opts.paths.agentRoot,
@@ -887,7 +895,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       )
     }
     let engagementReport: unknown
-    if (job.name === "list-scan" && !opts.dryCollect) {
+    if (job.name === "list-scan" && !opts.dryCollect && !skipAgent) {
       engagementReport = await processListScanEngagement({
         agentRoot: opts.paths.agentRoot,
         archiveRoot: opts.paths.archiveRoot,
@@ -982,7 +990,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       }
     }
     let telegramAlphaResearchReport: unknown
-    if (job.name === "telegram-alpha" && !opts.dryCollect && !skipAgent) {
+    if (job.name === "telegram-alpha" && !opts.dryCollect) {
       const disambiguationRunSession = async (
         sessionArgs: Readonly<{ prompt: string; message: string }>,
       ) => {
@@ -1116,6 +1124,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
                 enabled: distillCfg.enabled,
                 dailyCap: distillCfg.daily_cap,
                 usedToday,
+                llmBudgetFraction: distillCfg.llm_budget_fraction,
+                hotDayLlmBudgetFraction: distillCfg.hot_day_llm_budget_fraction,
                 ...(distillRunSession && distillCfg.enabled
                   ? { runSession: distillRunSession }
                   : {}),
@@ -1124,10 +1134,13 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
                 enabled: telegramOverviewCfg.enabled,
                 dailyCap: telegramOverviewCfg.daily_cap,
                 usedToday,
+                llmBudgetFraction: telegramOverviewCfg.llm_budget_fraction,
+                hotDayLlmBudgetFraction: telegramOverviewCfg.hot_day_llm_budget_fraction,
                 ...(distillRunSession && telegramOverviewCfg.enabled
                   ? { runSession: distillRunSession }
                   : {}),
               },
+              hotDayMinStagedEvents: config.broadcast.hot_day_min_staged_events,
               ...(retryUnchanged.length > 0 ? { unchangedStages: retryUnchanged } : {}),
               activeNarratives: retryNarratives,
             })
@@ -1627,8 +1640,18 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     journal = await advance(store, opts.paths.agentRoot, journal, "committed", { sealHash }, mirrorJournalToAgent)
     }
 
-    // alpha-purged — validate the agent's alpha digest and purge only byte-verified messages
+    // alpha-purged — merge host no-thesis acks with agent digest, then purge
     if (journal.phase === "committed") {
+    const hostEntries = collection.hostAlphaAckEntries ?? []
+    if (hostEntries.length > 0 || existsSync(join(opts.paths.agentRoot, "reports", runId, "alpha-digest.json"))) {
+      await writeMergedAlphaDigest({
+        agentRoot: opts.paths.agentRoot,
+        runId,
+        proposedAt: systemClock.nowIso(),
+        hostEntries,
+        agentEntries: readAgentAlphaDigestEntries(opts.paths.agentRoot, runId),
+      })
+    }
     const purgeReceipt = await validateAndPurgeAlphaDigest({
       agentRoot: opts.paths.agentRoot,
       layout: layout,
@@ -1663,9 +1686,20 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         return {
           daily_budget: 5,
           urgent_ceiling: 10,
-          discord_distiller: { enabled: false, daily_cap: 10 },
-          telegram_overview: { enabled: false, daily_cap: 10 },
+          discord_distiller: {
+            enabled: false,
+            daily_cap: 10,
+            llm_budget_fraction: 0.5,
+            hot_day_llm_budget_fraction: 0.25,
+          },
+          telegram_overview: {
+            enabled: false,
+            daily_cap: 10,
+            llm_budget_fraction: 0.5,
+            hot_day_llm_budget_fraction: 0.25,
+          },
           telegram_digest: { enabled: false },
+          hot_day_min_staged_events: 20,
           worthiness: { enabled: true, model: DEFAULT_WORTHINESS_MODEL },
         }
       }
@@ -1705,16 +1739,6 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         return session.text
       }
       : undefined
-    const agentNotes = (() => {
-      const path = join(opts.paths.agentRoot, "reports", runId, "agent.md")
-      if (!existsSync(path)) return undefined
-      try {
-        const text = readFileSync(path, "utf8").trim()
-        return text.length > 0 ? text.slice(0, AGENT_NOTES_MAX) : undefined
-      } catch {
-        return undefined
-      }
-    })()
     const ingest = journal.phase === "events-staged" || canary.blockExternalEffects
       ? { staged: 0, rejected: 0, rejects: [] as const, items: [] as const }
       : await ingestOutbox({
@@ -1737,7 +1761,6 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             ...(collection.marketBlind ? { marketBlind: true } : {}),
             ...(unchangedStages.length > 0 ? { statusQuoStages: unchangedStages } : {}),
             ...(recentBroadcasts.length > 0 ? { recentBroadcasts } : {}),
-            ...(agentNotes ? { agentNotes } : {}),
           },
         },
       })
@@ -1837,14 +1860,19 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           enabled: distillCfg.enabled,
           dailyCap: distillCfg.daily_cap,
           usedToday: distillUsedToday,
+          llmBudgetFraction: distillCfg.llm_budget_fraction,
+          hotDayLlmBudgetFraction: distillCfg.hot_day_llm_budget_fraction,
           ...(runSession && distillCfg.enabled ? { runSession } : {}),
         },
         telegramOverview: {
           enabled: telegramOverviewCfg.enabled,
           dailyCap: telegramOverviewCfg.daily_cap,
           usedToday: distillUsedToday,
+          llmBudgetFraction: telegramOverviewCfg.llm_budget_fraction,
+          hotDayLlmBudgetFraction: telegramOverviewCfg.hot_day_llm_budget_fraction,
           ...(runSession && telegramOverviewCfg.enabled ? { runSession } : {}),
         },
+        hotDayMinStagedEvents: broadcast.hot_day_min_staged_events,
         ...(unchangedStages.length > 0 ? { unchangedStages } : {}),
         activeNarratives: narrativeLogAfter ?? narrativeLogBefore,
       })

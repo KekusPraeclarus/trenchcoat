@@ -58,70 +58,20 @@ Do not invent historical entries to backfill the log.
 
 ## Broadcast
 
-Propose one outbox item in `outbox/<run-id>.json` when any of (one item per normalized `auditClaim.subject` per run — merge facts into a single `text`, never reworded same-subject variants):
+Follow `skills/_shared/broadcast-checklist.md`. Propose one outbox item when any of:
 
 1. You append a **new** slug (absent from the log at run start), or
 2. An existing slug's **stage changes** this run (`emerging` ↔ `peaking` ↔ `fading`), or
-3. An existing slug gets a notable concrete development described below, or
-4. Sealed inbox evidence (social **or** market attention) carries a **founder /
-   protocol primary-source catalyst** — a founder, CEO, protocol official, or
-   official project channel announcing a material product, wallet, protocol,
-   ecosystem, or distribution catalyst (including CG/market lines that name a
-   rebranded L1/token with prior identity, e.g. Gram prev Toncoin). Open a new
-   slug if absent; do not wait for multi-author CT cluster or a stage shift.
+3. An existing slug gets a notable concrete development (checklist), or
+4. Sealed inbox evidence carries a **founder / protocol primary-source catalyst**
+   (checklist — open a new slug if absent).
 
-Do **not** broadcast pure same-stage re-sightings (`lastSeen` only). Do **not**
-restate known heat in outbox `text` or chat-summary bullets — if the log already
-says peaking, omit "still peaking" / "bumped to peaking on this scan". Mention
-heat only when it drops or increases; describe a same-stage development by what
-actually changed.
-
-Outbox shape (required — host rejects `broadcasts` or bare `text`):
-
-```json
-{
-  "schema": 1,
-  "items": [
-    {
-      "severity": "watch",
-      "text": "new narrative popping: base ai agents. still early, watching how sticky it gets.",
-      "refs": ["state/narratives/log.jsonl"],
-      "auditClaim": {
-        "type": "narrative-emergence",
-        "subject": "base-ai",
-        "direction": "up",
-        "horizonHours": 72,
-        "verificationRule": "narrative.emergence"
-      }
-    }
-  ]
-}
-```
-
-Hard rules: key is `items` (never `broadcasts`); `text` ≤280 chars; `refs` under
-`state/…` or same-run `inbox/<run-id>/…` (frozen regular files only); `auditClaim`
-required with a known `verificationRule`.
+Do **not** broadcast pure same-stage re-sightings (`lastSeen` only).
 
 - `severity`: `watch` for a weak/early read; `notable` when multiple independent
   sources converge; reserve `urgent` for clear capital rotation into the new
   narrative from a fading one (`type: "rotation"`, `verificationRule: "rotation"`).
-- `text`: operator voice (see AGENTS.md Voice) — ≤280 chars, no emoji/hashtags.
-  Narrative/ticker framing only; never name individual CT/trader handles or
-  "who's live" roll calls (cite people in the report, not inside `text`).
-- `refs`: `state/…` (usually `state/narratives/log.jsonl`) and/or same-run
-  `inbox/<run-id>/…` evidence that supports the claim. Do not invent refs or cite
-  other runs.
 - Subject = the slug. Cite evidence provenance in the report, not inside `text`.
-- In-meta development: when a narrative already in the log gets any notable
-  concrete update without a stage change — product/ecosystem catalyst, revenue
-  or usage change, material mcap/tape move, identity/security risk, or
-  names/leaders moving — propose `type: "narrative-development"`,
-  `direction: "rotation"`, `verificationRule: "narrative.development"`, subject
-  = the slug. Never restate the stage in `text`; host rejects only repeats of
-  recent accepted broadcasts.
-- Founder primary-source catalysts are never "incremental sentiment": always
-  propose the log line **and** the outbox item in the same run. Severity at
-  least `watch`; prefer `notable` for blue-chip founders or billion-user scale.
 
 ### Market-blind (host may mark degraded)
 

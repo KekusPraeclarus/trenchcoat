@@ -13,6 +13,7 @@ const dirs = [
   "state/narratives",
   "state/research",
   "knowledge",
+  "skills/_shared",
   "skills/watchlist-scan",
   "skills/list-scan",
   "skills/telegram-alpha",

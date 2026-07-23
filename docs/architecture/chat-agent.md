@@ -2,7 +2,7 @@
 description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-23
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -85,13 +85,16 @@ little as possible itself:
 - Host commands: `/start`, `/status`, confirm/cancel, and research proposals
   reply without an ask-mode agent turn
 - **Session policy**: Cursor chat id persisted in `~/.trenchcoat/chat-session.json`;
-  rotated after `config.chat.idle_timeout_minutes` (default 30). Knowledge store
-  is long-term memory; sessions stay disposable. Idle rotation calls
-  `agent create-chat` (90s host timeout). If create-chat fails under load
+  rotated after `config.chat.idle_timeout_minutes` (default 30), or when
+  `turnCount` reaches `config.chat.turn_count_max` (default 40), or when the
+  built prompt exceeds `config.chat.max_prompt_chars` (default 12_000). Knowledge
+  store is long-term memory; sessions stay disposable. Idle/turn/prompt rotation
+  calls `agent create-chat` (90s host timeout). If create-chat fails under load
   (post-deploy cold start, concurrent Discord research), the host **resumes the
   prior chat id** rather than failing the turn — rotation is hygiene, not a
   Cursor invalidation. Handler catch logs the underlying `detail` before the
-  operator-facing timeout hint.
+  operator-facing timeout hint. Discord conversation mirrors `turn_count_max`
+  via `config.chat.discord.conversation.turn_count_max` (default 40).
 - **Streaming**: chat turns use Cursor `--output-format stream-json
   --stream-partial-output`. Partials go to Telegram `sendMessageDraft` (Bot API
   9.5+; same `draft_id` animates updates). Drafts are ephemeral — the host then
@@ -115,6 +118,8 @@ little as possible itself:
 - Recall questions are answered from the store without collectors
 - Confirmed research acquires the writer lock in `runOperatorResearchNow`; if the
   lock is held, the durable confirmed request stays `queued` and the pump retries
+- Session rotation on turn count / prompt size keeps Cursor context bounded
+  (schema 19 / ADR 034)
 
 ## Source files
 

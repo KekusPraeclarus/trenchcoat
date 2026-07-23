@@ -9,7 +9,10 @@ import { writeAtomicFileFsync, sha256Bytes } from "../src/lib/fs-atomic.js"
 import { createRunId } from "../src/lib/run-id.js"
 import { ensureArchive } from "../src/lib/archive.js"
 import { listPendingAlphaPaths } from "../src/orchestrator/review-collect.js"
-import { validateAndPurgeAlphaDigest } from "../src/orchestrator/alpha.js"
+import {
+  parseAlphaQueueRelPath,
+  validateAndPurgeAlphaDigest,
+} from "../src/orchestrator/alpha.js"
 
 const MAX_ENTRIES = 500
 const DEFAULT_AGENT = join(homedir(), ".trenchcoat", "agent")
@@ -30,9 +33,7 @@ function parseArgs(): { agentRoot: string; archiveRoot: string; dryRun: boolean 
 }
 
 function parseQueuePath(rel: string): { channel: string; messageId: string } | null {
-  const m = /^alpha-queue\/([^/]+)\/(\d+)\.json$/u.exec(rel)
-  if (!m) return null
-  return { channel: m[1]!, messageId: m[2]! }
+  return parseAlphaQueueRelPath(rel)
 }
 
 async function drainBatch(

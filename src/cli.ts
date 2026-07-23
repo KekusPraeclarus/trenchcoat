@@ -565,12 +565,16 @@ async function cmdListenTelegram(): Promise<void> {
   const home = join(homedir(), ".trenchcoat")
   const { agentRoot, archiveRoot } = resolveHomes()
   let idleTimeoutMinutes = 30
+  let turnCountMax = 40
+  let maxPromptChars = 12_000
   let researchConfirmTtlMinutes = 15
   const configPath = join(home, "config.json")
   if (existsSync(configPath)) {
     const { loadConfig } = await import("./lib/config.js")
     const cfg = loadConfig(configPath)
     idleTimeoutMinutes = cfg.chat.idle_timeout_minutes
+    turnCountMax = cfg.chat.turn_count_max
+    maxPromptChars = cfg.chat.max_prompt_chars
     researchConfirmTtlMinutes = cfg.chat.research_confirm_ttl_minutes
   }
 
@@ -578,6 +582,8 @@ async function cmdListenTelegram(): Promise<void> {
     agentRoot,
     telegramUserId: operatorId,
     idleTimeoutMinutes,
+    turnCountMax,
+    maxPromptChars,
     store: fileChatSessionStore(join(home, "chat-session.json")),
   })
 

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV18 } from "../../src/migrations/config.js"
+import { migrateConfigToV20 } from "../../src/migrations/config.js"
 import { ensureArchive, runArchiveDir } from "../../src/lib/archive.js"
 import { StateStore } from "../../src/lib/state.js"
-import { validateAndEnqueueResearchCandidates } from "../../src/orchestrator/research-candidates.js"
+import { validateAndEnqueueResearchCandidates, detectSocialResearchCandidates } from "../../src/orchestrator/research-candidates.js"
 import {
   migrateGenericNarrativeResearchQueue,
   repairGenericNarrativeQueueEntries,
@@ -19,7 +19,7 @@ const TOKEN2 = "So11111111111111111111111111111111111111113"
 const RUN = "list-scan-rc-1"
 
 function writeMinimalConfig(dir: string): void {
-  const cfg = ConfigSchema.parse(migrateConfigToV18({
+  const cfg = ConfigSchema.parse(migrateConfigToV20({
     schema: 5,
     twitter: {
       operator_list_urls: [
@@ -122,6 +122,35 @@ function writeProposal(agentRoot: string, candidates: unknown[]): void {
 }
 
 describe("research candidates", () => {
+  it("detects multi-author CA clusters as host hints (top 3)", async () => {
+    const { agentRoot, layout, restoreHome } = await scaffold()
+    try {
+      const TOKEN3 = "So11111111111111111111111111111111111111114"
+      const TOKEN4 = "So11111111111111111111111111111111111111115"
+      writeSealedInbox(layout, [
+        { provenance: "twitter:@alice:1", text: `buying solana:${TOKEN}` },
+        { provenance: "twitter:@bob:2", text: `also watching ${TOKEN}` },
+        { provenance: "twitter:@carol:3", text: `solana:${TOKEN2} looks live` },
+        { provenance: "twitter:@dave:4", text: `watching ${TOKEN2}` },
+        { provenance: "twitter:@erin:5", text: `solana:${TOKEN3}` },
+        { provenance: "twitter:@frank:6", text: `${TOKEN3} too` },
+        { provenance: "twitter:@gina:7", text: `solo only ${TOKEN4}` },
+      ])
+
+      const hints = detectSocialResearchCandidates({
+        layout,
+        runId: RUN,
+        agentRoot,
+      })
+      expect(hints).toHaveLength(3)
+      expect(hints.every((h) => h.authorCount >= 2)).toBe(true)
+      expect(hints.every((h) => h.evidenceRefs.every((ref) => ref.startsWith(`inbox/${RUN}/`)))).toBe(true)
+      expect(hints.some((h) => h.tokenAddress === TOKEN4)).toBe(false)
+    } finally {
+      restoreHome()
+    }
+  })
+
   it("enqueues when sealed evidence has the CA from two independent authors", async () => {
     const { agentRoot, layout, restoreHome } = await scaffold()
     try {

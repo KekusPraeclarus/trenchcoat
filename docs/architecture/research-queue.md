@@ -83,7 +83,8 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
 - **Operator path** — Telegram confirm or `tc research <subject>` calls
   `enqueueOperatorResearch` / `runOperatorResearchNow` under the workspace lock.
   After resolution, the host reuses DexScreener pairs from resolve and collects
-  market/security, cached FOMO context, and bounded X search concurrently before
+  market/security, cached FOMO context, optional Discord wallet-signal context
+  (`discord-wallet-context`, ADR 035), and bounded X search concurrently before
   the network-denied research passes.
 - **Cron path** — `tc run research` reserves one due entry (kept in-file as
   `researching`), assembles a full dossier (`meta`, `market-dex`,
@@ -98,8 +99,9 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `run.ts` **defers** `preArchiveRun` until after `runResearchPasses` for cron
   research so those files are frozen before proposals/verifier (operator
   research archives after passes the same way)
-- **Immediate drain** — when social nominations, narrative bridge, or fomo-signal
-  enqueue at least one entry, `scheduleResearchDrain` kicks a host pump after the
+- **Immediate drain** — when social nominations, narrative bridge, fomo-signal,
+  or discord-wallet buy-convergence enqueue at least one entry,
+  `scheduleResearchDrain` kicks a host pump after the
   parent run releases the workspace lock (does not nest under the same lock).
   Hourly launchd `research` remains a backstop for anything left pending
 - **Narrative bridge** — after `narrative-scan` integrity succeeds,

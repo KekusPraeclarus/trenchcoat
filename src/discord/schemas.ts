@@ -327,6 +327,7 @@ export const ConversationSessionsFileSchema = z.object({
   channels: z.record(z.string(), z.object({
     cursorChatId: z.string().min(1).max(128),
     lastActivityAt: IsoTimestampSchema,
+    turnCount: z.number().int().nonnegative().default(0),
   })).default({}),
 })
 export type ConversationSessionsFile = z.infer<typeof ConversationSessionsFileSchema>

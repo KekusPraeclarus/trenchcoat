@@ -18,6 +18,7 @@ import {
   skipLedgerLines,
   type HealthSnapshot,
 } from "./health.js"
+import { summarizeAgentMd } from "./review-summarize.js"
 
 export type ReviewCollectResult = Readonly<{
   snapshotNames: readonly string[]
@@ -337,6 +338,26 @@ export async function collectReview(args: Readonly<{
     lines: reportLines.length > 0 ? reportLines : ["reports=(none)"],
   })
   snapshotNames.push("review-reports-manifest")
+
+  const summaryLines = prereqs.sealedReports.map((ref) => {
+    let bullet = "(empty)"
+    try {
+      const body = readFileSync(join(args.agentRoot, ref.reportPath), "utf8")
+      const summarized = summarizeAgentMd(body)
+      if (summarized.length > 0) bullet = summarized
+    } catch {
+      bullet = "(unreadable)"
+    }
+    return `runId=${ref.runId} job=${ref.job} createdAt=${ref.createdAt} bullet=${bullet}`
+  })
+  await writeManifestSnapshot({
+    runId: args.runId,
+    writer: args.writer,
+    fetchedAt: args.fetchedAt,
+    name: "review-reports-summary",
+    lines: summaryLines.length > 0 ? summaryLines : ["reports=(none)"],
+  })
+  snapshotNames.push("review-reports-summary")
 
   const alphaLines = capManifestLines(
     prereqs.pendingAlphaPaths.map((path) => `path=${path}`),

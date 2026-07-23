@@ -277,6 +277,7 @@ export function createDiscordConversationRunner(opts: Readonly<{
   agentRoot: string
   store: DiscordStore
   idleTimeoutMinutes: number
+  turnCountMax?: number
   model: string
   createChat?: () => Promise<string>
   runSession?: (args: Readonly<{
@@ -295,21 +296,26 @@ export function createDiscordConversationRunner(opts: Readonly<{
     timeoutMs: 600_000,
     model: opts.model,
   }))
+  const turnCountMax = opts.turnCountMax ?? 40
 
   return async ({ channelId, memberText, authorUserId, forceCursorChatId }) => {
     const nowIso = systemClock.nowIso()
     let sessions = opts.store.loadConversationSessions()
     let state = sessions.channels[channelId]
+    const turnCount = state?.turnCount ?? 0
     const expired = state
       ? Date.parse(nowIso) - Date.parse(state.lastActivityAt)
         >= opts.idleTimeoutMinutes * 60_000
       : true
+    const turnCapHit = turnCount >= turnCountMax
 
     let cursorChatId = forceCursorChatId ?? state?.cursorChatId
-    if (!cursorChatId || (expired && !forceCursorChatId)) {
+    let resetTurnCount = false
+    if (!cursorChatId || ((expired || turnCapHit) && !forceCursorChatId)) {
       const priorId = state?.cursorChatId
       try {
         cursorChatId = await createChat()
+        resetTurnCount = true
       } catch (error) {
         if (!priorId) throw error
         log.warn("discord conversation create-chat failed; resuming prior", {
@@ -329,20 +335,26 @@ export function createDiscordConversationRunner(opts: Readonly<{
     })
     assertInstructionIntegrity(opts.agentRoot, integrityBefore)
 
-    sessions = {
-      schema: 1,
-      channels: {
-        ...opts.store.loadConversationSessions().channels,
-        [channelId]: { cursorChatId, lastActivityAt: systemClock.nowIso() },
-      },
-    }
-    await opts.store.saveConversationSessions(sessions)
-
     if (result.status === "error") {
       throw new Error(result.error ?? "conversation session failed")
     }
     const text = result.text?.trim()
     if (!text) throw new Error("conversation session returned empty reply")
+
+    const nextTurnCount = resetTurnCount ? 1 : turnCount + 1
+    sessions = {
+      schema: 1,
+      channels: {
+        ...opts.store.loadConversationSessions().channels,
+        [channelId]: {
+          cursorChatId,
+          lastActivityAt: systemClock.nowIso(),
+          turnCount: nextTurnCount,
+        },
+      },
+    }
+    await opts.store.saveConversationSessions(sessions)
+
     return { text, cursorChatId }
   }
 }
@@ -519,6 +531,7 @@ export async function handleConversationTurn(args: Readonly<{
       agentRoot: mainRoot,
       store,
       idleTimeoutMinutes: config.chat.discord.conversation.idle_timeout_minutes,
+      turnCountMax: config.chat.discord.conversation.turn_count_max,
       model: config.chat.discord.conversation.model,
     })
 
@@ -773,6 +786,7 @@ export async function maybeSynthesizeConversation(args: Readonly<{
     agentRoot: mainRoot,
     store,
     idleTimeoutMinutes: loadConfig().chat.discord.conversation.idle_timeout_minutes,
+    turnCountMax: loadConfig().chat.discord.conversation.turn_count_max,
     model: loadConfig().chat.discord.conversation.model,
   })
 
@@ -844,11 +858,12 @@ export function writeConversationSessionForTest(
   channelId: string,
   cursorChatId: string,
   lastActivityAt: string,
+  turnCount = 0,
 ): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   writeFileSync(path, `${JSON.stringify({
     schema: 1,
-    channels: { [channelId]: { cursorChatId, lastActivityAt } },
+    channels: { [channelId]: { cursorChatId, lastActivityAt, turnCount } },
   }, null, 2)}\n`, { mode: 0o600 })
 }
 

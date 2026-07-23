@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV18 } from "../migrations/config.js"
+import { migrateConfigToV20 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(18),
+  schema: z.literal(20),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -161,16 +161,31 @@ export const ConfigSchema = z.object({
     discord_distiller: z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(200).default(10),
-    }).default({ enabled: false, daily_cap: 10 }),
+      llm_budget_fraction: z.number().min(0).max(1).default(0.5),
+      hot_day_llm_budget_fraction: z.number().min(0).max(1).default(0.25),
+    }).default({
+      enabled: false,
+      daily_cap: 10,
+      llm_budget_fraction: 0.5,
+      hot_day_llm_budget_fraction: 0.25,
+    }),
     // Telegram topic deep-dive LLM (shares distill session counter with Discord)
     telegram_overview: z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(200).default(10),
-    }).default({ enabled: false, daily_cap: 10 }),
+      llm_budget_fraction: z.number().min(0).max(1).default(0.5),
+      hot_day_llm_budget_fraction: z.number().min(0).max(1).default(0.25),
+    }).default({
+      enabled: false,
+      daily_cap: 10,
+      llm_budget_fraction: 0.5,
+      hot_day_llm_budget_fraction: 0.25,
+    }),
     // Host-only daily Telegram narrative map (20:00 Europe/London)
     telegram_digest: z.object({
       enabled: z.boolean().default(false),
     }).default({ enabled: false }),
+    hot_day_min_staged_events: z.number().int().min(1).max(500).default(20),
     // Host LLM gate: approve/reject agent market broadcasts before stage (INV-B2)
     worthiness: z.object({
       enabled: z.boolean().default(true),
@@ -495,6 +510,8 @@ export const ConfigSchema = z.object({
   }),
   chat: z.object({
     idle_timeout_minutes: z.number().int().default(30),
+    turn_count_max: z.number().int().min(1).max(500).default(40),
+    max_prompt_chars: z.number().int().min(1_000).max(100_000).default(12_000),
     research_confirm_ttl_minutes: z.number().int().min(1).max(120).default(15),
     discord: z.object({
       enabled: z.boolean().default(false),
@@ -512,6 +529,7 @@ export const ConfigSchema = z.object({
         model: z.string().min(1).max(64).default("composer-2.5"),
         classifier_model: z.string().min(1).max(64).default("composer-2.5-fast"),
         idle_timeout_minutes: z.number().int().min(1).max(1_440).default(30),
+        turn_count_max: z.number().int().min(1).max(500).default(40),
         context_messages: z.number().int().min(2).max(50).default(10),
         channel_ids: z.array(z.string().regex(/^\d{17,20}$/u)).max(20).default([]),
         max_research_per_turn: z.number().int().min(1).max(10).default(5),
@@ -543,6 +561,25 @@ export const ConfigSchema = z.object({
         match_stale_running_ms: z.number().int().min(60_000).max(3_600_000).default(900_000),
         retention_days: z.number().int().min(7).max(90).default(35),
         mention_review_blacklist_days: z.number().int().min(1).max(30).default(7),
+      }).default({}),
+      wallet_signals: z.object({
+        enabled: z.boolean().default(false),
+        shadow_mode: z.boolean().default(true),
+        channel_ids: z.array(z.string().regex(/^\d{17,20}$/u)).max(20).default([]),
+        scan_interval_minutes: z.number().int().min(1).max(60).default(5),
+        max_message_age_hours: z.number().int().min(1).max(72).default(6),
+        actor_dedupe_ttl_minutes: z.number().int().min(1).max(120).default(15),
+        convergence: z.object({
+          enabled: z.boolean().default(true),
+          window_minutes: z.number().int().min(5).max(1440).default(60),
+          min_actors: z.number().int().min(2).max(50).default(3),
+        }).default({}),
+        sell_pressure: z.object({
+          enabled: z.boolean().default(true),
+          window_minutes: z.number().int().min(5).max(1440).default(60),
+          min_actors: z.number().int().min(2).max(50).default(3),
+        }).default({}),
+        max_enqueues_per_day: z.number().int().min(0).max(50).default(3),
       }).default({}),
     }).default({}),
   }),
@@ -608,6 +645,47 @@ export const ConfigSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: "chat.discord.channel_ids must be unique",
         path: ["chat", "discord", "channel_ids"],
+      })
+    }
+  }
+  const walletSignals = cfg.chat.discord.wallet_signals
+  if (walletSignals.enabled) {
+    if (!cfg.chat.discord.enabled) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "chat.discord.enabled required when wallet_signals.enabled",
+        path: ["chat", "discord", "wallet_signals", "enabled"],
+      })
+    }
+    if (!cfg.chat.discord.guild_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "chat.discord.guild_id required when wallet_signals.enabled",
+        path: ["chat", "discord", "guild_id"],
+      })
+    }
+    if (walletSignals.channel_ids.length < 1 || walletSignals.channel_ids.length > 20) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "wallet_signals.channel_ids must contain 1–20 ids when enabled",
+        path: ["chat", "discord", "wallet_signals", "channel_ids"],
+      })
+    }
+    const uniqueWalletChannels = new Set(walletSignals.channel_ids)
+    if (uniqueWalletChannels.size !== walletSignals.channel_ids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "wallet_signals.channel_ids must be unique",
+        path: ["chat", "discord", "wallet_signals", "channel_ids"],
+      })
+    }
+    const researchChannels = new Set(cfg.chat.discord.channel_ids)
+    const overlap = walletSignals.channel_ids.filter((id) => researchChannels.has(id))
+    if (overlap.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "wallet_signals.channel_ids must be disjoint from chat.discord.channel_ids",
+        path: ["chat", "discord", "wallet_signals", "channel_ids"],
       })
     }
   }
@@ -706,7 +784,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV18(raw))
+  return ConfigSchema.parse(migrateConfigToV20(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

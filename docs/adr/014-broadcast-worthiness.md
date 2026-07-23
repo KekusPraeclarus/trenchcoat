@@ -80,3 +80,8 @@ surviving proposal, without letting the host invent market broadcast copy.
   mandatory research outbox.
 - [ADR 024](024-founder-primary-source-broadcast.md) — founder primary-source
   catalysts are worthy on first sighting.
+
+## Follow-up (ADR 034)
+
+Claim-only worthiness input (no proposal prose / agent.md) and a 48h
+`{subject, claimHash}` verdict cache — see [034-token-cost-host-gates.md](034-token-cost-host-gates.md).

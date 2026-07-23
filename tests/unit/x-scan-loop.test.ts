@@ -105,13 +105,15 @@ describe("x-scan loop", () => {
         hitCursor: false,
         pagesScrolled: 1,
       }),
-      runTarget: async ({ target }) => {
-        order.push(target.label)
+      runTarget: async ({ bundles }) => {
+        for (const bundle of bundles) {
+          order.push(bundle.target.label)
+        }
         return {
-          runId: `run-${target.label}`,
+          runId: "run-batched",
           journal: {
             schema: 1,
-            runId: `run-${target.label}`,
+            runId: "run-batched",
             job: "list-scan",
             phase: "complete",
             createdAt: "2026-07-20T10:00:00.000Z",
@@ -128,6 +130,66 @@ describe("x-scan loop", () => {
     expect(cursors.targets["home/fyp"]?.lastPostId).toBe("home/fyp-new")
     expect(cursors.targets["operator-list-1"]?.lastPostId).toBe("operator-list-1-new")
     expect(cursors.lastRoundCompletedAt).toBeTruthy()
+  })
+
+  it("runs one batched list-scan per round", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-xbatch-"))
+    const ac = new AbortController()
+    let runCalls = 0
+    let bundleCount = 0
+    await runXScanLoop({
+      paths: { agentRoot: root, archiveRoot: join(root, "archive") },
+      home: root,
+      signal: ac.signal,
+      resolveTargets: () => targets,
+      maxPages: 2,
+      roundDelayMs: () => 5,
+      sleep: async () => {
+        ac.abort()
+      },
+      openSession: async () => ({
+        page: () => ({}) as Page,
+        close: async () => undefined,
+        relaunch: async () => ({}) as Page,
+      }),
+      scrape: async (_page, target) => ({
+        bundle: {
+          target,
+          challenged: false,
+          posts: [{
+            id: `${target.label}-new`,
+            author: "alice",
+            text: "signal",
+            url: "https://x.com/a/1",
+            timestamp: "2026-07-20T10:00:00.000Z",
+            provenance: "twitter:@alice:1",
+            engagement: { likes: 0, views: 0 },
+          }],
+        },
+        newestPostId: `${target.label}-new`,
+        hitCursor: false,
+        pagesScrolled: 1,
+      }),
+      runTarget: async ({ bundles }) => {
+        runCalls += 1
+        bundleCount = bundles.length
+        return {
+          runId: "run-batched",
+          journal: {
+            schema: 1,
+            runId: "run-batched",
+            job: "list-scan",
+            phase: "complete",
+            createdAt: "2026-07-20T10:00:00.000Z",
+            updatedAt: "2026-07-20T10:00:00.000Z",
+            sideEffects: [],
+          } as never,
+          exitCode: 0,
+        }
+      },
+    })
+    expect(runCalls).toBe(1)
+    expect(bundleCount).toBe(3)
   })
 
   it("passes stopAtPostId from persisted cursor", async () => {

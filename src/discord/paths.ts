@@ -20,6 +20,7 @@ export type DiscordLayout = Readonly<{
   /** Long-held: research vs monitor exclusivity (never blocks intake) */
   workerLock: string
   monitorCursor: string
+  walletSignalCursors: string
 }>
 
 export function discordHome(home = join(homedir(), ".trenchcoat")): string {
@@ -46,6 +47,7 @@ export function discordLayout(home = join(homedir(), ".trenchcoat")): DiscordLay
     lock: join(root, ".lock"),
     workerLock: join(root, ".worker.lock"),
     monitorCursor: join(root, "monitor-cursor.json"),
+    walletSignalCursors: join(root, "wallet-signal-cursors.json"),
   }
 }
 

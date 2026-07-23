@@ -534,6 +534,7 @@ job_to_unit() {
     wallet-review) echo trenchcoat-job-wallet-review ;;
     fomo-trader-sync) echo trenchcoat-job-fomo-trader-sync ;;
     fomo-signal-scan) echo trenchcoat-job-fomo-signal-scan ;;
+    discord-wallet-signal-scan) echo trenchcoat-job-discord-wallet-signal-scan ;;
     fomo-x-source-review) echo trenchcoat-job-fomo-x-source-review ;;
     fomo-narrative-source-scan) echo trenchcoat-job-fomo-narrative-source-scan ;;
     narrative-source-review) echo trenchcoat-job-narrative-source-review ;;
@@ -567,6 +568,7 @@ trenchcoat-job-wallet-scan-evm
 trenchcoat-job-wallet-review
 trenchcoat-job-fomo-trader-sync
 trenchcoat-job-fomo-signal-scan
+trenchcoat-job-discord-wallet-signal-scan
 trenchcoat-job-fomo-x-source-review
 trenchcoat-job-fomo-narrative-source-scan
 trenchcoat-job-narrative-source-review
@@ -730,6 +732,7 @@ write_interval_job wallet-scan-evm 900 1
 write_interval_job wallet-review 86400
 write_interval_job fomo-trader-sync 21600 1
 write_interval_job fomo-signal-scan 1200 1
+write_interval_job discord-wallet-signal-scan 300 1
 write_interval_job fomo-x-source-review 21600 1
 write_interval_job fomo-narrative-source-scan 21600 1
 write_interval_job narrative-source-review 86400 1

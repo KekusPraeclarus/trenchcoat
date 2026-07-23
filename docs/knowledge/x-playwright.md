@@ -41,8 +41,9 @@ last_verified: 2026-07-21
 - **KeepAlive** `com.trenchcoat.x-scan` → `tc listen x-scan`: one persistent
   Playwright session round-robins FYP → operator lists → managed list
 - Each target scrolls until the prior `lastPostId` cursor reappears (or
-  `max_pages_per_run`); then a per-target `list-scan` agent pass under the
-  workspace lock; cursors in `~/.trenchcoat/x-scan/cursors.json`
+  `max_pages_per_run`); then **one batched** `list-scan` agent pass for all
+  post-bearing targets under the workspace lock (ADR 034); cursors in
+  `~/.trenchcoat/x-scan/cursors.json`
 - Random **5–30 minute** delay between completed rounds (natural pacing)
 - One-shot `tc run list-scan` still scrapes all targets in a single run
 - Legacy cron/jitter `com.trenchcoat.job.list-scan` is retired by install

@@ -34,7 +34,7 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | Job | Cadence (initial) | Collectors | Agent output |
 |---|---|---|---|
 | `watchlist-scan` | every 2h | active watchlist market + security snapshots, optional bounded X/Farcaster token search; **host-pre skip** when empty watchlist | watchlist evidence review |
-| `list-scan` | KeepAlive `x-scan` drives per-target passes; one-shot `tc run list-scan` still supported | FYP + two operator X lists + managed list *(live)*; streaming skips alpha manifest; one-shot may include `list-scan-alpha-manifest` | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m) |
+| `list-scan` | KeepAlive `x-scan` batches all post-bearing targets into **one** list-scan per round (ADR 034); one-shot `tc run list-scan` still supported | FYP + two operator X lists + managed list *(live)*; streaming writes `list-scan-alpha-manifest` once/round (host may pre-ack no-thesis); skipAgent when no posts + no agent-alpha | trends, discovery candidates, bot `x-engagement.json` likes/follows (default ≤2 likes/10m) |
 | `telegram-alpha` | on each new channel message (`tc listen channels` pump, batches ≤8) | path+contentHash manifest + sealed message-body snapshots | `alpha-digest.json` (knowledge or ack tombstone); host enqueues research ≤3 (ADR 015); prefer empty outbox |
 | `farcaster-scan` | ~every 4h (uniform jitter 3h15m–4h45m via `ops/run-job-jittered.sh`) | Neynar for-you + optional channels + following; one trending fallback when for-you has no live evidence *(live when `farcaster.enabled`)* | trends/discovery from any usable FC feed; likes only on live for-you cast hashes (`fc-engagement.json`, ≤2 likes/10m) |
 | `source-list-review` | daily (`RunAtLoad` + 24h) and after sealed audit | lagged source-score epoch + managed-list membership; writes `sources.json` scores for settled callers | **no agent** — host-only promote/demote, then X sync (source-lifecycle.md) |
@@ -50,6 +50,7 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `wallet-scan-solana` | every 5m | Helius finalized wallet actions | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
 | `wallet-scan-evm` | every 15m | Infura (eth/base) + throttled Robinhood public RPC | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
 | `wallet-review` | daily / after scans | lagged settled buy outcomes + bounded voter + persisted exclusion evidence | **no agent** — promote/drop + `wallet.lifecycle` router events |
+| `discord-wallet-signal-scan` | every 5m | Discord Cielo/relay wallet-alert REST poll → buy confluence / sell pressure; isolated from `wallets.json` (ADR 035) | **no agent** |
 | `harness-improve` | weekly (off by default) | sealed scorecard epochs only | **no agent write to prod** — confined worktree + tests + optional `gh pr create` (ADR 005); never merges, never starts canary |
 | `incident-remediate` | hourly (off by default) | health/logs/skips | host remediation lane (ADR 017); Telegram approval for high-risk |
 | `incident-remediate-weekly` | Monday 08:00 local (off by default) | deferred queue | at most one revalidated deferred incident |
@@ -68,7 +69,8 @@ still apply under `--dry-collect`; missing `agent/state/` fails closed as
 unusable evidence), the run is journaled and sealed as `collector-skip` without
 an `agent.md` stub. X scanning is KeepAlive `tc listen x-scan`
 (`com.trenchcoat.x-scan`): persistent Playwright, FYP then lists with per-target
-agent passes and a random 5–30m delay between rounds. `farcaster-scan` remains
+cursors, then **one batched** `list-scan` per round (ADR 034), then a random
+5–30m delay between rounds. `farcaster-scan` remains
 jitter-gated via `ops/run-job-jittered.sh` (uniform [3h15m, 4h45m]). Telegram
 alpha is separate: `tc listen channels` polls ~60s and pumps `telegram-alpha`
 immediately on new messages. Cron is otherwise the only trigger — no human. The
@@ -78,6 +80,15 @@ Decision weighting is the bot's job, not ours: skills instruct it to blend
 technicals with attention/sentiment/narrative evidence, weighted by each source's
 score from `state/sources.json`. The orchestrator just guarantees those inputs
 exist and are fresh.
+
+## Session separation (ADR 034 / 035)
+
+These Cursor sessions must remain separate — do not merge jobs for token savings:
+
+- list-scan agent vs worthiness vs Discord/Telegram distill
+- research pass-1 vs pass-2 (host Tavily between)
+- narrative-scan vs list-scan (archive reuse only, not one job)
+- review vs channel distill
 
 ## Run loop
 
@@ -426,8 +437,10 @@ staged router events.
   host-owned rules compatible with the claim type/direction (`isKnownVerificationRule`).
   Unauditable claims do not leave the machine
 - Worthiness gate (`broadcast.worthiness`, default enabled + `composer-2.5-fast`;
-  [ADR 014](../adr/014-broadcast-worthiness.md), [ADR 026](../adr/026-telegram-digest-and-topic-fanout.md)):
-  after mechanical validation, a host ask-mode session decides `{worth, reason}`
+  [ADR 014](../adr/014-broadcast-worthiness.md), [ADR 026](../adr/026-telegram-digest-and-topic-fanout.md),
+  [ADR 034](../adr/034-token-cost-host-gates.md)):
+  after mechanical validation (+ ADR 034 mechanical gate / claimHash cache), a
+  host ask-mode session decides `{worth, reason}` from claim+refs+history only
   per item. `worth:false`, session errors, and malformed JSON reject with
   `worthiness:…` receipts in `broadcast-rejects.json` — never stage. History is
   subject-scoped for 48h and includes accepted ingress plus still-staged pending
@@ -458,11 +471,13 @@ staged router events.
   Bare intake hosts default to `/v1/events`; loopback HTTP is allowed. Severity
   `lifecycle` (wallet add/drop) skips Discord market budget and is never distilled
 - Host-only `telegram-digest` (20:00 Europe/London, VPS systemd) emits one
-  Telegram-only `narrative.digest` covering every retention-active narrative
-  (≤3,400 Markdown chars). Immutable ledger under
-  `archive/telegram-digests/<London-date>.json`. No active narratives → durable
-  no-send record. Headers alone over capacity → `capacity-exceeded` incident and
-  failed job (never silent omit). Retries reuse the exact stored event
+  Telegram-only `narrative.digest` covering retention-active narratives that
+  had a host-approved Telegram development in the window (≤3,400 Markdown
+  chars). Quiet actives are omitted — no "nothing happened" filler. Immutable
+  ledger under `archive/telegram-digests/<London-date>.json`. No active
+  narratives, or active but no window developments → durable no-send record.
+  Listed development headers alone over capacity → `capacity-exceeded` incident
+  and failed job (never silent truncate). Retries reuse the exact stored event
 - Send failures never fail the run (except digest capacity-exceeded); durable
   fanout retries with dead-letter visibility
 

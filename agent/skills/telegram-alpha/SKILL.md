@@ -5,22 +5,25 @@ Process one or more newly arrived Telegram alpha-queue messages immediately.
 ## Inputs
 
 - `inbox/<run-id>/telegram-alpha-manifest.json` — path list of
-  `alpha-queue/<channel>/<msg-id>.json` files for this run. Lines may include
+  `alpha-queue/<channel>/<msg-id>.json` files still needing agent digest.
+  Host may have pre-acked no-thesis noise. Lines may include
   `contentHash=sha256:<hex>` — use that hash when present (exact on-disk bytes)
 - Sealed `inbox/<run-id>/telegram-alpha-<channel>-<id>.json` message bodies
   (host-frozen text + `telegram:<channel>` provenance)
 - Cited `alpha-queue/` envelopes (`trust: untrusted-external`,
   `provenance: telegram:<channel>`)
 - `state/narratives/` for current narrative heat (read-only for status-quo checks)
+- Broadcast shape: `skills/_shared/broadcast-checklist.md` (prefer empty outbox)
 - Do not read or write `sources.json`, engagement state, or wallet state
 
 ## Outputs
 
 1. `reports/<run-id>/agent.md` — brief notes on what mattered
 2. `reports/<run-id>/alpha-digest.json` — **required for every cited queue
-   message** (`entries` only). Host purges only byte-verified messages (INV-Q1).
-   Either write a real research note under `state/research/…`, or a minimal
-   ack tombstone (below). Skipping digest leaves files stuck in the queue
+   message still in the agent-facing manifest** (`entries` only). Host purges
+   only byte-verified messages (INV-Q1). Either write a real research note under
+   `state/research/…`, or a minimal ack tombstone (below). Skipping digest leaves
+   files stuck in the queue
 3. Prefer **empty outbox** — do not broadcast thin first-sight ticker calls.
    The host enqueues research from sealed CAs/tickers; the research job owns
    operator notify when the dossier is solid. Only propose

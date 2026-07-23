@@ -20,8 +20,10 @@ last_verified: 2026-07-23
   (hot-day ops: **50** — ADR 033); Telegram **message count** stays uncapped
   after worthiness. Cap miss → packet/fallback text, still delivered. The daily
   **narrative map** is a separate host-only `narrative.digest` at 20:00
-  Europe/London (`broadcast.telegram_digest.enabled`) covering every active
-  narrative in one message (≤3,400 chars). Discord stays a run-scoped **own**
+  Europe/London (`broadcast.telegram_digest.enabled`) covering retention-active
+  narratives that had a host-approved Telegram development in the window
+  (≤3,400 chars); quiet actives are omitted rather than padded with
+  "nothing happened". Discord stays a run-scoped **own**
   bottom-line distill (at most one Discord payload per run — never a reuse of
   the TG topic text)
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,

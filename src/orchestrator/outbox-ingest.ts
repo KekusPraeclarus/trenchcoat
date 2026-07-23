@@ -4,11 +4,20 @@ import { Outbox } from "../lib/outbox.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
 import { sha256Json } from "../lib/canonical-json.js"
 import { canonicalizeBroadcastRefs } from "./broadcast-refs.js"
+import { evaluateMechanicalBroadcastGate } from "./broadcast-mechanical-gate.js"
 import {
+  claimHash,
   runBroadcastWorthiness,
   type WorthinessContext,
   type WorthinessSessionRunner,
 } from "./broadcast-worthiness.js"
+import {
+  loadWorthinessCache,
+  lookupWorthinessCache,
+  saveWorthinessCache,
+  upsertWorthinessCache,
+  type WorthinessCache,
+} from "./broadcast-worthiness-cache.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
 import { assertNarrativeDevelopmentAllowed } from "./narrative-development.js"
 import {
@@ -175,6 +184,17 @@ export async function ingestOutbox(args: Readonly<{
   let staged = 0
   let claimIndex = loadMarketClaimIndex(args.agentRoot)
   const loopHistory = [...worthinessCandidates]
+  const proposedSubjectsSeen = new Set<string>()
+  const proposedClaimHashes = new Set<string>()
+  let worthinessCache: WorthinessCache | undefined
+  let worthinessCacheDirty = false
+  if (worthinessEnabled) {
+    worthinessCache = loadWorthinessCache(args.agentRoot, {
+      nowIso: args.nowIso,
+      ...(logBefore.length > 0 ? { narrativeLogBefore: logBefore } : {}),
+      ...(logAfter ? { narrativeLogAfter: logAfter } : {}),
+    })
+  }
   let itemIndex = 0
   for (const raw of proposed.items) {
     if (itemIndex >= OUTBOX_ITEMS_MAX) {
@@ -247,41 +267,72 @@ export async function ingestOutbox(args: Readonly<{
     const platforms = resolveSocialPlatformsForClaim(args.agentRoot, withDurableRefs)
     const capped = capSeverityForPlatformCoverage(withDurableRefs, platforms)
 
-    if (worthinessEnabled && args.worthiness) {
+    const mechanical = evaluateMechanicalBroadcastGate(capped, {
+      proposedSubjectsSeen,
+      proposedClaimHashes,
+      recentAcceptedClaims,
+      nowIso: args.nowIso,
+    })
+    if (!mechanical.ok) {
+      reject(mechanical.reason, rawHash)
+      continue
+    }
+
+    if (worthinessEnabled && args.worthiness && worthinessCache) {
       const subject = capped.auditClaim.subject.trim().toLowerCase()
-      const subjectHistory = loopHistory
-        .filter((entry) => entry.subject.trim().toLowerCase() === subject)
-        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-        .slice(0, 20)
-        .map((entry) => ({
-          occurredAt: entry.occurredAt,
-          subject: entry.subject,
-          summary: entry.summary,
-          destinations: entry.destinations,
-          status: entry.status,
-        }))
-      const review = await runBroadcastWorthiness({
-        item: capped,
-        enabled: true,
-        ...(args.worthiness.runSession
-          ? { runSession: args.worthiness.runSession }
-          : {}),
-        context: {
-          ...args.worthiness.context,
-          ...(worthinessStatusQuo.length > 0
-            ? { statusQuoStages: worthinessStatusQuo }
-            : {}),
-          ...(args.marketBlind ? { marketBlind: true } : {}),
-          ...(subjectHistory.length > 0 ? { recentBroadcasts: subjectHistory } : {}),
-        },
+      const hash = claimHash(capped.auditClaim)
+      const cached = lookupWorthinessCache(worthinessCache, {
+        subject,
+        claimHash: hash,
+        nowIso: args.nowIso,
       })
-      if (!review.ok) {
-        reject(`worthiness:${review.reason}`, rawHash)
-        continue
-      }
-      if (!review.worth) {
-        reject(`worthiness:not-worth:${review.reason}`, rawHash)
-        continue
+      if (cached) {
+        if (!cached.worth) {
+          reject(`worthiness:cached-not-worth:${cached.reason}`, rawHash)
+          continue
+        }
+      } else {
+        const subjectHistory = loopHistory
+          .filter((entry) => entry.subject.trim().toLowerCase() === subject)
+          .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+          .slice(0, 20)
+          .map((entry) => ({
+            occurredAt: entry.occurredAt,
+            subject: entry.subject,
+            summary: entry.summary,
+            destinations: entry.destinations,
+            status: entry.status,
+          }))
+        const review = await runBroadcastWorthiness({
+          item: capped,
+          enabled: true,
+          ...(args.worthiness.runSession
+            ? { runSession: args.worthiness.runSession }
+            : {}),
+          context: {
+            ...args.worthiness.context,
+            ...(worthinessStatusQuo.length > 0
+              ? { statusQuoStages: worthinessStatusQuo }
+              : {}),
+            ...(args.marketBlind ? { marketBlind: true } : {}),
+            ...(subjectHistory.length > 0 ? { recentBroadcasts: subjectHistory } : {}),
+          },
+        })
+        if (!review.ok) {
+          reject(`worthiness:${review.reason}`, rawHash)
+          continue
+        }
+        worthinessCache = upsertWorthinessCache(worthinessCache, {
+          auditClaim: capped.auditClaim,
+          worth: review.worth,
+          reason: review.reason,
+          decidedAt: args.nowIso,
+        })
+        worthinessCacheDirty = true
+        if (!review.worth) {
+          reject(`worthiness:not-worth:${review.reason}`, rawHash)
+          continue
+        }
       }
     }
 
@@ -312,6 +363,9 @@ export async function ingestOutbox(args: Readonly<{
 
   if (staged > 0) {
     await saveMarketClaimIndex(args.agentRoot, claimIndex)
+  }
+  if (worthinessCacheDirty && worthinessCache) {
+    await saveWorthinessCache(args.agentRoot, worthinessCache)
   }
 
   await writeJsonRecordFsync(

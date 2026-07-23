@@ -5,26 +5,22 @@ Scan Farcaster for-you + operator channels and train the feed with likes.
 ## Inputs
 
 - Inbox snapshots under `inbox/<run-id>/farcaster-*` (untrusted evidence)
+- `inbox/<run-id>/research-candidates-hint.json` — optional host-detected
+  multi-author CA clusters; prefer confirming these; never invent CAs
 - `state/narratives/` for current narrative model
+- Broadcast shape and gates: `skills/_shared/broadcast-checklist.md`
 - Do not read or write `sources.json`, `fc-source-lifecycle.json`, or `fc-engagement.json`
 
 ## Outputs
 
 1. `reports/<run-id>/agent.md` — brief narrative/sentiment notes and candidates
 2. `reports/<run-id>/fc-engagement.json` — your like choices only
-3. Operator broadcasts in `outbox/<run-id>.json` — one item per normalized `auditClaim.subject` per run; `refs` must be
-   `state/…` or same-run `inbox/<run-id>/…` frozen evidence (e.g. for-you /
-   channel snapshots). Prefer citing the fresh inbox files that support the claim;
-   the host canonicalizes same-run inbox refs to sealed archive paths. Read
-   `state/narratives/log.jsonl` first: do not restate known narrative stages;
-   mention heat only when it drops or increases. **Founder / protocol
-   primary-source catalysts must broadcast** in the same run (new
-   `narrative-emergence` or `narrative-development` on a matching slug) — do not
-   wait for CT cluster or stage shift; empty outbox is fine only for ordinary
-   noise.
+3. Operator broadcasts in `outbox/<run-id>.json` — follow
+   `skills/_shared/broadcast-checklist.md`. Prefer citing fresh inbox files.
 4. Optional `reports/<run-id>/research-candidates.json` — at most three host-enqueued
    research nominations when a canonical `chain` + `tokenAddress` appears verbatim
    in sealed same-run inbox evidence and ≥2 independent authors/clusters support it.
+   Prefer confirming hosts listed in `research-candidates-hint.json` when present.
    Never invent contract addresses. Ticker-only nominations are rejected. The host
    may enqueue research queue entries only — never watchlist, decisions, ledger, or
    wallets.

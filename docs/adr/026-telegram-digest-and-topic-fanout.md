@@ -31,12 +31,14 @@ Telegram has two independent output modes:
    internal intent is a short topic update.
 2. **Daily** — one host-only `telegram-digest` job at **20:00 Europe/London**
    (VPS systemd calendar timer only). Emits a Telegram-only `narrative.digest`
-   covering **every** retention-active narrative (`pruneNarrativeLogInMemory`
-   with `narratives.retention_days`). Immutable ledger at
-   `archive/telegram-digests/<London-date>.json`. Day-keyed `eventId`; retries
-   reuse the exact stored event. No active narratives → durable no-send record.
-   Mandatory headers alone over capacity → `capacity-exceeded`, run incident,
-   failed job (never silent omit or split).
+   covering retention-active narratives that had a host-approved Telegram
+   development in the prior 20:00→20:00 London window. Quiet active narratives
+   are omitted — absence is the signal; never pad with "no development" filler.
+   Immutable ledger at `archive/telegram-digests/<London-date>.json`. Day-keyed
+   `eventId`; retries reuse the exact stored event. No active narratives, or
+   active but no window developments → durable no-send record. Listed
+   development headers alone over capacity → `capacity-exceeded`, run incident,
+   failed job (never silent truncate or split).
 
 Worthiness history is subject-scoped for 48h and includes accepted **plus**
 still-staged candidates. Reworded same-catalyst rejects; genuinely new

@@ -1,5 +1,5 @@
 {
-  "schema": 18,
+  "schema": 20,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -204,15 +204,20 @@
     "urgent_ceiling": 100,
     "discord_distiller": {
       "enabled": true,
-      "daily_cap": 100
+      "daily_cap": 100,
+      "llm_budget_fraction": 0.5,
+      "hot_day_llm_budget_fraction": 0.25
     },
     "telegram_overview": {
       "enabled": true,
-      "daily_cap": 50
+      "daily_cap": 50,
+      "llm_budget_fraction": 0.5,
+      "hot_day_llm_budget_fraction": 0.25
     },
     "telegram_digest": {
       "enabled": true
     },
+    "hot_day_min_staged_events": 20,
     "worthiness": {
       "enabled": true,
       "model": "composer-2.5-fast"
@@ -308,7 +313,12 @@
       "sighting_lookback_days": 30,
       "max_new_candidates_per_run": 100,
       "max_active_candidates": 500,
-      "chains": ["solana", "ethereum", "base", "robinhood"],
+      "chains": [
+        "solana",
+        "ethereum",
+        "base",
+        "robinhood"
+      ],
       "anti_automation": {
         "max_buys_per_hour": 20,
         "max_distinct_tokens_per_day": 30,
@@ -457,11 +467,15 @@
   },
   "chat": {
     "idle_timeout_minutes": 30,
+    "turn_count_max": 40,
+    "max_prompt_chars": 12000,
     "research_confirm_ttl_minutes": 15,
     "discord": {
       "enabled": true,
       "guild_id": "1000000000000000001",
-      "channel_ids": ["1000000000000000002"],
+      "channel_ids": [
+        "1000000000000000002"
+      ],
       "model": "composer-2.5-fast",
       "watch_days": 30,
       "watch_scan_hours": 6,
@@ -473,6 +487,7 @@
         "model": "composer-2.5",
         "classifier_model": "composer-2.5-fast",
         "idle_timeout_minutes": 30,
+        "turn_count_max": 40,
         "context_messages": 10,
         "channel_ids": [],
         "max_research_per_turn": 5
@@ -504,6 +519,28 @@
         "match_stale_running_ms": 900000,
         "retention_days": 35,
         "mention_review_blacklist_days": 7
+      },
+      "wallet_signals": {
+        "enabled": true,
+        "shadow_mode": true,
+        "channel_ids": [
+          "1000000000000000003",
+          "1000000000000000004"
+        ],
+        "scan_interval_minutes": 5,
+        "max_message_age_hours": 6,
+        "actor_dedupe_ttl_minutes": 15,
+        "convergence": {
+          "enabled": true,
+          "window_minutes": 60,
+          "min_actors": 3
+        },
+        "sell_pressure": {
+          "enabled": true,
+          "window_minutes": 60,
+          "min_actors": 3
+        },
+        "max_enqueues_per_day": 3
       }
     }
   },

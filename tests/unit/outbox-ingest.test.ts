@@ -391,6 +391,85 @@ describe("outbox ingest", () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
+  it("rejects duplicate subjects via mechanical gate before worthiness", async () => {
+    const runSession = vi.fn(async () => '{"worth":true,"reason":"should not run for dup"}')
+    const second = {
+      ...VALID_ITEM,
+      text: "different wording same subject",
+      auditClaim: { ...VALID_ITEM.auditClaim, horizonHours: 24 },
+    }
+    const s = await scaffold({ schema: 1, items: [VALID_ITEM, second] })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession,
+        context: { job: "list-scan" },
+      },
+    })
+    expect(report.staged).toBe(1)
+    expect(report.rejects.some((entry) => entry.reason === "duplicate-subject-in-run")).toBe(true)
+    expect(runSession).toHaveBeenCalledOnce()
+  })
+
+  it("skips LLM when worthiness cache hits worth true", async () => {
+    const { upsertWorthinessCache, saveWorthinessCache, emptyWorthinessCache } =
+      await import("../../src/orchestrator/broadcast-worthiness-cache.js")
+    const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
+    const cache = upsertWorthinessCache(emptyWorthinessCache(), {
+      auditClaim: VALID_ITEM.auditClaim as never,
+      worth: true,
+      reason: "cached approve",
+      decidedAt: NOW,
+    })
+    await saveWorthinessCache(s.agentRoot, cache)
+    const runSession = vi.fn(async () => '{"worth":false,"reason":"should not run"}')
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession,
+        context: { job: "list-scan" },
+      },
+    })
+    expect(report.staged).toBe(1)
+    expect(runSession).not.toHaveBeenCalled()
+  })
+
+  it("rejects from worthiness cache hit worth false", async () => {
+    const { upsertWorthinessCache, saveWorthinessCache, emptyWorthinessCache } =
+      await import("../../src/orchestrator/broadcast-worthiness-cache.js")
+    const s = await scaffold({ schema: 1, items: [VALID_ITEM] })
+    const cache = upsertWorthinessCache(emptyWorthinessCache(), {
+      auditClaim: VALID_ITEM.auditClaim as never,
+      worth: false,
+      reason: "thin FYI",
+      decidedAt: NOW,
+    })
+    await saveWorthinessCache(s.agentRoot, cache)
+    const runSession = vi.fn(async () => '{"worth":true,"reason":"should not run"}')
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      worthiness: {
+        enabled: true,
+        runSession,
+        context: { job: "list-scan" },
+      },
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejects[0]?.reason).toBe("worthiness:cached-not-worth:thin FYI")
+    expect(runSession).not.toHaveBeenCalled()
+  })
+
   it("rejects items beyond the eight-item envelope cap", async () => {
     const items = Array.from({ length: 10 }, (_, index) => ({
       ...VALID_ITEM,

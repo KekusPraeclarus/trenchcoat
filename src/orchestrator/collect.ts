@@ -40,11 +40,16 @@ import {
 import { writeXFypEligibleSnapshot } from "./x-fyp-eligible.js"
 import { collectFomoTraderSync } from "./fomo-trader-collect.js"
 import { collectFomoSignalScan } from "./fomo-signal-collect.js"
+import { collectDiscordWalletSignalScan } from "./discord-wallet-signal-collect.js"
 import { collectFomoXSourceReview } from "./fomo-x-source-review.js"
 import { collectFomoNarrativeSourceScan } from "./fomo-narrative-source-scan.js"
 import { runNarrativeSourceReview } from "./narrative-source-review.js"
 import { sanitizePathSegment } from "../lib/snapshot.js"
 import { sha256Bytes } from "../lib/fs-atomic.js"
+import {
+  hostAckNoThesisAlphaMessages,
+  type HostAlphaAckResult,
+} from "./alpha.js"
 
 export type DiscoverySighting = Readonly<{
   handle: string
@@ -92,6 +97,10 @@ export type CollectionSummary = Readonly<{
   alphaManifestTruncated?: number
   /** Posts/casts omitted from capped twitter/farcaster/fyp snapshots; 0 when none */
   snapshotItemsTruncated?: number
+  /** Paths still needing agent digest after host no-thesis ack */
+  agentAlphaPathCount?: number
+  /** Host-written digest entries for no-thesis acks (merged before purge) */
+  hostAlphaAckEntries?: readonly import("../contracts/schemas.js").AlphaDigestEntry[]
 }>
 
 const EMPTY_SUMMARY: CollectionSummary = {
@@ -199,6 +208,15 @@ export async function collectForJob(args: Readonly<{
       })
     case "fomo-signal-scan":
       return collectFomoSignalScan({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+        ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+      })
+    case "discord-wallet-signal-scan":
+      return collectDiscordWalletSignalScan({
         runId: args.runId,
         writer: args.writer,
         fetchedAt: args.fetchedAt,
@@ -623,12 +641,17 @@ export async function writeListScanAlphaManifest(args: Readonly<{
   writer: SnapshotWriter
   fetchedAt: string
   agentRoot: string
+  /** When set, write these paths instead of listing the full queue */
+  paths?: readonly string[]
 }>): Promise<Readonly<{
   snapshotName: "list-scan-alpha-manifest"
   pendingCount: number
   truncatedBy: number
+  paths: readonly string[]
 }>> {
-  const pendingAlphaPaths = listPendingAlphaPaths(args.agentRoot)
+  const pendingAlphaPaths = args.paths
+    ? [...args.paths]
+    : listPendingAlphaPaths(args.agentRoot)
   const alphaLines = capManifestLines(
     pendingAlphaPaths.map((path) => `path=${path}`),
   )
@@ -636,6 +659,10 @@ export async function writeListScanAlphaManifest(args: Readonly<{
   const truncatedBy = truncatedMarker
     ? Number.parseInt(truncatedMarker.slice("truncated=".length), 10) || 0
     : 0
+  const cappedPaths = pendingAlphaPaths.slice(
+    0,
+    Math.max(0, pendingAlphaPaths.length - truncatedBy),
+  )
   await args.writer.writeInbox(args.runId, "list-scan-alpha-manifest", {
     source: "host.list-scan-collector",
     fetchedAt: args.fetchedAt,
@@ -652,6 +679,7 @@ export async function writeListScanAlphaManifest(args: Readonly<{
     snapshotName: "list-scan-alpha-manifest",
     pendingCount: pendingAlphaPaths.length,
     truncatedBy,
+    paths: cappedPaths,
   }
 }
 
@@ -731,12 +759,45 @@ async function collectListScan(args: Readonly<{
 
   let alphaPendingCount = 0
   let alphaManifestTruncated = 0
+  let agentAlphaPathCount = 0
+  let hostAck: HostAlphaAckResult | undefined
   if (shouldWriteAlpha) {
-    const alpha = await writeListScanAlphaManifest(args)
+    const pending = listPendingAlphaPaths(args.agentRoot)
+    alphaPendingCount = pending.length
+    hostAck = await hostAckNoThesisAlphaMessages({
+      agentRoot: args.agentRoot,
+      runId: args.runId,
+      paths: pending.slice(0, 500),
+    })
+    agentAlphaPathCount = hostAck.needsAgentPaths.length
+    const alpha = await writeListScanAlphaManifest({
+      ...args,
+      paths: hostAck.needsAgentPaths,
+    })
     names.push(alpha.snapshotName)
-    alphaPendingCount = alpha.pendingCount
     alphaManifestTruncated = alpha.truncatedBy
   }
+
+  const skipAgent = postCount === 0 && agentAlphaPathCount === 0
+
+  await args.writer.writeInbox(args.runId, "list-scan-collection-status", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:list-scan-collection-status`,
+      text: [
+        `postCount=${postCount}`,
+        `alphaPending=${alphaPendingCount}`,
+        `agentAlpha=${agentAlphaPathCount}`,
+        `skipAgent=${skipAgent}`,
+      ].join(" "),
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    }],
+  })
+  names.push("list-scan-collection-status")
 
   const statusParts: string[] = []
   if (shouldWriteAlpha && alphaPendingCount > 0) {
@@ -746,11 +807,17 @@ async function collectListScan(args: Readonly<{
         : `alpha-pending:${alphaPendingCount}`,
     )
   }
+  if (agentAlphaPathCount > 0) {
+    statusParts.push(`agent-alpha:${agentAlphaPathCount}`)
+  }
   if (snapshotItemsTruncated > 0) {
     statusParts.push(`posts-truncated:${snapshotItemsTruncated}`)
   }
   if (args.listScanOverride) {
     statusParts.push(`streaming-target:${bundles.map((b) => b.target.label).join(",")}`)
+  }
+  if (skipAgent) {
+    statusParts.push("no-signal")
   }
 
   return {
@@ -766,14 +833,23 @@ async function collectListScan(args: Readonly<{
     fypCasts: [],
     postCount,
     collectionKind: "external",
+    ...(skipAgent ? { skipAgent: true, collectionStatus: "no-signal" } : {}),
     ...(shouldWriteAlpha
       ? {
         alphaPendingCount,
         alphaManifestTruncated,
+        agentAlphaPathCount,
+        ...(hostAck && hostAck.hostEntries.length > 0
+          ? { hostAlphaAckEntries: hostAck.hostEntries }
+          : {}),
       }
       : {}),
     ...(snapshotItemsTruncated > 0 ? { snapshotItemsTruncated } : {}),
-    ...(statusParts.length > 0 ? { collectionStatus: statusParts.join(";") } : {}),
+    ...(!skipAgent && statusParts.length > 0
+      ? { collectionStatus: statusParts.join(";") }
+      : skipAgent
+        ? { collectionStatus: "no-signal" }
+        : {}),
   }
 }
 
@@ -808,36 +884,18 @@ async function collectTelegramAlpha(args: Readonly<{
     }
   }
 
-  const alphaLines = capManifestLines(paths.map((path) => {
-    const abs = join(args.agentRoot, path)
-    if (!existsSync(abs)) return `path=${path}`
-    try {
-      const hash = sha256Bytes(readFileSync(abs))
-      return `path=${path} contentHash=${hash}`
-    } catch {
-      return `path=${path}`
-    }
-  }))
-  const truncatedMarker = alphaLines.find((line) => line.startsWith("truncated="))
-  const truncatedBy = truncatedMarker
-    ? Number.parseInt(truncatedMarker.slice("truncated=".length), 10) || 0
-    : 0
+  const cappedPaths = paths.slice(0, Math.max(0, paths.length - (
+    (() => {
+      const lines = capManifestLines(paths.map((p) => `path=${p}`))
+      const marker = lines.find((line) => line.startsWith("truncated="))
+      return marker ? Number.parseInt(marker.slice("truncated=".length), 10) || 0 : 0
+    })()
+  )))
+  const truncatedBy = Math.max(0, paths.length - cappedPaths.length)
   const snapshotNames: string[] = ["telegram-alpha-manifest"]
-  await args.writer.writeInbox(args.runId, "telegram-alpha-manifest", {
-    source: "host.telegram-alpha",
-    fetchedAt: args.fetchedAt,
-    trust: "untrusted-external",
-    items: alphaLines.map((text, index) => ({
-      provenance: `${args.runId}:telegram-alpha-manifest:${index}`,
-      text,
-      ts: args.fetchedAt,
-      ageSec: 0,
-      freshnessTier: "live" as const,
-    })),
-  })
 
   // Seal message bodies so host research enqueue can see verbatim CAs/tickers
-  for (const rel of paths) {
+  for (const rel of cappedPaths) {
     const sealed = trySealTelegramAlphaPath({
       agentRoot: args.agentRoot,
       runId: args.runId,
@@ -854,16 +912,56 @@ async function collectTelegramAlpha(args: Readonly<{
     }
   }
 
+  const hostAck = await hostAckNoThesisAlphaMessages({
+    agentRoot: args.agentRoot,
+    runId: args.runId,
+    paths: cappedPaths,
+  })
+  const agentAlphaPathCount = hostAck.needsAgentPaths.length
+  const agentAlphaLines = capManifestLines(hostAck.needsAgentPaths.map((path) => {
+    const abs = join(args.agentRoot, path)
+    if (!existsSync(abs)) return `path=${path}`
+    try {
+      const hash = sha256Bytes(readFileSync(abs))
+      return `path=${path} contentHash=${hash}`
+    } catch {
+      return `path=${path}`
+    }
+  }))
+  await args.writer.writeInbox(args.runId, "telegram-alpha-manifest", {
+    source: "host.telegram-alpha",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: (agentAlphaLines.length > 0 ? agentAlphaLines : ["pendingAlpha=(none)"]).map((text, index) => ({
+      provenance: `${args.runId}:telegram-alpha-manifest:${index}`,
+      text,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    })),
+  })
+
+  const skipAgent = agentAlphaPathCount === 0
+
   return {
     ...EMPTY_SUMMARY,
     snapshotNames,
-    postCount: alphaLines.length,
+    postCount: cappedPaths.length,
     collectionKind: "external",
     alphaPendingCount: paths.length,
     alphaManifestTruncated: truncatedBy,
-    ...(truncatedBy > 0
-      ? { collectionStatus: `alpha-pending:${paths.length};truncated=${truncatedBy}` }
-      : { collectionStatus: `alpha-pending:${paths.length}` }),
+    agentAlphaPathCount,
+    ...(hostAck.hostEntries.length > 0
+      ? { hostAlphaAckEntries: hostAck.hostEntries }
+      : {}),
+    ...(skipAgent
+      ? {
+        skipAgent: true,
+        collectionStatus: "host-alpha-ack-only",
+      }
+      : truncatedBy > 0
+        ? { collectionStatus: `alpha-pending:${paths.length};truncated=${truncatedBy};agent-alpha:${agentAlphaPathCount}` }
+        : { collectionStatus: `alpha-pending:${paths.length};agent-alpha:${agentAlphaPathCount}` }),
   }
 }
 

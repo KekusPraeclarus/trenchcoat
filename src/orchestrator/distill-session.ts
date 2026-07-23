@@ -46,6 +46,13 @@ export type DistillSessionRunner = (
   args: Readonly<{ prompt: string; message: string }>,
 ) => Promise<string>
 
+export type DistillBudgetFraction = Readonly<{
+  llmBudgetFraction: number
+  hotDayLlmBudgetFraction: number
+  hotDayMinStagedEvents: number
+  stagedEventsThisRun: number
+}>
+
 export type DistillArgs = Readonly<{
   reportText: string
   fallbackText: string
@@ -56,6 +63,8 @@ export type DistillArgs = Readonly<{
   usedToday: number
   runSession?: DistillSessionRunner
   enabled?: boolean
+  /** When set, LLM sessions stop at floor(dailyCap * fraction) with reason llm-budget-fraction */
+  budgetFraction?: DistillBudgetFraction
 }>
 
 export type TopicPacketMember = Readonly<{
@@ -87,6 +96,7 @@ export type TelegramTopicArgs = Readonly<{
   usedToday: number
   runSession?: DistillSessionRunner
   enabled?: boolean
+  budgetFraction?: DistillBudgetFraction
 }>
 
 export type DailyDigestSection = Readonly<{
@@ -377,18 +387,30 @@ export function sortActiveNarrativesForDigest(
   })
 }
 
+/** Narratives with non-empty host-approved window text — quiet slugs stay off the map. */
+export function selectDigestNarratives(
+  narratives: readonly TopicNarrativeSnapshot[],
+  developmentsBySlug: Readonly<Record<string, string>>,
+): TopicNarrativeSnapshot[] {
+  return sortActiveNarrativesForDigest(
+    narratives.filter((entry) => (developmentsBySlug[entry.slug] ?? "").trim().length > 0),
+  )
+}
+
 export function renderDailyDigestMarkdown(args: Readonly<{
   londonDate: string
   narratives: readonly TopicNarrativeSnapshot[]
   sectionsBySlug: Readonly<Record<string, string>>
 }>): string {
-  const ordered = sortActiveNarrativesForDigest(args.narratives)
+  const ordered = sortActiveNarrativesForDigest(args.narratives).filter((entry) => (
+    (args.sectionsBySlug[entry.slug] ?? "").trim().length > 0
+  ))
   const parts = [`**Daily narrative map — ${args.londonDate}**`]
   for (const entry of ordered) {
     const label = deslugNarrativeLabel(entry.slug)
     const body = (args.sectionsBySlug[entry.slug] ?? "").trim()
     parts.push(`**${label} — ${entry.stage}**`)
-    if (body.length > 0) parts.push(body)
+    parts.push(body)
   }
   return parts.join("\n\n")
 }
@@ -403,23 +425,51 @@ export function renderTopicFallback(packet: TopicPacket): string {
   return clipChars(body.replace(/\s+/gu, " ").trim(), TELEGRAM_TOPIC_TEXT_MAX)
 }
 
-const NO_DEV_SENTENCE = "No host-approved development in this window."
+/**
+ * LLM distill sessions may consume only a fraction of dailyCap; hot days use a
+ * tighter fraction. Full dailyCap exhaustion stays distinct (cap-exhausted).
+ */
+export function resolveDistillLlmCap(args: Readonly<{
+  dailyCap: number
+  usedToday: number
+  budgetFraction?: DistillBudgetFraction
+}>): { ok: true } | {
+  ok: false
+  reason: "cap-exhausted" | "llm-budget-fraction"
+  capExhausted: boolean
+} {
+  if (args.usedToday >= args.dailyCap) {
+    return { ok: false, reason: "cap-exhausted", capExhausted: true }
+  }
+  const frac = args.budgetFraction
+  if (!frac) return { ok: true }
+  const fraction = frac.stagedEventsThisRun >= frac.hotDayMinStagedEvents
+    ? frac.hotDayLlmBudgetFraction
+    : frac.llmBudgetFraction
+  const effectiveCap = Math.floor(args.dailyCap * fraction)
+  if (args.usedToday >= effectiveCap) {
+    return { ok: false, reason: "llm-budget-fraction", capExhausted: false }
+  }
+  return { ok: true }
+}
 
 /**
- * Compact deterministic daily digest. Reserves every title/stage header first.
- * Returns null when mandatory headers alone exceed the cap.
+ * Compact deterministic daily digest for narratives with window developments.
+ * Quiet slugs are omitted (absence is the signal). Returns null when the set
+ * is empty or mandatory headers alone exceed the cap.
  */
 export function renderDailyDigestCompactFallback(args: Readonly<{
   londonDate: string
   narratives: readonly TopicNarrativeSnapshot[]
   developmentsBySlug: Readonly<Record<string, string>>
 }>): string | null {
-  const ordered = sortActiveNarrativesForDigest(args.narratives)
+  const ordered = selectDigestNarratives(args.narratives, args.developmentsBySlug)
+  if (ordered.length === 0) return null
+
   const title = `**Daily narrative map — ${args.londonDate}**`
   const headers = ordered.map((entry) => (
     `**${deslugNarrativeLabel(entry.slug)} — ${entry.stage}**`
   ))
-  const skeletonParts = [title, ...headers]
   // title + blank line between each header block: n headers → n separators before bodies
   let used = charLen(title)
   for (const header of headers) {
@@ -428,12 +478,11 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
   if (used > TELEGRAM_DIGEST_TEXT_MAX) return null
 
   const remaining = TELEGRAM_DIGEST_TEXT_MAX - used
-  const bodyBudgetPer = ordered.length > 0 ? Math.floor(remaining / ordered.length) : 0
+  const bodyBudgetPer = Math.floor(remaining / ordered.length)
   const parts: string[] = [title]
   for (const entry of ordered) {
     const header = `**${deslugNarrativeLabel(entry.slug)} — ${entry.stage}**`
-    const source = (args.developmentsBySlug[entry.slug] ?? "").trim()
-    const bodySource = source.length > 0 ? source : NO_DEV_SENTENCE
+    const bodySource = (args.developmentsBySlug[entry.slug] ?? "").trim()
     // each body costs \n\n before it
     const bodyMax = Math.max(0, bodyBudgetPer - 2)
     const body = clipChars(bodySource.replace(/\s+/gu, " "), bodyMax)
@@ -462,8 +511,13 @@ export async function runDiscordDistiller(args: DistillArgs): Promise<DistillRes
   if (args.enabled === false) {
     return fallback("disabled", args.usedToday)
   }
-  if (args.usedToday >= args.dailyCap) {
-    return fallback("cap-exhausted", args.usedToday, true)
+  const cap = resolveDistillLlmCap({
+    dailyCap: args.dailyCap,
+    usedToday: args.usedToday,
+    ...(args.budgetFraction ? { budgetFraction: args.budgetFraction } : {}),
+  })
+  if (!cap.ok) {
+    return fallback(cap.reason, args.usedToday, cap.capExhausted)
   }
   if (!args.runSession) {
     return fallback("no-runner", args.usedToday)
@@ -510,8 +564,13 @@ export async function runTelegramTopicDistiller(
   if (args.enabled === false) {
     return fallback("disabled", args.usedToday)
   }
-  if (args.usedToday >= args.dailyCap) {
-    return fallback("cap-exhausted", args.usedToday, true)
+  const cap = resolveDistillLlmCap({
+    dailyCap: args.dailyCap,
+    usedToday: args.usedToday,
+    ...(args.budgetFraction ? { budgetFraction: args.budgetFraction } : {}),
+  })
+  if (!cap.ok) {
+    return fallback(cap.reason, args.usedToday, cap.capExhausted)
   }
   if (!args.runSession) {
     return fallback("no-runner", args.usedToday)

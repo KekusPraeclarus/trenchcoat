@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import {
   ResearchCandidateFileSchema,
@@ -11,10 +11,15 @@ import {
 } from "../contracts/schemas.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
 import { loadConfig } from "../lib/config.js"
-import { getChain } from "../lib/chains.js"
+import { getChain, validateAddress } from "../lib/chains.js"
 import { enqueueResearch, dedupeKeyFor } from "../lib/research-queue.js"
+import type { SnapshotWriter } from "../lib/snapshot.js"
 import { StateStore } from "../lib/state.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
+import {
+  extractAddressesFromText,
+  extractChainHint,
+} from "./telegram-alpha-research.js"
 
 export const MAX_RESEARCH_CANDIDATES_PER_RUN = 3
 
@@ -37,6 +42,177 @@ function independentAuthorKey(item: Readonly<{ provenance: string; clusterId?: s
     return `${social[1].toLowerCase()}:${social[2].toLowerCase()}`
   }
   return `prov:${provenance.toLowerCase().slice(0, 120)}`
+}
+
+export type SocialResearchHint = Readonly<{
+  chain: string
+  tokenAddress: string
+  authorCount: number
+  authors: readonly string[]
+  evidenceRefs: readonly string[]
+}>
+
+const CHAIN_CA_IN_TEXT = /\b([a-z][a-z0-9-]{1,31}):([A-Za-z0-9]{32,128})\b/giu
+
+function resolveHintChain(
+  text: string,
+  address: string,
+): string | undefined {
+  CHAIN_CA_IN_TEXT.lastIndex = 0
+  for (const match of text.matchAll(CHAIN_CA_IN_TEXT)) {
+    const slug = match[1]?.toLowerCase()
+    const token = match[2]
+    if (!slug || !token || token !== address) continue
+    if (getChain(slug)) return slug
+  }
+  const hint = extractChainHint(text)
+  if (hint && getChain(hint)) {
+    const chain = getChain(hint)!
+    if (validateAddress(chain.addressFormat, address)) return hint
+  }
+  if (validateAddress("base58-32", address) && !address.startsWith("0x")) {
+    return "solana"
+  }
+  return undefined
+}
+
+/**
+ * Host scan of sealed same-run inbox for multi-author CA clusters. Hint only —
+ * agent still authors research-candidates.json; host validates post-session.
+ */
+export function detectSocialResearchCandidates(args: Readonly<{
+  layout: ArchiveLayout
+  runId: string
+  agentRoot: string
+  max?: number
+}>): SocialResearchHint[] {
+  const max = args.max ?? MAX_RESEARCH_CANDIDATES_PER_RUN
+  const frozenInbox = join(runArchiveDir(args.layout, args.runId), "inbox")
+  if (!existsSync(frozenInbox)) return []
+
+  type Acc = {
+    chain: string
+    tokenAddress: string
+    authors: Set<string>
+    evidenceRefs: Set<string>
+  }
+  const byKey = new Map<string, Acc>()
+
+  for (const fileName of readdirSync(frozenInbox).sort()) {
+    if (!fileName.endsWith(".json")) continue
+    if (fileName.includes("..") || fileName.includes("\0") || fileName.includes("/")) continue
+    const frozenPath = join(frozenInbox, fileName)
+    let envelope
+    try {
+      envelope = SnapshotEnvelopeSchema.safeParse(JSON.parse(readFileSync(frozenPath, "utf8")))
+    } catch {
+      continue
+    }
+    if (!envelope.success) continue
+    const evidenceRef = `inbox/${args.runId}/${fileName}`
+    for (const item of envelope.data.items) {
+      if (item.freshnessTier === "expired") continue
+      const author = independentAuthorKey(item)
+      const addresses = extractAddressesFromText(item.text)
+      for (const address of addresses) {
+        const chain = resolveHintChain(item.text, address)
+        if (!chain) continue
+        const chainEntry = getChain(chain)
+        if (!chainEntry) continue
+        if (!validateAddress(chainEntry.addressFormat, address)) continue
+        const key = `${chain}:${address}`.toLowerCase()
+        let acc = byKey.get(key)
+        if (!acc) {
+          acc = {
+            chain,
+            tokenAddress: address,
+            authors: new Set(),
+            evidenceRefs: new Set(),
+          }
+          byKey.set(key, acc)
+        }
+        acc.authors.add(author)
+        acc.evidenceRefs.add(evidenceRef)
+      }
+    }
+  }
+
+  const state = new StateStore(join(args.agentRoot, "state"))
+  const watchlistKeys = new Set(
+    state.loadWatchlist().entries.map((entry) => (
+      `${entry.identity.chain}:${entry.identity.tokenAddress}`.toLowerCase()
+    )),
+  )
+  const queueKeys = new Set(
+    state.loadResearchQueue().entries
+      .filter((entry) => entry.chain && entry.tokenAddress)
+      .map((entry) => dedupeKeyFor({
+        subject: entry.subject,
+        chain: entry.chain,
+        tokenAddress: entry.tokenAddress,
+      })),
+  )
+
+  const hints: SocialResearchHint[] = []
+  for (const [key, acc] of byKey) {
+    if (acc.authors.size < 2) continue
+    if (watchlistKeys.has(key) || queueKeys.has(key)) continue
+    const evidenceRefs = [...acc.evidenceRefs].sort()
+    const hit = scanSealedEvidence({
+      layout: args.layout,
+      runId: args.runId,
+      chain: acc.chain,
+      tokenAddress: acc.tokenAddress,
+      evidenceRefs,
+    })
+    if ("error" in hit) continue
+    if (hit.authors.size < 2) continue
+    hints.push({
+      chain: acc.chain,
+      tokenAddress: acc.tokenAddress,
+      authorCount: hit.authors.size,
+      authors: [...hit.authors].sort().slice(0, 32),
+      evidenceRefs,
+    })
+  }
+
+  return hints
+    .sort((a, b) => {
+      if (b.authorCount !== a.authorCount) return b.authorCount - a.authorCount
+      return `${a.chain}:${a.tokenAddress}`.localeCompare(`${b.chain}:${b.tokenAddress}`)
+    })
+    .slice(0, max)
+}
+
+/** Path-only host hint for list-scan / farcaster-scan (no scraped tweet text). */
+export async function writeResearchCandidatesHint(args: Readonly<{
+  writer: SnapshotWriter
+  runId: string
+  fetchedAt: string
+  hints: readonly SocialResearchHint[]
+}>): Promise<void> {
+  const lines = args.hints.length > 0
+    ? args.hints.map((hint) => (
+      [
+        `chain=${hint.chain}`,
+        `token=${hint.tokenAddress}`,
+        `authors=${hint.authorCount}`,
+        `evidence=${hint.evidenceRefs.join(",")}`,
+      ].join(" ")
+    ))
+    : ["candidates=(none)"]
+  await args.writer.writeInbox(args.runId, "research-candidates-hint", {
+    source: "host.research-candidates-hint",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: lines.map((text, index) => ({
+      provenance: `${args.runId}:research-candidates-hint:${index}`,
+      text,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live" as const,
+    })),
+  })
 }
 
 function addressAppearsVerbatim(text: string, chain: string, tokenAddress: string): boolean {

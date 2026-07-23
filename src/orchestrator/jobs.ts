@@ -20,6 +20,7 @@ export type JobName =
   | "wallet-review"
   | "fomo-trader-sync"
   | "fomo-signal-scan"
+  | "discord-wallet-signal-scan"
   | "fomo-x-source-review"
   | "fomo-narrative-source-scan"
   | "narrative-source-review"
@@ -59,6 +60,7 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "wallet-review", skill: "review", description: "Wallet score/lifecycle review", preconditionTier: "none" },
   { name: "fomo-trader-sync", skill: "review", description: "Fomo leaderboard → X nominations (no wallets)", preconditionTier: "host" },
   { name: "fomo-signal-scan", skill: "review", description: "Fomo feed convergence and pressure signals", preconditionTier: "host" },
+  { name: "discord-wallet-signal-scan", skill: "review", description: "Discord wallet-signal confluence (Cielo/relay channels)", preconditionTier: "host" },
   { name: "fomo-x-source-review", skill: "fomo-x-source-review", description: "Classify Fomo-nominated X accounts", preconditionTier: "host" },
   { name: "fomo-narrative-source-scan", skill: "review", description: "Scan probation narrative X sources", preconditionTier: "host" },
   { name: "narrative-source-review", skill: "review", description: "Promote or demote narrative X sources", preconditionTier: "host" },

@@ -87,6 +87,34 @@ describe("prepareTelegramDigest", () => {
       stage: "peaking",
     }])
     const layout = await ensureArchive(join(root, "archive"))
+    const srcRunId = "20260717T120000Z-src"
+    const outbox = new Outbox(join(layout.routerOutbox, srcRunId))
+    const item = {
+      severity: "notable" as const,
+      text: "RH catalyst printed",
+      refs: ["state/narratives/log.jsonl"],
+      auditClaim: {
+        type: "narrative-development" as const,
+        subject: "rh-chain-meme-rotation",
+        direction: "rotation" as const,
+        horizonHours: 72,
+        verificationRule: "narrative.development",
+      },
+    }
+    const srcEvent = buildBroadcastRouterEvent(srcRunId, "2026-07-17T12:00:00.000Z", item)
+    await outbox.stage({
+      ...srcEvent,
+      channels: { telegram: { text: "RH catalyst printed" } },
+    })
+    mkdirSync(join(layout.runs, srcRunId), { recursive: true })
+    writeFileSync(join(layout.runs, srcRunId, "delivery-receipts.json"), JSON.stringify({
+      receipts: [{
+        eventId: srcEvent.eventId,
+        status: "accepted",
+        deliveredAt: "2026-07-17T21:00:00.000Z",
+      }],
+    }))
+
     let launches = 0
     const first = await prepareTelegramDigest({
       agentRoot,
@@ -112,6 +140,7 @@ describe("prepareTelegramDigest", () => {
     expect(first.record.event?.text).toContain("**Daily narrative map")
     expect(first.record.event?.text).toContain("**RH Chain Meme Rotation — peaking**")
     expect(first.record.event?.text).not.toContain("agent title ignored")
+    expect(first.record.event?.text).not.toContain("No host-approved development")
 
     await stageTelegramDigestEvent({ layout, runId: RUN_ID, record: first.record })
     const second = await prepareTelegramDigest({
@@ -135,7 +164,121 @@ describe("prepareTelegramDigest", () => {
     expect(second.record.event?.text).toBe(first.record.event?.text)
   })
 
-  it("fails capacity-exceeded without staging when headers cannot fit", async () => {
+  it("records no-window-developments without staging when active but quiet", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-digest-quiet-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(agentRoot, { recursive: true })
+    writeNarrativeLog(agentRoot, [{
+      slug: "base-trust-collapse",
+      title: "Base Trust Collapse",
+      firstSeen: "2026-07-10T12:00:00.000Z",
+      lastSeen: "2026-07-17T12:00:00.000Z",
+      evidence: ["twitter:@a:1"],
+      stage: "fading",
+    }, {
+      slug: "brian-pfp-meta-collapse",
+      title: "Brian PFP Meta Collapse",
+      firstSeen: "2026-07-11T12:00:00.000Z",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+      evidence: ["twitter:@b:1"],
+      stage: "fading",
+    }])
+    const layout = await ensureArchive(join(root, "archive"))
+    const prepared = await prepareTelegramDigest({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: "2026-07-18T19:05:00.000Z",
+      retentionDays: 14,
+      enabled: true,
+      dailyCap: 10,
+      usedToday: 0,
+      runSession: async () => {
+        throw new Error("should not distill quiet day")
+      },
+    })
+    expect(prepared.record.outcome).toBe("no-window-developments")
+    expect(prepared.record.activeNarrativeSlugs).toEqual([
+      "base-trust-collapse",
+      "brian-pfp-meta-collapse",
+    ])
+    expect(prepared.record.event).toBeUndefined()
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    expect(outbox.list()).toHaveLength(0)
+  })
+
+  it("omits quiet narratives from the map when others have developments", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-digest-omit-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(agentRoot, { recursive: true })
+    writeNarrativeLog(agentRoot, [{
+      slug: "rh-chain-meme-rotation",
+      title: "RH",
+      firstSeen: "2026-07-17T12:00:00.000Z",
+      lastSeen: "2026-07-18T12:00:00.000Z",
+      evidence: ["twitter:@a:1"],
+      stage: "peaking",
+    }, {
+      slug: "base-trust-collapse",
+      title: "Base",
+      firstSeen: "2026-07-10T12:00:00.000Z",
+      lastSeen: "2026-07-17T12:00:00.000Z",
+      evidence: ["twitter:@b:1"],
+      stage: "fading",
+    }])
+    const layout = await ensureArchive(join(root, "archive"))
+    const srcRunId = "20260717T120000Z-live"
+    const outbox = new Outbox(join(layout.routerOutbox, srcRunId))
+    const item = {
+      severity: "notable" as const,
+      text: "RH catalyst printed",
+      refs: ["state/narratives/log.jsonl"],
+      auditClaim: {
+        type: "narrative-development" as const,
+        subject: "rh-chain-meme-rotation",
+        direction: "rotation" as const,
+        horizonHours: 72,
+        verificationRule: "narrative.development",
+      },
+    }
+    const srcEvent = buildBroadcastRouterEvent(srcRunId, "2026-07-17T12:00:00.000Z", item)
+    await outbox.stage({
+      ...srcEvent,
+      channels: { telegram: { text: "RH catalyst printed" } },
+    })
+    mkdirSync(join(layout.runs, srcRunId), { recursive: true })
+    writeFileSync(join(layout.runs, srcRunId, "delivery-receipts.json"), JSON.stringify({
+      receipts: [{
+        eventId: srcEvent.eventId,
+        status: "accepted",
+        deliveredAt: "2026-07-17T21:00:00.000Z",
+      }],
+    }))
+
+    const prepared = await prepareTelegramDigest({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: "2026-07-18T19:05:00.000Z",
+      retentionDays: 14,
+      enabled: true,
+      dailyCap: 10,
+      usedToday: 0,
+      runSession: async ({ message }) => {
+        expect(message).toContain("rh-chain-meme-rotation")
+        expect(message).not.toContain("base-trust-collapse")
+        return JSON.stringify({
+          sections: [{ slug: "rh-chain-meme-rotation", body: "Peaking on wallet lore." }],
+        })
+      },
+    })
+    expect(prepared.record.outcome).toBe("prepared")
+    expect(prepared.record.event?.text).toContain("RH Chain Meme Rotation")
+    expect(prepared.record.event?.text).not.toContain("Base Trust Collapse")
+    expect(prepared.record.event?.text).not.toContain("No host-approved development")
+  })
+
+  it("fails capacity-exceeded without staging when development headers cannot fit", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-digest-cap-"))
     const agentRoot = join(root, "agent")
     mkdirSync(agentRoot, { recursive: true })
@@ -149,6 +292,36 @@ describe("prepareTelegramDigest", () => {
     }))
     writeNarrativeLog(agentRoot, entries)
     const layout = await ensureArchive(join(root, "archive"))
+    const srcRunId = "20260717T120000Z-cap"
+    const srcOutbox = new Outbox(join(layout.routerOutbox, srcRunId))
+    const receipts: Array<{ eventId: string; status: string; deliveredAt: string }> = []
+    for (const entry of entries) {
+      const item = {
+        severity: "notable" as const,
+        text: `${entry.slug} moved`,
+        refs: ["state/narratives/log.jsonl"],
+        auditClaim: {
+          type: "narrative-development" as const,
+          subject: entry.slug,
+          direction: "rotation" as const,
+          horizonHours: 72,
+          verificationRule: "narrative.development",
+        },
+      }
+      const event = buildBroadcastRouterEvent(srcRunId, "2026-07-17T12:00:00.000Z", item)
+      await srcOutbox.stage({
+        ...event,
+        channels: { telegram: { text: `${entry.slug} moved` } },
+      })
+      receipts.push({
+        eventId: event.eventId,
+        status: "accepted",
+        deliveredAt: "2026-07-17T21:00:00.000Z",
+      })
+    }
+    mkdirSync(join(layout.runs, srcRunId), { recursive: true })
+    writeFileSync(join(layout.runs, srcRunId, "delivery-receipts.json"), JSON.stringify({ receipts }))
+
     const prepared = await prepareTelegramDigest({
       agentRoot,
       layout,

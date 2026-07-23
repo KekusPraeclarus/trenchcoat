@@ -712,7 +712,12 @@ export const DISCORD_SUGGESTIONS_V17_DEFAULTS = Object.freeze({
 /** Schema 17: passive Discord suggestion intake under incident_remediation */
 export function migrateConfigToV17(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 17 || record?.["schema"] === 18) return raw
+  if (
+    record?.["schema"] === 17
+    || record?.["schema"] === 18
+    || record?.["schema"] === 19
+    || record?.["schema"] === 20
+  ) return raw
 
   const v16 = (
     record?.["schema"] === 16
@@ -747,7 +752,11 @@ export const TELEGRAM_DIGEST_V18_DEFAULTS = Object.freeze({
 /** Schema 18: daily Telegram narrative digest under broadcast */
 export function migrateConfigToV18(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 18) return raw
+  if (
+    record?.["schema"] === 18
+    || record?.["schema"] === 19
+    || record?.["schema"] === 20
+  ) return raw
 
   const v17 = (
     record?.["schema"] === 17
@@ -767,6 +776,154 @@ export function migrateConfigToV18(raw: unknown): unknown {
         ...TELEGRAM_DIGEST_V18_DEFAULTS,
         ...prevDigest,
         enabled: prevDigest["enabled"] === true,
+      },
+    },
+  }
+}
+
+export const TOKEN_COST_V19_DEFAULTS = Object.freeze({
+  llm_budget_fraction: 0.5,
+  hot_day_llm_budget_fraction: 0.25,
+  hot_day_min_staged_events: 20,
+  turn_count_max: 40,
+  max_prompt_chars: 12_000,
+})
+
+/** Schema 19: token-cost host gates (distill fractions, chat turn caps) */
+export function migrateConfigToV19(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 19 || record?.["schema"] === 20) return raw
+
+  const v18 = (
+    record?.["schema"] === 18
+      ? record
+      : migrateConfigToV18(raw)
+  ) as Record<string, unknown>
+
+  const prevBroadcast = (v18["broadcast"] ?? {}) as Record<string, unknown>
+  const prevDiscord = (prevBroadcast["discord_distiller"] ?? {}) as Record<string, unknown>
+  const prevTelegram = (prevBroadcast["telegram_overview"] ?? {}) as Record<string, unknown>
+  const prevChat = (v18["chat"] ?? {}) as Record<string, unknown>
+  const prevDiscordChat = (prevChat["discord"] ?? {}) as Record<string, unknown>
+  const prevConversation = (prevDiscordChat["conversation"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v18,
+    schema: 19,
+    broadcast: {
+      ...prevBroadcast,
+      discord_distiller: {
+        ...prevDiscord,
+        llm_budget_fraction:
+          typeof prevDiscord["llm_budget_fraction"] === "number"
+            ? prevDiscord["llm_budget_fraction"]
+            : TOKEN_COST_V19_DEFAULTS.llm_budget_fraction,
+        hot_day_llm_budget_fraction:
+          typeof prevDiscord["hot_day_llm_budget_fraction"] === "number"
+            ? prevDiscord["hot_day_llm_budget_fraction"]
+            : TOKEN_COST_V19_DEFAULTS.hot_day_llm_budget_fraction,
+      },
+      telegram_overview: {
+        ...prevTelegram,
+        llm_budget_fraction:
+          typeof prevTelegram["llm_budget_fraction"] === "number"
+            ? prevTelegram["llm_budget_fraction"]
+            : TOKEN_COST_V19_DEFAULTS.llm_budget_fraction,
+        hot_day_llm_budget_fraction:
+          typeof prevTelegram["hot_day_llm_budget_fraction"] === "number"
+            ? prevTelegram["hot_day_llm_budget_fraction"]
+            : TOKEN_COST_V19_DEFAULTS.hot_day_llm_budget_fraction,
+      },
+      hot_day_min_staged_events:
+        typeof prevBroadcast["hot_day_min_staged_events"] === "number"
+          ? prevBroadcast["hot_day_min_staged_events"]
+          : TOKEN_COST_V19_DEFAULTS.hot_day_min_staged_events,
+    },
+    chat: {
+      ...prevChat,
+      turn_count_max:
+        typeof prevChat["turn_count_max"] === "number"
+          ? prevChat["turn_count_max"]
+          : TOKEN_COST_V19_DEFAULTS.turn_count_max,
+      max_prompt_chars:
+        typeof prevChat["max_prompt_chars"] === "number"
+          ? prevChat["max_prompt_chars"]
+          : TOKEN_COST_V19_DEFAULTS.max_prompt_chars,
+      discord: {
+        ...prevDiscordChat,
+        conversation: {
+          ...prevConversation,
+          turn_count_max:
+            typeof prevConversation["turn_count_max"] === "number"
+              ? prevConversation["turn_count_max"]
+              : TOKEN_COST_V19_DEFAULTS.turn_count_max,
+        },
+      },
+    },
+  }
+}
+
+export const WALLET_SIGNALS_V20_DEFAULTS = Object.freeze({
+  enabled: false,
+  shadow_mode: true,
+  channel_ids: [] as readonly string[],
+  scan_interval_minutes: 5,
+  max_message_age_hours: 6,
+  actor_dedupe_ttl_minutes: 15,
+  convergence: Object.freeze({
+    enabled: true,
+    window_minutes: 60,
+    min_actors: 3,
+  }),
+  sell_pressure: Object.freeze({
+    enabled: true,
+    window_minutes: 60,
+    min_actors: 3,
+  }),
+  max_enqueues_per_day: 3,
+})
+
+/** Schema 20: Discord wallet-signal confluence under chat.discord */
+export function migrateConfigToV20(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 20) return raw
+
+  const v19 = (
+    record?.["schema"] === 19
+      ? record
+      : migrateConfigToV19(raw)
+  ) as Record<string, unknown>
+
+  const prevChat = (v19["chat"] ?? {}) as Record<string, unknown>
+  const prevDiscordChat = (prevChat["discord"] ?? {}) as Record<string, unknown>
+  const prevWalletSignals = (prevDiscordChat["wallet_signals"] ?? {}) as Record<string, unknown>
+  const prevConvergence = (prevWalletSignals["convergence"] ?? {}) as Record<string, unknown>
+  const prevSellPressure = (prevWalletSignals["sell_pressure"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v19,
+    schema: 20,
+    chat: {
+      ...prevChat,
+      discord: {
+        ...prevDiscordChat,
+        wallet_signals: {
+          ...WALLET_SIGNALS_V20_DEFAULTS,
+          ...prevWalletSignals,
+          channel_ids: Array.isArray(prevWalletSignals["channel_ids"])
+            ? prevWalletSignals["channel_ids"]
+            : [...WALLET_SIGNALS_V20_DEFAULTS.channel_ids],
+          enabled: prevWalletSignals["enabled"] === true,
+          shadow_mode: prevWalletSignals["shadow_mode"] !== false,
+          convergence: {
+            ...WALLET_SIGNALS_V20_DEFAULTS.convergence,
+            ...prevConvergence,
+          },
+          sell_pressure: {
+            ...WALLET_SIGNALS_V20_DEFAULTS.sell_pressure,
+            ...prevSellPressure,
+          },
+        },
       },
     },
   }

@@ -16,6 +16,7 @@ export type ChatSessionState = Readonly<{
   cursorChatId: string
   lastActivityAt: string
   telegramUserId: string
+  turnCount: number
 }>
 
 export type ChatSessionStore = Readonly<{
@@ -41,6 +42,9 @@ export function fileChatSessionStore(path: string): ChatSessionStore {
           cursorChatId: raw.cursorChatId,
           lastActivityAt: raw.lastActivityAt,
           telegramUserId: raw.telegramUserId,
+          turnCount: typeof raw.turnCount === "number" && Number.isFinite(raw.turnCount)
+            ? Math.max(0, Math.floor(raw.turnCount))
+            : 0,
         }
       } catch {
         return undefined
@@ -67,6 +71,17 @@ export function sessionExpired(
   return nowMs - last >= idleTimeoutMinutes * 60_000
 }
 
+export function turnCountExpired(
+  state: ChatSessionState,
+  turnCountMax: number,
+): boolean {
+  return state.turnCount >= turnCountMax
+}
+
+export function estimatePromptChars(prompt: string): number {
+  return prompt.length
+}
+
 export type ChatStreamSink = Readonly<{
   onPartial?: (text: string) => void | Promise<void>
 }>
@@ -80,6 +95,8 @@ export function createChatTurnRunner(opts: Readonly<{
   agentRoot: string
   telegramUserId: string
   idleTimeoutMinutes: number
+  turnCountMax: number
+  maxPromptChars: number
   store: ChatSessionStore
   createChat?: () => Promise<string>
   runSession?: (args: Readonly<{
@@ -107,9 +124,12 @@ export function createChatTurnRunner(opts: Readonly<{
   return async (operatorText, sink) => {
     let state = opts.store.load()
     const now = nowIso()
+    const promptPreview = buildChatPrompt(operatorText)
     const needsNewChat = !state
       || state.telegramUserId !== opts.telegramUserId
       || sessionExpired(state, opts.idleTimeoutMinutes, Date.parse(now))
+      || turnCountExpired(state, opts.turnCountMax)
+      || estimatePromptChars(promptPreview) > opts.maxPromptChars
     if (needsNewChat) {
       const priorId = state?.telegramUserId === opts.telegramUserId
         ? state.cursorChatId
@@ -120,6 +140,7 @@ export function createChatTurnRunner(opts: Readonly<{
           cursorChatId,
           lastActivityAt: now,
           telegramUserId: opts.telegramUserId,
+          turnCount: 0,
         }
         opts.store.save(state)
         log.info("chat session created", { cursorChatId })
@@ -134,6 +155,7 @@ export function createChatTurnRunner(opts: Readonly<{
           cursorChatId: priorId,
           lastActivityAt: now,
           telegramUserId: opts.telegramUserId,
+          turnCount: state?.turnCount ?? 0,
         }
         opts.store.save(state)
       }
@@ -143,7 +165,7 @@ export function createChatTurnRunner(opts: Readonly<{
       throw new Error("chat session missing after create")
     }
 
-    const prompt = buildChatPrompt(operatorText)
+    const prompt = promptPreview
     log.info("chat turn start", { cursorChatId: state.cursorChatId, streaming: true })
     const integrityBefore = captureInstructionIntegritySnapshot(opts.agentRoot)
     const result = await runSession({
@@ -160,20 +182,30 @@ export function createChatTurnRunner(opts: Readonly<{
       throw error
     }
 
-    opts.store.save({
-      ...state,
-      lastActivityAt: nowIso(),
-    })
-
     if (result.status === "error") {
       log.error("chat turn failed", { detail: result.error ?? "unknown" })
+      // Do not increment turnCount on failed turns
+      opts.store.save({
+        ...state,
+        lastActivityAt: nowIso(),
+      })
       throw new Error(result.error ?? "chat session failed")
     }
     const text = result.text?.trim()
     if (!text) {
       log.error("chat turn failed", { detail: "chat session returned empty reply" })
+      opts.store.save({
+        ...state,
+        lastActivityAt: nowIso(),
+      })
       throw new Error("chat session returned empty reply")
     }
+
+    opts.store.save({
+      ...state,
+      lastActivityAt: nowIso(),
+      turnCount: state.turnCount + 1,
+    })
     return text
   }
 }

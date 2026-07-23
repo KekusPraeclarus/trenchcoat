@@ -32,10 +32,16 @@ import {
   createRemediationStore,
 } from "../remediation/store.js"
 import { remediationLayout } from "../remediation/paths.js"
+import { listPendingAlphaPaths } from "./review-collect.js"
 
 export type XScanLoopPaths = Readonly<{
   agentRoot: string
   archiveRoot: string
+}>
+
+export type XScanPendingCursor = Readonly<{
+  label: string
+  newestPostId: string
 }>
 
 export type XScanLoopOptions = Readonly<{
@@ -47,10 +53,10 @@ export type XScanLoopOptions = Readonly<{
   roundDelayMs?: () => number
   /** Injectable sleep (tests) */
   sleep?: (ms: number) => Promise<void>
-  /** Injectable target runner (tests) */
+  /** Injectable batched list-scan runner (tests) */
   runTarget?: (args: Readonly<{
-    target: TwitterScrapeTarget
-    bundle: TwitterScrapeBundle
+    bundles: readonly TwitterScrapeBundle[]
+    pendingCursorAdvances: readonly XScanPendingCursor[]
   }>) => Promise<RunResult>
   openSession?: () => Promise<PersistentTwitterSession>
   /** Injectable scrape (tests) — defaults to scrapeTargetUntilCursor */
@@ -79,28 +85,31 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 async function runListScanWithLockRetry(args: Readonly<{
   paths: XScanLoopPaths
-  bundle: TwitterScrapeBundle
+  bundles: readonly TwitterScrapeBundle[]
+  pendingCursorAdvances: readonly XScanPendingCursor[]
   maxLockRetries: number
   lockRetryMs: number
   sleep: (ms: number) => Promise<void>
   runTarget?: XScanLoopOptions["runTarget"]
-  target: TwitterScrapeTarget
 }>): Promise<RunResult> {
   for (let attempt = 0; attempt <= args.maxLockRetries; attempt += 1) {
     const result = args.runTarget
-      ? await args.runTarget({ target: args.target, bundle: args.bundle })
+      ? await args.runTarget({
+        bundles: args.bundles,
+        pendingCursorAdvances: args.pendingCursorAdvances,
+      })
       : await runJob({
         job: "list-scan",
         paths: args.paths,
         listScanOverride: {
-          bundles: [args.bundle],
-          includeAlphaManifest: false,
+          bundles: args.bundles,
+          includeAlphaManifest: true,
         },
       })
     if (result.exitCode !== 3) return result
     if (attempt === args.maxLockRetries) return result
     log.warn("x-scan waiting for workspace lock", {
-      target: args.target.label,
+      bundles: args.bundles.map((b) => b.target.label).join(","),
       attempt: attempt + 1,
     })
     await args.sleep(args.lockRetryMs)
@@ -110,8 +119,8 @@ async function runListScanWithLockRetry(args: Readonly<{
 
 /**
  * Persistent FYP → lists round-robin. Keeps one Playwright session alive,
- * scrolls each target until the last-read post, runs list-scan per target,
- * then sleeps a random 5–30 minutes before the next round.
+ * scrolls each target until the last-read post, runs one batched list-scan
+ * per round, then sleeps a random 5–30 minutes before the next round.
  */
 export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
   const cursorsFile = xScanCursorsPath(opts.home)
@@ -149,6 +158,9 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
       const cursors = loadXScanCursors(cursorsFile)
       const scrape = opts.scrape ?? scrapeTargetUntilCursor
       const maxPages = opts.maxPages ?? loadConfig().twitter.max_pages_per_run
+      const bundles: TwitterScrapeBundle[] = []
+      const pendingCursorAdvances: XScanPendingCursor[] = []
+      let challengedBreak = false
 
       for (const target of targets) {
         if (opts.signal?.aborted) break
@@ -208,6 +220,7 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
           })
           // Back off hard so we do not hammer a locked account
           await sleep(30 * 60 * 1_000).catch(() => undefined)
+          challengedBreak = true
           break
         }
 
@@ -243,31 +256,53 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
           hitCursor: scraped.hitCursor,
           newestPostId: scraped.newestPostId,
         })
+        bundles.push(scraped.bundle)
+        if (scraped.newestPostId) {
+          pendingCursorAdvances.push({
+            label: target.label,
+            newestPostId: scraped.newestPostId,
+          })
+        }
+      }
 
+      if (opts.signal?.aborted) break
+
+      const alphaPending = listPendingAlphaPaths(opts.paths.agentRoot).length
+      if (!challengedBreak && (bundles.length > 0 || alphaPending > 0)) {
+        log.info("x-scan batched list-scan", {
+          bundles: bundles.map((b) => b.target.label).join(",") || "(none)",
+          posts: bundles.reduce((n, b) => n + b.posts.length, 0),
+          alphaPending,
+        })
         const result = await runListScanWithLockRetry({
           paths: opts.paths,
-          target,
-          bundle: scraped.bundle,
+          bundles,
+          pendingCursorAdvances,
           maxLockRetries,
           lockRetryMs,
           sleep,
           ...(opts.runTarget ? { runTarget: opts.runTarget } : {}),
         })
 
-        if (result.exitCode === 0 && scraped.newestPostId) {
-          await advanceXScanCursor({
-            cursorsPath: cursorsFile,
-            targetLabel: target.label,
-            lastPostId: scraped.newestPostId,
-            nowIso: systemClock.nowIso(),
-          })
-        } else if (result.exitCode !== 0) {
-          log.warn("x-scan target run failed", {
-            target: target.label,
+        if (result.exitCode === 0) {
+          const nowIso = systemClock.nowIso()
+          for (const pending of pendingCursorAdvances) {
+            await advanceXScanCursor({
+              cursorsPath: cursorsFile,
+              targetLabel: pending.label,
+              lastPostId: pending.newestPostId,
+              nowIso,
+            })
+          }
+        } else {
+          log.warn("x-scan batched run failed", {
             exitCode: result.exitCode,
             runId: result.runId,
+            bundles: bundles.map((b) => b.target.label).join(","),
           })
         }
+      } else if (!challengedBreak) {
+        log.info("x-scan round idle — no posts and no alpha backlog")
       }
 
       if (opts.signal?.aborted) break

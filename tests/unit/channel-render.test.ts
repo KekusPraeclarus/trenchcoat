@@ -547,4 +547,53 @@ describe("renderChannelPayloads", () => {
     const ledger = loadBroadcastLedger(layout, dayKey(new Date(NOW)))
     expect(Object.keys(ledger.reservations)).toHaveLength(1)
   })
+
+  it("skips Discord LLM distill when llm-budget-fraction is exhausted", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-frac-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
+    writeFileSync(
+      chatReportPath(agentRoot, RUN_ID),
+      "# Chat recall\n\n## Host summary\n\n- RH owns attention.\n",
+    )
+
+    let launches = 0
+    const report = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      chatSummary: {
+        schema: 1,
+        runId: RUN_ID,
+        validatedAt: NOW,
+        promoted: true,
+        itemIds: [],
+        reportPath: `reports/chat/${RUN_ID}.md`,
+        untrustedEvidence: true,
+      },
+      discordBudget: DISCORD_BUDGET,
+      distiller: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 5,
+        llmBudgetFraction: 0.5,
+        hotDayLlmBudgetFraction: 0.25,
+        runSession: async () => {
+          launches += 1
+          return "should not run"
+        },
+      },
+      telegramOverview: TG_OFF,
+      hotDayMinStagedEvents: 20,
+    })
+
+    expect(launches).toBe(0)
+    expect(report.usedDistill).toBe(0)
+    expect(report.receipts[0]?.distillReason).toBe("llm-budget-fraction")
+    expect(outbox.list()[0]?.channels?.discord?.text).toBe(ITEM.text)
+  })
 })

@@ -71,3 +71,8 @@ setting of 100.
 - [ADR 014](014-broadcast-worthiness.md) — semantic gate; Telegram uncapped by count
 - [ADR 001](001-router-delivery-guarantee.md) — Discord budget at channel-render
 - [ADR 026](026-telegram-digest-and-topic-fanout.md) — Telegram topic + digest modes
+
+## Follow-up (ADR 034)
+
+Distill LLM session fractions (`llm_budget_fraction` / hot-day fraction) are
+separate from Discord message caps — see [034-token-cost-host-gates.md](034-token-cost-host-gates.md).

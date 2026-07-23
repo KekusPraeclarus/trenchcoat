@@ -1,17 +1,16 @@
 /**
  * Host worthiness gate for market broadcasts (INV-B2). After mechanical ingest
  * checks, a fast model approves or rejects agent-authored proposals — fail-closed,
- * never invents broadcast text.
+ * never invents broadcast text. Judges from claim + refs + history only.
  */
 
-import type { BroadcastItem } from "../contracts/schemas.js"
+import type { AuditClaim, BroadcastItem } from "../contracts/schemas.js"
+import { sha256Json } from "../lib/canonical-json.js"
 import { deslugNarrativeLabel } from "../lib/narrative-label.js"
-import { watchWindowClaimFragment } from "../lib/watch-window.js"
 import { BROADCAST_WORTHINESS_PROMPT } from "../prompts/host.js"
 import type { StageKnown } from "./narrative-stage-dedupe.js"
 
 export const WORTHINESS_REASON_MAX = 200
-export const AGENT_NOTES_MAX = 2_000
 export const DEFAULT_WORTHINESS_MODEL = "composer-2.5-fast"
 export const WORTHINESS_TIMEOUT_MS = 90_000
 
@@ -31,8 +30,6 @@ export type WorthinessContext = Readonly<{
     destinations: readonly ("telegram" | "discord")[]
     status?: "accepted" | "staged"
   }>>
-  /** Optional agent.md excerpt — treated as untrusted color, not authority */
-  agentNotes?: string
 }>
 
 export type WorthinessResult =
@@ -40,9 +37,25 @@ export type WorthinessResult =
   | Readonly<{ ok: true; worth: false; reason: string }>
   | Readonly<{ ok: false; reason: string }>
 
-function claimLine(item: BroadcastItem): string {
-  const claim = item.auditClaim
-  return `type=${claim.type} subject=${claim.subject} direction=${claim.direction} ${watchWindowClaimFragment(claim)}`
+/** Stable hash over auditClaim fields only (subject lowercased + trimmed). */
+export function claimHash(auditClaim: AuditClaim): `sha256:${string}` {
+  return sha256Json({
+    type: auditClaim.type,
+    subject: auditClaim.subject.trim().toLowerCase(),
+    direction: auditClaim.direction,
+    horizonHours: auditClaim.horizonHours,
+    verificationRule: auditClaim.verificationRule,
+  })
+}
+
+function claimLine(claim: AuditClaim): string {
+  return [
+    `type=${claim.type}`,
+    `subject=${claim.subject}`,
+    `direction=${claim.direction}`,
+    `horizonHours=${claim.horizonHours}`,
+    `verificationRule=${claim.verificationRule}`,
+  ].join(" ")
 }
 
 function stageList(stages: readonly StageKnown[] | undefined): string {
@@ -86,9 +99,8 @@ export function worthinessUserMessage(args: Readonly<{
   item: BroadcastItem
   context: WorthinessContext
 }>): string {
-  const notes = (args.context.agentNotes ?? "").trim().slice(0, AGENT_NOTES_MAX)
   return [
-    "Decide whether this market broadcast is worth sending. Reply with JSON only.",
+    "Decide whether this market broadcast is worth sending from claim, refs, and history only. Reply with JSON only.",
     `job: ${args.context.job}`,
     `collectionStatus: ${args.context.collectionStatus ?? "unknown"}`,
     `marketBlind: ${args.context.marketBlind === true ? "true" : "false"}`,
@@ -96,14 +108,8 @@ export function worthinessUserMessage(args: Readonly<{
     `<accepted-broadcast-history>\n${broadcastList(args.context.recentBroadcasts, "accepted")}\n</accepted-broadcast-history>`,
     `<staged-broadcast-history>\n${broadcastList(args.context.recentBroadcasts, "staged")}\n</staged-broadcast-history>`,
     `severity: ${args.item.severity}`,
-    `auditClaim: ${claimLine(args.item)}`,
+    `auditClaim: ${claimLine(args.item.auditClaim)}`,
     `refs: ${args.item.refs.join(", ") || "(none)"}`,
-    notes.length > 0
-      ? `<untrusted-agent-notes>\n${notes}\n</untrusted-agent-notes>`
-      : "agentNotes: (none)",
-    "<untrusted-proposal>",
-    args.item.text,
-    "</untrusted-proposal>",
   ].join("\n")
 }
 

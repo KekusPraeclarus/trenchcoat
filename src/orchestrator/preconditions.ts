@@ -34,6 +34,9 @@ export type JobSkipReason =
   | "router-unconfigured"
   | "no-pending-ingress"
   | "telegram-digest-disabled"
+  | "wallet-signals-disabled"
+  | "wallet-signals-misconfigured"
+  | "discord-token-missing"
 
 export type JobPreconditionResult = Readonly<{
   skip: true
@@ -60,6 +63,7 @@ const HOST_GATED_JOBS = new Set<JobName>([
   "watchlist-scan",
   "fomo-trader-sync",
   "fomo-signal-scan",
+  "discord-wallet-signal-scan",
   "delivery-retry",
   "telegram-digest",
 ])
@@ -199,6 +203,28 @@ export async function evaluateJobPreconditions(args: Readonly<{
     const subjects = countActiveWatchlistSubjects(args.agentRoot)
     if (subjects === 0) {
       return { skip: true, reason: "no-active-watchlist-subjects", details: { subjects } }
+    }
+  }
+
+  if (args.job === "discord-wallet-signal-scan") {
+    let cfg
+    try {
+      cfg = loadConfig()
+    } catch {
+      return { skip: true, reason: "wallet-signals-disabled" }
+    }
+    if (!cfg.chat.discord.wallet_signals.enabled) {
+      return { skip: true, reason: "wallet-signals-disabled" }
+    }
+    if (
+      !cfg.chat.discord.enabled
+      || !cfg.chat.discord.guild_id
+      || cfg.chat.discord.wallet_signals.channel_ids.length < 1
+    ) {
+      return { skip: true, reason: "wallet-signals-misconfigured" }
+    }
+    if (!process.env["DISCORD_RESEARCH_BOT_TOKEN"]?.trim()) {
+      return { skip: true, reason: "discord-token-missing" }
     }
   }
 

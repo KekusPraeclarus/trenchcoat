@@ -83,7 +83,7 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
 - **Streaming X scan** — production uses KeepAlive `com.trenchcoat.x-scan`
   (`tc listen x-scan`): one persistent Playwright session round-robins FYP then
   configured lists, scrolling each target until the last-read post id
-  (`~/.trenchcoat/x-scan/cursors.json`), then runs `list-scan` per target with
+  (`~/.trenchcoat/x-scan/cursors.json`), then runs **one batched** `list-scan` per round with
   injected scrape bundles. Random 5–30 minute delay between completed rounds.
   Challenge/login fails the target and backs off. Cron `list-scan` is retired.
 - `list-scan` (legacy one-shot / streaming override) also writes path-only

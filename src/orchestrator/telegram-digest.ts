@@ -21,8 +21,8 @@ import {
   runTelegramDailyDigestDistiller,
   renderDailyDigestCompactFallback,
   renderDailyDigestMarkdown,
+  selectDigestNarratives,
   TELEGRAM_DIGEST_TEXT_MAX,
-  TELEGRAM_TOPIC_TEXT_MAX,
   type TopicNarrativeSnapshot,
 } from "./distill-session.js"
 import {
@@ -39,6 +39,7 @@ const SOURCE_TEXT_MAX = 1_200
 export type TelegramDigestOutcome =
   | "prepared"
   | "no-active-narratives"
+  | "no-window-developments"
   | "capacity-exceeded"
 
 export type TelegramDigestRecord = Readonly<{
@@ -404,6 +405,35 @@ export async function prepareTelegramDigest(args: Readonly<{
     }
   }
 
+  const interesting = selectDigestNarratives(snapshots, developments)
+  if (interesting.length === 0) {
+    const record: TelegramDigestRecord = {
+      schema: 1,
+      londonDate,
+      windowStart,
+      windowEnd,
+      activeNarrativeSlugs: activeSlugs,
+      sourceEventIds,
+      inputHash,
+      outcome: "no-window-developments",
+      preparedAt: args.nowIso,
+    }
+    await persistDigestRecord(args.layout, record)
+    return {
+      record,
+      usedToday: args.usedToday,
+      report: {
+        schema: 1,
+        runId: args.runId,
+        londonDate,
+        outcome: "no-window-developments",
+        reused: false,
+        activeCount: active.length,
+        sourceCount: sources.length,
+      },
+    }
+  }
+
   let usedToday = args.usedToday
   let renderMethod: "distilled" | "fallback" = "fallback"
   let text: string | null = null
@@ -413,7 +443,7 @@ export async function prepareTelegramDigest(args: Readonly<{
       londonDate,
       windowStart,
       windowEnd,
-      activeNarratives: snapshots,
+      activeNarratives: interesting,
       developmentsBySlug: developments,
     },
     dailyCap: args.dailyCap,
@@ -429,7 +459,7 @@ export async function prepareTelegramDigest(args: Readonly<{
     )
     const rendered = renderDailyDigestMarkdown({
       londonDate,
-      narratives: snapshots,
+      narratives: interesting,
       sectionsBySlug,
     })
     if ([...rendered].length <= TELEGRAM_DIGEST_TEXT_MAX) {
@@ -441,7 +471,7 @@ export async function prepareTelegramDigest(args: Readonly<{
   if (text === null) {
     text = renderDailyDigestCompactFallback({
       londonDate,
-      narratives: snapshots,
+      narratives: interesting,
       developmentsBySlug: developments,
     })
     renderMethod = "fallback"

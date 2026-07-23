@@ -53,6 +53,18 @@ export function parseConversationGateOutput(raw: string): boolean | undefined {
   }
 }
 
+const REACTION_LIKE = /^(lol|lmao|gm|gn|nice|based|same|this|ok|okay|yes|no|nah|yep|yup|👀|🔥|💀)$/iu
+
+/** Strip Discord mention/custom-emoji markup for weak-content checks */
+function stripDiscordMarkup(content: string): string {
+  return content
+    .replace(/https?:\/\/\S+/gu, " ")
+    .replace(/<@!?\d+>/gu, " ")
+    .replace(/<a?:\w+:\d+>/gu, " ")
+    .replace(/<#\d+>/gu, " ")
+    .replace(/<@&\d+>/gu, " ")
+}
+
 /** Deterministic pre-filters before any model call */
 export function deterministicAddressed(args: Readonly<{
   content: string
@@ -63,6 +75,21 @@ export function deterministicAddressed(args: Readonly<{
   if (args.mentionsBot || args.replyToBot) return "addressed"
   if (args.replyToOtherMember) return "not-addressed"
   if (!/[A-Za-z0-9]/u.test(args.content)) return "not-addressed"
+
+  const stripped = stripDiscordMarkup(args.content)
+  const wordTokens = stripped.match(/[\p{L}\p{N}]{3,}/gu) ?? []
+  if (wordTokens.length === 0) return "not-addressed"
+
+  const tokens = stripped.trim().split(/\s+/u).filter(Boolean)
+  if (
+    tokens.length > 0
+    && tokens.length <= 2
+    && tokens.every((token) => REACTION_LIKE.test(token))
+  ) {
+    return "not-addressed"
+  }
+
+  if (/\btrenchcoat\b/iu.test(args.content)) return "addressed"
   return "classify"
 }
 

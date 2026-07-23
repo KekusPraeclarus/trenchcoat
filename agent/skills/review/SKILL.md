@@ -15,8 +15,11 @@ reconciles the index after accepted mutations and review/narrative prune.
 Read inbox manifests by path only — never interpolate report or alpha bodies into
 tool commands:
 
+- `inbox/<run-id>/review-reports-summary.json` — host ≤280-char bullets per
+  sealed report (read this first)
 - `inbox/<run-id>/review-reports-manifest.json` — sealed run ids + paths to
-  `reports/<run-id>/agent.md` (newest first, bounded by host config)
+  `reports/<run-id>/agent.md` (open full bodies only when a summary bullet is
+  relevant; newest first, bounded by host config)
 - `inbox/<run-id>/review-alpha-manifest.json` — pending `alpha-queue/` paths
 - `inbox/<run-id>/review-watchlist-snapshot.json` — active watchlist subjects
 - `inbox/<run-id>/review-macro-snapshot.json` — fear/greed macro context

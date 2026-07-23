@@ -320,6 +320,8 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
   })
 
   client.on("messageCreate", (message) => {
+    const walletChannelIds = config.chat.discord.wallet_signals.channel_ids
+    if (walletChannelIds.includes(message.channelId)) return
     if (!isAllowedMessage(message, guildId, channelIds)) return
     if (isRenewText(message.content)) {
       void handleRenewal(message, opts.token).catch((error) => {
