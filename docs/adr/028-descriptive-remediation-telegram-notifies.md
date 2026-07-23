@@ -42,3 +42,6 @@ Cursor session glitch.
 
 - Redeploy, then `tc remediations retry` / `scan` / `run` to drain the
   post-lock-starvation backlog (see ADR 027).
+- Persist admitted `queued-waiting` incidents even when the scan finds no new
+  Discord threads (empty `pendingThreads` early-return must still
+  `store.save(incidentsFile)`).

@@ -728,6 +728,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
 
   if (pendingThreads.length === 0) {
     await args.store.saveSuggestions(ledger)
+    await args.store.save(incidentsFile)
     await args.store.saveCursors({
       ...cursors,
       suggestionClassifierFailures: 0,
@@ -788,6 +789,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
       bump(outcome)
     }
     await args.store.saveSuggestions(ledger)
+    await args.store.save(incidentsFile)
     await args.store.saveCursors({
       ...cursors,
       suggestionClassifierFailures: failures,
@@ -824,6 +826,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
       bump(outcome)
     }
     await args.store.saveSuggestions(ledger)
+    await args.store.save(incidentsFile)
     await args.store.saveCursors({
       ...cursors,
       suggestionClassifierFailures: failures,
