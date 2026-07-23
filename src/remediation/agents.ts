@@ -179,7 +179,7 @@ export async function runProposeAgent(args: Readonly<{
     prompt: [PROPOSE_PROMPT, "", `diagnosisPath=${args.diagnosisPath}`].join("\n"),
     cwd: args.repoRoot,
     model: args.model,
-    mode: "plan",
+    mode: "ask",
     schema: PatchProposalSchema,
     runSession,
   })
