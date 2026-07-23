@@ -98,7 +98,7 @@ describe("delivery-retry crash resume", () => {
     })
     expect(receipts[0]).toMatchObject({
       status: "failed",
-      error: expect.stringContaining("requires rendered Telegram"),
+      error: expect.stringContaining("requires rendered channel payloads"),
     })
     expect(calls).toBe(0)
   })

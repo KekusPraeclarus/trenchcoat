@@ -47,6 +47,7 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
 | `narrative-source-review` | daily (promote/demote + gated follow) |
 | `delivery-retry` | every 15m (host-only; retries staged router ingress without a terminal receipt; skips when router env missing or backlog empty) |
+| `telegram-digest` | **VPS systemd only** — `*-*-* 20:00:00 Europe/London` (host-only daily narrative map; requires `broadcast.telegram_digest.enabled`; no Mac launchd timer) |
 
 Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbook:
 [ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
@@ -298,6 +299,13 @@ predeploy backup only when migration itself corrupted host state.
   default 14). If `~/.trenchcoat/config.json` is still schema 6 on disk,
   `loadConfig` migrates in memory — re-save or copy from repo `config.json` to
   persist `narratives` on disk.
+- **Daily Telegram digest** — VPS systemd timer `trenchcoat-job-telegram-digest`
+  at 20:00 Europe/London (`broadcast.telegram_digest.enabled`). Inspect
+  `archive/telegram-digests/<London-date>.json` for `prepared` /
+  `no-active-narratives` / `capacity-exceeded`. Retries reuse the immutable
+  event (same `eventId` / payload). Capacity overflow fails the job with a run
+  incident — never omits narratives silently. Manual: `trenchcoat run telegram-digest`
+  (Linux). Do **not** load a Mac launchd timer while the VPS is production.
 - **Adding a Telegram channel** — add to `~/.trenchcoat/config.json` under
   `telegram_channels` with `mode: "preview"` (preferred). Restart
   **`com.trenchcoat.channels`** (`launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels`),

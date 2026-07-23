@@ -33,6 +33,7 @@ export type JobSkipReason =
   | "fomo-capability-gate"
   | "router-unconfigured"
   | "no-pending-ingress"
+  | "telegram-digest-disabled"
 
 export type JobPreconditionResult = Readonly<{
   skip: true
@@ -60,6 +61,7 @@ const HOST_GATED_JOBS = new Set<JobName>([
   "fomo-trader-sync",
   "fomo-signal-scan",
   "delivery-retry",
+  "telegram-digest",
 ])
 
 export function isHostGatedJob(job: JobName): boolean {
@@ -235,6 +237,18 @@ export async function evaluateJobPreconditions(args: Readonly<{
     const pending = listIngressPending(layout, args.nowIso)
     if (pending.length === 0) {
       return { skip: true, reason: "no-pending-ingress", details: { pending: 0 } }
+    }
+  }
+
+  if (args.job === "telegram-digest") {
+    let enabled = false
+    try {
+      enabled = loadConfig().broadcast.telegram_digest.enabled
+    } catch {
+      enabled = false
+    }
+    if (!enabled) {
+      return { skip: true, reason: "telegram-digest-disabled" }
     }
   }
 

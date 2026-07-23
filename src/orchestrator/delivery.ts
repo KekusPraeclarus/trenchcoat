@@ -65,14 +65,37 @@ async function attempt(
   args: Readonly<{ runId: string; routerUrl: string; hmacKey: string; nowIso: string; allowInsecureLoopback: boolean }>,
 ): Promise<DeliveryReceipt> {
   const eventId = event.eventId as `sha256:${string}`
-  if (event.type === "finding.broadcast" && !event.channels?.telegram) {
-    return buildReceipt({
-      runId: args.runId,
-      eventId,
-      status: "failed",
-      error: "finding.broadcast requires rendered Telegram channel payload before ingress",
-      deliveredAt: args.nowIso,
-    })
+  if (event.type === "finding.broadcast") {
+    // channels must be host-rendered; telegram may be omitted for topic-merged followers
+    if (!event.channels) {
+      return buildReceipt({
+        runId: args.runId,
+        eventId,
+        status: "failed",
+        error: "finding.broadcast requires rendered channel payloads before ingress",
+        deliveredAt: args.nowIso,
+      })
+    }
+  }
+  if (event.type === "narrative.digest") {
+    if (!event.channels?.telegram?.text) {
+      return buildReceipt({
+        runId: args.runId,
+        eventId,
+        status: "failed",
+        error: "narrative.digest requires Telegram channel payload before ingress",
+        deliveredAt: args.nowIso,
+      })
+    }
+    if (event.text !== event.channels.telegram.text) {
+      return buildReceipt({
+        runId: args.runId,
+        eventId,
+        status: "failed",
+        error: "narrative.digest text must match channels.telegram.text",
+        deliveredAt: args.nowIso,
+      })
+    }
   }
   if (
     event.type === "finding.correction"

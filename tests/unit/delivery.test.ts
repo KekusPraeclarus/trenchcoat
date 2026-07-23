@@ -99,4 +99,52 @@ describe("staged outbox delivery", () => {
     await deliverStagedOutbox(args)
     expect(calls).toBe(2)
   })
+
+  it("allows topic-merged finding.broadcast without telegram payload", async () => {
+    const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-delivery-merged-")))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    await outbox.stage({
+      ...buildBroadcastRouterEvent(RUN_ID, NOW, ITEM),
+      channels: {},
+    })
+    let calls = 0
+    const fetcher: FetchLike = async () => {
+      calls += 1
+      return jsonResponse(202, { status: "accepted", delivery_id: "d-merged" })
+    }
+    const receipts = await deliverStagedOutbox({
+      layout, runId: RUN_ID, routerUrl: ROUTER_URL, hmacKey: HMAC, nowIso: NOW, fetcher,
+    })
+    expect(receipts[0]?.status).toBe("accepted")
+    expect(calls).toBe(1)
+  })
+
+  it("requires telegram payload for narrative.digest", async () => {
+    const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-delivery-digest-")))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    const { buildNarrativeDigestRouterEvent } = await import("../../src/orchestrator/router.js")
+    const event = buildNarrativeDigestRouterEvent({
+      runId: RUN_ID,
+      occurredAt: NOW,
+      text: "**Daily narrative map — 2026-07-17**\n\n**RH — peaking**\n\nStill live.",
+      londonDate: "2026-07-17",
+      windowStart: "2026-07-16T19:00:00.000Z",
+      windowEnd: NOW,
+      activeNarrativeSlugs: ["rh-chain-meme-rotation"],
+      sourceEventIds: [],
+      inputHash: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    })
+    const { channels: _channels, ...base } = event
+    await outbox.stage(base as typeof event)
+    const receipts = await deliverStagedOutbox({
+      layout,
+      runId: RUN_ID,
+      routerUrl: ROUTER_URL,
+      hmacKey: HMAC,
+      nowIso: NOW,
+      fetcher: async () => jsonResponse(202, { status: "accepted", delivery_id: "d-x" }),
+    })
+    expect(receipts[0]?.status).toBe("failed")
+    expect(receipts[0]?.error).toMatch(/narrative\.digest requires Telegram/)
+  })
 })

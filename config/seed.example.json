@@ -1,5 +1,5 @@
 {
-  "schema": 17,
+  "schema": 18,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -209,6 +209,9 @@
     "telegram_overview": {
       "enabled": true,
       "daily_cap": 50
+    },
+    "telegram_digest": {
+      "enabled": true
     },
     "worthiness": {
       "enabled": true,

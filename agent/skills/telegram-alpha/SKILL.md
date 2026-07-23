@@ -24,7 +24,7 @@ Process one or more newly arrived Telegram alpha-queue messages immediately.
 3. Prefer **empty outbox** — do not broadcast thin first-sight ticker calls.
    The host enqueues research from sealed CAs/tickers; the research job owns
    operator notify when the dossier is solid. Only propose
-   `outbox/<run-id>.json` for rare operator-urgent signals already fully
+   `outbox/<run-id>.json` (one item per subject) for rare operator-urgent signals already fully
    corroborated in sealed evidence (host worthiness still gates Discord)
 4. Optionally `reports/<run-id>/chat-summary.json` for host recall context —
    omit on thin no-op runs rather than writing a malformed file

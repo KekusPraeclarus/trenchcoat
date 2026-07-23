@@ -89,7 +89,36 @@ describe("worthinessUserMessage", () => {
     expect(message).toContain("<untrusted-agent-notes>")
     expect(message).toContain("statusQuoStages:")
     expect(message).toContain("<accepted-broadcast-history>")
+    expect(message).toContain("<staged-broadcast-history>")
     expect(message).toContain("PONS founder follow")
+  })
+
+  it("labels accepted and staged history separately", () => {
+    const message = worthinessUserMessage({
+      item: ITEM,
+      context: {
+        job: "list-scan",
+        recentBroadcasts: [
+          {
+            occurredAt: "2026-07-21T10:00:00.000Z",
+            subject: "rh-chain-meme-rotation",
+            summary: "accepted prior",
+            destinations: ["telegram"],
+            status: "accepted",
+          },
+          {
+            occurredAt: "2026-07-21T11:00:00.000Z",
+            subject: "rh-chain-meme-rotation",
+            summary: "staged prior",
+            destinations: ["telegram"],
+            status: "staged",
+          },
+        ],
+      },
+    })
+    expect(message).toMatch(/<accepted-broadcast-history>[\s\S]*accepted prior[\s\S]*<\/accepted-broadcast-history>/)
+    expect(message).toMatch(/<staged-broadcast-history>[\s\S]*staged prior[\s\S]*<\/staged-broadcast-history>/)
+    expect(BROADCAST_WORTHINESS_PROMPT).toMatch(/staged-broadcast-history/)
   })
 })
 

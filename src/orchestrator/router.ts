@@ -165,6 +165,72 @@ export function buildRouterPayload(
   return buildBroadcastRouterEvent(runId, occurredAt, item)
 }
 
+const TELEGRAM_DIGEST_TEXT_MAX = 3_400
+
+/** Build an immutable narrative.digest RouterEvent for the daily Telegram map */
+export function buildNarrativeDigestRouterEvent(args: Readonly<{
+  runId: string
+  occurredAt: string
+  text: string
+  londonDate: string
+  windowStart: string
+  windowEnd: string
+  activeNarrativeSlugs: readonly string[]
+  sourceEventIds: readonly string[]
+  inputHash: `sha256:${string}`
+}>): RouterEvent {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(args.runId)) {
+    throw new TypeError("Run id is invalid")
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(args.londonDate)) {
+    throw new TypeError("londonDate must be YYYY-MM-DD")
+  }
+  const occurredTimestamp = Date.parse(args.occurredAt)
+  if (!Number.isFinite(occurredTimestamp) || new Date(occurredTimestamp).toISOString() !== args.occurredAt) {
+    throw new TypeError("occurredAt must be a canonical ISO timestamp")
+  }
+  const windowStartMs = Date.parse(args.windowStart)
+  const windowEndMs = Date.parse(args.windowEnd)
+  if (
+    !Number.isFinite(windowStartMs)
+    || !Number.isFinite(windowEndMs)
+    || new Date(windowStartMs).toISOString() !== args.windowStart
+    || new Date(windowEndMs).toISOString() !== args.windowEnd
+  ) {
+    throw new TypeError("digest window timestamps must be canonical ISO")
+  }
+  const text = args.text.trim()
+  if (text.length < 1) throw new TypeError("digest text is empty")
+  if ([...text].length > TELEGRAM_DIGEST_TEXT_MAX) {
+    throw new TypeError("digest text exceeds Telegram cap")
+  }
+
+  const eventId = sha256Json({
+    type: "narrative.digest",
+    londonDate: args.londonDate,
+  })
+
+  return {
+    schema: 1,
+    eventId,
+    occurredAt: args.occurredAt,
+    runId: args.runId,
+    type: "narrative.digest",
+    severity: "info",
+    text,
+    refs: [],
+    channels: { telegram: { text } },
+    dailyDigest: {
+      londonDate: args.londonDate,
+      windowStart: args.windowStart,
+      windowEnd: args.windowEnd,
+      activeNarrativeSlugs: [...args.activeNarrativeSlugs],
+      sourceEventIds: [...args.sourceEventIds],
+      inputHash: args.inputHash,
+    },
+  }
+}
+
 function parseRetryAfter(value: string | null): number | undefined {
   if (!value) return undefined
   const seconds = Number(value)

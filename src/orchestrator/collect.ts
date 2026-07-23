@@ -167,6 +167,7 @@ export async function collectForJob(args: Readonly<{
     case "audit":
     case "outcomes-settle":
     case "delivery-retry":
+    case "telegram-digest":
     case "wallet-review":
     case "wallet-runner-discovery":
     case "harness-improve":

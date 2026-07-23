@@ -58,7 +58,7 @@ Do not invent historical entries to backfill the log.
 
 ## Broadcast
 
-Propose one outbox item in `outbox/<run-id>.json` when any of:
+Propose one outbox item in `outbox/<run-id>.json` when any of (one item per normalized `auditClaim.subject` per run — merge facts into a single `text`, never reworded same-subject variants):
 
 1. You append a **new** slug (absent from the log at run start), or
 2. An existing slug's **stage changes** this run (`emerging` ↔ `peaking` ↔ `fading`), or

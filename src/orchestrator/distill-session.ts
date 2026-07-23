@@ -1,10 +1,11 @@
 /**
- * Channel distillers — host-side, fail-closed rewrites of a chat report into
- * per-destination payloads (INV-B2). Fixed host prompts, quoted untrusted input,
- * strict post-checks, never write state.
+ * Channel distillers — host-side, fail-closed rewrites into per-destination
+ * payloads (INV-B2). Fixed host prompts, quoted untrusted input, strict
+ * post-checks, never write state.
  *
  * Discord: run-scoped bottom-line, silent on unchanged-stage heat.
- * Telegram: longer landscape overview; restating current narratives is encouraged.
+ * Telegram intraday: one topic deep-dive per subject group.
+ * Telegram daily: section bodies for the narrative map (host renders headers).
  */
 
 import type { AuditClaim } from "../contracts/schemas.js"
@@ -13,23 +14,28 @@ import { hasLocalWorkspaceRefs } from "../lib/telegram-format.js"
 import { scrubLeakedHourHorizons, watchWindowClaimFragment } from "../lib/watch-window.js"
 import {
   DISCORD_DISTILLER_PROMPT,
-  TELEGRAM_OVERVIEW_PROMPT,
+  TELEGRAM_DAILY_DIGEST_PROMPT,
+  TELEGRAM_TOPIC_PROMPT,
 } from "../prompts/host.js"
 import {
   restatesUnchangedNarrativeStage,
   statusQuoFillerPattern,
   type StageKnown,
 } from "./narrative-stage-dedupe.js"
+import type { NarrativeLogEntry } from "./narrative-log.js"
 
 export const DISCORD_TEXT_MAX = 320
 export const DISCORD_TICKER_MAX = 3
-export const TELEGRAM_TEXT_MAX = 8_000
+export const TELEGRAM_TOPIC_TEXT_MAX = 3_400
+/** @deprecated Use TELEGRAM_TOPIC_TEXT_MAX — alias for callers/tests */
+export const TELEGRAM_TEXT_MAX = TELEGRAM_TOPIC_TEXT_MAX
 
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u
 const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
 /** Bare @handle — excludes twitter:@ / farcaster:@ (colon precedes @) */
 const BARE_AT_HANDLE = /(?<![a-z:])@[\w.-]+/iu
 const TICKER_TOKEN = /\$[A-Za-z][A-Za-z0-9]{0,15}\b/gu
+const MARKDOWN_BODY_MARKERS = /(?:^|\n)\s*#{1,6}\s|(?:\*\*|__|`)/u
 
 export type DistillSessionRunner = (
   args: Readonly<{ prompt: string; message: string }>,
@@ -47,20 +53,60 @@ export type DistillArgs = Readonly<{
   enabled?: boolean
 }>
 
-export type TelegramOverviewArgs = Readonly<{
-  reportText: string
-  fallbackText: string
+export type TopicPacketMember = Readonly<{
+  eventId: string
+  severity: string
+  text: string
   auditClaim?: AuditClaim
-  /** Prior heat landscape — Telegram may restate these */
-  knownStages?: readonly StageKnown[]
+}>
+
+export type TopicNarrativeSnapshot = Readonly<{
+  slug: string
+  stage: NarrativeLogEntry["stage"]
+  tickers: readonly string[]
+  lastSeen: string
+}>
+
+export type TopicPacket = Readonly<{
+  subject: string
+  subjectLabel: string
+  narrative?: TopicNarrativeSnapshot
+  members: readonly TopicPacketMember[]
+  otherNarratives: readonly TopicNarrativeSnapshot[]
+}>
+
+export type TelegramTopicArgs = Readonly<{
+  packet: TopicPacket
+  fallbackText: string
   dailyCap: number
   usedToday: number
   runSession?: DistillSessionRunner
   enabled?: boolean
 }>
 
+export type DailyDigestSection = Readonly<{
+  slug: string
+  body: string
+}>
+
+export type DailyDigestPacket = Readonly<{
+  londonDate: string
+  windowStart: string
+  windowEnd: string
+  activeNarratives: readonly TopicNarrativeSnapshot[]
+  developmentsBySlug: Readonly<Record<string, string>>
+}>
+
 export type DistillResult = Readonly<{
   text: string
+  usedFallback: boolean
+  reason?: string
+  used: number
+  capExhausted: boolean
+}>
+
+export type DailyDigestDistillResult = Readonly<{
+  sections: readonly DailyDigestSection[]
   usedFallback: boolean
   reason?: string
   used: number
@@ -89,6 +135,15 @@ function stripFence(raw: string): string {
   return text
 }
 
+function charLen(text: string): number {
+  return [...text].length
+}
+
+function clipChars(text: string, max: number): string {
+  if (charLen(text) <= max) return text
+  return [...text].slice(0, max).join("")
+}
+
 export function distillUserMessage(args: Readonly<{
   reportText: string
   auditClaim?: AuditClaim
@@ -104,19 +159,94 @@ export function distillUserMessage(args: Readonly<{
   ].join("\n")
 }
 
+export function telegramTopicUserMessage(packet: TopicPacket): string {
+  const narrativeLine = packet.narrative
+    ? `subjectNarrative: stage=${packet.narrative.stage} lastSeen=${packet.narrative.lastSeen} tickers=${packet.narrative.tickers.join(",") || "(none)"}`
+    : "subjectNarrative: (none)"
+  const otherLine = packet.otherNarratives.length > 0
+    ? packet.otherNarratives
+      .map((entry) => `${entry.slug}|${deslugNarrativeLabel(entry.slug)}|${entry.stage}`)
+      .join("; ")
+    : "(none)"
+  const members = packet.members.map((member, index) => {
+    const claim = member.auditClaim ? claimLine(member.auditClaim) : "auditClaim=(none)"
+    return [
+      `member[${index}] eventId=${member.eventId} severity=${member.severity}`,
+      claim,
+      "<untrusted-member-text>",
+      member.text,
+      "</untrusted-member-text>",
+    ].join("\n")
+  }).join("\n")
+  return [
+    "Rewrite the quoted topic packet as one Telegram deep-dive using the system rules.",
+    `subject=${packet.subject}`,
+    `subjectLabel=${packet.subjectLabel}`,
+    narrativeLine,
+    `otherNarratives (forbidden): ${otherLine}`,
+    "<untrusted-topic-packet>",
+    members,
+    "</untrusted-topic-packet>",
+  ].join("\n")
+}
+
+/** @deprecated Prefer telegramTopicUserMessage */
 export function telegramOverviewUserMessage(args: Readonly<{
   reportText: string
   auditClaim?: AuditClaim
   knownStages?: readonly StageKnown[]
 }>): string {
+  const subject = args.auditClaim?.subject ?? "unknown"
+  return telegramTopicUserMessage({
+    subject,
+    subjectLabel: deslugNarrativeLabel(subject),
+    members: [{
+      eventId: "legacy",
+      severity: "notable",
+      text: args.reportText,
+      ...(args.auditClaim ? { auditClaim: args.auditClaim } : {}),
+    }],
+    otherNarratives: [],
+  })
+}
+
+export function telegramDailyDigestUserMessage(packet: DailyDigestPacket): string {
+  const narratives = packet.activeNarratives.map((entry) => (
+    `${entry.slug}|${deslugNarrativeLabel(entry.slug)}|${entry.stage}|lastSeen=${entry.lastSeen}|tickers=${entry.tickers.join(",") || "(none)"}`
+  )).join("\n")
+  const developments = packet.activeNarratives.map((entry) => {
+    const body = packet.developmentsBySlug[entry.slug] ?? ""
+    return [
+      `slug=${entry.slug}`,
+      "<untrusted-developments>",
+      body.length > 0 ? body : "(none)",
+      "</untrusted-developments>",
+    ].join("\n")
+  }).join("\n")
   return [
-    "Rewrite the quoted report as a Telegram landscape overview using the system rules.",
-    `auditClaim: ${claimLine(args.auditClaim)}`,
-    `knownStages: ${stageList(args.knownStages)}`,
-    "<untrusted-report>",
-    args.reportText,
-    "</untrusted-report>",
+    "Write daily digest section bodies as JSON using the system rules.",
+    `londonDate=${packet.londonDate}`,
+    `windowStart=${packet.windowStart}`,
+    `windowEnd=${packet.windowEnd}`,
+    "activeNarratives:",
+    narratives,
+    "<untrusted-digest-packet>",
+    developments,
+    "</untrusted-digest-packet>",
   ].join("\n")
+}
+
+function mentionsOtherNarrative(
+  text: string,
+  otherNarratives: readonly TopicNarrativeSnapshot[],
+): boolean {
+  const lower = text.toLowerCase()
+  for (const entry of otherNarratives) {
+    const label = deslugNarrativeLabel(entry.slug).toLowerCase()
+    if (label.length > 0 && lower.includes(label)) return true
+    if (lower.includes(entry.slug.toLowerCase())) return true
+  }
+  return false
 }
 
 /** Mechanical Discord style post-check. Returns reason on reject. */
@@ -126,7 +256,7 @@ export function validateDiscordDistillOutput(
 ): { ok: true; text: string } | { ok: false; reason: string } {
   const text = stripFence(raw)
   if (text.length < 1) return { ok: false, reason: "empty" }
-  if ([...text].length > DISCORD_TEXT_MAX) return { ok: false, reason: "too-long" }
+  if (charLen(text) > DISCORD_TEXT_MAX) return { ok: false, reason: "too-long" }
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
@@ -142,18 +272,172 @@ export function validateDiscordDistillOutput(
   return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
 
-/** Mechanical Telegram overview post-check. Restating known stages is allowed. */
-export function validateTelegramOverviewOutput(
+/** Mechanical Telegram topic post-check. */
+export function validateTelegramTopicOutput(
   raw: string,
+  otherNarratives: readonly TopicNarrativeSnapshot[] = [],
 ): { ok: true; text: string } | { ok: false; reason: string } {
   const text = stripFence(raw)
   if (text.length < 1) return { ok: false, reason: "empty" }
-  if ([...text].length > TELEGRAM_TEXT_MAX) return { ok: false, reason: "too-long" }
+  if (charLen(text) > TELEGRAM_TOPIC_TEXT_MAX) return { ok: false, reason: "too-long" }
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
+  if (mentionsOtherNarrative(text, otherNarratives)) {
+    return { ok: false, reason: "cross-topic-mention" }
+  }
   return { ok: true, text: scrubLeakedHourHorizons(text) }
+}
+
+/** @deprecated Prefer validateTelegramTopicOutput */
+export function validateTelegramOverviewOutput(
+  raw: string,
+): { ok: true; text: string } | { ok: false; reason: string } {
+  return validateTelegramTopicOutput(raw, [])
+}
+
+function validatePlainDigestBody(body: string): { ok: true; text: string } | { ok: false; reason: string } {
+  const text = body.trim()
+  if (text.length < 1) return { ok: false, reason: "empty-body" }
+  if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
+  if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
+  if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
+  if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
+  if (MARKDOWN_BODY_MARKERS.test(text)) return { ok: false, reason: "markdown-in-body" }
+  return { ok: true, text: scrubLeakedHourHorizons(text) }
+}
+
+export function validateTelegramDailyDigestOutput(
+  raw: string,
+  activeSlugs: readonly string[],
+): { ok: true; sections: DailyDigestSection[] } | { ok: false; reason: string } {
+  const text = stripFence(raw)
+  if (text.length < 1) return { ok: false, reason: "empty" }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { ok: false, reason: "invalid-json" }
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, reason: "not-object" }
+  }
+  const sectionsRaw = (parsed as { sections?: unknown }).sections
+  if (!Array.isArray(sectionsRaw)) return { ok: false, reason: "sections-not-array" }
+
+  const expected = new Set(activeSlugs)
+  if (sectionsRaw.length !== expected.size) return { ok: false, reason: "section-count" }
+
+  const seen = new Set<string>()
+  const sections: DailyDigestSection[] = []
+  for (const entry of sectionsRaw) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return { ok: false, reason: "section-not-object" }
+    }
+    const record = entry as Record<string, unknown>
+    if (typeof record["slug"] !== "string") return { ok: false, reason: "slug-not-string" }
+    if (typeof record["body"] !== "string") return { ok: false, reason: "body-not-string" }
+    const slug = record["slug"]
+    if (!expected.has(slug)) return { ok: false, reason: "unknown-slug" }
+    if (seen.has(slug)) return { ok: false, reason: "duplicate-slug" }
+    seen.add(slug)
+    const body = validatePlainDigestBody(record["body"])
+    if (!body.ok) return { ok: false, reason: body.reason }
+    sections.push({ slug, body: body.text })
+  }
+  for (const slug of expected) {
+    if (!seen.has(slug)) return { ok: false, reason: "missing-slug" }
+  }
+  return { ok: true, sections }
+}
+
+const STAGE_ORDER: Record<NarrativeLogEntry["stage"], number> = {
+  peaking: 0,
+  emerging: 1,
+  fading: 2,
+}
+
+export function sortActiveNarrativesForDigest(
+  entries: readonly TopicNarrativeSnapshot[],
+): TopicNarrativeSnapshot[] {
+  return [...entries].sort((a, b) => {
+    const stageDelta = STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage]
+    if (stageDelta !== 0) return stageDelta
+    const seenDelta = b.lastSeen.localeCompare(a.lastSeen)
+    if (seenDelta !== 0) return seenDelta
+    return deslugNarrativeLabel(a.slug).localeCompare(deslugNarrativeLabel(b.slug))
+  })
+}
+
+export function renderDailyDigestMarkdown(args: Readonly<{
+  londonDate: string
+  narratives: readonly TopicNarrativeSnapshot[]
+  sectionsBySlug: Readonly<Record<string, string>>
+}>): string {
+  const ordered = sortActiveNarrativesForDigest(args.narratives)
+  const parts = [`**Daily narrative map — ${args.londonDate}**`]
+  for (const entry of ordered) {
+    const label = deslugNarrativeLabel(entry.slug)
+    const body = (args.sectionsBySlug[entry.slug] ?? "").trim()
+    parts.push(`**${label} — ${entry.stage}**`)
+    if (body.length > 0) parts.push(body)
+  }
+  return parts.join("\n\n")
+}
+
+export function renderTopicFallback(packet: TopicPacket): string {
+  const lines = [`**${packet.subjectLabel}**`]
+  if (packet.narrative) {
+    lines.push(`${packet.narrative.stage}.`)
+  }
+  for (const member of packet.members) {
+    const text = member.text.trim()
+    if (text.length > 0) lines.push(text)
+  }
+  return clipChars(lines.join("\n\n"), TELEGRAM_TOPIC_TEXT_MAX)
+}
+
+const NO_DEV_SENTENCE = "No host-approved development in this window."
+
+/**
+ * Compact deterministic daily digest. Reserves every title/stage header first.
+ * Returns null when mandatory headers alone exceed the cap.
+ */
+export function renderDailyDigestCompactFallback(args: Readonly<{
+  londonDate: string
+  narratives: readonly TopicNarrativeSnapshot[]
+  developmentsBySlug: Readonly<Record<string, string>>
+}>): string | null {
+  const ordered = sortActiveNarrativesForDigest(args.narratives)
+  const title = `**Daily narrative map — ${args.londonDate}**`
+  const headers = ordered.map((entry) => (
+    `**${deslugNarrativeLabel(entry.slug)} — ${entry.stage}**`
+  ))
+  const skeletonParts = [title, ...headers]
+  // title + blank line between each header block: n headers → n separators before bodies
+  let used = charLen(title)
+  for (const header of headers) {
+    used += 2 + charLen(header) // \n\n + header
+  }
+  if (used > TELEGRAM_TOPIC_TEXT_MAX) return null
+
+  const remaining = TELEGRAM_TOPIC_TEXT_MAX - used
+  const bodyBudgetPer = ordered.length > 0 ? Math.floor(remaining / ordered.length) : 0
+  const parts: string[] = [title]
+  for (const entry of ordered) {
+    const header = `**${deslugNarrativeLabel(entry.slug)} — ${entry.stage}**`
+    const source = (args.developmentsBySlug[entry.slug] ?? "").trim()
+    const bodySource = source.length > 0 ? source : NO_DEV_SENTENCE
+    // each body costs \n\n before it
+    const bodyMax = Math.max(0, bodyBudgetPer - 2)
+    const body = clipChars(bodySource.replace(/\s+/gu, " "), bodyMax)
+    parts.push(header)
+    if (body.length > 0) parts.push(body)
+  }
+  const rendered = parts.join("\n\n")
+  if (charLen(rendered) > TELEGRAM_TOPIC_TEXT_MAX) return null
+  return rendered
 }
 
 /**
@@ -200,14 +484,18 @@ export async function runDiscordDistiller(args: DistillArgs): Promise<DistillRes
 }
 
 /**
- * Rewrite a chat report into a Telegram landscape overview. Fail-closed to
- * fallbackText on any miss. May restate knownStages heat.
+ * Rewrite a bounded topic packet into one Telegram deep-dive. Fail-closed to
+ * packet fallback on any miss.
  */
-export async function runTelegramOverviewDistiller(
-  args: TelegramOverviewArgs,
+export async function runTelegramTopicDistiller(
+  args: TelegramTopicArgs,
 ): Promise<DistillResult> {
+  const fallbackText = clipChars(
+    args.fallbackText.length > 0 ? args.fallbackText : renderTopicFallback(args.packet),
+    TELEGRAM_TOPIC_TEXT_MAX,
+  )
   const fallback = (reason: string, used: number, capExhausted = false): DistillResult => ({
-    text: args.fallbackText,
+    text: fallbackText,
     usedFallback: true,
     reason,
     used,
@@ -225,20 +513,103 @@ export async function runTelegramOverviewDistiller(
   }
 
   const used = args.usedToday + 1
-  const known = args.knownStages ?? []
   try {
     const raw = await args.runSession({
-      prompt: TELEGRAM_OVERVIEW_PROMPT,
-      message: telegramOverviewUserMessage({
-        reportText: args.reportText,
-        ...(args.auditClaim ? { auditClaim: args.auditClaim } : {}),
-        ...(known.length > 0 ? { knownStages: known } : {}),
-      }),
+      prompt: TELEGRAM_TOPIC_PROMPT,
+      message: telegramTopicUserMessage(args.packet),
     })
-    const checked = validateTelegramOverviewOutput(raw)
+    const checked = validateTelegramTopicOutput(raw, args.packet.otherNarratives)
     if (!checked.ok) return fallback(checked.reason, used)
     return { text: checked.text, usedFallback: false, used, capExhausted: false }
   } catch {
     return fallback("session-error", used)
+  }
+}
+
+/** @deprecated Prefer runTelegramTopicDistiller */
+export async function runTelegramOverviewDistiller(
+  args: Readonly<{
+    reportText: string
+    fallbackText: string
+    auditClaim?: AuditClaim
+    knownStages?: readonly StageKnown[]
+    dailyCap: number
+    usedToday: number
+    runSession?: DistillSessionRunner
+    enabled?: boolean
+  }>,
+): Promise<DistillResult> {
+  const subject = args.auditClaim?.subject ?? "unknown"
+  return runTelegramTopicDistiller({
+    packet: {
+      subject,
+      subjectLabel: deslugNarrativeLabel(subject),
+      members: [{
+        eventId: "legacy",
+        severity: "notable",
+        text: args.reportText,
+        ...(args.auditClaim ? { auditClaim: args.auditClaim } : {}),
+      }],
+      otherNarratives: [],
+    },
+    fallbackText: args.fallbackText,
+    dailyCap: args.dailyCap,
+    usedToday: args.usedToday,
+    ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
+    ...(args.runSession ? { runSession: args.runSession } : {}),
+  })
+}
+
+/**
+ * Produce validated daily-digest section bodies. Fail-closed to empty sections
+ * (caller builds compact fallback).
+ */
+export async function runTelegramDailyDigestDistiller(args: Readonly<{
+  packet: DailyDigestPacket
+  dailyCap: number
+  usedToday: number
+  runSession?: DistillSessionRunner
+  enabled?: boolean
+}>): Promise<DailyDigestDistillResult> {
+  const empty = (reason: string, used: number, capExhausted = false): DailyDigestDistillResult => ({
+    sections: [],
+    usedFallback: true,
+    reason,
+    used,
+    capExhausted,
+  })
+
+  if (args.enabled === false) {
+    return empty("disabled", args.usedToday)
+  }
+  if (args.usedToday >= args.dailyCap) {
+    return empty("cap-exhausted", args.usedToday, true)
+  }
+  if (!args.runSession) {
+    return empty("no-runner", args.usedToday)
+  }
+
+  const used = args.usedToday + 1
+  const activeSlugs = args.packet.activeNarratives.map((entry) => entry.slug)
+  try {
+    const raw = await args.runSession({
+      prompt: TELEGRAM_DAILY_DIGEST_PROMPT,
+      message: telegramDailyDigestUserMessage(args.packet),
+    })
+    const checked = validateTelegramDailyDigestOutput(raw, activeSlugs)
+    if (!checked.ok) return empty(checked.reason, used)
+    const rendered = renderDailyDigestMarkdown({
+      londonDate: args.packet.londonDate,
+      narratives: args.packet.activeNarratives,
+      sectionsBySlug: Object.fromEntries(
+        checked.sections.map((section) => [section.slug, section.body]),
+      ),
+    })
+    if (charLen(rendered) > TELEGRAM_TOPIC_TEXT_MAX) {
+      return empty("too-long", used)
+    }
+    return { sections: checked.sections, usedFallback: false, used, capExhausted: false }
+  } catch {
+    return empty("session-error", used)
   }
 }

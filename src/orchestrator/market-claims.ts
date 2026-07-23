@@ -340,6 +340,92 @@ export function extractBroadcastClaimsFromArchive(args: Readonly<{
   return claims
 }
 
+export type WorthinessBroadcastCandidate = Readonly<{
+  occurredAt: string
+  subject: string
+  summary: string
+  destinations: readonly ("telegram" | "discord")[]
+  status: "accepted" | "staged"
+  eventId: string
+}>
+
+/**
+ * Subject-scoped candidates for worthiness: accepted ingress or still-pending
+ * staged events. Excludes conflicts and topic-merged followers (rendered
+ * channels without telegram).
+ */
+export function extractWorthinessBroadcastCandidates(args: Readonly<{
+  layout: ArchiveLayout
+  startExclusive: string
+  endInclusive: string
+}>): WorthinessBroadcastCandidate[] {
+  const outboxRoot = args.layout.routerOutbox
+  if (!existsSync(outboxRoot)) return []
+  const startMs = parseIso(args.startExclusive)
+  const endMs = parseIso(args.endInclusive)
+  const out: WorthinessBroadcastCandidate[] = []
+
+  for (const runDir of readdirSync(outboxRoot)) {
+    const dir = join(outboxRoot, runDir)
+    let files: string[]
+    try {
+      files = readdirSync(dir).filter((n) => n.endsWith(".json"))
+    } catch {
+      continue
+    }
+    const receiptPath = join(runArchiveDir(args.layout, runDir), "delivery-receipts.json")
+    const receiptByEvent = new Map<string, string>()
+    if (existsSync(receiptPath)) {
+      try {
+        const receipts = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+          receipts?: Array<{ eventId?: string; status?: string }>
+        }
+        for (const receipt of receipts.receipts ?? []) {
+          if (receipt.eventId && receipt.status) {
+            receiptByEvent.set(receipt.eventId, receipt.status)
+          }
+        }
+      } catch {
+        // ignore corrupt receipts
+      }
+    }
+
+    for (const name of files) {
+      try {
+        const event = RouterEventSchema.parse(JSON.parse(readFileSync(join(dir, name), "utf8")))
+        if (event.type !== "finding.broadcast") continue
+        const ms = parseIso(event.occurredAt)
+        if (!(ms > startMs && ms <= endMs)) continue
+        // Topic-merged followers: channels present without telegram
+        if (event.channels && !event.channels.telegram) continue
+
+        const status = receiptByEvent.get(event.eventId)
+        if (status === "conflict") continue
+        const accepted = status === "accepted" || status === "duplicate"
+        const staged = !status || status === "failed" || status === "skipped"
+        if (!accepted && !staged) continue
+
+        const destinations: Array<"telegram" | "discord"> = []
+        if (event.channels?.telegram) destinations.push("telegram")
+        if (event.channels?.discord) destinations.push("discord")
+        if (destinations.length === 0) destinations.push("telegram")
+
+        out.push({
+          occurredAt: event.occurredAt,
+          subject: event.auditClaim?.subject ?? "unknown",
+          summary: (event.channels?.telegram?.text ?? event.text).slice(0, 500),
+          destinations,
+          status: accepted ? "accepted" : "staged",
+          eventId: event.eventId,
+        })
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+  return out.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+}
+
 /**
  * Extract accepted decision claims from a run's validation receipts + proposals.
  */

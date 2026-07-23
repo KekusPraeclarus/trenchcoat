@@ -140,6 +140,7 @@ const HOST_ONLY_JOBS = new Set([
   "audit",
   "outcomes-settle",
   "delivery-retry",
+  "telegram-digest",
   "wallet-review",
   "harness-improve",
   "incident-remediate",
@@ -1056,19 +1057,19 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             })()
             const distillCfg = config.broadcast.discord_distiller
             const telegramOverviewCfg = config.broadcast.telegram_overview
-            const retryUnchanged = (() => {
+            const retryNarratives = (() => {
               try {
                 const path = narrativeLogPath(opts.paths.agentRoot)
-                const entries = pruneNarrativeLogInMemory(
+                return pruneNarrativeLogInMemory(
                   existsSync(path) ? readFileSync(path, "utf8") : "",
                   nowIso,
                   config.narratives.retention_days,
                 ).entries
-                return statusQuoNarratives(entries)
               } catch {
                 return []
               }
             })()
+            const retryUnchanged = statusQuoNarratives(retryNarratives)
             const distillRunSession = distillCfg.enabled || telegramOverviewCfg.enabled
               ? async (distillArgs: Readonly<{ prompt: string; message: string }>) => {
                 const session = await runOneShotSession({
@@ -1111,6 +1112,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
                   : {}),
               },
               ...(retryUnchanged.length > 0 ? { unchangedStages: retryUnchanged } : {}),
+              activeNarratives: retryNarratives,
             })
             if (rendered.distillUsedToday !== usedToday) {
               await writeJsonRecordFsync(distillCapPath, {
@@ -1140,6 +1142,91 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             occurredAt: nowIso,
           } satisfies RunIncident)
         }
+      }
+    }
+    let telegramDigestReport: unknown
+    if (job.name === "telegram-digest" && !opts.dryCollect && !canary.blockExternalEffects) {
+      const {
+        prepareTelegramDigest,
+        stageTelegramDigestEvent,
+      } = await import("./telegram-digest.js")
+      const config = loadConfig()
+      const nowIso = systemClock.nowIso()
+      const distillDay = dayKey(new Date(nowIso))
+      const distillCapPath = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
+      let usedToday = 0
+      if (existsSync(distillCapPath)) {
+        try {
+          const raw = JSON.parse(readFileSync(distillCapPath, "utf8")) as { used?: unknown }
+          if (typeof raw.used === "number" && Number.isFinite(raw.used) && raw.used >= 0) {
+            usedToday = Math.floor(raw.used)
+          }
+        } catch {
+          usedToday = 0
+        }
+      }
+      const digestCfg = config.broadcast.telegram_digest
+      const overviewCfg = config.broadcast.telegram_overview
+      const runSession = async (sessionArgs: Readonly<{ prompt: string; message: string }>) => {
+        const session = await runOneShotSession({
+          prompt: `${sessionArgs.prompt}\n\n${sessionArgs.message}`,
+          cwd: opts.paths.agentRoot,
+          mode: "ask",
+          sandbox: true,
+          timeoutMs: 120_000,
+        })
+        if (session.status !== "finished" || !session.text) {
+          throw new Error(session.error ?? "telegram digest session failed")
+        }
+        return session.text
+      }
+      const prepared = await prepareTelegramDigest({
+        agentRoot: opts.paths.agentRoot,
+        layout,
+        runId,
+        nowIso,
+        retentionDays: config.narratives.retention_days,
+        enabled: digestCfg.enabled,
+        dailyCap: overviewCfg.daily_cap,
+        usedToday,
+        runSession,
+      })
+      if (prepared.usedToday !== usedToday) {
+        await writeJsonRecordFsync(distillCapPath, {
+          schema: 1,
+          day: distillDay,
+          used: prepared.usedToday,
+          updatedAt: nowIso,
+        } as never)
+      }
+      if (prepared.record.outcome === "prepared") {
+        await stageTelegramDigestEvent({
+          layout,
+          runId,
+          record: prepared.record,
+        })
+      }
+      telegramDigestReport = prepared.report
+      writeFileSync(
+        join(reportDir, "telegram-digest.json"),
+        `${JSON.stringify(prepared.report, null, 2)}\n`,
+      )
+      if (prepared.record.outcome === "capacity-exceeded") {
+        await appendRunIncident(layout, runId, {
+          schema: 1,
+          incidentId: sha256Json({
+            runId,
+            kind: "telegram-digest-capacity",
+            londonDate: prepared.record.londonDate,
+          }),
+          runId,
+          kind: "other",
+          message: `telegram-digest capacity-exceeded for ${prepared.record.londonDate}`,
+          occurredAt: nowIso,
+        })
+        throw new Error(
+          `telegram-digest capacity-exceeded for ${prepared.record.londonDate}`,
+        )
       }
     }
     let auditReport: unknown
@@ -1561,6 +1648,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           urgent_ceiling: 10,
           discord_distiller: { enabled: false, daily_cap: 10 },
           telegram_overview: { enabled: false, daily_cap: 10 },
+          telegram_digest: { enabled: false },
           worthiness: { enabled: true, model: DEFAULT_WORTHINESS_MODEL },
         }
       }
@@ -1741,6 +1829,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ...(runSession && telegramOverviewCfg.enabled ? { runSession } : {}),
         },
         ...(unchangedStages.length > 0 ? { unchangedStages } : {}),
+        activeNarratives: narrativeLogAfter ?? narrativeLogBefore,
       })
       if (channelRender.distillUsedToday !== distillUsedToday) {
         await writeJsonRecordFsync(distillCapPath, {

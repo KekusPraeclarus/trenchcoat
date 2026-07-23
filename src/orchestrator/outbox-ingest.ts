@@ -29,6 +29,7 @@ import {
 } from "../remediation/integrity-hold.js"
 import {
   extractBroadcastClaimsFromArchive,
+  extractWorthinessBroadcastCandidates,
   loadMarketClaimIndex,
   recordFromBroadcastEvent,
   saveMarketClaimIndex,
@@ -39,6 +40,8 @@ import {
 export function outboxProposalPath(agentRoot: string, runId: string): string {
   return join(agentRoot, "outbox", `${runId}.json`)
 }
+
+export const OUTBOX_ITEMS_MAX = 8
 
 type ProposedRead =
   | Readonly<{ ok: true; items: unknown[] }>
@@ -87,9 +90,9 @@ export type OutboxIngestReport = Readonly<{
 /**
  * Validate the agent's broadcast proposals and stage survivors as durable
  * RouterEvents. After mechanical gates, an optional host worthiness session
- * (fail-closed) must approve before stage. Telegram is uncapped at ingest;
- * Discord daily budget is applied later in `renderChannelPayloads`.
- * Rejections are archived with a receipt.
+ * (fail-closed) must approve before stage. Telegram is topic-scoped at render
+ * (one message per subject per run); Discord daily budget is applied later in
+ * `renderChannelPayloads`. Rejections are archived with a receipt.
  */
 export async function ingestOutbox(args: Readonly<{
   agentRoot: string
@@ -130,6 +133,13 @@ export async function ingestOutbox(args: Readonly<{
     endInclusive: args.nowIso,
     acceptedOnly: true,
   })
+  const worthinessCandidates = extractWorthinessBroadcastCandidates({
+    layout: args.layout,
+    startExclusive: new Date(
+      Date.parse(args.nowIso) - 48 * 3_600_000,
+    ).toISOString(),
+    endInclusive: args.nowIso,
+  })
 
   const reject = (reason: string, itemHash?: `sha256:${string}`): void => {
     rejects.push(itemHash ? { reason, itemHash } : { reason })
@@ -164,7 +174,15 @@ export async function ingestOutbox(args: Readonly<{
 
   let staged = 0
   let claimIndex = loadMarketClaimIndex(args.agentRoot)
+  const loopHistory = [...worthinessCandidates]
+  let itemIndex = 0
   for (const raw of proposed.items) {
+    if (itemIndex >= OUTBOX_ITEMS_MAX) {
+      reject("outbox-items-cap", sha256Json(raw as never))
+      itemIndex += 1
+      continue
+    }
+    itemIndex += 1
     const rawHash = sha256Json(raw as never)
     let item: BroadcastItem
     try {
@@ -230,6 +248,18 @@ export async function ingestOutbox(args: Readonly<{
     const capped = capSeverityForPlatformCoverage(withDurableRefs, platforms)
 
     if (worthinessEnabled && args.worthiness) {
+      const subject = capped.auditClaim.subject.trim().toLowerCase()
+      const subjectHistory = loopHistory
+        .filter((entry) => entry.subject.trim().toLowerCase() === subject)
+        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+        .slice(0, 20)
+        .map((entry) => ({
+          occurredAt: entry.occurredAt,
+          subject: entry.subject,
+          summary: entry.summary,
+          destinations: entry.destinations,
+          status: entry.status,
+        }))
       const review = await runBroadcastWorthiness({
         item: capped,
         enabled: true,
@@ -242,6 +272,7 @@ export async function ingestOutbox(args: Readonly<{
             ? { statusQuoStages: worthinessStatusQuo }
             : {}),
           ...(args.marketBlind ? { marketBlind: true } : {}),
+          ...(subjectHistory.length > 0 ? { recentBroadcasts: subjectHistory } : {}),
         },
       })
       if (!review.ok) {
@@ -260,8 +291,8 @@ export async function ingestOutbox(args: Readonly<{
     await outbox.stage(event)
     const claim = recordFromBroadcastEvent({
       event,
-      // Telegram always fans out for market broadcasts; Discord is attached later
-      // by channel-render only when budget allows — update destinations then.
+      // Telegram fanout is decided later by channel-render (topic leaders only);
+      // destinations are updated then. Index defaults to telegram for now.
       destinations: ["telegram"],
     })
     if (claim) {
@@ -269,6 +300,14 @@ export async function ingestOutbox(args: Readonly<{
     }
     accepted.push(capped)
     staged += 1
+    loopHistory.unshift({
+      occurredAt: args.nowIso,
+      subject: capped.auditClaim.subject,
+      summary: capped.text,
+      destinations: ["telegram"],
+      status: "staged",
+      eventId: event.eventId,
+    })
   }
 
   if (staged > 0) {

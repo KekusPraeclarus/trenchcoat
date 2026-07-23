@@ -67,10 +67,10 @@ incident + destination + sorted invalidated claim ids.
 
 ### Per-channel payloads
 
-`finding.broadcast` ingress **requires** `channels.telegram` already attached —
-`deliverStagedOutbox` fails closed with
-`requires rendered Telegram channel payload before ingress` if channel-render
-was skipped. `finding.correction` requires at least one of
+`finding.broadcast` ingress requires host-rendered `channels` — Telegram may be
+omitted for same-run topic-merged followers (router skips that destination).
+`narrative.digest` requires `channels.telegram` with text byte-identical to
+`event.text`. `finding.correction` requires at least one of
 `channels.telegram` / `channels.discord`, and only those destinations that
 originally received an invalidated public broadcast (INV-S28 — never for
 internal-only narrative/decision invalidations). Host `renderChannelPayloads`
@@ -78,15 +78,14 @@ internal-only narrative/decision invalidations). Host `renderChannelPayloads`
 
 | Destination | Source |
 |---|---|
-| Telegram | Fail-closed landscape overview from the promoted chat report when `broadcast.telegram_overview.enabled` (longer chat-style report; may restate current narrative heat; no host plumbing / workspace paths / provenance or bare @handles; no trader roll calls; ≤8k); on any miss falls back to `event.text`. No daily message-count limit |
-| Discord | Fail-closed **own** bottom-line distill from the chat report (≤320 chars, ≤3 tickers, no provenance or bare @handles, no trader roll calls, no status-quo filler / unchanged-stage restatement) — never reuse Telegram overview/closer text (multi-claim runs would otherwise fan out reworded duplicates); at most one Discord payload per run — later claims omit `channels.discord` (`run-deduped`, no budget burn); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
+| Telegram (intraday) | One fail-closed **topic deep-dive** per normalized `auditClaim.subject` per run when `broadcast.telegram_overview.enabled` (bounded topic packet only — never the global chat report; ≤3,400 Markdown chars; no other-narrative inventory; no host plumbing / workspace paths / provenance or bare @handles); on miss uses packet fallback. Same-subject followers omit `channels.telegram` (`topic-merged`). No daily message-count limit |
+| Telegram (daily) | Host-only `narrative.digest` at 20:00 Europe/London (`broadcast.telegram_digest.enabled`): every retention-active narrative in one message (≤3,400 chars), immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId` |
+| Discord | Fail-closed **own** bottom-line distill from the chat report (≤320 chars, ≤3 tickers, no provenance or bare @handles, no trader roll calls, no status-quo filler / unchanged-stage restatement) — never reuse Telegram topic text; at most one Discord payload per run — later claims omit `channels.discord` (`run-deduped`, no budget burn); prior narrative heat passed as `unchangedStages`; on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
-When `channels` is present and `channels.discord` is absent, Discord delivery is
-skipped (`skipped-discord-budget` for budget omit; channel-render receipts also
-record `run-deduped` when a later claim in the same run was silenced). Telegram
-may still attach a per-claim overview; Discord is intentionally single-shot per
-run.
+When `channels` is present and a destination payload is absent, that destination is
+skipped (`skipped-discord-budget` / `skipped-no-channel-payload`). Discord is
+intentionally single-shot per run; intraday Telegram is one message per subject.
 
 ## Delivery workers
 

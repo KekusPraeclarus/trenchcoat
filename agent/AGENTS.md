@@ -71,7 +71,11 @@ When a job may broadcast, write **only** this envelope (host rejects anything el
 ```
 
 Never use a top-level `broadcasts` key or a bare `text` field. `text` must be ≤280
-chars. `refs` must be `state/…` or same-run `inbox/<run-id>/…` paths that already
+chars. **One `BroadcastItem` per normalized `auditClaim.subject` per run** — if
+multiple pieces of evidence support one current development, merge the concrete
+facts into that item's `text`. Do not emit reworded variants for the same subject;
+the host groups same-subject items and sends only one Telegram topic deep-dive.
+`refs` must be `state/…` or same-run `inbox/<run-id>/…` paths that already
 exist as frozen regular files (host rejects traversal, cross-run, missing, and
 mutable refs; same-run inbox refs are canonicalized to sealed archive paths before
 ingress). Known `verificationRule` values include `narrative.emergence`,

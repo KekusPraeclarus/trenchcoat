@@ -390,4 +390,25 @@ describe("outbox ingest", () => {
     expect(report.rejects[0]?.reason).toMatch(/ref-missing/)
     expect(runSession).not.toHaveBeenCalled()
   })
+
+  it("rejects items beyond the eight-item envelope cap", async () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({
+      ...VALID_ITEM,
+      text: `broadcast item ${index}`,
+      auditClaim: {
+        ...VALID_ITEM.auditClaim,
+        subject: `subject-${index}`,
+      },
+    }))
+    const s = await scaffold({ schema: 1, items })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+    })
+    expect(report.staged).toBe(8)
+    expect(report.rejected).toBe(2)
+    expect(report.rejects.filter((entry) => entry.reason === "outbox-items-cap")).toHaveLength(2)
+  })
 })

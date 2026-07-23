@@ -12,7 +12,7 @@ Scan Farcaster for-you + operator channels and train the feed with likes.
 
 1. `reports/<run-id>/agent.md` — brief narrative/sentiment notes and candidates
 2. `reports/<run-id>/fc-engagement.json` — your like choices only
-3. Operator broadcasts in `outbox/<run-id>.json` — `refs` must be
+3. Operator broadcasts in `outbox/<run-id>.json` — one item per normalized `auditClaim.subject` per run; `refs` must be
    `state/…` or same-run `inbox/<run-id>/…` frozen evidence (e.g. for-you /
    channel snapshots). Prefer citing the fresh inbox files that support the claim;
    the host canonicalizes same-run inbox refs to sealed archive paths. Read

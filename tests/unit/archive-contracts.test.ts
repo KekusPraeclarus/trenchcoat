@@ -27,6 +27,7 @@ describe("wave0 archive contracts", () => {
       expect(broadcastBudgetPath(layout, "2026-07-17")).toBe(
         join(root, "broadcast-budget", "2026-07-17.json"),
       )
+      expect(layout.telegramDigests).toBe(join(root, "telegram-digests"))
       expect(quarantineDir(layout, GOLDEN_RUN_ID)).toBe(
         join(root, "quarantine", GOLDEN_RUN_ID),
       )

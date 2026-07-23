@@ -205,6 +205,7 @@ export type BroadcastItem = z.infer<typeof BroadcastItemSchema>
 export const RouterEventTypeSchema = z.enum([
   "finding.broadcast",
   "finding.correction",
+  "narrative.digest",
   "wallet.lifecycle",
   "wallet.convergence",
 ])
@@ -252,6 +253,14 @@ export const RouterEventSchema = z.object({
     windowMinutes: z.number().int().positive().max(1_440),
     firstBuyAt: IsoTimestampSchema,
     label: z.literal("UNVERIFIED WALLET CONVERGENCE"),
+  }).optional(),
+  dailyDigest: z.object({
+    londonDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    windowStart: IsoTimestampSchema,
+    windowEnd: IsoTimestampSchema,
+    activeNarrativeSlugs: z.array(z.string().min(1).max(64)).max(500),
+    sourceEventIds: z.array(z.string().min(1).max(128)).max(500),
+    inputHash: Sha256Schema,
   }).optional(),
 })
 export type RouterEvent = z.infer<typeof RouterEventSchema>

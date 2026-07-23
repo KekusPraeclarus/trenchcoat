@@ -712,7 +712,7 @@ export const DISCORD_SUGGESTIONS_V17_DEFAULTS = Object.freeze({
 /** Schema 17: passive Discord suggestion intake under incident_remediation */
 export function migrateConfigToV17(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 17) return raw
+  if (record?.["schema"] === 17 || record?.["schema"] === 18) return raw
 
   const v16 = (
     record?.["schema"] === 16
@@ -735,6 +735,38 @@ export function migrateConfigToV17(raw: unknown): unknown {
           ? prevSuggestions["channel_ids"]
           : DISCORD_SUGGESTIONS_V17_DEFAULTS.channel_ids,
         enabled: prevSuggestions["enabled"] === true,
+      },
+    },
+  }
+}
+
+export const TELEGRAM_DIGEST_V18_DEFAULTS = Object.freeze({
+  enabled: false,
+})
+
+/** Schema 18: daily Telegram narrative digest under broadcast */
+export function migrateConfigToV18(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 18) return raw
+
+  const v17 = (
+    record?.["schema"] === 17
+      ? record
+      : migrateConfigToV17(raw)
+  ) as Record<string, unknown>
+
+  const prevBroadcast = (v17["broadcast"] ?? {}) as Record<string, unknown>
+  const prevDigest = (prevBroadcast["telegram_digest"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v17,
+    schema: 18,
+    broadcast: {
+      ...prevBroadcast,
+      telegram_digest: {
+        ...TELEGRAM_DIGEST_V18_DEFAULTS,
+        ...prevDigest,
+        enabled: prevDigest["enabled"] === true,
       },
     },
   }

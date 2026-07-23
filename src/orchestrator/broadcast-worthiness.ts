@@ -29,6 +29,7 @@ export type WorthinessContext = Readonly<{
     subject: string
     summary: string
     destinations: readonly ("telegram" | "discord")[]
+    status?: "accepted" | "staged"
   }>>
   /** Optional agent.md excerpt — treated as untrusted color, not authority */
   agentNotes?: string
@@ -52,8 +53,12 @@ function stageList(stages: readonly StageKnown[] | undefined): string {
   return mapped.length > 0 ? mapped : "(none)"
 }
 
-function broadcastList(broadcasts: WorthinessContext["recentBroadcasts"]): string {
+function broadcastList(
+  broadcasts: WorthinessContext["recentBroadcasts"],
+  status: "accepted" | "staged",
+): string {
   const mapped = (broadcasts ?? [])
+    .filter((entry) => (entry.status ?? "accepted") === status)
     .slice(0, 20)
     .map((entry) => {
       const summary = entry.summary.trim().replace(/\s+/gu, " ").slice(0, 180)
@@ -88,7 +93,8 @@ export function worthinessUserMessage(args: Readonly<{
     `collectionStatus: ${args.context.collectionStatus ?? "unknown"}`,
     `marketBlind: ${args.context.marketBlind === true ? "true" : "false"}`,
     `statusQuoStages: ${stageList(args.context.statusQuoStages)}`,
-    `<accepted-broadcast-history>\n${broadcastList(args.context.recentBroadcasts)}\n</accepted-broadcast-history>`,
+    `<accepted-broadcast-history>\n${broadcastList(args.context.recentBroadcasts, "accepted")}\n</accepted-broadcast-history>`,
+    `<staged-broadcast-history>\n${broadcastList(args.context.recentBroadcasts, "staged")}\n</staged-broadcast-history>`,
     `severity: ${args.item.severity}`,
     `auditClaim: ${claimLine(args.item)}`,
     `refs: ${args.item.refs.join(", ") || "(none)"}`,

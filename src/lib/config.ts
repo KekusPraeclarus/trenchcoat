@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV17 } from "../migrations/config.js"
+import { migrateConfigToV18 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(17),
+  schema: z.literal(18),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -162,11 +162,15 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(50).default(10),
     }).default({ enabled: false, daily_cap: 10 }),
-    // Telegram landscape overview LLM (shares distill session counter with Discord)
+    // Telegram topic deep-dive LLM (shares distill session counter with Discord)
     telegram_overview: z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(50).default(10),
     }).default({ enabled: false, daily_cap: 10 }),
+    // Host-only daily Telegram narrative map (20:00 Europe/London)
+    telegram_digest: z.object({
+      enabled: z.boolean().default(false),
+    }).default({ enabled: false }),
     // Host LLM gate: approve/reject agent market broadcasts before stage (INV-B2)
     worthiness: z.object({
       enabled: z.boolean().default(true),
@@ -701,7 +705,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV17(raw))
+  return ConfigSchema.parse(migrateConfigToV18(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

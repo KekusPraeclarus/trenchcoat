@@ -538,6 +538,7 @@ job_to_unit() {
     fomo-narrative-source-scan) echo trenchcoat-job-fomo-narrative-source-scan ;;
     narrative-source-review) echo trenchcoat-job-narrative-source-review ;;
     delivery-retry) echo trenchcoat-job-delivery-retry ;;
+    telegram-digest) echo trenchcoat-job-telegram-digest ;;
     discord-watchlist-scan) echo trenchcoat-job-discord-watchlist-scan ;;
     discord-chain-integration) echo trenchcoat-job-discord-chain-integration ;;
     telegram-alpha) echo trenchcoat-channels ;;
@@ -570,6 +571,7 @@ trenchcoat-job-fomo-x-source-review
 trenchcoat-job-fomo-narrative-source-scan
 trenchcoat-job-narrative-source-review
 trenchcoat-job-delivery-retry
+trenchcoat-job-telegram-digest
 trenchcoat-job-discord-watchlist-scan
 trenchcoat-job-incident-remediate
 trenchcoat-job-incident-remediate-weekly
@@ -732,6 +734,8 @@ write_interval_job fomo-x-source-review 21600 1
 write_interval_job fomo-narrative-source-scan 21600 1
 write_interval_job narrative-source-review 86400 1
 write_interval_job delivery-retry 900 1
+write_oneshot_service trenchcoat-job-telegram-digest telegram-digest "$BIN_DIR/run-precheck telegram-digest"
+write_calendar_timer trenchcoat-job-telegram-digest "*-*-* 20:00:00 Europe/London"
 write_discord_watchlist
 write_discord_chain
 write_interval_job incident-remediate 3600

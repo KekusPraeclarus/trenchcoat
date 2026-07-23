@@ -82,7 +82,7 @@ Plain markdown. No tables. No mermaid.
 ## Market broadcast
 
 For every completed, resolved dossier with a clear trade or watch
-takeaway, write exactly one `outbox/<run-id>.json` item as
+takeaway, write exactly one `outbox/<run-id>.json` item (one subject only) as
 `{schema:1,items:[{severity,text,refs,auditClaim}]}` regardless of verdict.
 Use `token-up` for a track/upside thesis. Use `token-down` for drop/ignore,
 failed thesis, cooked tape/socials, identity risk, or a material security

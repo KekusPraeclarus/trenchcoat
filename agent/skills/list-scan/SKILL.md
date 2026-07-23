@@ -20,7 +20,7 @@ Scan FYP + operator discovery lists and curate the feed with likes/follows.
 
 1. `reports/<run-id>/agent.md` — brief narrative/sentiment notes and candidates
 2. `reports/<run-id>/x-engagement.json` — your like/follow/unfollow choices
-3. Operator broadcasts in `outbox/<run-id>.json` — cite fresh evidence with
+3. Operator broadcasts in `outbox/<run-id>.json` — one item per normalized `auditClaim.subject` per run (merge facts into a single `text`); cite fresh evidence with
    `refs` under `state/…` **or** same-run `inbox/<run-id>/…` (e.g.
    `inbox/<run-id>/twitter-home-fyp.json`). Do not drop inbox evidence refs to “fix”
    validation; the host freezes them into sealed archive refs. Rejected shapes:

@@ -58,7 +58,7 @@ already in TL;DR. Extra short sections OK if genuinely useful. No run-id meta,
 ### Market broadcast
 
 Every completed, resolved dossier with a clear trade, watch, or avoid takeaway
-must write exactly one `outbox/<run-id>.json`, including negative conclusions:
+must write exactly one `outbox/<run-id>.json` (one item per subject), including negative conclusions:
 
 ```json
 {

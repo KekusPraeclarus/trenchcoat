@@ -10,6 +10,7 @@ export type JobName =
   | "audit"
   | "outcomes-settle"
   | "delivery-retry"
+  | "telegram-digest"
   | "source-list-review"
   | "fc-source-review"
   | "wallet-discovery"
@@ -48,6 +49,7 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "audit", skill: "review", description: "Sealed audit epoch", preconditionTier: "none" },
   { name: "outcomes-settle", skill: "review", description: "Settle mature source-call and wallet-buy outcomes", preconditionTier: "none" },
   { name: "delivery-retry", skill: "review", description: "Retry staged router ingress without terminal receipt", preconditionTier: "host" },
+  { name: "telegram-digest", skill: "review", description: "Daily Telegram narrative landscape digest", preconditionTier: "host" },
   { name: "source-list-review", skill: "review", description: "Deterministic X source-list lifecycle", preconditionTier: "none" },
   { name: "fc-source-review", skill: "review", description: "Deterministic Farcaster follow-graph lifecycle", preconditionTier: "none" },
   { name: "wallet-discovery", skill: "wallet-evidence", description: "Early buyer discovery evidence", preconditionTier: "host" },

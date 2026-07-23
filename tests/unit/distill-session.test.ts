@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest"
 import {
   DISCORD_TEXT_MAX,
   distillUserMessage,
+  renderDailyDigestCompactFallback,
   runDiscordDistiller,
-  runTelegramOverviewDistiller,
-  telegramOverviewUserMessage,
-  TELEGRAM_TEXT_MAX,
+  runTelegramTopicDistiller,
+  telegramTopicUserMessage,
+  TELEGRAM_TOPIC_TEXT_MAX,
   validateDiscordDistillOutput,
-  validateTelegramOverviewOutput,
+  validateTelegramDailyDigestOutput,
+  validateTelegramTopicOutput,
 } from "../../src/orchestrator/distill-session.js"
 
 const CLAIM = {
@@ -192,47 +194,96 @@ describe("runDiscordDistiller", () => {
   })
 })
 
-describe("validateTelegramOverviewOutput", () => {
-  it("accepts a landscape overview that restates peaking heat", () => {
+describe("validateTelegramTopicOutput", () => {
+  it("accepts a topic deep-dive", () => {
     const text = [
-      "**RH rotation**",
+      "**RH Chain Meme Rotation**",
       "",
-      "Still peaking. Fresh wallet/tibbir insider lore on the side.",
-      "",
-      "**Other lanes**",
-      "",
-      "- base trust collapse still sustained",
+      "Founder wallet catalyst is the live tell. Watch leaders for invalidation.",
     ].join("\n")
-    expect(validateTelegramOverviewOutput(text)).toEqual({ ok: true, text })
+    expect(validateTelegramTopicOutput(text)).toEqual({ ok: true, text })
   })
 
   it("rejects provenance handles and workspace paths", () => {
-    expect(validateTelegramOverviewOutput("Flip (twitter:@brian_armstrong)").ok).toBe(false)
-    expect(validateTelegramOverviewOutput("see reports/list-scan-1/agent.md").ok).toBe(false)
-    expect(validateTelegramOverviewOutput("inbox/foo/twitter-fyp.json").ok).toBe(false)
+    expect(validateTelegramTopicOutput("Flip (twitter:@brian_armstrong)").ok).toBe(false)
+    expect(validateTelegramTopicOutput("see reports/list-scan-1/agent.md").ok).toBe(false)
+    expect(validateTelegramTopicOutput("inbox/foo/twitter-fyp.json").ok).toBe(false)
   })
 
   it("rejects bare @handles", () => {
-    expect(validateTelegramOverviewOutput("palgrani & @stockcoin_flap pushing").ok).toBe(false)
+    expect(validateTelegramTopicOutput("palgrani & @stockcoin_flap pushing").ok).toBe(false)
   })
 
   it("rejects overlong and control chars", () => {
-    expect(validateTelegramOverviewOutput("x".repeat(TELEGRAM_TEXT_MAX + 1)).ok).toBe(false)
-    expect(validateTelegramOverviewOutput("bad\u0000text").ok).toBe(false)
+    expect(validateTelegramTopicOutput("x".repeat(TELEGRAM_TOPIC_TEXT_MAX + 1)).ok).toBe(false)
+    expect(validateTelegramTopicOutput("bad\u0000text").ok).toBe(false)
+  })
+
+  it("rejects mentions of other active narratives", () => {
+    expect(validateTelegramTopicOutput(
+      "RH still live while Base Trust Collapse fades",
+      [{ slug: "base-trust-collapse", stage: "fading", tickers: [], lastSeen: "2026-07-18T19:00:00.000Z" }],
+    )).toEqual({ ok: false, reason: "cross-topic-mention" })
   })
 
   it("scrubs leaked hour tokens but keeps natural watch prose", () => {
-    const scrubbed = validateTelegramOverviewOutput("Watch over the next 72h")
+    const scrubbed = validateTelegramTopicOutput("Watch over the next 72h")
     expect(scrubbed).toEqual({ ok: true, text: "Watch the next few days" })
-    const natural = validateTelegramOverviewOutput("Watch this month")
+    const natural = validateTelegramTopicOutput("Watch this month")
     expect(natural).toEqual({ ok: true, text: "Watch this month" })
   })
 })
 
-describe("runTelegramOverviewDistiller", () => {
+describe("validateTelegramDailyDigestOutput", () => {
+  it("requires exactly the active slugs with plain bodies", () => {
+    const ok = validateTelegramDailyDigestOutput(
+      JSON.stringify({
+        sections: [
+          { slug: "rh-chain-meme-rotation", body: "Still peaking on wallet lore." },
+          { slug: "base-trust-collapse", body: "Fade continues." },
+        ],
+      }),
+      ["rh-chain-meme-rotation", "base-trust-collapse"],
+    )
+    expect(ok.ok).toBe(true)
+  })
+
+  it("rejects missing, unknown, duplicate, markdown, and overlong final maps", () => {
+    expect(validateTelegramDailyDigestOutput(
+      JSON.stringify({ sections: [{ slug: "rh-chain-meme-rotation", body: "ok" }] }),
+      ["rh-chain-meme-rotation", "base-trust-collapse"],
+    )).toMatchObject({ ok: false, reason: "section-count" })
+    expect(validateTelegramDailyDigestOutput(
+      JSON.stringify({ sections: [
+        { slug: "rh-chain-meme-rotation", body: "ok" },
+        { slug: "unknown", body: "ok" },
+      ] }),
+      ["rh-chain-meme-rotation", "base-trust-collapse"],
+    )).toMatchObject({ ok: false, reason: "unknown-slug" })
+    expect(validateTelegramDailyDigestOutput(
+      JSON.stringify({ sections: [
+        { slug: "rh-chain-meme-rotation", body: "ok" },
+        { slug: "rh-chain-meme-rotation", body: "again" },
+      ] }),
+      ["rh-chain-meme-rotation", "base-trust-collapse"],
+    )).toMatchObject({ ok: false, reason: "duplicate-slug" })
+    expect(validateTelegramDailyDigestOutput(
+      JSON.stringify({ sections: [{ slug: "rh-chain-meme-rotation", body: "**bold**" }] }),
+      ["rh-chain-meme-rotation"],
+    )).toMatchObject({ ok: false, reason: "markdown-in-body" })
+  })
+})
+
+describe("runTelegramTopicDistiller", () => {
   it("fails closed when disabled or missing runner", async () => {
-    const disabled = await runTelegramOverviewDistiller({
-      reportText: "# Chat recall\n",
+    const packet = {
+      subject: "rh-chain-meme-rotation",
+      subjectLabel: "RH Chain Meme Rotation",
+      members: [{ eventId: "e1", severity: "notable", text: "fallback line" }],
+      otherNarratives: [] as const,
+    }
+    const disabled = await runTelegramTopicDistiller({
+      packet,
       fallbackText: "fallback line",
       dailyCap: 10,
       usedToday: 0,
@@ -240,8 +291,8 @@ describe("runTelegramOverviewDistiller", () => {
     })
     expect(disabled).toMatchObject({ text: "fallback line", usedFallback: true, reason: "disabled" })
 
-    const noRunner = await runTelegramOverviewDistiller({
-      reportText: "# Chat recall\n",
+    const noRunner = await runTelegramTopicDistiller({
+      packet,
       fallbackText: "fallback line",
       dailyCap: 10,
       usedToday: 0,
@@ -250,24 +301,41 @@ describe("runTelegramOverviewDistiller", () => {
     expect(noRunner).toMatchObject({ text: "fallback line", usedFallback: true, reason: "no-runner" })
   })
 
-  it("accepts overview output and increments used", async () => {
+  it("accepts topic output and increments used", async () => {
     const overview =
-      "RH rotation still peaking.\n\nWallet/tibbir lore is narrative ammo until verified."
-    const result = await runTelegramOverviewDistiller({
-      reportText: "# Chat recall\n## Host summary\n",
+      "RH rotation still peaking.\n\nWallet lore is narrative ammo until verified."
+    const result = await runTelegramTopicDistiller({
+      packet: {
+        subject: "rh-chain-meme-rotation",
+        subjectLabel: "RH Chain Meme Rotation",
+        narrative: {
+          slug: "rh-chain-meme-rotation",
+          stage: "peaking",
+          tickers: ["RH"],
+          lastSeen: "2026-07-18T19:00:00.000Z",
+        },
+        members: [{
+          eventId: "e1",
+          severity: "notable",
+          text: "body",
+          auditClaim: CLAIM,
+        }],
+        otherNarratives: [{
+          slug: "base-trust-collapse",
+          stage: "fading",
+          tickers: [],
+          lastSeen: "2026-07-18T18:00:00.000Z",
+        }],
+      },
       fallbackText: "fallback line",
-      auditClaim: CLAIM,
-      knownStages: [{
-        slug: "rh-chain-meme-rotation",
-        title: "RH",
-        stage: "peaking",
-      }],
       dailyCap: 10,
       usedToday: 1,
       enabled: true,
       runSession: async ({ message }) => {
-        expect(message).toContain("knownStages: RH Chain Meme Rotation=peaking")
-        expect(message).toContain("<untrusted-report>")
+        expect(message).toContain("subjectLabel=RH Chain Meme Rotation")
+        expect(message).toContain("otherNarratives (forbidden)")
+        expect(message).toContain("base-trust-collapse")
+        expect(message).toContain("<untrusted-topic-packet>")
         return overview
       },
     })
@@ -280,8 +348,13 @@ describe("runTelegramOverviewDistiller", () => {
   })
 
   it("fails closed when session leaks a workspace path", async () => {
-    const result = await runTelegramOverviewDistiller({
-      reportText: "# report",
+    const result = await runTelegramTopicDistiller({
+      packet: {
+        subject: "rh-chain-meme-rotation",
+        subjectLabel: "RH Chain Meme Rotation",
+        members: [{ eventId: "e1", severity: "notable", text: "fallback line" }],
+        otherNarratives: [],
+      },
       fallbackText: "fallback line",
       dailyCap: 10,
       usedToday: 0,
@@ -296,18 +369,59 @@ describe("runTelegramOverviewDistiller", () => {
     })
   })
 
-  it("frames overview input with knownStages", () => {
-    const msg = telegramOverviewUserMessage({
-      reportText: "body",
-      auditClaim: CLAIM,
-      knownStages: [{
-        slug: "rh-chain-meme-rotation",
-        title: "RH",
-        stage: "peaking",
+  it("frames topic input without a global chat report", () => {
+    const msg = telegramTopicUserMessage({
+      subject: "rh-chain-meme-rotation",
+      subjectLabel: "RH Chain Meme Rotation",
+      members: [{
+        eventId: "legacy",
+        severity: "notable",
+        text: "body",
+        auditClaim: CLAIM,
       }],
+      otherNarratives: [],
     })
-    expect(msg).toContain("Telegram landscape overview")
+    expect(msg).toContain("Telegram deep-dive")
     expect(msg).toContain("watchWindow=this week")
-    expect(msg).toContain("knownStages: RH Chain Meme Rotation=peaking")
+    expect(msg).toContain("<untrusted-topic-packet>")
+    expect(msg).not.toContain("Chat recall")
+  })
+})
+
+describe("daily digest rendering", () => {
+  it("keeps compact fallback within the Telegram cap", () => {
+    const narratives = Array.from({ length: 12 }, (_, index) => ({
+      slug: `lane-${index}`,
+      stage: (index % 3 === 0 ? "peaking" : index % 3 === 1 ? "emerging" : "fading") as
+        "peaking" | "emerging" | "fading",
+      tickers: [],
+      lastSeen: `2026-07-18T${String(10 + index).padStart(2, "0")}:00:00.000Z`,
+    }))
+    const rendered = renderDailyDigestCompactFallback({
+      londonDate: "2026-07-18",
+      narratives,
+      developmentsBySlug: Object.fromEntries(
+        narratives.map((entry) => [entry.slug, "Host-approved topic summary for the window."]),
+      ),
+    })
+    expect(rendered).not.toBeNull()
+    expect([...(rendered ?? "")].length).toBeLessThanOrEqual(TELEGRAM_TOPIC_TEXT_MAX)
+    for (const entry of narratives) {
+      expect(rendered).toContain(entry.slug.replace("lane-", "Lane "))
+    }
+  })
+
+  it("returns null when mandatory headers alone exceed the cap", () => {
+    const narratives = Array.from({ length: 80 }, (_, index) => ({
+      slug: `very-long-narrative-label-number-${index}`,
+      stage: "peaking" as const,
+      tickers: [],
+      lastSeen: "2026-07-18T19:00:00.000Z",
+    }))
+    expect(renderDailyDigestCompactFallback({
+      londonDate: "2026-07-18",
+      narratives,
+      developmentsBySlug: {},
+    })).toBeNull()
   })
 })

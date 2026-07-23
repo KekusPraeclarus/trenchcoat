@@ -416,35 +416,45 @@ staged router events.
   host-owned rules compatible with the claim type/direction (`isKnownVerificationRule`).
   Unauditable claims do not leave the machine
 - Worthiness gate (`broadcast.worthiness`, default enabled + `composer-2.5-fast`;
-  [ADR 014](../adr/014-broadcast-worthiness.md)):
+  [ADR 014](../adr/014-broadcast-worthiness.md), [ADR 026](../adr/026-telegram-digest-and-topic-fanout.md)):
   after mechanical validation, a host ask-mode session decides `{worth, reason}`
   per item. `worth:false`, session errors, and malformed JSON reject with
-  `worthiness:…` receipts in `broadcast-rejects.json` — never stage. Agent still
-  authors `text`; the host never invents market broadcast copy
+  `worthiness:…` receipts in `broadcast-rejects.json` — never stage. History is
+  subject-scoped for 48h and includes accepted ingress plus still-staged pending
+  events (reworded same-catalyst rejected; genuinely new same-subject developments
+  allowed). Agent still authors `text`; the host never invents market broadcast
+  copy. Envelopes are capped at eight items per run (`outbox-items-cap`)
 - Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5)
   when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
   that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
-  Discord failsafe (INV-B4). Telegram is never count-limited after schema validation.
-  Separate: `broadcast.discord_distiller.daily_cap` and
-  `broadcast.telegram_overview.daily_cap` cap LLM sessions (shared used counter under
+  Discord failsafe (INV-B4). Intraday Telegram is one topic deep-dive per
+  normalized subject per run (not message-count limited). Separate:
+  `broadcast.discord_distiller.daily_cap` and `broadcast.telegram_overview.daily_cap`
+  cap LLM sessions (shared used counter under
   `archive/broadcast-budget/discord-distill-<day>.json`), not Discord message count
 - Over Discord budget: omit `channels.discord` (router skips Discord; Telegram still
-  sends). Receipted as `budget-skipped`, never silently dropped
+  sends on leaders). Receipted as `budget-skipped`, never silently dropped
 - Host stages validated items, then `renderChannelPayloads` attaches per-destination
-  text (`channels.telegram` always; `channels.discord` when Discord budget allows
-  and this is the first Discord payload of the run) before HMAC-POST to the
-  long-lived router (`com.trenchcoat.router` / `tc router serve`;
-  `TRENCHCOAT_ROUTER_*` — see [router.md](router.md)). Telegram gets a fail-closed
-  landscape overview (`distill-session.ts` / `telegram_overview`) when enabled —
-  longer chat-style report that may restate current narrative heat (no trader roll
-  calls); else short `event.text`. Discord gets a fail-closed bottom-line distill
+  text before HMAC-POST to the long-lived router (`com.trenchcoat.router` /
+  `tc router serve`; `TRENCHCOAT_ROUTER_*` — see [router.md](router.md)). Telegram
+  groups same-subject events and runs a fail-closed topic distiller on a bounded
+  packet (leader claim + group member texts + matching narrative snapshot; never
+  the global chat report) when `broadcast.telegram_overview.enabled` — receipts
+  `topic-deep-dive` / `topic-fallback`; same-subject followers omit
+  `channels.telegram` (`topic-merged`). Discord gets a fail-closed bottom-line distill
   (≤320 chars, at most once per run; later claims omit Discord as `run-deduped`)
   when `broadcast.discord_distiller.enabled` (else short broadcast text on the
-  first eligible event only). Discord text is distilled independently of Telegram
-  — do not copy overview/closer text across channels. Bare intake hosts default
-  to `/v1/events`; loopback HTTP is allowed. Severity `lifecycle` (wallet
-  add/drop) skips Discord market budget and is never distilled
-- Send failures never fail the run; durable fanout retries with dead-letter visibility
+  first eligible event only). Discord text is distilled independently of Telegram.
+  Bare intake hosts default to `/v1/events`; loopback HTTP is allowed. Severity
+  `lifecycle` (wallet add/drop) skips Discord market budget and is never distilled
+- Host-only `telegram-digest` (20:00 Europe/London, VPS systemd) emits one
+  Telegram-only `narrative.digest` covering every retention-active narrative
+  (≤3,400 Markdown chars). Immutable ledger under
+  `archive/telegram-digests/<London-date>.json`. No active narratives → durable
+  no-send record. Headers alone over capacity → `capacity-exceeded` incident and
+  failed job (never silent omit). Retries reuse the exact stored event
+- Send failures never fail the run (except digest capacity-exceeded); durable
+  fanout retries with dead-letter visibility
 
 ### Broadcast audit (proposals vs fanout)
 
@@ -469,9 +479,11 @@ by skills even without CT cluster or stage shift; that rule is skill-enforced �
 the host never invents market text when outbox is omitted (INV-B2). Also check
 failed/`collected`/`--skip-agent` runs: no agent session means no proposal.
 
-Worthiness repeat checks use **accepted** router deliveries only ([ADR 014](../adr/014-broadcast-worthiness.md),
-[ADR 023](../adr/023-narrative-development-and-research-broadcast.md)); narrative
-log stage and agent notes do not prove prior fanout. From the desktop, prefer
+Worthiness repeat checks use accepted ingress **and still-staged** same-subject
+candidates ([ADR 014](../adr/014-broadcast-worthiness.md),
+[ADR 023](../adr/023-narrative-development-and-research-broadcast.md),
+[ADR 026](../adr/026-telegram-digest-and-topic-fanout.md)); narrative log stage and
+agent notes do not prove prior fanout. From the desktop, prefer
 `./ops/remote.sh` ad-hoc grep or `sync` then inspect `.trenchcoat-remote/archive/`
 — do not ask the operator to paste logs when SSH is available.
 

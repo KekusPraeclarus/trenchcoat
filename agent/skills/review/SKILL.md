@@ -66,7 +66,7 @@ was retained.
    compressed notes). Update existing files in place; create new files only for
    tokens with explicit evidence. Prune stale detail from the live file; history
    stays in git/archive, not bloated prose.
-5. Optional operator broadcasts in `outbox/<run-id>.json` — when used, `refs` must
+5. Optional operator broadcasts in `outbox/<run-id>.json` — one item per normalized `auditClaim.subject` per run; when used, `refs` must
    be `state/…` or same-run `inbox/<run-id>/…` frozen regular files (host rejects
    traversal, cross-run, missing, mutable paths).
 6. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A context

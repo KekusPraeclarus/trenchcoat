@@ -120,7 +120,7 @@ describe("renderChannelPayloads", () => {
     expect(event?.channels?.discord?.text).toContain("[X-only]")
   })
 
-  it("attaches telegram overview and distilled discord text", async () => {
+  it("attaches telegram topic deep-dive and distilled discord text", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-render-rep-"))
     const agentRoot = join(root, "agent")
     mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
@@ -146,13 +146,9 @@ describe("renderChannelPayloads", () => {
     writeFileSync(chatReportPath(agentRoot, RUN_ID), reportMd)
 
     const overviewText = [
-      "**Brian PFP flip**",
+      "**RH Chain Meme Rotation**",
       "",
-      "Dominant lane right now.",
-      "",
-      "**RH rotation**",
-      "",
-      "Still peaking.",
+      "Fresh capital rotating into RH infra. Watch invalidation if leaders cool.",
     ].join("\n")
     const discordText = "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip"
 
@@ -186,11 +182,21 @@ describe("renderChannelPayloads", () => {
         enabled: true,
         dailyCap: 10,
         usedToday: 0,
-        runSession: async () => {
+        runSession: async ({ message }) => {
           tgLaunches += 1
+          expect(message).toContain("<untrusted-topic-packet>")
+          expect(message).not.toContain("Chat recall")
           return overviewText
         },
       },
+      activeNarratives: [{
+        slug: "rh-chain-meme-rotation",
+        title: "RH",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@a:1"],
+        stage: "peaking",
+      }],
       unchangedStages: [{
         slug: "rh-chain-meme-rotation",
         title: "RH",
@@ -207,12 +213,12 @@ describe("renderChannelPayloads", () => {
     expect(event?.channels?.telegram?.text).not.toContain("Chat recall")
     expect(event?.channels?.telegram?.text).not.toContain("Receipt paths")
     expect(event?.channels?.discord?.text).toBe(discordText)
-    expect(report.receipts[0]?.telegram).toBe("overview")
+    expect(report.receipts[0]?.telegram).toBe("topic-deep-dive")
     expect(report.receipts[0]?.discord).toBe("distilled")
     expect(existsSync(join(runArchiveDir(layout, RUN_ID), "channel-render-receipts.json"))).toBe(true)
   })
 
-  it("fails closed telegram overview to broadcast text", async () => {
+  it("fails closed telegram topic render to packet fallback", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-render-tg-fail-"))
     const agentRoot = join(root, "agent")
     mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
@@ -249,9 +255,108 @@ describe("renderChannelPayloads", () => {
     })
     expect(report.usedTelegramOverview).toBe(0)
     const event = outbox.list()[0]
-    expect(event?.channels?.telegram?.text).toBe(ITEM.text)
-    expect(report.receipts[0]?.telegram).toBe("broadcast-text")
+    expect(event?.channels?.telegram?.text).toContain("**RH Chain Meme Rotation**")
+    expect(event?.channels?.telegram?.text).toContain(ITEM.text)
+    expect(report.receipts[0]?.telegram).toBe("topic-fallback")
     expect(report.receipts[0]?.telegramReason).toBe("workspace-path")
+  })
+
+  it("emits one Telegram topic message per subject and merges followers", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-topic-group-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    const watch = {
+      ...ITEM,
+      severity: "watch" as const,
+      text: "RH watch: leaders still firm on chain narrative",
+    }
+    const urgent = {
+      ...ITEM,
+      severity: "urgent" as const,
+      text: "RH urgent: founder wallet catalyst just printed",
+    }
+    const other = {
+      ...ITEM,
+      text: "Base trust collapse accelerated after exchange delist chatter",
+      auditClaim: {
+        type: "narrative-fade" as const,
+        subject: "base-trust-collapse",
+        direction: "down" as const,
+        horizonHours: 72,
+        verificationRule: "narrative.fade",
+      },
+    }
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, watch))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, urgent))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, other))
+
+    let tgLaunches = 0
+    const report = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      discordBudget: DISCORD_BUDGET,
+      distiller: DC_OFF,
+      telegramOverview: {
+        enabled: true,
+        dailyCap: 10,
+        usedToday: 0,
+        runSession: async ({ message }) => {
+          tgLaunches += 1
+          expect(message).toContain("<untrusted-topic-packet>")
+          expect(message).not.toContain("Chat recall")
+          if (message.includes("subject=rh-chain-meme-rotation")) {
+            expect(message).toContain("founder wallet catalyst")
+            expect(message).toContain("leaders still firm")
+            expect(message).toContain("otherNarratives (forbidden)")
+            expect(message).toContain("base-trust-collapse")
+            return "**RH Chain Meme Rotation**\n\nFounder wallet catalyst is the live tell."
+          }
+          expect(message).toContain("subject=base-trust-collapse")
+          expect(message).toContain("otherNarratives (forbidden)")
+          expect(message).toContain("rh-chain-meme-rotation")
+          return "**Base Trust Collapse**\n\nDelist chatter is accelerating fade."
+        },
+      },
+      activeNarratives: [
+        {
+          slug: "rh-chain-meme-rotation",
+          title: "RH",
+          firstSeen: NOW,
+          lastSeen: NOW,
+          evidence: ["twitter:@a:1"],
+          stage: "peaking",
+        },
+        {
+          slug: "base-trust-collapse",
+          title: "Base",
+          firstSeen: NOW,
+          lastSeen: NOW,
+          evidence: ["twitter:@b:1"],
+          stage: "fading",
+        },
+      ],
+    })
+
+    expect(tgLaunches).toBe(2)
+    expect(report.usedTelegramOverview).toBe(2)
+    const events = outbox.list()
+    const bySubject = new Map(
+      events.map((event) => [event.auditClaim?.subject, event]),
+    )
+    const rhEvents = events.filter((event) => event.auditClaim?.subject === "rh-chain-meme-rotation")
+    expect(rhEvents).toHaveLength(2)
+    const rhLeader = rhEvents.find((event) => event.channels?.telegram?.text)
+    const rhFollower = rhEvents.find((event) => !event.channels?.telegram)
+    expect(rhLeader?.severity).toBe("urgent")
+    expect(rhLeader?.channels?.telegram?.text).toContain("Founder wallet catalyst")
+    expect(rhFollower?.channels?.telegram).toBeUndefined()
+    expect(bySubject.get("base-trust-collapse")?.channels?.telegram?.text).toContain("Delist chatter")
+    expect(report.receipts.filter((receipt) => receipt.telegram === "topic-merged")).toHaveLength(1)
+    expect(report.receipts.filter((receipt) => receipt.telegram === "topic-deep-dive")).toHaveLength(2)
   })
 
   it("skips already-enriched events on resume", async () => {

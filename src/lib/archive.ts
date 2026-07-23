@@ -26,6 +26,7 @@ export type ArchiveLayout = Readonly<{
   wallets: string
   routerOutbox: string
   broadcastBudget: string
+  telegramDigests: string
   quarantine: string
   exonerations: string
   harness: string
@@ -44,10 +45,15 @@ export function archiveLayout(root: string): ArchiveLayout {
     wallets: join(root, "wallets"),
     routerOutbox: join(root, "router-outbox"),
     broadcastBudget: join(root, "broadcast-budget"),
+    telegramDigests: join(root, "telegram-digests"),
     quarantine: join(root, "quarantine"),
     exonerations: join(root, "exonerations"),
     harness: join(root, "harness"),
   }
+}
+
+export function telegramDigestPath(layout: ArchiveLayout, londonDate: string): string {
+  return join(layout.telegramDigests, `${londonDate}.json`)
 }
 
 export function runArchiveDir(layout: ArchiveLayout, runId: string): string {
