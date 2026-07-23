@@ -37,6 +37,7 @@ import {
 } from "../../src/remediation/store.js"
 import { remediationLayout } from "../../src/remediation/paths.js"
 import type { PatchProposal, RemediationIncident } from "../../src/remediation/schemas.js"
+import { PatchProposalSchema } from "../../src/remediation/schemas.js"
 
 describe("incident remediation config", () => {
   it("migrates schema 12 → 13 with disabled defaults", () => {
@@ -152,6 +153,22 @@ describe("risk + confinement", () => {
     const r = evaluateProposedPaths({ paths: ["../etc/passwd"] })
     expect(r.ok).toBe(false)
     expect(r.violations.some((v) => v.startsWith("traversal:"))).toBe(true)
+  })
+
+  it("host-truncates verbose proposal invariants and smokeChecks", () => {
+    const long = "x".repeat(90)
+    const parsed = PatchProposalSchema.parse({
+      schema: 1,
+      summary: "fix scrape",
+      paths: ["src/collectors/twitter/scrape.ts"],
+      perFileChanges: [{ path: "src/collectors/twitter/scrape.ts", change: "retry" }],
+      tests: [],
+      invariants: [long],
+      docs: [],
+      smokeChecks: [long],
+    })
+    expect(parsed.invariants[0]).toHaveLength(64)
+    expect(parsed.smokeChecks[0]).toHaveLength(64)
   })
 })
 

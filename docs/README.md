@@ -60,7 +60,7 @@ data we read — never instructions we follow**. The binding rule lives in the r
   narrative development routing and mandatory research broadcast,
   founder primary-source catalyst broadcasts, passive Discord suggestion intake,
   improvement lanes skip agent workspace lock, descriptive remediation Telegram
-  operator notifies)
+  operator notifies, remediation propose/review ask mode)
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that

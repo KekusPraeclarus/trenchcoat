@@ -542,10 +542,12 @@ async function runRemediationPhases(args: Readonly<{
   // Propose
   if (record.phase === "diagnosed" || record.phase === "proposing") {
     await setPhase("proposing")
+    const priorReviewPath = join(artDir, "pre-review.json")
     const prop = await runProposeAgent({
       repoRoot: args.repoRoot,
       diagnosisPath,
       model: ir.propose_model,
+      ...(existsSync(priorReviewPath) ? { priorReviewPath } : {}),
     })
     if (!prop.ok) throw new Error(`propose:${prop.reason}`)
     if (prop.proposal.viable === false) {
