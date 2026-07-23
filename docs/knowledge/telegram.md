@@ -13,11 +13,12 @@ last_verified: 2026-07-23
 - FLOOD_WAIT backoff; atomic finalized message writes; heartbeat + cursor
 - Operator chat bot is separate from router fanout bot
 - Chat replies allowlist-checked before any handling (INV-B3)
-- Market fanout Telegram text is a fail-closed **topic deep-dive**
-  (`broadcast.telegram_overview` key preserved; one subject per message, ≤3,400
-  Markdown chars). The daily **narrative map** is a separate host-only
+- Market fanout Telegram text is a fail-closed **short topic paragraph**
+  (`broadcast.telegram_overview` key preserved; one subject per message, ≤800
+  chars — Discord-style closer with room for one paragraph, not a multi-section
+  briefing). The daily **narrative map** is a separate host-only
   `narrative.digest` at 20:00 Europe/London (`broadcast.telegram_digest.enabled`)
-  covering every active narrative in one message (same hard cap). Discord stays a
+  covering every active narrative in one message (≤3,400 chars). Discord stays a
   run-scoped **own** bottom-line distill (at most one Discord payload per run —
   never a reuse of the TG topic text)
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,

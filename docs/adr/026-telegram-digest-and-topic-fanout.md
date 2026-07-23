@@ -21,13 +21,14 @@ job could pass before the first reached that state and stage a semantic duplicat
 Telegram has two independent output modes:
 
 1. **Intraday** — keep immediate posts for host-approved developments, but each
-   message is a **single-topic deep-dive** (≤3,400 Markdown characters). Events
-   are grouped by normalized `auditClaim.subject`; one leader per group receives
-   Telegram (`urgent` > `notable` > `watch`, then smallest `eventId`); followers
-   omit `channels.telegram` (`topic-merged`). Distiller input is a bounded host
-   packet only (never `reports/chat` or unrelated narratives). Config key
-   `broadcast.telegram_overview` is preserved for live continuity; internal
-   intent is topic deep-dive.
+   message is a **single-topic short paragraph** (≤800 Markdown characters;
+   Discord-style closer with room for one paragraph — no multi-section briefings).
+   Events are grouped by normalized `auditClaim.subject`; one leader per group
+   receives Telegram (`urgent` > `notable` > `watch`, then smallest `eventId`);
+   followers omit `channels.telegram` (`topic-merged`). Distiller input is a
+   bounded host packet only (never `reports/chat` or unrelated narratives).
+   Config key `broadcast.telegram_overview` is preserved for live continuity;
+   internal intent is a short topic update.
 2. **Daily** — one host-only `telegram-digest` job at **20:00 Europe/London**
    (VPS systemd calendar timer only). Emits a Telegram-only `narrative.digest`
    covering **every** retention-active narrative (`pruneNarrativeLogInMemory`

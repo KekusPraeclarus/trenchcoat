@@ -6,6 +6,7 @@ import {
   runDiscordDistiller,
   runTelegramTopicDistiller,
   telegramTopicUserMessage,
+  TELEGRAM_DIGEST_TEXT_MAX,
   TELEGRAM_TOPIC_TEXT_MAX,
   validateDiscordDistillOutput,
   validateTelegramDailyDigestOutput,
@@ -195,13 +196,21 @@ describe("runDiscordDistiller", () => {
 })
 
 describe("validateTelegramTopicOutput", () => {
-  it("accepts a topic deep-dive", () => {
-    const text = [
-      "**RH Chain Meme Rotation**",
-      "",
-      "Founder wallet catalyst is the live tell. Watch leaders for invalidation.",
-    ].join("\n")
+  it("accepts a short topic paragraph", () => {
+    const text =
+      "RH chain meme rotation just got a founder-wallet catalyst — leaders still firm this week; watch invalidation if tape cools."
     expect(validateTelegramTopicOutput(text)).toEqual({ ok: true, text })
+  })
+
+  it("rejects section headers and bullet briefings", () => {
+    expect(validateTelegramTopicOutput([
+      "**What changed**",
+      "",
+      "Founder wallet catalyst is live.",
+    ].join("\n"))).toEqual({ ok: false, reason: "section-header" })
+    expect(validateTelegramTopicOutput(
+      "RH still live.\n- watch leaders\n- watch tape",
+    )).toEqual({ ok: false, reason: "bullet-list" })
   })
 
   it("rejects provenance handles and workspace paths", () => {
@@ -303,7 +312,7 @@ describe("runTelegramTopicDistiller", () => {
 
   it("accepts topic output and increments used", async () => {
     const overview =
-      "RH rotation still peaking.\n\nWallet lore is narrative ammo until verified."
+      "RH rotation still peaking on wallet lore — narrative ammo until verified this week."
     const result = await runTelegramTopicDistiller({
       packet: {
         subject: "rh-chain-meme-rotation",
@@ -381,7 +390,7 @@ describe("runTelegramTopicDistiller", () => {
       }],
       otherNarratives: [],
     })
-    expect(msg).toContain("Telegram deep-dive")
+    expect(msg).toContain("Telegram topic update")
     expect(msg).toContain("watchWindow=this week")
     expect(msg).toContain("<untrusted-topic-packet>")
     expect(msg).not.toContain("Chat recall")
@@ -405,7 +414,7 @@ describe("daily digest rendering", () => {
       ),
     })
     expect(rendered).not.toBeNull()
-    expect([...(rendered ?? "")].length).toBeLessThanOrEqual(TELEGRAM_TOPIC_TEXT_MAX)
+    expect([...(rendered ?? "")].length).toBeLessThanOrEqual(TELEGRAM_DIGEST_TEXT_MAX)
     for (const entry of narratives) {
       expect(rendered).toContain(entry.slug.replace("lane-", "Lane "))
     }

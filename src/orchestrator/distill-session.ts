@@ -4,7 +4,7 @@
  * post-checks, never write state.
  *
  * Discord: run-scoped bottom-line, silent on unchanged-stage heat.
- * Telegram intraday: one topic deep-dive per subject group.
+ * Telegram intraday: one short topic paragraph per subject group.
  * Telegram daily: section bodies for the narrative map (host renders headers).
  */
 
@@ -26,9 +26,14 @@ import type { NarrativeLogEntry } from "./narrative-log.js"
 
 export const DISCORD_TEXT_MAX = 320
 export const DISCORD_TICKER_MAX = 3
-export const TELEGRAM_TOPIC_TEXT_MAX = 3_400
+/** Intraday topic update — one short paragraph, not a briefing */
+export const TELEGRAM_TOPIC_TEXT_MAX = 800
+/** Daily narrative map hard cap (one Telegram message) */
+export const TELEGRAM_DIGEST_TEXT_MAX = 3_400
 /** @deprecated Use TELEGRAM_TOPIC_TEXT_MAX — alias for callers/tests */
 export const TELEGRAM_TEXT_MAX = TELEGRAM_TOPIC_TEXT_MAX
+const TOPIC_SECTION_HEADER = /(?:^|\n)\s*\*\*[^*\n]{2,80}\*\*\s*(?:\n|$)/u
+const TOPIC_BULLET_LINE = /(?:^|\n)\s*[-•*]\s+\S/u
 
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u
 const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
@@ -179,7 +184,7 @@ export function telegramTopicUserMessage(packet: TopicPacket): string {
     ].join("\n")
   }).join("\n")
   return [
-    "Rewrite the quoted topic packet as one Telegram deep-dive using the system rules.",
+    "Rewrite the quoted topic packet as one short Telegram topic update using the system rules.",
     `subject=${packet.subject}`,
     `subjectLabel=${packet.subjectLabel}`,
     narrativeLine,
@@ -272,7 +277,7 @@ export function validateDiscordDistillOutput(
   return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
 
-/** Mechanical Telegram topic post-check. */
+/** Mechanical Telegram topic post-check — short paragraph, no briefing layout. */
 export function validateTelegramTopicOutput(
   raw: string,
   otherNarratives: readonly TopicNarrativeSnapshot[] = [],
@@ -284,6 +289,8 @@ export function validateTelegramTopicOutput(
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
+  if (TOPIC_SECTION_HEADER.test(text)) return { ok: false, reason: "section-header" }
+  if (TOPIC_BULLET_LINE.test(text)) return { ok: false, reason: "bullet-list" }
   if (mentionsOtherNarrative(text, otherNarratives)) {
     return { ok: false, reason: "cross-topic-mention" }
   }
@@ -387,15 +394,13 @@ export function renderDailyDigestMarkdown(args: Readonly<{
 }
 
 export function renderTopicFallback(packet: TopicPacket): string {
-  const lines = [`**${packet.subjectLabel}**`]
-  if (packet.narrative) {
-    lines.push(`${packet.narrative.stage}.`)
-  }
-  for (const member of packet.members) {
-    const text = member.text.trim()
-    if (text.length > 0) lines.push(text)
-  }
-  return clipChars(lines.join("\n\n"), TELEGRAM_TOPIC_TEXT_MAX)
+  const lead = packet.members.map((member) => member.text.trim()).filter((text) => text.length > 0)
+  const body = lead.length > 0
+    ? lead.join(" ")
+    : packet.narrative
+      ? `${packet.subjectLabel} ${packet.narrative.stage}.`
+      : packet.subjectLabel
+  return clipChars(body.replace(/\s+/gu, " ").trim(), TELEGRAM_TOPIC_TEXT_MAX)
 }
 
 const NO_DEV_SENTENCE = "No host-approved development in this window."
@@ -420,9 +425,9 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
   for (const header of headers) {
     used += 2 + charLen(header) // \n\n + header
   }
-  if (used > TELEGRAM_TOPIC_TEXT_MAX) return null
+  if (used > TELEGRAM_DIGEST_TEXT_MAX) return null
 
-  const remaining = TELEGRAM_TOPIC_TEXT_MAX - used
+  const remaining = TELEGRAM_DIGEST_TEXT_MAX - used
   const bodyBudgetPer = ordered.length > 0 ? Math.floor(remaining / ordered.length) : 0
   const parts: string[] = [title]
   for (const entry of ordered) {
@@ -436,7 +441,7 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
     if (body.length > 0) parts.push(body)
   }
   const rendered = parts.join("\n\n")
-  if (charLen(rendered) > TELEGRAM_TOPIC_TEXT_MAX) return null
+  if (charLen(rendered) > TELEGRAM_DIGEST_TEXT_MAX) return null
   return rendered
 }
 
@@ -484,8 +489,8 @@ export async function runDiscordDistiller(args: DistillArgs): Promise<DistillRes
 }
 
 /**
- * Rewrite a bounded topic packet into one Telegram deep-dive. Fail-closed to
- * packet fallback on any miss.
+ * Rewrite a bounded topic packet into one short Telegram topic update.
+ * Fail-closed to packet fallback on any miss.
  */
 export async function runTelegramTopicDistiller(
   args: TelegramTopicArgs,
@@ -605,7 +610,7 @@ export async function runTelegramDailyDigestDistiller(args: Readonly<{
         checked.sections.map((section) => [section.slug, section.body]),
       ),
     })
-    if (charLen(rendered) > TELEGRAM_TOPIC_TEXT_MAX) {
+    if (charLen(rendered) > TELEGRAM_DIGEST_TEXT_MAX) {
       return empty("too-long", used)
     }
     return { sections: checked.sections, usedFallback: false, used, capExhausted: false }

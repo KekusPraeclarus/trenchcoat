@@ -266,11 +266,13 @@ reasoning, confidence, and cited sources) is the raw material. Weekly:
    Pricing uses first post-event execution observations, benchmark-adjusted
    returns, explicit missing/censored states, and versioned RSI-at-decision
    features (audit-metrics.md).
-3. It marks the **paper-trading ledger** (`state/ledger.json`): each track-call
-   becomes a virtual position at the first post-decision execution reference,
-   closes only on a drop at the first post-drop reference, or remains marked to
-   market. Opening, finalising, and closing are deterministic consequences of
-   decisions — the model never books ledger entries (INV-S10).
+3. **`outcomes-settle`** (every 6h, and again inside audit) marks the
+   **paper-trading ledger** (`state/ledger.json`): each track-call opens
+   `entry-pending` at proposal time; host `settle-ledger` finalises entry at the
+   first post-decision execution bar (`decisionTs` from the archived decision
+   bundle). A drop on an unfilled position cancels it (`censored`); a drop on an
+   `open` position marks `exit-pending` (exit bar finalisation is a follow-up).
+   The model never books ledger entries (INV-S10).
 4. Deterministic host code computes scorecard aggregates. The audit agent receives
    only the frozen figures and compares decisions vs outcomes: were track-calls
    early or late, were drops vindicated, what did ignores do, were broadcasts
@@ -287,6 +289,9 @@ the paired headline numbers. Peak-close is MFE diagnostics, never booked P&L.
 Lessons feed back into skills only via a developer edit or the host-owned
 Harness Improvement Loop (ADR 005) — the runtime bot does not rewrite its own
 instructions.
+
+Note: audit still stubs headline `paperPnl*` until scorecard persistence is
+wired; entry finalisation already runs via `outcomes-settle` / `settle-ledger.ts`.
 
 The audit narration runs as a fresh one-shot session with no tools or workspace
 access. Host code supplies one hash-bound epoch summary containing the computed
@@ -431,8 +436,8 @@ staged router events.
 - Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (default 5)
   when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
   that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
-  Discord failsafe (INV-B4). Intraday Telegram is one topic deep-dive per
-  normalized subject per run (not message-count limited). Separate:
+  Discord failsafe (INV-B4). Intraday Telegram is one short topic paragraph per
+  normalized subject per run (not message-count limited; ≤800 chars). Separate:
   `broadcast.discord_distiller.daily_cap` and `broadcast.telegram_overview.daily_cap`
   cap LLM sessions (shared used counter under
   `archive/broadcast-budget/discord-distill-<day>.json`), not Discord message count
@@ -539,9 +544,10 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/proposals.ts` — host-validated decision proposals (INV-S23)
 - `src/orchestrator/gate-evidence.ts` — archive-then-live security gate receipts
 - `src/orchestrator/market-bars.ts` — live DexScreener/GeckoTerminal BarProviders
-- `src/orchestrator/outcomes-settle.ts` — mature source-call + wallet-buy settlement
+- `src/orchestrator/outcomes-settle.ts` — mature source-call + wallet-buy settlement + ledger entry finalisation
+- `src/orchestrator/settle-ledger.ts` — entry-pending → open at first post-decision bar
 - `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
-  ledger marking, calibration, source attribution
+  calibration, source attribution (ledger marking via outcomes-settle)
 - `src/orchestrator/recovery.ts` — resume/discard-inbox stub (full recovery ladder open)
 - `src/orchestrator/sources.ts` — archive source-call outcome loader (host `sources.json` writer still open)
 - `src/orchestrator/wallet-*.ts` — host-only wallet discovery/scan/review/seed

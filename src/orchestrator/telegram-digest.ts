@@ -21,6 +21,7 @@ import {
   runTelegramDailyDigestDistiller,
   renderDailyDigestCompactFallback,
   renderDailyDigestMarkdown,
+  TELEGRAM_DIGEST_TEXT_MAX,
   TELEGRAM_TOPIC_TEXT_MAX,
   type TopicNarrativeSnapshot,
 } from "./distill-session.js"
@@ -431,7 +432,7 @@ export async function prepareTelegramDigest(args: Readonly<{
       narratives: snapshots,
       sectionsBySlug,
     })
-    if ([...rendered].length <= TELEGRAM_TOPIC_TEXT_MAX) {
+    if ([...rendered].length <= TELEGRAM_DIGEST_TEXT_MAX) {
       text = rendered
       renderMethod = "distilled"
     }

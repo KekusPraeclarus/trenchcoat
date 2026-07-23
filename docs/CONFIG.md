@@ -143,7 +143,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
   },
   // daily_budget / urgent_ceiling = Discord message caps only
-  // telegram_overview = intraday topic deep-dive LLM (config key preserved; ADR 026)
+  // telegram_overview = intraday short topic paragraph LLM (config key preserved; ADR 026)
   // telegram_digest = host-only daily narrative map at 20:00 Europe/London (schema 18)
   // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
   // worthiness = host approve/reject gate before stage (fail-closed; default composer-2.5-fast; ADR 014)

@@ -145,11 +145,8 @@ describe("renderChannelPayloads", () => {
     ].join("\n")
     writeFileSync(chatReportPath(agentRoot, RUN_ID), reportMd)
 
-    const overviewText = [
-      "**RH Chain Meme Rotation**",
-      "",
-      "Fresh capital rotating into RH infra. Watch invalidation if leaders cool.",
-    ].join("\n")
+    const overviewText =
+      "RH chain meme rotation has fresh capital rotating into infra — watch invalidation if leaders cool this week."
     const discordText = "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip"
 
     let tgLaunches = 0
@@ -255,8 +252,8 @@ describe("renderChannelPayloads", () => {
     })
     expect(report.usedTelegramOverview).toBe(0)
     const event = outbox.list()[0]
-    expect(event?.channels?.telegram?.text).toContain("**RH Chain Meme Rotation**")
     expect(event?.channels?.telegram?.text).toContain(ITEM.text)
+    expect(event?.channels?.telegram?.text).not.toMatch(/\*\*[^*\n]+\*\*\s*\n/)
     expect(report.receipts[0]?.telegram).toBe("topic-fallback")
     expect(report.receipts[0]?.telegramReason).toBe("workspace-path")
   })
@@ -313,12 +310,12 @@ describe("renderChannelPayloads", () => {
             expect(message).toContain("leaders still firm")
             expect(message).toContain("otherNarratives (forbidden)")
             expect(message).toContain("base-trust-collapse")
-            return "**RH Chain Meme Rotation**\n\nFounder wallet catalyst is the live tell."
+            return "RH founder wallet catalyst is the live tell this week — leaders still firm."
           }
           expect(message).toContain("subject=base-trust-collapse")
           expect(message).toContain("otherNarratives (forbidden)")
           expect(message).toContain("rh-chain-meme-rotation")
-          return "**Base Trust Collapse**\n\nDelist chatter is accelerating fade."
+          return "Base trust collapse is accelerating on delist chatter — fade still the frame."
         },
       },
       activeNarratives: [
@@ -352,9 +349,9 @@ describe("renderChannelPayloads", () => {
     const rhLeader = rhEvents.find((event) => event.channels?.telegram?.text)
     const rhFollower = rhEvents.find((event) => !event.channels?.telegram)
     expect(rhLeader?.severity).toBe("urgent")
-    expect(rhLeader?.channels?.telegram?.text).toContain("Founder wallet catalyst")
+    expect(rhLeader?.channels?.telegram?.text).toContain("founder wallet catalyst")
     expect(rhFollower?.channels?.telegram).toBeUndefined()
-    expect(bySubject.get("base-trust-collapse")?.channels?.telegram?.text).toContain("Delist chatter")
+    expect(bySubject.get("base-trust-collapse")?.channels?.telegram?.text).toContain("delist chatter")
     expect(report.receipts.filter((receipt) => receipt.telegram === "topic-merged")).toHaveLength(1)
     expect(report.receipts.filter((receipt) => receipt.telegram === "topic-deep-dive")).toHaveLength(2)
   })
