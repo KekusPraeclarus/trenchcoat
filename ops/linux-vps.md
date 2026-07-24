@@ -197,6 +197,7 @@ Override host with `TRENCHCOAT_SSH_HOST`.
 | Logs | `/tmp/trenchcoat.*.log` |
 | Restart KeepAlive | `systemctl --user restart trenchcoat-router` (etc.) |
 | Timers | `systemctl --user list-timers 'trenchcoat-*'` |
+| Recover stuck deploy pause | `rm -f ~/.trenchcoat/deploy-pause.json` then `systemctl --user daemon-reload && systemctl --user start trenchcoat-job-*.timer` (or re-run `~/bin/trenchcoat-deploy`). Pause files >45m auto-clear. |
 | Incident remediation (post-deploy enable) | After schema 17 deploy: set `incident_remediation.enabled` + `schedule_enabled` (+ optional `discord_suggestions.enabled` / `channel_ids`), then `tc config migrate --write`, `tc remediations status`, `tc remediations suggestions` |
 | Rollback runtime | `mv ~/.trenchcoat/runtime ~/.trenchcoat/runtime.bad && mv ~/.trenchcoat/runtime.prev ~/.trenchcoat/runtime && systemctl --user restart trenchcoat-router trenchcoat-listener trenchcoat-channels trenchcoat-x-scan` |
 

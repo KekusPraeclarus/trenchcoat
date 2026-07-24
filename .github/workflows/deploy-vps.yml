@@ -21,6 +21,9 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
+          # Must outlive install wait-idle (30m) + build; default 10m orphaned
+          # deploy-pause + stopped timers when SSH was killed mid-wait (2026-07-23).
+          command_timeout: 40m
           # Prefer authorized_keys command=/…/trenchcoat-deploy when set; this
           # script is the fallback when the key is not forced.
           script: |

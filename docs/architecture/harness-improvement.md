@@ -90,11 +90,12 @@ do **not** block idle — they would hang redeploys forever on a busy host.
 `wait-idle` first fails orphaned incomplete journals (pre-seal + no lock + ≥30m,
 or any running ≥6h) so SIGTERM zombies cannot block forever.
 
-`ops/install-launchd.sh` sets a deploy pause (`~/.trenchcoat/deploy-pause.json`),
-bootouts StartInterval jobs, waits for idle (default 30m), reloads launchd, then
-clears the pause and kickstarts any deferred job names. While paused, `runJob`
-exits 3 and `run-with-lock-retry` waits without burning attempts. Escape hatch:
-`--skip-agent-wait`. Operator probe: `tc harness wait-idle`.
+`ops/install-launchd.sh` / `ops/install-systemd.sh` set a deploy pause
+(`~/.trenchcoat/deploy-pause.json`), stop scheduled jobs, wait for idle (default
+30m), reload schedulers, then clear the pause and kickstart deferred jobs. Abort
+restores schedulers; pause files older than 45m auto-clear. While paused,
+`runJob` exits 3 and `run-with-lock-retry` waits without burning attempts.
+Escape hatch: `--skip-agent-wait`. Operator probe: `tc harness wait-idle`.
 `tc run fail <id>` / `tc status --heal-apply` for manual orphan cleanup.
 
 ## Drain gate (agent activation)

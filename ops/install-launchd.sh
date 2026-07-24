@@ -972,7 +972,54 @@ clear_deploy_pause_and_kick() {
   done
 }
 
-trap 'if [ "${PAUSE_ACTIVE:-0}" -eq 1 ]; then rm -f "${PAUSE_FILE:-}"; echo "deploy pause cleared (install aborted)" >&2; fi' EXIT
+# Abort path: pause file alone is not enough — StartInterval jobs were bootout.
+restore_scheduled_units_after_abort() {
+  if [ "$NO_LOAD" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
+    return 0
+  fi
+  echo "restoring scheduled launchd jobs after aborted install…" >&2
+  for label in \
+    com.trenchcoat.job.chart-sweep \
+    com.trenchcoat.job.watchlist-scan \
+    com.trenchcoat.job.farcaster-scan \
+    com.trenchcoat.job.narrative-scan \
+    com.trenchcoat.job.research \
+    com.trenchcoat.job.outcomes-settle \
+    com.trenchcoat.job.source-list-review \
+    com.trenchcoat.job.fc-source-review \
+    com.trenchcoat.job.review \
+    com.trenchcoat.job.audit \
+    com.trenchcoat.job.wallet-discovery \
+    com.trenchcoat.job.wallet-runner-discovery \
+    com.trenchcoat.job.wallet-scan-solana \
+    com.trenchcoat.job.wallet-scan-evm \
+    com.trenchcoat.job.wallet-review \
+    com.trenchcoat.job.fomo-trader-sync \
+    com.trenchcoat.job.fomo-signal-scan \
+    com.trenchcoat.job.discord-wallet-signal-scan \
+    com.trenchcoat.job.fomo-x-source-review \
+    com.trenchcoat.job.fomo-narrative-source-scan \
+    com.trenchcoat.job.narrative-source-review \
+    com.trenchcoat.job.delivery-retry \
+    com.trenchcoat.job.discord-watchlist-scan \
+    com.trenchcoat.job.harness-improve \
+    com.trenchcoat.job.incident-remediate \
+    com.trenchcoat.job.incident-remediate-weekly \
+    com.trenchcoat.backup
+  do
+    if [ -f "$DEST/$label.plist" ]; then
+      launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
+      launchctl bootstrap "$DOMAIN" "$DEST/$label.plist" 2>/dev/null || true
+      launchctl enable "$DOMAIN/$label" 2>/dev/null || true
+    fi
+  done
+}
+
+trap 'if [ "${PAUSE_ACTIVE:-0}" -eq 1 ]; then
+  rm -f "${PAUSE_FILE:-}"
+  restore_scheduled_units_after_abort
+  echo "deploy pause cleared + jobs restored (install aborted)" >&2
+fi' EXIT
 
 # --- host prep ---
 if [ "$DRY_RUN" -eq 0 ]; then

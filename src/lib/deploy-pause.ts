@@ -5,6 +5,9 @@ import { writeAtomicFile } from "./fs-atomic.js"
 
 export const DEPLOY_PAUSE_SCHEMA = 1 as const
 
+/** Orphaned pause files older than this are auto-cleared so a killed install cannot strand the host */
+export const DEPLOY_PAUSE_MAX_AGE_MS = 45 * 60 * 1000
+
 export type DeployPauseFile = Readonly<{
   schema: typeof DEPLOY_PAUSE_SCHEMA
   pausedAt: string
@@ -18,13 +21,35 @@ export function deployPausePath(home = join(homedir(), ".trenchcoat")): string {
   return join(home, "deploy-pause.json")
 }
 
-export function readDeployPause(home?: string): DeployPauseFile | undefined {
+function clearPauseFile(path: string): void {
+  try {
+    unlinkSync(path)
+  } catch {
+    // already gone
+  }
+}
+
+export function readDeployPause(
+  home?: string,
+  nowMs: number = Date.now(),
+): DeployPauseFile | undefined {
   const path = deployPausePath(home)
   if (!existsSync(path)) return undefined
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<DeployPauseFile>
-    if (raw.schema !== DEPLOY_PAUSE_SCHEMA) return undefined
-    if (typeof raw.pausedAt !== "string" || typeof raw.reason !== "string") return undefined
+    if (raw.schema !== DEPLOY_PAUSE_SCHEMA) {
+      clearPauseFile(path)
+      return undefined
+    }
+    if (typeof raw.pausedAt !== "string" || typeof raw.reason !== "string") {
+      clearPauseFile(path)
+      return undefined
+    }
+    const pausedMs = Date.parse(raw.pausedAt)
+    if (!Number.isFinite(pausedMs) || nowMs - pausedMs > DEPLOY_PAUSE_MAX_AGE_MS) {
+      clearPauseFile(path)
+      return undefined
+    }
     const deferredJobs = Array.isArray(raw.deferredJobs)
       ? raw.deferredJobs.filter((j): j is string => typeof j === "string" && SAFE_JOB.test(j))
       : []
@@ -35,12 +60,13 @@ export function readDeployPause(home?: string): DeployPauseFile | undefined {
       deferredJobs,
     }
   } catch {
+    clearPauseFile(path)
     return undefined
   }
 }
 
-export function isDeployPaused(home?: string): boolean {
-  return readDeployPause(home) !== undefined
+export function isDeployPaused(home?: string, nowMs: number = Date.now()): boolean {
+  return readDeployPause(home, nowMs) !== undefined
 }
 
 export async function beginDeployPause(args: Readonly<{

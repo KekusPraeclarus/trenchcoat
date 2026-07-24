@@ -405,12 +405,14 @@ Recovery is deterministic and privilege-preserving (ADR 006 / INV-S11):
    `archive/quarantine/` and refuse auto-resume; router down → staged outbox
    waits for the next cycle. Alpha queue is never purged until digest + seal
    succeed (INV-Q1).
-2. **Deploy pause** — `ops/install-launchd.sh` writes
-   `~/.trenchcoat/deploy-pause.json`, bootouts StartInterval jobs, waits for
-   idle, reloads launchd, then clears the pause and kickstarts deferred jobs.
-   While paused, `runJob` exits 3 and records the job name;
-   `run-with-lock-retry` waits without burning attempts; KeepAlive `x-scan`
-   sleeps until clear.
+2. **Deploy pause** — `ops/install-launchd.sh` / `ops/install-systemd.sh` write
+   `~/.trenchcoat/deploy-pause.json`, stop scheduled jobs/timers, wait for idle,
+   reload schedulers, then clear the pause and kickstart deferred jobs. While
+   paused, `runJob` exits 3 and records the job name; `run-with-lock-retry`
+   waits without burning attempts; KeepAlive `x-scan` sleeps until clear.
+   **Failsafe (INV-S24):** install EXIT trap restores schedulers if the install
+   aborts; pause files older than 45m auto-clear; `tc status` warns on an active
+   pause; Deploy VPS SSH `command_timeout` is 40m so it outlives wait-idle.
 3. **Operator DM (auth + review)** — needs-headful-reauth (never automated) and
    every **exoneration proposal** from a `warn` intent verdict (manual
    undock/confirm). Via the chat bot's outbound DM path — not the broadcast

@@ -8,6 +8,7 @@ import {
 import { agentLockPath } from "../lib/lock.js"
 import { loadConfig } from "../lib/config.js"
 import { loadDeploymentManifest, DEPLOYMENT_CONFIG_SCHEMA } from "../lib/deployment.js"
+import { readDeployPause, DEPLOY_PAUSE_MAX_AGE_MS } from "../lib/deploy-pause.js"
 import { StateStore } from "../lib/state.js"
 import { RunManifestSchema } from "../contracts/schemas.js"
 import { loadJournalForScan } from "./journal-store.js"
@@ -659,6 +660,18 @@ function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">):
       code: "deploy-manifest-missing",
       severity: "warn",
       summary: "deployment.json missing",
+      component: "deploy",
+    })
+  }
+
+  const pause = readDeployPause()
+  if (pause) {
+    const ageMs = Math.max(0, Date.parse(snapshot.capturedAt) - Date.parse(pause.pausedAt))
+    const ageMin = Math.floor(ageMs / 60_000)
+    push({
+      code: ageMs >= DEPLOY_PAUSE_MAX_AGE_MS / 2 ? "deploy-pause-stale" : "deploy-pause-active",
+      severity: ageMs >= DEPLOY_PAUSE_MAX_AGE_MS / 2 ? "error" : "warn",
+      summary: `deploy pause active age=${ageMin}m reason=${pause.reason}`,
       component: "deploy",
     })
   }

@@ -641,7 +641,24 @@ clear_deploy_pause_and_kick() {
   done
 }
 
-trap 'if [ "${PAUSE_ACTIVE:-0}" -eq 1 ]; then rm -f "${PAUSE_FILE:-}"; echo "deploy pause cleared (install aborted)" >&2; fi' EXIT
+# Abort path: pause file alone is not enough — timers were stopped and must return.
+restore_scheduled_units_after_abort() {
+  if [ "$NO_LOAD" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
+    return 0
+  fi
+  echo "restoring scheduled timers after aborted install…" >&2
+  systemctl --user daemon-reload 2>/dev/null || true
+  for unit in $SCHEDULED_UNITS trenchcoat-job-harness-improve trenchcoat-backup; do
+    systemctl --user enable "$unit.timer" 2>/dev/null || true
+    systemctl --user start "$unit.timer" 2>/dev/null || true
+  done
+}
+
+trap 'if [ "${PAUSE_ACTIVE:-0}" -eq 1 ]; then
+  rm -f "${PAUSE_FILE:-}"
+  restore_scheduled_units_after_abort
+  echo "deploy pause cleared + timers restored (install aborted)" >&2
+fi' EXIT
 
 enable_unit() {
   unit="$1"

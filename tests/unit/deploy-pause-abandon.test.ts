@@ -8,6 +8,7 @@ import {
   isDeployPaused,
   noteDeferredJob,
   readDeployPause,
+  DEPLOY_PAUSE_MAX_AGE_MS,
 } from "../../src/lib/deploy-pause.js"
 import {
   shouldAbandonIncomplete,
@@ -25,7 +26,8 @@ describe("deploy pause", () => {
   it("round-trips pause, deferred jobs, and clear", async () => {
     const home = mkdtempSync(join(tmpdir(), "tc-pause-"))
     expect(isDeployPaused(home)).toBe(false)
-    await beginDeployPause({ home, reason: "test", nowIso: "2026-07-20T18:00:00.000Z" })
+    const nowIso = new Date().toISOString()
+    await beginDeployPause({ home, reason: "test", nowIso })
     expect(isDeployPaused(home)).toBe(true)
     expect(readDeployPause(home)?.reason).toBe("test")
     await noteDeferredJob({ home, job: "wallet-scan-solana" })
@@ -35,6 +37,18 @@ describe("deploy pause", () => {
     const deferred = await endDeployPause(home)
     expect(deferred).toEqual(["wallet-scan-solana", "research"])
     expect(isDeployPaused(home)).toBe(false)
+  })
+
+  it("auto-clears pause files older than DEPLOY_PAUSE_MAX_AGE_MS", async () => {
+    const home = mkdtempSync(join(tmpdir(), "tc-pause-stale-"))
+    const pausedAt = "2026-07-23T19:54:42.000Z"
+    await beginDeployPause({ home, reason: "install-systemd", nowIso: pausedAt })
+    const freshMs = Date.parse(pausedAt) + 10 * 60 * 1000
+    expect(isDeployPaused(home, freshMs)).toBe(true)
+    const staleMs = Date.parse(pausedAt) + DEPLOY_PAUSE_MAX_AGE_MS + 1
+    expect(isDeployPaused(home, staleMs)).toBe(false)
+    expect(readDeployPause(home, staleMs)).toBeUndefined()
+    expect(existsSync(join(home, "deploy-pause.json"))).toBe(false)
   })
 })
 

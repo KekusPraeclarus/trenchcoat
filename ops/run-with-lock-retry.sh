@@ -20,13 +20,28 @@ PAUSE_FILE="${TRENCHCOAT_HOME:-$HOME/.trenchcoat}/deploy-pause.json"
 MAX_ATTEMPTS=3
 attempt=1
 
+# Match src/lib/deploy-pause.ts DEPLOY_PAUSE_MAX_AGE_MS (45m) — clear orphans
+# left by a killed install so jobs are not stranded forever.
+clear_stale_deploy_pause() {
+  if [ ! -f "$PAUSE_FILE" ]; then
+    return 0
+  fi
+  stale="$(find "$PAUSE_FILE" -mmin +45 2>/dev/null || true)"
+  if [ -n "$stale" ]; then
+    rm -f "$PAUSE_FILE"
+    echo "cleared stale deploy pause (>45m) — running $JOB" >&2
+  fi
+}
+
 wait_for_deploy_pause() {
+  clear_stale_deploy_pause
   if [ ! -f "$PAUSE_FILE" ]; then
     return 0
   fi
   echo "deploy pause active — waiting to run $JOB" >&2
   while [ -f "$PAUSE_FILE" ]; do
     sleep 5
+    clear_stale_deploy_pause
   done
   echo "deploy pause cleared — running $JOB" >&2
 }
