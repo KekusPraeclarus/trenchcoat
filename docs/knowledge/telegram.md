@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 ---
 
 # Telegram
@@ -13,6 +13,10 @@ last_verified: 2026-07-23
 - FLOOD_WAIT backoff; atomic finalized message writes; heartbeat + cursor
 - Operator chat bot is separate from router fanout bot
 - Chat replies allowlist-checked before any handling (INV-B3)
+- Operator DM directives (ADR 040): leading `/model-high|mid|low`, `/plan`,
+  `/agent` are stripped before the LLM; default remains durable composer-2.5
+  ask on the agent workspace. `/agent` is an explicit unsandboxed checkout
+  turn — see chat-agent.md
 - Market fanout Telegram text is a fail-closed **short topic paragraph**
   (`broadcast.telegram_overview` key preserved; one subject per message, ≤800
   chars — Discord-style closer with room for one paragraph, not a multi-section

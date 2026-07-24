@@ -8,6 +8,12 @@ import {
   scrubChildEnv,
   SCRUBBED_CHILD_ENV_KEYS,
 } from "../../src/orchestrator/session.js"
+import {
+  CHAT_MODEL_HIGH,
+  CHAT_MODEL_LOW,
+  CHAT_MODEL_MID,
+} from "../../src/chat/directives.js"
+import { resolveChatSessionLaunch } from "../../src/chat/session.js"
 
 describe("cursor cli session", () => {
   it("builds headless login-auth argv without requiring an api key", () => {
@@ -30,6 +36,7 @@ describe("cursor cli session", () => {
       "enabled",
     ])
     expect(args.includes("--api-key")).toBe(false)
+    expect(args.includes("--force")).toBe(false)
   })
 
   it("includes ask mode and resume for chat turns", () => {
@@ -50,6 +57,74 @@ describe("cursor cli session", () => {
     expect(args).toContain("--stream-partial-output")
   })
 
+  it("builds Telegram /agent argv with force and sandbox disabled", () => {
+    const launch = resolveChatSessionLaunch({
+      operatorText: "edit the file",
+      agentRoot: "/tmp/agent",
+      turn: { mode: "agent", model: CHAT_MODEL_HIGH },
+      resolveRepoRoot: () => "/repo",
+    })
+    const args = buildCursorCliArgs({
+      prompt: launch.prompt,
+      cwd: launch.cwd,
+      model: launch.model,
+      sandbox: launch.sandbox,
+      force: launch.force,
+      outputFormat: "stream-json",
+      streamPartial: true,
+    })
+    expect(args).toContain("--sandbox")
+    expect(args[args.indexOf("--sandbox") + 1]).toBe("disabled")
+    expect(args).toContain("--force")
+    expect(args).toContain(CHAT_MODEL_HIGH)
+    expect(args).toContain("/repo")
+    expect(args.includes("--mode")).toBe(false)
+    expect(args.includes("--resume")).toBe(false)
+  })
+
+  it("builds Telegram /plan argv sandboxed without force", () => {
+    const launch = resolveChatSessionLaunch({
+      operatorText: "design the change",
+      agentRoot: "/tmp/agent",
+      turn: { mode: "plan", model: CHAT_MODEL_MID },
+      resolveRepoRoot: () => "/repo",
+    })
+    const args = buildCursorCliArgs({
+      prompt: launch.prompt,
+      cwd: launch.cwd,
+      model: launch.model,
+      sandbox: launch.sandbox,
+      force: launch.force,
+      ...(launch.mode ? { mode: launch.mode } : {}),
+    })
+    expect(args).toContain("--mode")
+    expect(args).toContain("plan")
+    expect(args[args.indexOf("--sandbox") + 1]).toBe("enabled")
+    expect(args.includes("--force")).toBe(false)
+    expect(args).toContain(CHAT_MODEL_MID)
+  })
+
+  it("builds model-low ask override without resume", () => {
+    const launch = resolveChatSessionLaunch({
+      operatorText: "quick question",
+      agentRoot: "/tmp/agent",
+      turn: { model: CHAT_MODEL_LOW },
+      resumeChatId: "should-not-resume",
+    })
+    const args = buildCursorCliArgs({
+      prompt: launch.prompt,
+      cwd: launch.cwd,
+      model: launch.model,
+      sandbox: launch.sandbox,
+      ...(launch.mode ? { mode: launch.mode } : {}),
+      ...(launch.resumeChatId ? { resumeChatId: launch.resumeChatId } : {}),
+    })
+    expect(args).toContain(CHAT_MODEL_LOW)
+    expect(args).toContain("ask")
+    expect(args.includes("--resume")).toBe(false)
+    expect(args[args.indexOf("--workspace") + 1]).toBe("/tmp/agent")
+  })
+
   it("resolves a binary name", () => {
     expect(resolveCursorCliBin()).toMatch(/agent/u)
   })
@@ -65,6 +140,13 @@ describe("cursor cli session", () => {
       expect(src, rel).not.toMatch(/CURSOR_API_KEY/u)
       expect(src, rel).not.toMatch(/apiKey:\s*process\.env/u)
     }
+  })
+
+  it("Telegram /agent is the only chat path that disables sandbox", () => {
+    const src = readFileSync(join(process.cwd(), "src/chat/session.ts"), "utf8")
+    // Narrow exception: sandbox disabled only when mode === "agent"
+    expect(src).toMatch(/sandbox:\s*mode\s*!==\s*"agent"/u)
+    expect(src).toMatch(/force:\s*mode\s*===\s*"agent"/u)
   })
 })
 

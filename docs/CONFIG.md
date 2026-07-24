@@ -14,7 +14,7 @@ read_when:
 | Var | Used by | Purpose |
 |---|---|---|
 | `TRENCHCOAT_CURSOR_BIN` | orchestrator | optional path to `agent` binary |
-| `TRENCHCOAT_REPO_ROOT` | harness-improve / harness-meta-improve | absolute path to the git checkout (`.git` + `package.json`). `install-launchd.sh` writes this into `~/.trenchcoat/env` because launchd jobs often start with cwd `/` |
+| `TRENCHCOAT_REPO_ROOT` | harness-improve / harness-meta-improve / Telegram `/plan`+`/agent` | absolute path to the git checkout (`.git` + `package.json`). `install-launchd.sh` writes this into `~/.trenchcoat/env` because launchd jobs often start with cwd `/`. Telegram code turns also require `ops/` + `docs/` (ADR 040) |
 | _(none — Cursor CLI login)_ | orchestrator, chat | `agent login` / `agent status` |
 | `TRENCHCOAT_ROUTER_URL` / `TRENCHCOAT_ROUTER_TOKEN` | orchestrator | router intake URL (bare host ok — defaults to `/v1/events`) + legacy bearer env (HMAC is authoritative). Loopback HTTP allowed; off-loopback requires HTTPS |
 | `TRENCHCOAT_ROUTER_HMAC_KEY` | orchestrator / router | HMAC signing key for intake (INV-B5) |

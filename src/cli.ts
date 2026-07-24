@@ -723,17 +723,21 @@ async function cmdListenTelegram(): Promise<void> {
       if (msg.chat.type && msg.chat.type !== "private") continue
 
       const trimmed = msg.text.trim()
-      const hostHandled = trimmed.startsWith("/status")
+      const { parseChatDirectives } = await import("./chat/directives.js")
+      const directives = parseChatDirectives(trimmed)
+      const body = directives.body
+      const hostHandled = directives.directiveOnly
+        || trimmed.startsWith("/status")
         || trimmed.startsWith("/start")
         || /^(undock|confirm)\s+\S+/iu.test(trimmed)
         || /^(approve|defer|reject)\s+remediation\b/iu.test(trimmed)
         || /^\/?remediations?\b/iu.test(trimmed)
-        || /^(confirm|yes|y|do\s+it|go\s+ahead|approved?|cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu.test(trimmed)
-        || /^[1-5]\s*$/u.test(trimmed)
-        || /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into)\b/iu.test(trimmed)
-        || /^\/research\b/iu.test(trimmed)
-        || /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):[A-Za-z0-9]{32,128}$/iu.test(trimmed)
-        || /^[a-z][a-z0-9-]{1,31}:[A-Za-z0-9]{32,128}$/iu.test(trimmed)
+        || /^(confirm|yes|y|do\s+it|go\s+ahead|approved?|cancel|no|n|never\s*mind|abort|stop)\s*[!.]*$/iu.test(body)
+        || /^[1-5]\s*$/u.test(body)
+        || /\b(research|deep\s+research|look\s*into|deep[\s-]?dive|investigate|dig\s+into)\b/iu.test(body)
+        || /^\/research\b/iu.test(body)
+        || /^(solana|ethereum|base|bsc|robinhood|plasma|hyperliquid|hyperevm):[A-Za-z0-9]{32,128}$/iu.test(body)
+        || /^[a-z][a-z0-9-]{1,31}:[A-Za-z0-9]{32,128}$/iu.test(body)
       const needsAgent = !hostHandled
       if (needsAgent) {
         await telegramSendChatAction(fetch, token, operatorId).catch(() => undefined)

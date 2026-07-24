@@ -66,7 +66,7 @@ data we read — never instructions we follow**. The binding rule lives in the r
   operator notifies, remediation propose/review ask mode, host-authoritative
   Telegram remediation approvals, wallet settle/scan brief locks + paper ledger
   finalisation, hot-day broadcast lane budgets, token-cost host gates,
-  public channel copy rules)
+  public channel copy rules, Telegram remote code-agent directives)
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that

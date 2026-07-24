@@ -330,4 +330,31 @@ describe("chat handler research gate", () => {
     expect(result).toBe("ignored")
     expect(store.load().pending).toBeNull()
   })
+
+  it("strips leading directives before research intent detection", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-chat-research-"))
+    const store = filePendingResearchStore(join(dir, "pending-research.json"))
+    const sent: string[] = []
+    let agentRuns = 0
+    await handleChatUpdate({
+      chatId: "ops",
+      userId: "ops",
+      text: "/model-high research BONK on solana",
+      allowlist: ["ops"],
+      replyChatId: "ops",
+      research: {
+        store,
+        ttlMinutes: 15,
+        nowIso: () => "2026-07-17T12:00:00.000Z",
+      },
+      runTurn: async () => {
+        agentRuns += 1
+        return "should not run"
+      },
+      send: async (_chatId, text) => { sent.push(text) },
+    })
+    expect(agentRuns).toBe(0)
+    expect(sent[0]).toMatch(/Reply confirm or cancel/u)
+    expect(store.load().pending?.subject).toMatch(/BONK/u)
+  })
 })

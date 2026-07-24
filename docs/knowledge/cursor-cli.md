@@ -2,7 +2,7 @@
 description: Provider knowledge — Cursor CLI local agent (login auth, not API key).
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-24
 ---
 
 # Cursor CLI
@@ -30,7 +30,10 @@ Binding decision: [ADR 003](../adr/003-cursor-cli-auth.md).
 - Incident remediation (ADR 017): triage/diagnose/review use
   `composer-2.5-fast`; propose/build use `cursor-grok-4.5-high`. Prompts are
   path-only against host evidence artifacts under `~/.trenchcoat/remediations/`
-- Operator Telegram chat: same, plus `--mode ask --output-format stream-json --stream-partial-output` (assistant text deltas → Telegram `sendMessageDraft`)
+- Operator Telegram chat: default is `--mode ask --output-format stream-json
+  --stream-partial-output` on `~/.trenchcoat/agent`. Leading `/model-*`,
+  `/plan`, `/agent` overrides are one-off (no `--resume`); `/agent` uses
+  `--sandbox disabled --force` on `TRENCHCOAT_REPO_ROOT` (ADR 040)
 - Chat idle rotation: `agent create-chat` (host timeout 90s). On failure with a
   prior same-operator session, resume that id instead of failing the DM
   (chat-agent.md)

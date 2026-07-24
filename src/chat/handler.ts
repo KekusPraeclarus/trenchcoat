@@ -1,5 +1,9 @@
 import { log } from "../lib/log.js"
-import type { ChatTurnRunner } from "./session.js"
+import {
+  CHAT_DIRECTIVE_HELP,
+  parseChatDirectives,
+} from "./directives.js"
+import type { ChatTurnOptions, ChatTurnRunner } from "./session.js"
 import {
   extractResearchIntent,
   isCancelText,
@@ -96,7 +100,11 @@ export async function handleChatUpdate(args: Readonly<{
   if (trimmed === "/start" || trimmed.startsWith("/start ")) {
     await args.send(
       target,
-      "trenchcoat chat online. Ask about the knowledge store — watchlist, narratives, sources, wallets, recent reports. Ask to research a token and confirm to launch a host research run.",
+      [
+        "trenchcoat chat online. Ask about the knowledge store — watchlist, narratives, sources, wallets, recent reports. Ask to research a token and confirm to launch a host research run.",
+        "",
+        CHAT_DIRECTIVE_HELP,
+      ].join("\n"),
     )
     return "replied"
   }
@@ -140,6 +148,20 @@ export async function handleChatUpdate(args: Readonly<{
     }
   }
 
+  // Strip leading model/mode directives before research intent and the LLM prompt.
+  const directives = parseChatDirectives(trimmed)
+  if (directives.directiveOnly) {
+    await args.send(target, CHAT_DIRECTIVE_HELP)
+    return "replied"
+  }
+  const body = directives.body
+  const turnOpts: ChatTurnOptions | undefined = directives.hasOverride
+    ? {
+      ...(directives.model ? { model: directives.model } : {}),
+      ...(directives.mode ? { mode: directives.mode } : {}),
+    }
+    : undefined
+
   if (args.research) {
     let file = clearExpiredPending(args.research.store.load(), nowIso())
     if (!file.telegramUserId) {
@@ -156,7 +178,7 @@ export async function handleChatUpdate(args: Readonly<{
       args.research.store.save(file)
     }
 
-    if (isCancelText(trimmed)) {
+    if (isCancelText(body)) {
       const hadPending = Boolean(file.pending || file.pendingChoice)
       const choiceId = file.pendingChoice?.requestId
       const next = cancelPending(file, args.userId)
@@ -177,12 +199,12 @@ export async function handleChatUpdate(args: Readonly<{
       return "replied"
     }
 
-    if (file.pendingChoice && isResearchChoiceText(trimmed)) {
+    if (file.pendingChoice && isResearchChoiceText(body)) {
       const result = selectResearchChoice({
         file,
         telegramUserId: args.userId,
         nowIso: nowIso(),
-        selection: trimmed,
+        selection: body,
       })
       if (result.error || !result.confirmed) {
         await args.send(target, result.error ?? "invalid pick")
@@ -197,7 +219,7 @@ export async function handleChatUpdate(args: Readonly<{
       return "replied"
     }
 
-    if (isConfirmText(trimmed)) {
+    if (isConfirmText(body)) {
       const result = confirmPending({
         file,
         telegramUserId: args.userId,
@@ -216,7 +238,8 @@ export async function handleChatUpdate(args: Readonly<{
       return "replied"
     }
 
-    const intent = extractResearchIntent(trimmed)
+    // Research confirm stays on the host path — ignore model/mode directives here.
+    const intent = extractResearchIntent(body)
     if (intent.kind === "research" && intent.subject) {
       const proposed = proposeResearch({
         file,
@@ -240,12 +263,12 @@ export async function handleChatUpdate(args: Readonly<{
   try {
     if (draft) await draft.begin()
     const reply = draft
-      ? await args.runTurn(trimmed, {
+      ? await args.runTurn(body, {
         onPartial: async (text) => {
           await draft.update(text)
         },
-      })
-      : await args.runTurn(trimmed)
+      }, turnOpts)
+      : await args.runTurn(body, undefined, turnOpts)
     if (draft) await draft.flush()
     const prepared = await prepareTelegramReply({
       text: reply,
@@ -270,7 +293,9 @@ export async function handleChatUpdate(args: Readonly<{
     log.error("chat turn failed", { detail })
     const hint = detail.includes("timed out")
       ? "chat turn timed out — try again or ask something smaller"
-      : "chat turn failed — check listener logs"
+      : detail.includes("TRENCHCOAT_REPO_ROOT") || detail.includes("repo root")
+        ? `chat turn failed — ${detail}`
+        : "chat turn failed — check listener logs"
     await args.send(target, hint)
   }
   return "replied"

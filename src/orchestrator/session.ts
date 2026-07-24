@@ -19,6 +19,11 @@ export type SessionOptions = Readonly<{
   cwd: string
   model?: string
   sandbox?: boolean
+  /**
+   * Pass CLI `--force` (auto-approve shell). Only for explicit Telegram /agent
+   * remote-coding turns (ADR 040); default callers must leave this unset.
+   */
+  force?: boolean
   /** Optional override; default resolves `agent` then `cursor-agent` from PATH / ~/.local/bin */
   bin?: string
   timeoutMs?: number
@@ -72,6 +77,7 @@ export function buildCursorCliArgs(opts: Readonly<{
   cwd: string
   model?: string
   sandbox?: boolean
+  force?: boolean
   apiKey?: string
   resumeChatId?: string
   mode?: SessionMode
@@ -93,6 +99,9 @@ export function buildCursorCliArgs(opts: Readonly<{
     "--sandbox",
     opts.sandbox === false ? "disabled" : "enabled",
   ]
+  if (opts.force) {
+    args.push("--force")
+  }
   if (opts.streamPartial) {
     if (outputFormat !== "stream-json") {
       throw new Error("streamPartial requires outputFormat stream-json")
@@ -160,6 +169,7 @@ export async function runOneShotSession(opts: SessionOptions): Promise<SessionRe
     cwd: opts.cwd,
     ...(opts.model ? { model: opts.model } : {}),
     ...(opts.sandbox === undefined ? {} : { sandbox: opts.sandbox }),
+    ...(opts.force ? { force: true } : {}),
     ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
     ...(opts.resumeChatId ? { resumeChatId: opts.resumeChatId } : {}),
     ...(opts.mode ? { mode: opts.mode } : {}),

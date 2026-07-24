@@ -2,7 +2,7 @@
 description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
 status: active
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -25,13 +25,29 @@ overview distiller, not that file as-is (see knowledge/telegram.md).
 The conversational session must survive long chats without bloating, so it does as
 little as possible itself:
 
-- **Chat session** (`skills/chat/`) — resumable Cursor CLI chat (`agent create-chat`
+- Chat session (`skills/chat/`) — resumable Cursor CLI chat (`agent create-chat`
   + `--resume`) within a conversation, run in `--mode ask` (read-only). Holds
   only: the conversation, `state/INDEX.md`, and any chat reports already on disk.
   It answers directly when the index and existing context suffice. Host prompt
   and chat skill both say "read INDEX first" — if
   `~/.trenchcoat/agent/state/INDEX.md` is missing, the session has no rollup
   (scaffold / agent-workspace.md).
+- **Per-message directives (ADR 040)** — leading whitespace-separated tokens
+  only; stripped before research intent and before any model prompt; last-wins
+  within model and within mode:
+  - `/model-high` → `gpt-5.6-sol-low`
+  - `/model-mid` → `gpt-5.6-terra-medium`
+  - `/model-low` → `cursor-grok-4.5-high`
+  - `/plan` → one-off `--mode plan` on `TRENCHCOAT_REPO_ROOT` (sandboxed)
+  - `/agent` → one-off tool-enabled run (omit `--mode`) on
+    `TRENCHCOAT_REPO_ROOT` with `--sandbox disabled` and `--force`
+  - No directive ⇒ durable `composer-2.5` ask chat on `~/.trenchcoat/agent`
+  - Any override skips `--resume` and does not mutate `chat-session.json`
+  - Directive-only messages get host help; ask never auto-promotes to agent
+  - Checkout path comes only from install-written `TRENCHCOAT_REPO_ROOT`
+    (absolute + `.git` + `package.json` + `ops/` + `docs/`) — never from
+    Telegram text. Child env stays scrubbed; sandbox-off `/agent` can still
+    read host files such as `~/.trenchcoat/env`.
 - **Research proposal (host)** — fail-closed host extractor
   (`src/chat/research-intent.ts`, shared CA helpers in
   `src/chat/research-intent-core.ts`) detects research-shaped operator text and asks
@@ -83,7 +99,9 @@ little as possible itself:
   chats are dropped; replies always target that operator id, never the inbound
   `chat.id` if it differs (INV-B3)
 - Host commands: `/start`, `/status`, confirm/cancel, and research proposals
-  reply without an ask-mode agent turn
+  reply without an ask-mode agent turn. `/start` also lists the ADR 040
+  model/mode directives. Directive-only `/plan` / `/agent` / `/model-*`
+  messages return the same help text.
 - **Session policy**: Cursor chat id persisted in `~/.trenchcoat/chat-session.json`;
   rotated after `config.chat.idle_timeout_minutes` (default 30), or when
   `turnCount` reaches `config.chat.turn_count_max` (default 40), or when the
@@ -127,10 +145,14 @@ little as possible itself:
 - `src/lib/telegram-bot.ts` — `sendMessage` / operator HTML send / chunked send / `sendMessageDraft` / `sendChatAction`
 - `src/lib/telegram-format.ts` — strip local refs + markdown → Telegram HTML
 - `src/chat/telegram-reply.ts` — prepare final reply (chunk + optional chat report)
-- `src/chat/handler.ts` — allowlist, host commands, research confirm gate
+- `src/chat/handler.ts` — allowlist, host commands, research confirm gate,
+  leading directive parse
+- `src/chat/directives.ts` — `/model-*` `/plan` `/agent` grammar
+- `src/chat/repo-root.ts` — fail-closed `TRENCHCOAT_REPO_ROOT` for code turns
 - `src/chat/research-intent.ts` — fail-closed research intent extraction
 - `src/chat/pending-research.ts` — durable pending/confirmed request store
-- `src/chat/session.ts` — Cursor chat lifecycle + streaming turn runner
+- `src/chat/session.ts` — Cursor chat lifecycle + streaming turn runner +
+  one-off /plan|/agent launch policy
 - `src/chat/draft.ts` — throttled draft updates
 - `src/lib/cursor-stream.ts` — stream-json assistant delta merge
 - `src/chat/prompt.ts` — operator-text scrub / chat prompt / Telegram truncate
