@@ -18,6 +18,7 @@ import { evaluateWorktreeConfinement, readWorktreeMeta } from "./prepare.js"
 import { savePolicy } from "./policy.js"
 import { extractJsonObject } from "./parse-json.js"
 import { DECISION_POLICY_REL_PATH, POLICY_ALLOWLIST } from "./paths.js"
+import { ensureWorktreeDeps } from "../lib/worktree-deps.js"
 
 export type BuildSessionFn = (opts: SessionOptions) => Promise<SessionResult>
 
@@ -91,6 +92,8 @@ async function writeAndValidatePolicy(
 }
 
 function runUnitTests(worktreePath: string): boolean {
+  const deps = ensureWorktreeDeps({ worktreePath })
+  if (!deps.ok) return false
   const test = spawnSync("pnpm", ["test:unit"], {
     cwd: worktreePath,
     encoding: "utf8",

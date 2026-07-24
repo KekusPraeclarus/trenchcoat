@@ -103,7 +103,7 @@ Never inbox, scraped card prose, or mutable workspace text (INV-S24).
 | `harness_improvement.push_origin` | `true` | Push candidate → `origin/main` before local ff |
 | `harness_improvement.deploy_runtime` | `true` | Run install after integrate |
 | `harness_improvement.defer_agent_activation` | `true` | Schedule stops at pending agent deploy |
-| `harness_improvement.test_command` | `test:all` | `pnpm run <script>` in the worktree |
+| `harness_improvement.test_command` | `test:all` | `pnpm run <script>` in the worktree (after `pnpm install --frozen-lockfile`) |
 | `harness_improvement.require_two_epochs` | `true` | Need distinct sealed epochs with decision-time signals |
 | `harness_improvement.planner_model` / `reviewer_model` / `builder_model` | `composer-2.5` | Agent models |
 | `harness_improvement.min_mature_paired` | `40` | Canary maturity floor |
@@ -123,6 +123,9 @@ a fresh epoch pair appears; duplicate wakeups are no-ops via lock + trial ids.
 Scheduled runs resolve the checkout via `TRENCHCOAT_REPO_ROOT` (set in
 `~/.trenchcoat/env` by `install-launchd.sh`), then `process.cwd()`. Path must
 contain both `.git` and `package.json` (`~/.trenchcoat/runtime` is not valid).
+Sibling git worktrees used for candidates do **not** inherit the main
+checkout's `node_modules`; host installs with `pnpm install --frozen-lockfile`
+before any worktree `pnpm` test/gate script.
 
 `evaluateHypothesis` replays the holdout through the candidate worktree policy
 (with archived decision-time signals), compares the primary metric to the

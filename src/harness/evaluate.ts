@@ -21,6 +21,7 @@ import { isHoldoutConsumed, recordHoldoutConsumption } from "./holdout-registry.
 import { loadHoldoutSubjectsWithSignalsOrThrow } from "./signals.js"
 import { protectedMetricsUnchangedOrImproved } from "./quality.js"
 import { validateManifestoAgainstEvaluation } from "./manifesto-validate.js"
+import { ensureWorktreeDeps } from "../lib/worktree-deps.js"
 
 const DEFAULT_POLICY_REL_PATH = "agent/skills/decision-policy/policy.json"
 
@@ -202,12 +203,17 @@ export async function evaluateHypothesis(
 
   let testsPassed = true
   if (opts.runTests !== false) {
-    const test = spawnSync("pnpm", ["test:unit"], {
-      cwd: meta.worktreePath,
-      encoding: "utf8",
-      timeout: 120_000,
-    })
-    testsPassed = test.status === 0
+    const deps = ensureWorktreeDeps({ worktreePath: meta.worktreePath })
+    if (!deps.ok) {
+      testsPassed = false
+    } else {
+      const test = spawnSync("pnpm", ["test:unit"], {
+        cwd: meta.worktreePath,
+        encoding: "utf8",
+        timeout: 120_000,
+      })
+      testsPassed = test.status === 0
+    }
   }
 
   const holdout = loadSealedEpoch(layout, opts.holdoutEpochId)

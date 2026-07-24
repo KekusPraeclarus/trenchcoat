@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { writeAtomicFileFsync, sha256Bytes } from "../lib/fs-atomic.js"
+import { ensureWorktreeDeps } from "../lib/worktree-deps.js"
 import { probeCursorCli } from "../orchestrator/session.js"
 
 export type GateResult = Readonly<{
@@ -90,14 +91,22 @@ export async function runCleanGate(args: Readonly<{
   })
 
   if (!args.skipFullTests) {
-    const typecheck = run(args.worktreePath, "pnpm", ["typecheck"], 180_000)
-    steps.push({ name: "typecheck", ...typecheck })
-    const lint = run(args.worktreePath, "pnpm", ["lint"], 120_000)
-    steps.push({ name: "lint", ...lint })
-    const unit = run(args.worktreePath, "pnpm", ["test:unit"], 300_000)
-    steps.push({ name: "test:unit", ...unit })
-    const build = run(args.worktreePath, "pnpm", ["build"], 180_000)
-    steps.push({ name: "build", ...build })
+    const deps = ensureWorktreeDeps({ worktreePath: args.worktreePath })
+    steps.push({
+      name: "pnpm-install",
+      ok: deps.ok,
+      detail: deps.detail,
+    })
+    if (deps.ok) {
+      const typecheck = run(args.worktreePath, "pnpm", ["typecheck"], 180_000)
+      steps.push({ name: "typecheck", ...typecheck })
+      const lint = run(args.worktreePath, "pnpm", ["lint"], 120_000)
+      steps.push({ name: "lint", ...lint })
+      const unit = run(args.worktreePath, "pnpm", ["test:unit"], 300_000)
+      steps.push({ name: "test:unit", ...unit })
+      const build = run(args.worktreePath, "pnpm", ["build"], 180_000)
+      steps.push({ name: "build", ...build })
+    }
   }
 
   const ok = steps.every((s) => s.ok)

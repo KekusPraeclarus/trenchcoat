@@ -26,6 +26,7 @@ import {
   writeRejectionReceipt,
 } from "./lifecycle.js"
 import { harnessRoot } from "./canary.js"
+import { ensureWorktreeDeps } from "../lib/worktree-deps.js"
 import { assertRepoRoot, defaultExec, type ExecFn } from "./pr.js"
 import { runHarnessPlanner, type PlanSessionFn } from "./plan-agent.js"
 import { runHarnessReview, validateReviewApproval } from "./review-agent.js"
@@ -525,6 +526,30 @@ export async function runHarnessImprove(
 
     let testsOk = true
     if (opts.runTests !== false) {
+      const deps = ensureWorktreeDeps({ worktreePath: prepared.worktreePath })
+      if (!deps.ok) {
+        const detail = deps.detail.slice(0, 500)
+        await writeRejectionReceipt(opts.archiveRoot, {
+          schema: 1,
+          hypothesisId: hypothesis.hypothesisId,
+          rejectedAt: nowIso,
+          phase: "static_validated",
+          reason: `worktree deps: ${detail}`.slice(0, 500),
+        })
+        const report: HarnessImproveReport = {
+          status: "rejected",
+          reason: `worktree deps: ${detail}`,
+          hypothesisId: hypothesis.hypothesisId,
+          developmentEpochId,
+          holdoutEpochId,
+          branch: prepared.branch,
+          confinementOk: true,
+          testsOk: false,
+          baseCommit,
+        }
+        await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+        return report
+      }
       const script = hi.test_command.trim() || "test:all"
       const run = exec("pnpm", ["run", script], { cwd: prepared.worktreePath })
       testsOk = run.status === 0

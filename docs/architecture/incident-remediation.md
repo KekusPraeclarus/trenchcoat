@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 ---
 
 # Incident remediation
@@ -26,7 +26,9 @@ claim-index writes take a brief agent lock only for that mutation.
    Host may downgrade `attention-now`, never upgrade past evidence floors.
    Discord suggestions enter already-triaged as `attention-now` after host gates.
 4. **Immediate** — diagnose → propose → pre-review → risk/approval → build in
-   isolated worktree → post-diff review → gates (`test:all`) → ff-only push →
+   isolated worktree → post-diff review → **`pnpm install --frozen-lockfile`**
+   (sibling worktrees do not inherit `node_modules`) → gates (`typecheck` /
+   `lint` / `test:all`) → ff-only push →
    deploy → smoke → revert+`runtime.prev` on failure. Diagnose/propose/review
    Cursor sessions use **ask** mode ([ADR 029](../adr/029-remediation-propose-ask-mode.md));
    diagnose/propose may return typed `not-viable` (host closes the incident).
