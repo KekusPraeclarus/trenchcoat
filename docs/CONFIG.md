@@ -412,6 +412,12 @@ address as `tracking-probation` and `reasonCode: operator-seed`. Chains must
 support wallet tracking (`solana`, `ethereum`, `base`, `robinhood`). Refuses a non-empty
 `wallets.json`. Archives a receipt under `archive/wallet-seeds/` (router
 `wallet.lifecycle` fanout for seeds still deferred; review job stages live adds/drops).
+
+`tc wallets add-candidates <file>` merges operator-nominated **`candidate`**
+wallets into existing `wallets.json` (`discoveredFrom: operator-nomination`).
+Skips duplicates and hard-excluded records; archives a receipt under
+`archive/wallet-candidates/`. Supports `--dry-run`. Entry schema matches the
+`wallets` array in the operator seed file (`config/operator-seed.example.json`).
 Seed at least one eligible wallet before wallet scan jobs can produce evidence.
 Discovery also requires a tracking or watching watchlist entry. Discovery and
 scan agents are evidence-only and cannot change wallet state, scores, cursors,
@@ -437,6 +443,7 @@ application is not wired yet — only wallets are applied today.
 | `tc fc-engagement status` / `dry-run <run-id>` | FC like engagement probe |
 | `tc init [--seed <config>] [--operator-seed <file>]` | writes `~/.trenchcoat/config.json` from config seed; optional operator wallet seed |
 | `tc wallets seed <file>` | operator-seed wallets into empty `state/wallets.json` |
+| `tc wallets add-candidates <file> [--dry-run]` | merge operator-nominated candidates into existing wallet state |
 | `tc auth twitter` | headful interactive re-auth (documented sandbox exception) |
 | `tc auth twitter --create-managed-list` | one-time private managed source list; persists list id/url (ADR 004) |
 | `tc probe twitter` | scrape all configured targets + lifecycle summary; no membership mutations |

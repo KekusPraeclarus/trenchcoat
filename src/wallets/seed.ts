@@ -30,6 +30,12 @@ export const OperatorSeedFileSchema = z.object({
 })
 export type OperatorSeedFile = z.infer<typeof OperatorSeedFileSchema>
 
+export const OperatorCandidateFileSchema = z.object({
+  schema: z.literal(1),
+  wallets: z.array(OperatorWalletSeedEntrySchema).max(500).default([]),
+})
+export type OperatorCandidateFile = z.infer<typeof OperatorCandidateFileSchema>
+
 export function normalizeWalletAddress(chain: string, address: string): string {
   const entry = getChain(chain)
   if (!entry) throw new TypeError(`Unknown chain ${chain}`)

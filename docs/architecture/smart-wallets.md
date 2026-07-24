@@ -28,6 +28,9 @@ No signing libraries. No transaction submission. Read-only codecs only (INV-A1).
    writer lock, and stages one `wallet.lifecycle` router event per transition
    (unless canary blocks external effects). Refuses non-empty `wallets.json`.
    Autonomous discovery can populate an empty file.
+   **`tc wallets add-candidates <file>`** merges operator-nominated **`candidate`**
+   wallets into existing state (`discoveredFrom: operator-nomination`); no router
+   events until review promotes. Same entry schema as seed wallets array.
 2. **`wallet-discovery`** — host walks watchlist token identities on
    wallet-supported chains, extracts verified early buyers, stages `candidate`
    wallets, checkpoints resumable cursors in `state/wallets.json`, and
@@ -129,6 +132,7 @@ for copy-trade settlement.
 | Review / promote-drop | `src/wallets/review.ts` |
 | Exclusions | `src/wallets/exclusions.ts` |
 | Operator seed | `src/wallets/seed.ts`, `src/orchestrator/wallet-seed.ts` |
+| Operator candidate merge | `src/wallets/discovery.ts`, `src/orchestrator/wallet-add-candidates.ts` |
 | Solana provider | `src/collectors/wallets/helius-provider.ts` |
 | EVM / Robinhood provider | `src/collectors/wallets/evm-provider.ts` |
 | Host jobs | `src/orchestrator/wallet-*.ts` |

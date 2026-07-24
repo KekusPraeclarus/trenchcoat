@@ -826,6 +826,7 @@ export const WalletStatusSchema = z.enum([
 
 export const WalletDiscoveryOriginSchema = z.enum([
   "operator-seed",
+  "operator-nomination",
   "watchlist",
   "new-pools",
   "research",

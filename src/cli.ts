@@ -45,6 +45,7 @@ Commands:
   fc-source seed <path> [--dry-run]
   fc-source sync [--dry-run]
   wallets seed <path>
+  wallets add-candidates <path> [--dry-run]
   x-engagement dry-run <run-id>
   x-engagement status
   fc-engagement dry-run <run-id>
@@ -140,6 +141,18 @@ async function cmdWalletsSeed(seedPath: string): Promise<void> {
   if (report.skippedWatchlist > 0 || report.skippedSources > 0) {
     console.error("note: watchlist/sources in operator seed are not applied yet (wallets only)")
   }
+}
+
+async function cmdWalletsAddCandidates(seedPath: string, dryRun: boolean): Promise<void> {
+  const { agentRoot, archiveRoot } = resolveHomes()
+  const { applyOperatorWalletCandidates } = await import("./orchestrator/wallet-add-candidates.js")
+  const report = await applyOperatorWalletCandidates({
+    agentRoot,
+    archiveRoot,
+    seedPath,
+    dryRun,
+  })
+  console.log(JSON.stringify(report, null, 2))
 }
 
 async function cmdRun(jobName: string, args: string[]): Promise<void> {
@@ -938,9 +951,15 @@ async function main(): Promise<void> {
       )
       break
     case "wallets":
-      if (rest[0] !== "seed" || !rest[1]) usage()
-      await cmdWalletsSeed(rest[1]!)
-      break
+      if (rest[0] === "seed" && rest[1]) {
+        await cmdWalletsSeed(rest[1]!)
+        break
+      }
+      if (rest[0] === "add-candidates" && rest[1]) {
+        await cmdWalletsAddCandidates(rest[1]!, rest.includes("--dry-run"))
+        break
+      }
+      usage()
     case "run":
       if (!rest[0]) usage()
       await cmdRun(rest[0]!, rest.slice(1))
