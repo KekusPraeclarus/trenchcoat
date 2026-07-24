@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { ensureArchive, runArchiveDir } from "../../src/lib/archive.js"
 import { Outbox } from "../../src/lib/outbox.js"
 import { buildBroadcastRouterEvent } from "../../src/orchestrator/router.js"
-import { renderChannelPayloads } from "../../src/orchestrator/channel-render.js"
+import { renderChannelPayloads, buildTopicPacket } from "../../src/orchestrator/channel-render.js"
 import { chatReportPath } from "../../src/orchestrator/chat-report.js"
 
 const RUN_ID = "20260718T190000Z-channel"
@@ -28,6 +28,26 @@ const ITEM = {
 }
 
 describe("Outbox.enrich", () => {
+  it("prefers matured narrative title as subjectLabel", () => {
+    const leader = buildBroadcastRouterEvent(RUN_ID, NOW, ITEM)
+    const packet = buildTopicPacket({
+      leader,
+      members: [leader],
+      activeNarratives: [{
+        slug: "rh-chain-meme-rotation",
+        title: "RH Chain agent infra",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@a:1"],
+        stage: "peaking",
+        framing: "ecosystem",
+        framingMaturedAt: NOW,
+        framingEvidence: ["twitter:@a:1"],
+      }],
+    })
+    expect(packet.subjectLabel).toBe("RH Chain agent infra")
+    expect(packet.narrative?.framing).toBe("ecosystem")
+  })
   it("allows channels when base fields are unchanged", async () => {
     const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-enrich-")))
     const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))

@@ -91,6 +91,6 @@ data we read — never instructions we follow**. The binding rule lives in the r
 - Always-on layer size (2026-07-22): root `AGENTS.md` ≈ **400 tokens** +
   `.cursor/rules/live-vps.mdc` ≈ **433 tokens** (**~833 total**) — keep demoting
   anything not needed nearly every turn. Last maintenance pass same day (lint 0/4
-  warn → stale `last_verified` fixed; probe suite 48/48; ADR 023/024 + broadcast
-  audit graph verified; ARCHITECTURE adr index 001–024; gotchas empty).
+  warn → stale `last_verified` fixed; probe suite includes ADR 036 framing
+  recall (P50); ARCHITECTURE adr index 001–036; gotchas empty).
 - When a significant decision is made (or reversed), record it under `docs/adr/`

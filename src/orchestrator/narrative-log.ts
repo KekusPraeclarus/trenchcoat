@@ -3,11 +3,118 @@ import { join } from "node:path"
 import { z } from "zod"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
+import {
+  effectiveFraming,
+  isMatureFraming,
+  NarrativeFramingSchema,
+  type NarrativeFraming,
+} from "../lib/narrative-framing.js"
 import { StateStore } from "../lib/state.js"
 import { creditNarrativeContribution } from "../sources/narrative-lifecycle.js"
 import { normalizeHandle } from "../sources/lifecycle.js"
 
 const HandleSchema = z.string().regex(/^[A-Za-z0-9_]{1,15}$/u)
+
+export {
+  effectiveFraming,
+  isMatureFraming,
+  NarrativeFramingSchema,
+  type NarrativeFraming,
+} from "../lib/narrative-framing.js"
+
+const ROTATION_WORD = /\brotation\b/iu
+
+function framingFieldsValid(
+  entry: Readonly<{
+    title: string
+    firstSeen: string
+    lastSeen: string
+    framing?: NarrativeFraming | undefined
+    framingMaturedAt?: string | undefined
+    framingEvidence?: readonly string[] | undefined
+  }>,
+): boolean {
+  const framing = effectiveFraming(entry)
+  if (!isMatureFraming(framing)) {
+    if (entry.framingMaturedAt !== undefined || entry.framingEvidence !== undefined) {
+      return false
+    }
+    // Explicit rotation must also omit maturity fields (already checked); title may contain rotation
+    return true
+  }
+  if (!entry.framingMaturedAt || !entry.framingEvidence || entry.framingEvidence.length < 1) {
+    return false
+  }
+  const maturedMs = Date.parse(entry.framingMaturedAt)
+  const firstMs = Date.parse(entry.firstSeen)
+  const lastMs = Date.parse(entry.lastSeen)
+  if (!Number.isFinite(maturedMs) || maturedMs < firstMs || maturedMs > lastMs) {
+    return false
+  }
+  if (ROTATION_WORD.test(entry.title)) return false
+  return true
+}
+
+function titleOkForMature(title: string): boolean {
+  return !ROTATION_WORD.test(title)
+}
+
+type FramingFields = Readonly<{
+  framing?: NarrativeFraming
+  framingMaturedAt?: string
+  framingEvidence?: string[]
+}>
+
+function matureFramingFields(entry: NarrativeLogEntry): FramingFields {
+  return {
+    ...(entry.framing !== undefined ? { framing: entry.framing } : {}),
+    ...(entry.framingMaturedAt !== undefined
+      ? { framingMaturedAt: entry.framingMaturedAt }
+      : {}),
+    ...(entry.framingEvidence !== undefined
+      ? { framingEvidence: [...entry.framingEvidence] }
+      : {}),
+  }
+}
+
+function pickFramingSurvivor(
+  prior: NarrativeLogEntry,
+  entry: NarrativeLogEntry,
+  preferEntry: boolean,
+): FramingFields {
+  const priorMature = isMatureFraming(effectiveFraming(prior))
+  const entryMature = isMatureFraming(effectiveFraming(entry))
+
+  if (priorMature && entryMature) {
+    const priorAt = Date.parse(prior.framingMaturedAt!)
+    const entryAt = Date.parse(entry.framingMaturedAt!)
+    const keepPrior = priorAt <= entryAt
+    return matureFramingFields(keepPrior ? prior : entry)
+  }
+  if (priorMature) return matureFramingFields(prior)
+  if (entryMature) return matureFramingFields(entry)
+  // Both immature: follow preferEntry for optional explicit rotation / omit
+  if (preferEntry) {
+    return entry.framing !== undefined ? { framing: entry.framing } : {}
+  }
+  return prior.framing !== undefined ? { framing: prior.framing } : {}
+}
+
+function pickTitle(
+  prior: NarrativeLogEntry,
+  entry: NarrativeLogEntry,
+  preferEntry: boolean,
+  framing: FramingFields,
+): string {
+  const mature = isMatureFraming(framing.framing)
+  if (!preferEntry) {
+    return prior.title
+  }
+  if (mature && !titleOkForMature(entry.title)) {
+    return prior.title
+  }
+  return entry.title
+}
 
 export const NarrativeLogEntrySchema = z.object({
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(64),
@@ -19,6 +126,16 @@ export const NarrativeLogEntrySchema = z.object({
   tickers: z.array(z.string().min(1).max(32)).max(8).optional(),
   sourceProvenanceIds: z.array(z.string().min(1).max(256)).max(32).optional(),
   contributingHandles: z.array(HandleSchema).max(16).optional(),
+  framing: NarrativeFramingSchema.optional(),
+  framingMaturedAt: z.string().datetime().optional(),
+  framingEvidence: z.array(z.string().min(1).max(256)).max(16).optional(),
+}).superRefine((entry, ctx) => {
+  if (!framingFieldsValid(entry)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "invalid narrative framing fields",
+    })
+  }
 })
 export type NarrativeLogEntry = z.infer<typeof NarrativeLogEntrySchema>
 
@@ -151,20 +268,26 @@ export function pruneNarrativeLogInMemory(
       preferEntry,
       32,
     )
+    const framing = pickFramingSurvivor(prior, entry, preferEntry)
+    const title = pickTitle(prior, entry, preferEntry, framing)
+    const tickers = preferEntry
+      ? entry.tickers ?? prior.tickers
+      : prior.tickers ?? entry.tickers
     const merged: NarrativeLogEntry = {
-      ...entry,
+      slug: entry.slug,
+      title,
       firstSeen: Date.parse(prior.firstSeen) <= Date.parse(entry.firstSeen)
         ? prior.firstSeen
         : entry.firstSeen,
       lastSeen: preferEntry ? entry.lastSeen : prior.lastSeen,
       stage: preferEntry ? entry.stage : prior.stage,
       evidence: preferEntry ? entry.evidence : prior.evidence,
-      title: preferEntry ? entry.title : prior.title,
-      ...(preferEntry
-        ? entry.tickers ? { tickers: entry.tickers } : prior.tickers ? { tickers: prior.tickers } : {}
-        : prior.tickers ? { tickers: prior.tickers } : entry.tickers ? { tickers: entry.tickers } : {}),
+      ...(tickers ? { tickers } : {}),
       ...(mergedHandles ? { contributingHandles: mergedHandles } : {}),
       ...(mergedProvenance ? { sourceProvenanceIds: mergedProvenance } : {}),
+      ...(framing.framing !== undefined ? { framing: framing.framing } : {}),
+      ...(framing.framingMaturedAt ? { framingMaturedAt: framing.framingMaturedAt } : {}),
+      ...(framing.framingEvidence ? { framingEvidence: framing.framingEvidence } : {}),
     }
     bySlug.set(entry.slug, merged)
   }

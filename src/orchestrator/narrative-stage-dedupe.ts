@@ -4,6 +4,14 @@
  */
 
 import type { BroadcastItem } from "../contracts/schemas.js"
+import {
+  narrativeAliases,
+  textMentionsNarrativeAlias,
+} from "../lib/narrative-aliases.js"
+import {
+  effectiveFraming,
+  type NarrativeFraming,
+} from "../lib/narrative-framing.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
 
 const NARRATIVE_CLAIM_TYPES = new Set([
@@ -11,29 +19,6 @@ const NARRATIVE_CLAIM_TYPES = new Set([
   "narrative-fade",
   "rotation",
 ])
-
-const STAGE_STOPWORDS = new Set([
-  "meme",
-  "meta",
-  "sol",
-  "the",
-  "and",
-  "for",
-  "surge",
-  "collapse",
-  "trust",
-  "bridge",
-  "agents",
-  "fun",
-  "coin",
-  "chain",
-  "base",
-  "token",
-  "launch",
-])
-
-/** Short tokens allowed as distinctive aliases (operator shorthand). */
-const SHORT_ALIAS_ALLOW = new Set(["rh", "pfp"])
 
 const STATUS_QUO_FILLER =
   /\b(?:still have|continues to|under that|still peaking|still at peak|remains peaking|continues peaking|already peaking|already at peak|still fading|still emerging)\b|\bremains\b/iu
@@ -44,7 +29,10 @@ export type StageKnown = Readonly<{
   slug: string
   title: string
   stage: NarrativeStage
+  framing?: NarrativeFraming | undefined
 }>
+
+export { narrativeAliases }
 
 /** Narratives whose stage did not change this run (status-quo heat). */
 export function statusQuoNarratives(
@@ -58,31 +46,15 @@ export function statusQuoNarratives(
   for (const prior of logBefore) {
     const after = afterBySlug?.get(prior.slug)
     if (after && after.stage !== prior.stage) continue
-    out.push({ slug: prior.slug, title: prior.title, stage: prior.stage })
+    const survivor = after ?? prior
+    out.push({
+      slug: survivor.slug,
+      title: survivor.title,
+      stage: survivor.stage,
+      framing: effectiveFraming(survivor),
+    })
   }
   return out
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
-}
-
-/** Distinctive tokens used to recognize a narrative in free text. */
-export function narrativeAliases(entry: StageKnown): string[] {
-  const aliases = new Set<string>()
-  for (const part of entry.slug.split("-")) {
-    if (STAGE_STOPWORDS.has(part)) continue
-    if (part.length >= 4 || SHORT_ALIAS_ALLOW.has(part)) aliases.add(part)
-  }
-  for (const word of entry.title.toLowerCase().split(/[^a-z0-9]+/u)) {
-    if (STAGE_STOPWORDS.has(word)) continue
-    if (word.length >= 4 || SHORT_ALIAS_ALLOW.has(word)) aliases.add(word)
-  }
-  // Common operator shorthand for Robinhood-chain narratives
-  if (entry.slug.includes("rh-") || /\brobinhood\b/iu.test(entry.title)) {
-    aliases.add("rh")
-  }
-  return [...aliases]
 }
 
 function stageMentionPattern(stage: NarrativeStage): RegExp {
@@ -105,12 +77,7 @@ export function restatesUnchangedNarrativeStage(
   statusQuo: readonly StageKnown[],
 ): boolean {
   for (const entry of statusQuo) {
-    const aliases = narrativeAliases(entry)
-    if (aliases.length === 0) continue
-    const mentioned = aliases.some((alias) =>
-      new RegExp(`\\b${escapeRegExp(alias)}\\b`, "iu").test(text),
-    )
-    if (!mentioned) continue
+    if (!textMentionsNarrativeAlias(text, entry)) continue
     if (stageMentionPattern(entry.stage).test(text)) return true
     // Filler phrases only count when the same sentence names this narrative
     if (STATUS_QUO_FILLER.test(text)) return true

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ensureArchive } from "../../src/lib/archive.js"
 import {
+  effectiveFraming,
+  mergeNarrativeProposals,
   pruneNarrativeLog,
   pruneNarrativeLogInMemory,
 } from "../../src/orchestrator/narrative-log.js"
@@ -159,5 +161,175 @@ describe("pruneNarrativeLog", () => {
     })
     expect(report.kept).toBe(0)
     expect(readFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), "utf8")).toBe("")
+  })
+})
+
+describe("narrative framing", () => {
+  it("treats omitted framing as rotation", () => {
+    const result = pruneNarrativeLogInMemory(`${JSON.stringify(entry())}\n`, NOW, 14)
+    expect(result.entries[0]).toMatchObject({ slug: "base-ai" })
+    expect(result.entries[0]?.framing).toBeUndefined()
+    expect(effectiveFraming(result.entries[0]!)).toBe("rotation")
+  })
+
+  it("drops mature proposals missing framingEvidence", () => {
+    const bad = entry({
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+    })
+    const result = pruneNarrativeLogInMemory(`${JSON.stringify(bad)}\n`, NOW, 14)
+    expect(result.kept).toBe(0)
+    expect(result.malformed).toBe(1)
+  })
+
+  it("drops mature proposals whose title still says rotation", () => {
+    const bad = entry({
+      title: "RH chain meme rotation",
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+      framingEvidence: ["twitter:@bob:2"],
+    })
+    const result = pruneNarrativeLogInMemory(`${JSON.stringify(bad)}\n`, NOW, 14)
+    expect(result.kept).toBe(0)
+    expect(result.malformed).toBe(1)
+  })
+
+  it("accepts a valid ecosystem maturity line", () => {
+    const mature = entry({
+      title: "RH Chain agent infra",
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+      framingEvidence: ["twitter:@bob:2"],
+    })
+    const result = pruneNarrativeLogInMemory(`${JSON.stringify(mature)}\n`, NOW, 14)
+    expect(result.kept).toBe(1)
+    expect(result.entries[0]).toMatchObject({
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+      title: "RH Chain agent infra",
+    })
+  })
+
+  it("never regresses mature framing when a later line omits or sets rotation", () => {
+    const mature = entry({
+      title: "RH Chain agent infra",
+      lastSeen: "2026-07-15T12:00:00.000Z",
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-15T12:00:00.000Z",
+      framingEvidence: ["twitter:@bob:2"],
+    })
+    const later = entry({
+      title: "RH Chain agent infra update",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+      framing: "rotation",
+      evidence: ["twitter:@carol:3"],
+    })
+    const result = pruneNarrativeLogInMemory(
+      `${JSON.stringify(mature)}\n${JSON.stringify(later)}\n`,
+      NOW,
+      14,
+    )
+    expect(result.entries[0]).toMatchObject({
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-15T12:00:00.000Z",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+      title: "RH Chain agent infra update",
+    })
+  })
+
+  it("promotes rotation to ecosystem on a later valid maturity line", () => {
+    const prior = entry({
+      title: "RH chain meme rotation",
+      lastSeen: "2026-07-14T12:00:00.000Z",
+    })
+    const mature = entry({
+      title: "RH Chain agent infra",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+      framingEvidence: ["twitter:@bob:2"],
+    })
+    const result = pruneNarrativeLogInMemory(
+      `${JSON.stringify(prior)}\n${JSON.stringify(mature)}\n`,
+      NOW,
+      14,
+    )
+    expect(result.entries[0]).toMatchObject({
+      framing: "ecosystem",
+      firstSeen: "2026-07-10T12:00:00.000Z",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+    })
+  })
+
+  it("keeps the earlier maturity when ecosystem and regime disagree", () => {
+    const ecosystem = entry({
+      title: "RH Chain agent infra",
+      lastSeen: "2026-07-15T12:00:00.000Z",
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-15T12:00:00.000Z",
+      framingEvidence: ["twitter:@bob:2"],
+    })
+    const regime = entry({
+      title: "RH Chain regime",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+      framing: "regime",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+      framingEvidence: ["twitter:@carol:3"],
+    })
+    const result = pruneNarrativeLogInMemory(
+      `${JSON.stringify(ecosystem)}\n${JSON.stringify(regime)}\n`,
+      NOW,
+      14,
+    )
+    expect(result.entries[0]).toMatchObject({
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-15T12:00:00.000Z",
+      title: "RH Chain regime",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+    })
+  })
+
+  it("merges a maturity proposal into an existing log via mergeNarrativeProposals", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narrative-merge-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+    mkdirSync(join(agentRoot, "reports", RUN_ID), { recursive: true })
+    const prior = entry({
+      slug: "rh-chain-meme-rotation",
+      title: "Robinhood chain meme rotation",
+      firstSeen: "2026-07-01T00:00:00.000Z",
+      lastSeen: "2026-07-14T12:00:00.000Z",
+    })
+    writeFileSync(
+      join(agentRoot, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify(prior)}\n`,
+    )
+    const proposal = {
+      ...prior,
+      title: "RH Chain agent infra",
+      lastSeen: "2026-07-16T12:00:00.000Z",
+      evidence: ["twitter:@alice:1", "twitter:@bob:2"],
+      framing: "ecosystem",
+      framingMaturedAt: "2026-07-16T12:00:00.000Z",
+      framingEvidence: ["twitter:@bob:2"],
+    }
+    writeFileSync(
+      join(agentRoot, "reports", RUN_ID, "narrative-proposals.jsonl"),
+      `${JSON.stringify(proposal)}\n`,
+    )
+    const report = await mergeNarrativeProposals({
+      agentRoot,
+      runId: RUN_ID,
+      nowIso: NOW,
+    })
+    expect(report.malformed).toBe(0)
+    const log = readFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), "utf8")
+    const parsed = JSON.parse(log.trim())
+    expect(parsed).toMatchObject({
+      slug: "rh-chain-meme-rotation",
+      title: "RH Chain agent infra",
+      framing: "ecosystem",
+      firstSeen: "2026-07-01T00:00:00.000Z",
+    })
   })
 })

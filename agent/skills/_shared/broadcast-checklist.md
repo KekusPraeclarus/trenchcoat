@@ -56,3 +56,10 @@ fine only for ordinary noise, never for a founder primary-source catalyst.
 Read `state/narratives/log.jsonl` first: do **not** restate a narrative's known
 stage (e.g. omit "RH still peaking" when it is already peaking). Mention heat
 only when it drops or increases; host rejects status-quo stage restatements.
+
+Read `framing` from the log. If `ecosystem` or `regime`, do **not** call the lane
+a "rotation" in `text`. Prefer the log `title` in operator-facing language; never
+paste the kebab slug. Host rejects `stale-narrative-framing` when matured subjects
+still use `\brotation\b` as lane framing. Checklist `direction: "rotation"` on
+development claims means capital/attention shift direction — **not** permission to
+name the lane a rotation.

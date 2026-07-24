@@ -121,3 +121,21 @@ describe("assertNarrativeBroadcastAllowed", () => {
     })).toEqual({ ok: true })
   })
 })
+
+describe("framing on statusQuoNarratives", () => {
+  it("carries effective framing on status-quo survivors", () => {
+    const mature: NarrativeLogEntry = {
+      ...RH,
+      title: "RH Chain agent infra",
+      framing: "ecosystem",
+      framingMaturedAt: RH.lastSeen,
+      framingEvidence: ["twitter:@bob:2"],
+    }
+    const quo = statusQuoNarratives([mature])
+    expect(quo[0]).toMatchObject({
+      slug: "rh-chain-meme-rotation",
+      framing: "ecosystem",
+      title: "RH Chain agent infra",
+    })
+  })
+})

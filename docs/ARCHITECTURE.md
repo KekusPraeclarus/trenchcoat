@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-07-22
+last_verified: 2026-07-24
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -52,7 +52,7 @@ entries; writes a briefing to `agent/reports/` and, rarely, a broadcast proposal
 to `agent/outbox/`
 → orchestrator runs post-run integrity checks, writes as-of bundles for new
 decisions, creates entry-pending paper positions, validates outbox items (schema,
-length, narrative dedupe, worthiness review per ADR 014/023/024), attaches per-channel payloads (Telegram uncapped; Discord-only
+length, narrative dedupe, worthiness review per ADR 014/023/024/036), attaches per-channel payloads (Telegram uncapped; Discord-only
 daily/urgent budget when attaching `channels.discord` — `urgent` bypasses the
 Discord daily budget), and stages deliveries → seals the
 archive journal (ADR 006; Git is backup-only via `tc backup`) → purges durably
@@ -106,7 +106,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–031
+│   ├── adr/                  # binding decisions 001–036
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,

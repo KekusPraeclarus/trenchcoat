@@ -70,6 +70,20 @@ describe("validateDiscordDistillOutput", () => {
     )).toEqual({ ok: false, reason: "unchanged-stage-restatement" })
   })
 
+  it("rejects stale rotation framing for matured narratives", () => {
+    const matured = [{
+      slug: "rh-chain-meme-rotation",
+      title: "RH Chain agent infra",
+      stage: "peaking" as const,
+      framing: "ecosystem" as const,
+    }]
+    expect(validateDiscordDistillOutput(
+      "RH rotation still loud on infra catalysts this week.",
+      [],
+      matured,
+    )).toEqual({ ok: false, reason: "stale-narrative-framing" })
+  })
+
   it("rejects overlong and control chars", () => {
     expect(validateDiscordDistillOutput("x".repeat(DISCORD_TEXT_MAX + 1)).ok).toBe(false)
     expect(validateDiscordDistillOutput("bad\u0000text").ok).toBe(false)
@@ -252,6 +266,20 @@ describe("runDiscordDistiller", () => {
 })
 
 describe("validateTelegramTopicOutput", () => {
+  it("rejects stale rotation framing for the subject narrative", () => {
+    expect(validateTelegramTopicOutput(
+      "RH rotation still loud while agents ship",
+      [],
+      [{
+        slug: "rh-chain-meme-rotation",
+        stage: "peaking",
+        tickers: [],
+        lastSeen: "2026-07-18T12:00:00.000Z",
+        title: "RH Chain agent infra",
+        framing: "ecosystem",
+      }],
+    )).toEqual({ ok: false, reason: "stale-narrative-framing" })
+  })
   it("accepts a short topic paragraph", () => {
     const text =
       "RH chain meme rotation just got a founder-wallet catalyst — leaders still firm this week; watch invalidation if tape cools."
@@ -451,6 +479,42 @@ describe("runTelegramTopicDistiller", () => {
     expect(msg).toContain("<untrusted-topic-packet>")
     expect(msg).not.toContain("Chat recall")
   })
+
+  it("annotates mature framing on topic and discord distill packets", () => {
+    const msg = telegramTopicUserMessage({
+      subject: "rh-chain-meme-rotation",
+      subjectLabel: "RH Chain agent infra",
+      narrative: {
+        slug: "rh-chain-meme-rotation",
+        stage: "peaking",
+        tickers: [],
+        lastSeen: "2026-07-18T12:00:00.000Z",
+        title: "RH Chain agent infra",
+        framing: "ecosystem",
+      },
+      members: [{
+        eventId: "e1",
+        severity: "notable",
+        text: "infra catalyst",
+        auditClaim: CLAIM,
+      }],
+      otherNarratives: [],
+    })
+    expect(msg).toContain("framing=ecosystem")
+    expect(msg).toContain("subjectLabel=RH Chain agent infra")
+
+    const discord = distillUserMessage({
+      reportText: "report",
+      unchangedStages: [{
+        slug: "rh-chain-meme-rotation",
+        title: "RH Chain agent infra",
+        stage: "peaking",
+        framing: "ecosystem",
+      }],
+    })
+    expect(discord).toContain("framing=ecosystem")
+    expect(discord).toContain("RH Chain agent infra=peaking")
+  })
 })
 
 describe("daily digest rendering", () => {
@@ -499,6 +563,25 @@ describe("daily digest rendering", () => {
     expect(rendered).toContain("Wallet lore catalyst printed.")
     expect(rendered).not.toContain("Base Trust Collapse")
     expect(rendered).not.toContain("No host-approved development")
+  })
+
+  it("uses preferred mature titles in digest headers", () => {
+    const rendered = renderDailyDigestCompactFallback({
+      londonDate: "2026-07-18",
+      narratives: [{
+        slug: "rh-chain-meme-rotation",
+        stage: "peaking",
+        tickers: [],
+        lastSeen: "2026-07-18T12:00:00.000Z",
+        title: "RH Chain agent infra",
+        framing: "ecosystem",
+      }],
+      developmentsBySlug: {
+        "rh-chain-meme-rotation": "Protocol agents shipping.",
+      },
+    })
+    expect(rendered).toContain("RH Chain agent infra")
+    expect(rendered).not.toContain("RH Chain Meme Rotation")
   })
 
   it("returns null when there are no window developments", () => {

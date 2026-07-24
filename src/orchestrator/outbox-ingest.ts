@@ -26,6 +26,8 @@ import {
   statusQuoNarratives,
   type StageKnown,
 } from "./narrative-stage-dedupe.js"
+import { maturedNarrativeLabels, usesStaleRotationFraming } from "../lib/narrative-label.js"
+import { effectiveFraming } from "../lib/narrative-framing.js"
 import {
   capSeverityForPlatformCoverage,
   resolveSocialPlatformsForClaim,
@@ -131,6 +133,14 @@ export async function ingestOutbox(args: Readonly<{
   const logBefore = args.narrativeLogBefore ?? []
   const logAfter = args.narrativeLogAfter
   const statusQuo = statusQuoNarratives(logBefore, logAfter)
+  const framingSource = logAfter ?? logBefore
+  const maturedNarratives = maturedNarrativeLabels(
+    framingSource.map((entry) => ({
+      slug: entry.slug,
+      title: entry.title,
+      framing: effectiveFraming(entry),
+    })),
+  )
   const worthinessEnabled = args.worthiness?.enabled === true
   const worthinessStatusQuo: readonly StageKnown[] =
     args.worthiness?.context.statusQuoStages ?? statusQuo
@@ -249,6 +259,11 @@ export async function ingestOutbox(args: Readonly<{
 
     if (statusQuo.length > 0 && restatesUnchangedNarrativeStage(item.text, statusQuo)) {
       reject("status-quo-narrative-stage", rawHash)
+      continue
+    }
+
+    if (maturedNarratives.length > 0 && usesStaleRotationFraming(item.text, maturedNarratives)) {
+      reject("stale-narrative-framing", rawHash)
       continue
     }
 

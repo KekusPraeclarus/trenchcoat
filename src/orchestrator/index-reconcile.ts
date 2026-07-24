@@ -16,6 +16,10 @@ import type { StateStore } from "../lib/state.js"
 import { RunManifestSchema } from "../contracts/schemas.js"
 import { loadJournalForScan } from "./journal-store.js"
 import {
+  effectiveFraming,
+  isMatureFraming,
+} from "../lib/narrative-framing.js"
+import {
   narrativeLogPath,
   pruneNarrativeLogInMemory,
   type NarrativeLogEntry,
@@ -414,10 +418,12 @@ export async function reconcileIndex(args: Readonly<{
       if (a.lastSeen !== b.lastSeen) return b.lastSeen.localeCompare(a.lastSeen)
       return a.slug.localeCompare(b.slug)
     })
-    .map((entry) => (
-      `${entry.slug} — ${entry.stage}, ${entry.title}, ${entry.lastSeen.slice(0, 10)}`
+    .map((entry) => {
+      const framing = effectiveFraming(entry)
+      const framingPart = isMatureFraming(framing) ? `, framing=${framing}` : ""
+      return `${entry.slug} — ${entry.stage}, ${entry.title}${framingPart}, ${entry.lastSeen.slice(0, 10)}`
         + ` → ${narrativePointer(args.agentRoot, entry.slug)}`
-    ))
+    })
 
   const header = [
     "# INDEX",

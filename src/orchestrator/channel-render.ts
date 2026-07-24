@@ -3,7 +3,8 @@ import { join } from "node:path"
 import type { ArchiveLayout } from "../lib/archive.js"
 import { runArchiveDir, writeJsonRecordFsync } from "../lib/archive.js"
 import { sha256Json } from "../lib/canonical-json.js"
-import { deslugNarrativeLabel } from "../lib/narrative-label.js"
+import { preferredNarrativeLabel } from "../lib/narrative-label.js"
+import { effectiveFraming } from "../lib/narrative-framing.js"
 import { Outbox } from "../lib/outbox.js"
 import type {
   AuditClaim,
@@ -103,11 +104,14 @@ function normalizeSubject(event: RouterEvent): string {
 }
 
 function snapshotFromNarrative(entry: NarrativeLogEntry): TopicNarrativeSnapshot {
+  const framing = effectiveFraming(entry)
   return {
     slug: entry.slug,
     stage: entry.stage,
     tickers: entry.tickers ?? [],
     lastSeen: entry.lastSeen,
+    title: entry.title,
+    framing,
   }
 }
 
@@ -143,7 +147,10 @@ export function buildTopicPacket(args: Readonly<{
     .map(snapshotFromNarrative)
   return {
     subject,
-    subjectLabel: deslugNarrativeLabel(subject.length > 0 ? subject : "unknown"),
+    subjectLabel: preferredNarrativeLabel({
+      slug: subject.length > 0 ? subject : "unknown",
+      ...(matched ? { title: matched.title, framing: effectiveFraming(matched) } : {}),
+    }),
     ...(matched ? { narrative: snapshotFromNarrative(matched) } : {}),
     members,
     otherNarratives,

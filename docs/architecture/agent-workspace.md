@@ -2,7 +2,7 @@
 description: The runtime agent's workspace - instructions, skills, knowledge store (index, research, narratives, sources), alpha queue, outbox, sandbox config. Everything under agent/ is edited as artifact, read as data.
 scope: module
 status: draft
-last_verified: 2026-07-22
+last_verified: 2026-07-24
 read_when:
   - Authoring or editing anything under agent/ (bot instructions, skills, knowledge store schema, sandbox.json).
 do_not_read_when:
@@ -133,24 +133,32 @@ structured state, markdown for prose knowledge, one index for retrieval.
   `items` fail Zod and purge nothing (INV-Q1; see knowledge/telegram.md).
 - **`narratives/log.jsonl`** — rolling log of narratives the bot has seen.
   One JSON object per line: `slug`, `title`, `firstSeen`, `lastSeen`,
-  `evidence` (provenance ids), `stage: emerging | peaking | fading`. Host-owned
-  and integrity-protected — the agent never writes it directly. The narrative-scan
-  skill proposes updates in `reports/<run-id>/narrative-proposals.jsonl` (update
-  `lastSeen`/`stage` for known slugs; append only genuinely new ones). After the
-  session the host `mergeNarrativeProposals` (`src/orchestrator/narrative-log.ts`)
+  `evidence` (provenance ids), `stage: emerging | peaking | fading`, optional
+  `framing: rotation | ecosystem | regime` (omit = `rotation`), and when mature
+  `framingMaturedAt` + `framingEvidence`. Host-owned and integrity-protected —
+  the agent never writes it directly. The narrative-scan skill proposes updates
+  in `reports/<run-id>/narrative-proposals.jsonl` (update `lastSeen`/`stage`/
+  framing for known slugs; append only genuinely new ones; **slug stays stable
+  forever** even when framing matures). After the session the host
+  `mergeNarrativeProposals` (`src/orchestrator/narrative-log.ts`)
   schema-validates untrusted proposal lines, drops malformed ones, merges into
-  the log, and credits X narrative sources cited via `contributingHandles` /
+  the log with **monotonic framing** (never regress `ecosystem`/`regime` →
+  `rotation`), and credits X narrative sources cited via `contributingHandles` /
   `twitter:@handle` provenances into `state/x-narrative-sources.json`;
   `pruneNarrativeLog` then purges any entry whose `lastSeen` is older than
   `config.narratives.retention_days` (default 14) and collapses duplicate slugs.
-  Outbox broadcasts fire on a newly appended slug, a stage change, a notable
-  concrete same-stage development, or a founder/protocol primary-source catalyst
-  (material product/wallet/protocol/ecosystem announcement from a founder, CEO,
-  protocol official, or official project channel — no CT-cluster or stage-shift
-  prerequisite). Pure re-sightings stay silent. Host ingest
+  Display labels prefer the validated `title` when framing is mature (never the
+  mechanical deslug of a rotation-bearing slug). Outbox broadcasts fire on a
+  newly appended slug, a stage change, a notable concrete same-stage
+  development (including framing maturity), or a founder/protocol primary-source
+  catalyst (material product/wallet/protocol/ecosystem announcement from a
+  founder, CEO, protocol official, or official project channel — no CT-cluster
+  or stage-shift prerequisite). Pure re-sightings stay silent. Host ingest
   compatibility-routes same-stage emergence/rotation claims through development
-  novelty dedupe, while rejecting text that only restates known heat
-  (`narrative-stage-dedupe.ts`, `narrative-development.ts`).
+  novelty dedupe, while rejecting text that only restates known heat or uses
+  stale lane-“rotation” wording against a matured subject
+  (`stale-narrative-framing`; `narrative-stage-dedupe.ts`,
+  `narrative-development.ts`; ADR 036).
 - **`narratives/<slug>.md`** — optional richer notes for a narrative the bot
   wants to keep prose on (stage/sentiment/prevailing frontmatter). Not
   required for the rolling log or broadcast path.

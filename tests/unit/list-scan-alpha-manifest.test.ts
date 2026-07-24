@@ -32,6 +32,7 @@ describe("writeListScanAlphaManifest", () => {
       snapshotName: "list-scan-alpha-manifest",
       pendingCount: 1,
       truncatedBy: 0,
+      paths: ["alpha-queue/KashKyshAlpha/42.json"],
     })
     const body = readFileSync(
       join(agentRoot, "inbox", runId, "list-scan-alpha-manifest.json"),

@@ -2,7 +2,7 @@
 description: ADR — Same-stage narrative developments route through novelty dedupe; worthiness uses accepted delivery history; resolved research must propose one broadcast.
 scope: project
 status: accepted
-last_verified: 2026-07-22
+last_verified: 2026-07-24
 ---
 
 # ADR 023 — Narrative development routing and mandatory research broadcast
@@ -39,6 +39,13 @@ when identity is resolved and the dossier supports a bounded takeaway. No
 backfill of missed sends.
 
 ## Decision
+
+### Narrative framing maturity
+
+Owned by [ADR 036](036-durable-narrative-framing.md): agent-proposed,
+host-enforced `framing` on the narrative log; stable slug; preferred title
+labels; fail-closed `stale-narrative-framing` rejects. Display framing is not
+capital-flow `auditClaim.type: "rotation"`.
 
 ### Same-stage narrative compatibility routing
 
@@ -125,3 +132,4 @@ backfill of missed sends.
 - INV-B2 updated to codify same-stage development routing and mandatory
   research broadcast.
 - Founder primary-source catalysts: [ADR 024](024-founder-primary-source-broadcast.md).
+- Narrative framing maturity: [ADR 036](036-durable-narrative-framing.md).

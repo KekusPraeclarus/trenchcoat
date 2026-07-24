@@ -111,6 +111,106 @@ describe("narrative broadcast staging", () => {
     expect(report.rejects[0]?.reason).toMatch(/narrative-unchanged-stage|status-quo-narrative-stage/)
   })
 
+  it("rejects stale rotation framing for a matured RH narrative", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narr-stale-framing-"))
+    const agentRoot = join(root, "agent")
+    const layout = await ensureArchive(join(root, "archive"))
+    mkdirSync(join(agentRoot, "outbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+    const prior = {
+      slug: "rh-chain-meme-rotation",
+      title: "RH Chain agent infra",
+      firstSeen: "2026-07-01T00:00:00.000Z",
+      lastSeen: NOW,
+      evidence: ["twitter:@alice:1", "twitter:@bob:2"],
+      stage: "peaking" as const,
+      framing: "ecosystem" as const,
+      framingMaturedAt: NOW,
+      framingEvidence: ["twitter:@bob:2"],
+    }
+    writeFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), `${JSON.stringify(prior)}\n`)
+    writeFileSync(
+      join(agentRoot, "outbox", `${RUN_ID}.json`),
+      `${JSON.stringify({
+        schema: 1,
+        items: [{
+          severity: "notable",
+          text: "RH rotation still loud on CASHCAT while infra talk prints",
+          refs: ["state/narratives/log.jsonl"],
+          auditClaim: {
+            type: "narrative-development",
+            subject: "rh-chain-meme-rotation",
+            direction: "rotation",
+            horizonHours: 72,
+            verificationRule: "narrative.development",
+          },
+        }],
+      }, null, 2)}\n`,
+    )
+
+    const report = await ingestOutbox({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      narrativeLogBefore: [prior],
+      narrativeLogAfter: [prior],
+    })
+    expect(report.staged).toBe(0)
+    expect(report.rejected).toBe(1)
+    expect(report.rejects[0]?.reason).toBe("stale-narrative-framing")
+  })
+
+  it("stages a matured RH development that avoids lane-rotation wording", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narr-mature-dev-"))
+    const agentRoot = join(root, "agent")
+    const layout = await ensureArchive(join(root, "archive"))
+    mkdirSync(join(agentRoot, "outbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+    const prior = {
+      slug: "rh-chain-meme-rotation",
+      title: "RH Chain agent infra",
+      firstSeen: "2026-07-01T00:00:00.000Z",
+      lastSeen: NOW,
+      evidence: ["twitter:@alice:1", "twitter:@bob:2"],
+      stage: "peaking" as const,
+      framing: "ecosystem" as const,
+      framingMaturedAt: NOW,
+      framingEvidence: ["twitter:@bob:2"],
+    }
+    writeFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), `${JSON.stringify(prior)}\n`)
+    writeFileSync(
+      join(agentRoot, "outbox", `${RUN_ID}.json`),
+      `${JSON.stringify({
+        schema: 1,
+        items: [{
+          severity: "notable",
+          text: "Virtuals says RH chain agents are just getting started on protocol infra",
+          refs: ["state/narratives/log.jsonl"],
+          auditClaim: {
+            type: "narrative-development",
+            subject: "rh-chain-meme-rotation",
+            direction: "rotation",
+            horizonHours: 72,
+            verificationRule: "narrative.development",
+          },
+        }],
+      }, null, 2)}\n`,
+    )
+
+    const report = await ingestOutbox({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      narrativeLogBefore: [prior],
+      narrativeLogAfter: [prior],
+    })
+    expect(report.staged).toBe(1)
+    expect(report.rejected).toBe(0)
+    expect(report.items[0]?.auditClaim.subject).toBe("rh-chain-meme-rotation")
+  })
+
   it("allows a notable same-stage development with a legacy emergence claim", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-narr-development-"))
     const agentRoot = join(root, "agent")

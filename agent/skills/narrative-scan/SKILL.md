@@ -27,14 +27,32 @@ Each log line (and each proposal line) is one JSON object with this schema:
   "lastSeen": "2026-07-17T18:00:00.000Z",
   "evidence": ["twitter:@handle:123"],
   "stage": "emerging",
-  "tickers": ["TICKER"]
+  "tickers": ["TICKER"],
+  "framing": "ecosystem",
+  "framingMaturedAt": "2026-07-17T18:00:00.000Z",
+  "framingEvidence": ["twitter:@handle:123"]
 }
 ```
 
-- `slug` — lowercase kebab-case, stable id
+- `slug` — lowercase kebab-case, stable id (never rename a slug just to drop "rotation" from the id)
 - `stage` — `emerging` | `peaking` | `fading`
 - `evidence` — provenance ids from this run's inbox (never paste scraped text)
 - `tickers` — optional, at most 8 explicit ticker symbols from the evidence
+- `framing` — optional `rotation` | `ecosystem` | `regime` (omit = `rotation`)
+- `framingMaturedAt` / `framingEvidence` — required when `framing` is `ecosystem` or `regime`; omit when framing is rotation/default
+
+## Framing
+
+Display framing is separate from capital-flow `auditClaim.type: "rotation"`.
+
+1. Default framing is `rotation`. Mature to `ecosystem` (protocol/infra buildout) or `regime` (ambient market structure) only when **all** of:
+   - The slug already exists in the log from a prior run (`firstSeen` ≠ this run's `lastSeen`, prior evidence present), **and**
+   - Same-run inbox evidence shows durable ecosystem/infra/product delivery or ongoing usage — not only rotator ticker churn, **and**
+   - You write a rotation-free `title` and set `framing` + `framingMaturedAt` (= this run) + `framingEvidence` (same-run provenance ids).
+2. Elapsed calendar time alone is **not** sufficient.
+3. Once the log shows mature framing, later proposals must keep it (or omit framing fields so the host preserves them). Never put "rotation" in `title` or outbox `text` as lane framing for a matured slug.
+4. A framing maturity change is itself a notable development: you may propose one outbox item with `type: "narrative-development"`, subject = slug, explaining the durable shift without lane-"rotation" wording.
+5. Keep capital-flow `type: "rotation"` reserved for urgent category capital rotation (market-blind rules unchanged). Even then, do not call a matured lane "the RH rotation" in `text`.
 
 ## Proposals (`reports/<run-id>/narrative-proposals.jsonl`)
 

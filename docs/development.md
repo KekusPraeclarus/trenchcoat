@@ -2,7 +2,7 @@
 description: Developer workflow notes — parallel worktrees, shared-file merge ownership, and how to keep docs honest while coding.
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-07-24
 read_when:
   - Merging parallel feature worktrees or coordinating multi-agent integration.
   - You need the exclusive-ownership list for shared integration files.
@@ -36,6 +36,11 @@ while `realpath` resolves `/private/var/folders/...` — `assertInsideRoot` in
 `src/lib/snapshot.ts` realpaths the root and walks missing parents so temp
 fixtures work; still prefer `realpathSync` on agent roots when constructing
 writers by hand.
+
+With `exactOptionalPropertyTypes`, Zod-inferred `field?: T` is not assignable
+to `field?: T | undefined` receivers when the value may be missing — prefer
+conditional spreads (`...(x.framing !== undefined ? { framing: x.framing } : {})`)
+or annotate helper params as `T | undefined`.
 
 Host precondition skips call `ensureArchive`, which creates empty layout dirs
 (`runs/`, `transactions/`, …) even when no run is allocated. Assert those dirs

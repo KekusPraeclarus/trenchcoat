@@ -3,6 +3,13 @@
  * rh-chain-meme-rotation → RH Chain Meme Rotation
  */
 
+import { textMentionsNarrativeAlias } from "./narrative-aliases.js"
+import {
+  effectiveFraming,
+  isMatureFraming,
+  type NarrativeFraming,
+} from "./narrative-framing.js"
+
 /** Tokens rendered fully uppercase when deslugging */
 const SLUG_ACRONYMS = new Set([
   "rh",
@@ -28,6 +35,8 @@ const NARRATIVE_SLUG_IN_TEXT = /\b[a-z0-9]+(?:-[a-z0-9]+){1,}\b/gu
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>\]]+/gu
 
+const ROTATION_WORD = /\brotation\b/iu
+
 export function deslugNarrativeLabel(slug: string): string {
   return slug.split("-").filter((part) => part.length > 0).map((part) => {
     const lower = part.toLowerCase()
@@ -48,4 +57,47 @@ export function deslugNarrativeLabelsInText(text: string): string {
     deslugNarrativeLabel(match),
   )
   return deslugged.replace(/\u0001(\d+)\u0001/gu, (_m, i: string) => urls[Number(i)] ?? "")
+}
+
+export type NarrativeLabelSource = Readonly<{
+  slug: string
+  title?: string | undefined
+  framing?: NarrativeFraming | undefined
+}>
+
+export function preferredNarrativeLabel(source: NarrativeLabelSource): string {
+  const title = source.title?.trim() ?? ""
+  const framing = effectiveFraming(source)
+  if (isMatureFraming(framing) && title.length > 0) return title
+  if (
+    title.length > 0
+    && !ROTATION_WORD.test(title)
+    && source.slug.includes("rotation")
+  ) {
+    return title
+  }
+  return deslugNarrativeLabel(source.slug)
+}
+
+export function usesStaleRotationFraming(
+  text: string,
+  matured: readonly NarrativeLabelSource[],
+): boolean {
+  if (!ROTATION_WORD.test(text)) return false
+  for (const entry of matured) {
+    if (!isMatureFraming(effectiveFraming(entry))) continue
+    const title = entry.title?.trim() || deslugNarrativeLabel(entry.slug)
+    if (textMentionsNarrativeAlias(text, { slug: entry.slug, title })) return true
+    const mechanical = deslugNarrativeLabel(entry.slug)
+    if (mechanical.length > 0 && text.toLowerCase().includes(mechanical.toLowerCase())) {
+      return true
+    }
+  }
+  return false
+}
+
+export function maturedNarrativeLabels(
+  entries: readonly NarrativeLabelSource[],
+): NarrativeLabelSource[] {
+  return entries.filter((entry) => isMatureFraming(effectiveFraming(entry)))
 }

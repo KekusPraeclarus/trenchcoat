@@ -9,7 +9,13 @@
  */
 
 import type { AuditClaim } from "../contracts/schemas.js"
-import { deslugNarrativeLabel } from "../lib/narrative-label.js"
+import {
+  maturedNarrativeLabels,
+  preferredNarrativeLabel,
+  usesStaleRotationFraming,
+} from "../lib/narrative-label.js"
+import type { NarrativeFraming } from "../lib/narrative-framing.js"
+import { isMatureFraming } from "../lib/narrative-framing.js"
 import { hasLocalWorkspaceRefs } from "../lib/telegram-format.js"
 import { scrubLeakedHourHorizons, watchWindowClaimFragment } from "../lib/watch-window.js"
 import {
@@ -79,7 +85,25 @@ export type TopicNarrativeSnapshot = Readonly<{
   stage: NarrativeLogEntry["stage"]
   tickers: readonly string[]
   lastSeen: string
+  title?: string | undefined
+  framing?: NarrativeFraming | undefined
 }>
+
+function snapshotLabel(entry: Readonly<{
+  slug: string
+  title?: string | undefined
+  framing?: NarrativeFraming | undefined
+}>): string {
+  return preferredNarrativeLabel({
+    slug: entry.slug,
+    ...(entry.title ? { title: entry.title } : {}),
+    ...(entry.framing ? { framing: entry.framing } : {}),
+  })
+}
+
+function framingAnnotation(entry: Readonly<{ framing?: NarrativeFraming | undefined }>): string {
+  return isMatureFraming(entry.framing) ? ` framing=${entry.framing}` : ""
+}
 
 export type TopicPacket = Readonly<{
   subject: string
@@ -137,7 +161,15 @@ function claimLine(auditClaim?: AuditClaim): string {
 function stageList(stages: readonly StageKnown[] | undefined): string {
   const mapped = (stages ?? [])
     .slice(0, 24)
-    .map((entry) => `${deslugNarrativeLabel(entry.slug)}=${entry.stage}`)
+    .map((entry) => {
+      const label = preferredNarrativeLabel({
+        slug: entry.slug,
+        title: entry.title,
+        ...(entry.framing ? { framing: entry.framing } : {}),
+      })
+      const framing = framingAnnotation(entry)
+      return `${label}=${entry.stage}${framing}`
+    })
     .join(", ")
   return mapped.length > 0 ? mapped : "(none)"
 }
@@ -176,11 +208,11 @@ export function distillUserMessage(args: Readonly<{
 
 export function telegramTopicUserMessage(packet: TopicPacket): string {
   const narrativeLine = packet.narrative
-    ? `subjectNarrative: stage=${packet.narrative.stage} lastSeen=${packet.narrative.lastSeen} tickers=${packet.narrative.tickers.join(",") || "(none)"}`
+    ? `subjectNarrative: stage=${packet.narrative.stage} lastSeen=${packet.narrative.lastSeen} tickers=${packet.narrative.tickers.join(",") || "(none)"}${framingAnnotation(packet.narrative)}`
     : "subjectNarrative: (none)"
   const otherLine = packet.otherNarratives.length > 0
     ? packet.otherNarratives
-      .map((entry) => `${entry.slug}|${deslugNarrativeLabel(entry.slug)}|${entry.stage}`)
+      .map((entry) => `${entry.slug}|${snapshotLabel(entry)}|${entry.stage}${framingAnnotation(entry)}`)
       .join("; ")
     : "(none)"
   const members = packet.members.map((member, index) => {
@@ -212,9 +244,14 @@ export function telegramOverviewUserMessage(args: Readonly<{
   knownStages?: readonly StageKnown[]
 }>): string {
   const subject = args.auditClaim?.subject ?? "unknown"
+  const known = args.knownStages?.find((entry) => entry.slug === subject)
   return telegramTopicUserMessage({
     subject,
-    subjectLabel: deslugNarrativeLabel(subject),
+    subjectLabel: preferredNarrativeLabel({
+      slug: subject,
+      ...(known?.title ? { title: known.title } : {}),
+      ...(known?.framing ? { framing: known.framing } : {}),
+    }),
     members: [{
       eventId: "legacy",
       severity: "notable",
@@ -227,7 +264,7 @@ export function telegramOverviewUserMessage(args: Readonly<{
 
 export function telegramDailyDigestUserMessage(packet: DailyDigestPacket): string {
   const narratives = packet.activeNarratives.map((entry) => (
-    `${entry.slug}|${deslugNarrativeLabel(entry.slug)}|${entry.stage}|lastSeen=${entry.lastSeen}|tickers=${entry.tickers.join(",") || "(none)"}`
+    `${entry.slug}|${snapshotLabel(entry)}|${entry.stage}|lastSeen=${entry.lastSeen}|tickers=${entry.tickers.join(",") || "(none)"}${framingAnnotation(entry)}`
   )).join("\n")
   const developments = packet.activeNarratives.map((entry) => {
     const body = packet.developmentsBySlug[entry.slug] ?? ""
@@ -257,7 +294,7 @@ function mentionsOtherNarrative(
 ): boolean {
   const lower = text.toLowerCase()
   for (const entry of otherNarratives) {
-    const label = deslugNarrativeLabel(entry.slug).toLowerCase()
+    const label = snapshotLabel(entry).toLowerCase()
     if (label.length > 0 && lower.includes(label)) return true
     if (lower.includes(entry.slug.toLowerCase())) return true
   }
@@ -268,6 +305,7 @@ function mentionsOtherNarrative(
 export function validateDiscordDistillOutput(
   raw: string,
   unchangedStages: readonly StageKnown[] = [],
+  maturedNarratives: readonly StageKnown[] = [],
 ): { ok: true; text: string } | { ok: false; reason: string } {
   const text = stripFence(raw)
   if (text.length < 1) return { ok: false, reason: "empty" }
@@ -284,6 +322,12 @@ export function validateDiscordDistillOutput(
   ) {
     return { ok: false, reason: "unchanged-stage-restatement" }
   }
+  const matured = maturedNarratives.length > 0
+    ? maturedNarratives
+    : maturedNarrativeLabels(unchangedStages)
+  if (usesStaleRotationFraming(text, matured)) {
+    return { ok: false, reason: "stale-narrative-framing" }
+  }
   return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
 
@@ -291,6 +335,7 @@ export function validateDiscordDistillOutput(
 export function validateTelegramTopicOutput(
   raw: string,
   otherNarratives: readonly TopicNarrativeSnapshot[] = [],
+  maturedNarratives: readonly TopicNarrativeSnapshot[] = [],
 ): { ok: true; text: string } | { ok: false; reason: string } {
   const text = stripFence(raw)
   if (text.length < 1) return { ok: false, reason: "empty" }
@@ -303,6 +348,9 @@ export function validateTelegramTopicOutput(
   if (TOPIC_BULLET_LINE.test(text)) return { ok: false, reason: "bullet-list" }
   if (mentionsOtherNarrative(text, otherNarratives)) {
     return { ok: false, reason: "cross-topic-mention" }
+  }
+  if (usesStaleRotationFraming(text, maturedNarrativeLabels(maturedNarratives))) {
+    return { ok: false, reason: "stale-narrative-framing" }
   }
   return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
@@ -383,7 +431,7 @@ export function sortActiveNarrativesForDigest(
     if (stageDelta !== 0) return stageDelta
     const seenDelta = b.lastSeen.localeCompare(a.lastSeen)
     if (seenDelta !== 0) return seenDelta
-    return deslugNarrativeLabel(a.slug).localeCompare(deslugNarrativeLabel(b.slug))
+    return snapshotLabel(a).localeCompare(snapshotLabel(b))
   })
 }
 
@@ -407,7 +455,7 @@ export function renderDailyDigestMarkdown(args: Readonly<{
   ))
   const parts = [`**Daily narrative map — ${args.londonDate}**`]
   for (const entry of ordered) {
-    const label = deslugNarrativeLabel(entry.slug)
+    const label = snapshotLabel(entry)
     const body = (args.sectionsBySlug[entry.slug] ?? "").trim()
     parts.push(`**${label} — ${entry.stage}**`)
     parts.push(body)
@@ -468,7 +516,7 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
 
   const title = `**Daily narrative map — ${args.londonDate}**`
   const headers = ordered.map((entry) => (
-    `**${deslugNarrativeLabel(entry.slug)} — ${entry.stage}**`
+    `**${snapshotLabel(entry)} — ${entry.stage}**`
   ))
   // title + blank line between each header block: n headers → n separators before bodies
   let used = charLen(title)
@@ -481,7 +529,7 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
   const bodyBudgetPer = Math.floor(remaining / ordered.length)
   const parts: string[] = [title]
   for (const entry of ordered) {
-    const header = `**${deslugNarrativeLabel(entry.slug)} — ${entry.stage}**`
+    const header = `**${snapshotLabel(entry)} — ${entry.stage}**`
     const bodySource = (args.developmentsBySlug[entry.slug] ?? "").trim()
     // each body costs \n\n before it
     const bodyMax = Math.max(0, bodyBudgetPer - 2)
@@ -582,7 +630,14 @@ export async function runTelegramTopicDistiller(
       prompt: TELEGRAM_TOPIC_PROMPT,
       message: telegramTopicUserMessage(args.packet),
     })
-    const checked = validateTelegramTopicOutput(raw, args.packet.otherNarratives)
+    const checked = validateTelegramTopicOutput(
+      raw,
+      args.packet.otherNarratives,
+      [
+        ...(args.packet.narrative ? [args.packet.narrative] : []),
+        ...args.packet.otherNarratives,
+      ],
+    )
     if (!checked.ok) return fallback(checked.reason, used)
     return { text: checked.text, usedFallback: false, used, capExhausted: false }
   } catch {
@@ -604,10 +659,25 @@ export async function runTelegramOverviewDistiller(
   }>,
 ): Promise<DistillResult> {
   const subject = args.auditClaim?.subject ?? "unknown"
+  const known = args.knownStages?.find((entry) => entry.slug === subject)
   return runTelegramTopicDistiller({
     packet: {
       subject,
-      subjectLabel: deslugNarrativeLabel(subject),
+      subjectLabel: preferredNarrativeLabel({
+        slug: subject,
+        ...(known?.title ? { title: known.title } : {}),
+        ...(known?.framing ? { framing: known.framing } : {}),
+      }),
+      ...(known ? {
+        narrative: {
+          slug: known.slug,
+          stage: known.stage,
+          tickers: [],
+          lastSeen: "",
+          title: known.title,
+          ...(known.framing ? { framing: known.framing } : {}),
+        },
+      } : {}),
       members: [{
         eventId: "legacy",
         severity: "notable",
@@ -619,8 +689,8 @@ export async function runTelegramOverviewDistiller(
     fallbackText: args.fallbackText,
     dailyCap: args.dailyCap,
     usedToday: args.usedToday,
-    ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
     ...(args.runSession ? { runSession: args.runSession } : {}),
+    ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
   })
 }
 
