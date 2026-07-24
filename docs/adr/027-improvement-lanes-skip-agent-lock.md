@@ -21,8 +21,8 @@ worktrees, or git under the repo mutation lock.
 
 ## Decision
 
-1. Treat `harness-improve`, `incident-remediate`, and `incident-remediate-weekly`
-   as **agent-lock exempt** (`AGENT_LOCK_EXEMPT_JOBS` /
+1. Treat `harness-improve`, `harness-meta-improve`, `incident-remediate`, and
+   `incident-remediate-weekly` as **agent-lock exempt** (`AGENT_LOCK_EXEMPT_JOBS` /
    `jobRequiresAgentWorkspaceLock`).
 2. Those jobs never acquire `agent/.lock` in `runJob`. They keep their own
    confinement: remediations/ locks, harness worktrees, and

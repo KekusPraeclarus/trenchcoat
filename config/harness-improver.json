@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "configVersion": "improver-v1",
+  "mining": {
+    "minClusterSize": 5,
+    "maxClusters": 8,
+    "maxKeepPatterns": 3,
+    "maxEvidencePerPattern": 16,
+    "signalKeyPrefixes": ["confidence", "clusters", "role:", "dex:"]
+  },
+  "propose": {
+    "weakMetricPriority": {
+      "hitRate": 1,
+      "ignoreMissRate": 0.8,
+      "calibrationBrier": 0.6,
+      "paperPnlCostAdjusted": 0.4
+    },
+    "maxRationaleChars": 500
+  },
+  "planAddendum": ""
+}

@@ -149,6 +149,7 @@ const HOST_ONLY_JOBS = new Set([
   "wallet-scan-solana",
   "wallet-scan-evm",
   "harness-improve",
+  "harness-meta-improve",
   "incident-remediate",
   "incident-remediate-weekly",
   "fomo-trader-sync",
@@ -876,6 +877,20 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         `${JSON.stringify(harnessImproveReport, null, 2)}\n`,
       )
     }
+    let harnessMetaImproveReport: unknown
+    if (job.name === "harness-meta-improve") {
+      const { runHarnessMetaImprove } = await import("../harness/meta-schedule.js")
+      const { resolveHarnessRepoRoot } = await import("../harness/pr.js")
+      harnessMetaImproveReport = await runHarnessMetaImprove({
+        archiveRoot: opts.paths.archiveRoot,
+        repoRoot: resolveHarnessRepoRoot(),
+        nowIso: systemClock.nowIso(),
+      })
+      writeFileSync(
+        join(reportDir, "harness-meta-improve.json"),
+        `${JSON.stringify(harnessMetaImproveReport, null, 2)}\n`,
+      )
+    }
     let incidentRemediateReport: unknown
     if (job.name === "incident-remediate" || job.name === "incident-remediate-weekly") {
       const { runRemediationWorker } = await import("../remediation/orchestrate.js")
@@ -1042,6 +1057,26 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "outcomes-settle.json"),
         `${JSON.stringify(outcomesReport, null, 2)}\n`,
       )
+      try {
+        const { refreshCanaryMaturityAndStops } = await import("../harness/paired.js")
+        const canaryRefresh = await refreshCanaryMaturityAndStops({
+          archiveRoot: opts.paths.archiveRoot,
+          layout,
+          nowIso,
+          defaultHorizonHours: loadConfig().audit.horizons_hours[1] ?? 72,
+        })
+        writeFileSync(
+          join(reportDir, "canary-maturity.json"),
+          `${JSON.stringify(canaryRefresh, null, 2)}\n`,
+        )
+      } catch (error) {
+        writeFileSync(
+          join(reportDir, "canary-maturity.json"),
+          `${JSON.stringify({
+            error: error instanceof Error ? error.message : String(error),
+          }, null, 2)}\n`,
+        )
+      }
     }
     let deliveryRetryReport: unknown
     if (job.name === "delivery-retry" && !opts.dryCollect && !canary.blockExternalEffects) {
@@ -1286,14 +1321,52 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           sealedAt,
         }
       } else {
+        const { readOutcomeObservation } = await import("./scorecard.js")
+        const { decisionOutcomeToScorecardFields } = await import("./settle-decisions.js")
         const decisions = subjects.flatMap((subject) => {
           const bundle = loadDecisionBundle(layout, subject.id)
           if (!bundle) return []
-          return [{
-            verdict: bundle.card.verdict,
-            confidence: bundle.card.confidence,
-          }]
+          const outcome = readOutcomeObservation(
+            layout,
+            "decision",
+            subject.id,
+            subject.horizonHours,
+          )
+          return [decisionOutcomeToScorecardFields(
+            bundle.card.verdict,
+            bundle.card.confidence,
+            outcome,
+            config.audit.hit_threshold,
+          )]
         })
+        const outcomes = subjects.map((subject) => {
+          const outcome = readOutcomeObservation(
+            layout,
+            "decision",
+            subject.id,
+            subject.horizonHours,
+          )
+          return { status: outcome?.status ?? "provider-pending" }
+        })
+        const rugs = subjects.flatMap((subject) => {
+          const outcome = readOutcomeObservation(
+            layout,
+            "decision",
+            subject.id,
+            subject.horizonHours,
+          )
+          if (outcome?.status === "terminal-loss") return [{ rug: true }]
+          if (outcome?.status === "complete") return [{ rug: false }]
+          return []
+        })
+        let paperPnlGross = 0
+        let paperPnlCostAdjusted = 0
+        for (const d of decisions) {
+          if (d.verdict === "track" && d.excess72h !== undefined) {
+            paperPnlCostAdjusted += d.excess72h
+            paperPnlGross += d.excess72h
+          }
+        }
         auditReport = await runAuditEpoch({
           layout: layout,
           epochInput: {
@@ -1320,15 +1393,16 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             feeBpsPerSide: config.audit.execution_fee_bps_per_side,
             sourceBars: createLiveSourceBarProvider(fetch, () => sealedAt),
             walletBars: createLiveWalletBarProvider(fetch, () => sealedAt),
+            identityBars: createLiveIdentityBarProvider(fetch, () => sealedAt),
           },
           cohort: {
             decisions,
             broadcasts: [],
             sourceCalls: [],
-            outcomes: [],
-            rugs: [],
-            paperPnlGross: 0,
-            paperPnlCostAdjusted: 0,
+            outcomes,
+            rugs,
+            paperPnlGross,
+            paperPnlCostAdjusted,
           },
         })
       }
@@ -1610,6 +1684,14 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             blockedExternal: proposalReport.blockedExternal,
             plannedWatchlistHash: proposalReport.plannedWatchlistHash,
           } as never,
+          baselineProposal: {
+            shadow: true,
+            policyVersion: "baseline",
+          } as never,
+          decisionIds: proposalReport.receipts
+            .map((r) => r.appliedDecisionId)
+            .filter((id): id is string => typeof id === "string" && id.length > 0),
+          horizonHours: 72,
           mature: false,
           recordedAt: systemClock.nowIso(),
         })

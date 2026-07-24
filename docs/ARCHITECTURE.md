@@ -106,7 +106,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–036
+│   ├── adr/                  # binding decisions 001–039
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
@@ -125,7 +125,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   │                         #   FC follow-graph lifecycle (ADR 007)
 │   ├── social/               # X / FC engagement proposal validation / throttle
 │   ├── wallets/              # smart-wallet scoring + lifecycle events (ADR 002)
-│   ├── harness/              # sealed-scorecard improvement loop (ADR 005)
+│   ├── harness/              # policy + meta improver loops (ADR 005 / 038 / 039)
 │   ├── contracts/            # zod schemas + fixtures
 │   ├── migrations/           # config schema migrations
 │   ├── router/               # in-repo HMAC intake + durable fanout (ADR 001)

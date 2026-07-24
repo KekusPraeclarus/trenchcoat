@@ -8,19 +8,32 @@ import { loadSealedEpoch } from "../orchestrator/scorecard.js"
 import {
   HarnessHypothesisSchema,
   type HarnessHypothesis,
+  type HarnessWeaknessPattern,
   type Scorecard,
 } from "../contracts/schemas.js"
 import { HARNESS_PROPOSE_PROMPT } from "../prompts/host.js"
+import { loadImproverConfig, improverConfigHash } from "./improver-config.js"
+import { mineWeaknessFromSealedEpoch } from "./weakness-mining.js"
+import { buildKeepSummary } from "./keep-summary.js"
+import {
+  buildPriorAttemptsSummary,
+  ensurePriorAttemptsIndex,
+  isExactDuplicate,
+  isNearDuplicateSamePatternLever,
+} from "./prior-attempts.js"
 
 export function hypothesisDir(archiveRoot: string, hypothesisId: string): string {
   return join(archiveRoot, "..", "harness-improvements", hypothesisId)
 }
 
+/** Non-hypothesis dirs under harness-improvements (meta lane, deploy scratch) */
+const HARNESS_RESERVED_DIRS = new Set(["meta", "_deploy"])
+
 export function listHypothesisIds(archiveRoot: string): string[] {
   const root = join(archiveRoot, "..", "harness-improvements")
   if (!existsSync(root)) return []
   return readdirSync(root, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
+    .filter((d) => d.isDirectory() && !HARNESS_RESERVED_DIRS.has(d.name))
     .map((d) => d.name)
     .sort()
 }
@@ -99,12 +112,69 @@ function pickWeakMetric(scorecard: Scorecard): Readonly<{
   }
 }
 
+function safetyFloorsForMetric(primaryMetric: string): Record<string, number> {
+  switch (primaryMetric) {
+    case "ignoreMissRate":
+      return {
+        rugExposureMax: 0.25,
+        hitRateMin: 0.4,
+        outcomeCoverageMin: 0.7,
+      }
+    case "calibrationBrier":
+      return {
+        hitRateMin: 0.4,
+        rugExposureMax: 0.25,
+      }
+    default:
+      return {
+        rugExposureMax: 0.25,
+        outcomeCoverageMin: 0.7,
+        calibrationBrierMax: 0.3,
+      }
+  }
+}
+
+function selectFromPatterns(
+  patterns: readonly HarnessWeaknessPattern[],
+  priority: Readonly<Record<string, number>>,
+  maxRationaleChars: number,
+): Readonly<{
+  primaryMetric: string
+  rationale: string
+  safetyFloors: Record<string, number>
+  pattern: HarnessWeaknessPattern
+}> | undefined {
+  if (patterns.length === 0) return undefined
+  const ranked = [...patterns].sort((a, b) => {
+    const aPri = priority[a.primaryMetricHint ?? ""] ?? 0
+    const bPri = priority[b.primaryMetricHint ?? ""] ?? 0
+    if (bPri !== aPri) return bPri - aPri
+    if (b.score !== a.score) return b.score - a.score
+    return a.patternId.localeCompare(b.patternId)
+  })
+  const pattern = ranked[0]
+  if (!pattern) return undefined
+  const primaryMetric = pattern.primaryMetricHint ?? "paperPnlCostAdjusted"
+  const rationale = [
+    `Weakness pattern ${pattern.patternId}: ${pattern.label}`,
+    `support=${pattern.support} lift=${pattern.lift.toFixed(2)}`,
+  ].join(" — ").slice(0, maxRationaleChars)
+  return {
+    primaryMetric,
+    rationale,
+    safetyFloors: safetyFloorsForMetric(primaryMetric),
+    pattern,
+  }
+}
+
 export type ProposeOptions = Readonly<{
   archiveRoot: string
   epochId: string
   nowIso: string
   minEvents?: number
   minHoldoutEvents?: number
+  repoRoot?: string
+  hitThreshold?: number
 }>
 
 /** Host-deterministic single hypothesis from a sealed scorecard (no scraped text). */
@@ -114,9 +184,76 @@ export async function proposeFromSealedEpoch(
   const layout = archiveLayout(opts.archiveRoot)
   await ensureArchive(opts.archiveRoot)
   const sealed = loadSealedEpoch(layout, opts.epochId)
-  const pick = pickWeakMetric(sealed.scorecard)
+  const repoRoot = opts.repoRoot ?? process.cwd()
+  const improverConfig = loadImproverConfig(repoRoot)
+  const configHash = improverConfigHash(improverConfig)
+  const hitThreshold = opts.hitThreshold ?? 0.20
+
+  const weaknessReport = mineWeaknessFromSealedEpoch(
+    layout,
+    sealed,
+    improverConfig,
+    hitThreshold,
+  )
+  const keepSummary = buildKeepSummary(
+    layout,
+    sealed,
+    improverConfig,
+    hitThreshold,
+  )
+
+  await ensurePriorAttemptsIndex(opts.archiveRoot)
+  const priorSummary = buildPriorAttemptsSummary(opts.archiveRoot, {
+    nowIso: opts.nowIso,
+    maxRecords: 32,
+  })
+
+  const fromPatterns = selectFromPatterns(
+    weaknessReport.patterns,
+    improverConfig.propose.weakMetricPriority,
+    improverConfig.propose.maxRationaleChars,
+  )
+  const fallback = pickWeakMetric(sealed.scorecard)
+  const pick = fromPatterns ?? {
+    primaryMetric: fallback.primaryMetric,
+    rationale: fallback.rationale,
+    safetyFloors: fallback.safetyFloors,
+    pattern: undefined as HarnessWeaknessPattern | undefined,
+  }
+
+  let rationale = pick.rationale
+  const nearDup = isNearDuplicateSamePatternLever(
+    {
+      primaryMetric: pick.primaryMetric,
+      ...(pick.pattern ? { weaknessPatternId: pick.pattern.patternId } : {}),
+    },
+    priorSummary.records,
+  )
+  if (nearDup) {
+    rationale = `${rationale} Note: near-duplicate prior ${nearDup.hypothesisId} on same pattern/lever — manifesto must differ materially.`
+      .slice(0, improverConfig.propose.maxRationaleChars)
+  }
+  const exactDup = isExactDuplicate(
+    {},
+    priorSummary.records.filter(
+      (r) => r.weaknessPatternId === pick.pattern?.patternId
+        && r.primaryMetric === pick.primaryMetric,
+    ),
+  )
+  if (exactDup) {
+    rationale = `${rationale} Prior exact-pattern attempt ${exactDup.hypothesisId} recorded.`
+      .slice(0, improverConfig.propose.maxRationaleChars)
+  }
+
+  const weaknessReportHash = sha256Json(weaknessReport as never)
+  const keepSummaryHash = sha256Json(keepSummary as never)
   const hypothesisId = `hyp-${opts.epochId}-${createHash("sha256")
-    .update(pick.primaryMetric + sealed.manifest.manifestHash)
+    .update(
+      pick.primaryMetric
+        + sealed.manifest.manifestHash
+        + (pick.pattern?.patternId ?? "fallback")
+        + weaknessReportHash,
+    )
     .digest("hex")
     .slice(0, 12)}`
 
@@ -141,17 +278,28 @@ export async function proposeFromSealedEpoch(
       "integrity failure during candidate assignment",
       "candidate error budget exhausted",
     ],
-    rationale: pick.rationale,
+    rationale,
     status: "proposed",
+    ...(pick.pattern
+      ? {
+        weaknessPatternId: pick.pattern.patternId,
+        evidenceIds: pick.pattern.evidenceIds,
+      }
+      : {}),
+    weaknessReportHash,
+    keepSummaryHash,
+    improverConfigHash: configHash,
   })
 
+  const dir = hypothesisDir(opts.archiveRoot, hypothesisId)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   await saveHypothesis(opts.archiveRoot, hypothesis)
   await writeAtomicFile(
-    join(hypothesisDir(opts.archiveRoot, hypothesisId), "propose-prompt.txt"),
+    join(dir, "propose-prompt.txt"),
     `${HARNESS_PROPOSE_PROMPT}\n\nepoch=${opts.epochId}\nmanifest=${sealed.manifest.manifestHash}\n`,
   )
   await writeAtomicFile(
-    join(hypothesisDir(opts.archiveRoot, hypothesisId), "scorecard-summary.json"),
+    join(dir, "scorecard-summary.json"),
     `${JSON.stringify({
       epochId: sealed.scorecard.epochId,
       manifestHash: sealed.scorecard.manifestHash,
@@ -161,6 +309,18 @@ export async function proposeFromSealedEpoch(
       paperPnlCostAdjusted: sealed.scorecard.paperPnlCostAdjusted,
       rugExposure: sealed.scorecard.rugExposure,
     }, null, 2)}\n`,
+  )
+  await writeAtomicFile(
+    join(dir, "weakness-report.json"),
+    `${JSON.stringify(weaknessReport, null, 2)}\n`,
+  )
+  await writeAtomicFile(
+    join(dir, "keep-summary.json"),
+    `${JSON.stringify(keepSummary, null, 2)}\n`,
+  )
+  await writeAtomicFile(
+    join(dir, "prior-attempts-summary.json"),
+    `${JSON.stringify(priorSummary, null, 2)}\n`,
   )
 
   return hypothesis

@@ -53,7 +53,13 @@ describe("prop_inv_s29 runner discovery and convergence", () => {
           providerEventId: `e${r.eventN}`,
           runnerId: "r1",
         }))
-        const shuffled = [...events].sort(() => 0.5 - Math.random())
+        const shuffled = [...events]
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1))
+          const tmp = shuffled[i]!
+          shuffled[i] = shuffled[j]!
+          shuffled[j] = tmp
+        }
         const a = rankEarlyRunnerBuyers(events, {
           runnerId: "r1",
           firstSeenAt: "2026-07-21T12:00:00.000Z",

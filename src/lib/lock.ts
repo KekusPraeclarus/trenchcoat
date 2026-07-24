@@ -9,6 +9,7 @@ import { dirname, join } from "node:path"
  */
 export const AGENT_LOCK_EXEMPT_JOBS = Object.freeze(new Set([
   "harness-improve",
+  "harness-meta-improve",
   "incident-remediate",
   "incident-remediate-weekly",
   "outcomes-settle",

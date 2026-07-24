@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
+import { sha256Json } from "../lib/canonical-json.js"
 import {
   HarnessEvaluationSchema,
+  HarnessPlanSchema,
   PROTECTED_QUALITY_METRICS,
   type HarnessEvaluation,
   type Scorecard,
@@ -18,6 +20,7 @@ import { replayHoldoutThroughPolicy, type ReplaySubject } from "./replay.js"
 import { isHoldoutConsumed, recordHoldoutConsumption } from "./holdout-registry.js"
 import { loadHoldoutSubjectsWithSignalsOrThrow } from "./signals.js"
 import { protectedMetricsUnchangedOrImproved } from "./quality.js"
+import { validateManifestoAgainstEvaluation } from "./manifesto-validate.js"
 
 const DEFAULT_POLICY_REL_PATH = "agent/skills/decision-policy/policy.json"
 
@@ -295,7 +298,7 @@ export async function evaluateHypothesis(
     && improved
     && safety.ok
     && protectedCheck.ok
-  const evaluation = HarnessEvaluationSchema.parse({
+  let evaluation = HarnessEvaluationSchema.parse({
     schema: 1,
     hypothesisId: opts.hypothesisId,
     evaluatedAt: opts.nowIso,
@@ -327,12 +330,61 @@ export async function evaluateHypothesis(
     }),
   })
 
+  const manifesto = await attachManifestoValidation(
+    opts.archiveRoot,
+    evaluation,
+    opts.nowIso,
+  )
+  evaluation = manifesto.evaluation
+  const finalOk = ok && manifesto.ok
+  if (ok && !manifesto.ok) {
+    evaluation = HarnessEvaluationSchema.parse({
+      ...evaluation,
+      rejectReason: [
+        evaluation.rejectReason,
+        "manifesto:unpredicted-protected-regression",
+      ].filter(Boolean).join("; ").slice(0, 280),
+    })
+  }
+
   await persistEvaluation(
     opts.archiveRoot,
     evaluation,
-    ok ? "holdout_evaluated" : "rejected",
+    finalOk ? "holdout_evaluated" : "rejected",
   )
   return evaluation
+}
+
+async function attachManifestoValidation(
+  archiveRoot: string,
+  evaluation: HarnessEvaluation,
+  nowIso: string,
+): Promise<{ evaluation: HarnessEvaluation, ok: boolean }> {
+  const dir = hypothesisDir(archiveRoot, evaluation.hypothesisId)
+  const planPath = join(dir, "plan.json")
+  if (!existsSync(planPath)) return { evaluation, ok: true }
+  let plan
+  try {
+    plan = HarnessPlanSchema.parse(JSON.parse(readFileSync(planPath, "utf8")))
+  } catch {
+    return { evaluation, ok: true }
+  }
+  const manifesto = validateManifestoAgainstEvaluation(plan, evaluation.metrics, {
+    hypothesisId: evaluation.hypothesisId,
+    validatedAt: nowIso,
+  })
+  await writeAtomicFile(
+    join(dir, "manifesto-validation.json"),
+    `${JSON.stringify(manifesto, null, 2)}\n`,
+  )
+  const manifestoValidationHash = sha256Json(manifesto as never)
+  return {
+    evaluation: HarnessEvaluationSchema.parse({
+      ...evaluation,
+      manifestoValidationHash,
+    }),
+    ok: manifesto.ok,
+  }
 }
 
 async function persistEvaluation(

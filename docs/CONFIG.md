@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-24
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -14,7 +14,7 @@ read_when:
 | Var | Used by | Purpose |
 |---|---|---|
 | `TRENCHCOAT_CURSOR_BIN` | orchestrator | optional path to `agent` binary |
-| `TRENCHCOAT_REPO_ROOT` | harness-improve | absolute path to the git checkout (`.git` + `package.json`). `install-launchd.sh` writes this into `~/.trenchcoat/env` because launchd jobs often start with cwd `/` |
+| `TRENCHCOAT_REPO_ROOT` | harness-improve / harness-meta-improve | absolute path to the git checkout (`.git` + `package.json`). `install-launchd.sh` writes this into `~/.trenchcoat/env` because launchd jobs often start with cwd `/` |
 | _(none — Cursor CLI login)_ | orchestrator, chat | `agent login` / `agent status` |
 | `TRENCHCOAT_ROUTER_URL` / `TRENCHCOAT_ROUTER_TOKEN` | orchestrator | router intake URL (bare host ok — defaults to `/v1/events`) + legacy bearer env (HMAC is authoritative). Loopback HTTP allowed; off-loopback requires HTTPS |
 | `TRENCHCOAT_ROUTER_HMAC_KEY` | orchestrator / router | HMAC signing key for intake (INV-B5) |
@@ -42,21 +42,24 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **20** (Discord `chat.discord.wallet_signals` confluence —
-ADR 035; prior schema **19** token-cost host gates: distill LLM budget fractions,
-chat turn/prompt caps — ADR 034; prior schema **18** daily Telegram narrative
-digest under `broadcast.telegram_digest`; prior schema **17** (passive Discord suggestion intake under
-`incident_remediation.discord_suggestions`, INV-S27 / ADR 025; prior schema **16**
-drops Discord research caps and adds conversation; prior **14** post-fix claim
-revalidation under `incident_remediation.revalidation`, INV-S28 / ADR 017; prior schema **13** host
-`incident_remediation` lane; prior schema **12** Discord `chat.discord.chain_integration`
-host lane; prior schema **11** agent-gated harness defaults on, local integrate /
-deferred activation; prior schema **10** `chat.discord` private-guild research
-bot section, plus prior schema **9** `fomo` web scrape section with `x_source_review` /
+Current schema is **21** (harness meta lane operator controls under
+`harness_improvement.meta_*` — ADR 039; prior schema **20** Discord
+`chat.discord.wallet_signals` confluence — ADR 035; prior schema **19**
+token-cost host gates: distill LLM budget fractions, chat turn/prompt caps —
+ADR 034; prior schema **18** daily Telegram narrative digest under
+`broadcast.telegram_digest`; prior schema **17** (passive Discord suggestion
+intake under `incident_remediation.discord_suggestions`, INV-S27 / ADR 025;
+prior schema **16** drops Discord research caps and adds conversation; prior
+**14** post-fix claim revalidation under `incident_remediation.revalidation`,
+INV-S28 / ADR 017; prior schema **13** host `incident_remediation` lane; prior
+schema **12** Discord `chat.discord.chain_integration` host lane; prior schema
+**11** agent-gated harness defaults on, local integrate / deferred activation;
+prior schema **10** `chat.discord` private-guild research bot section, plus
+prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v19 shapes via `migrateConfigToV20`.
+`loadConfig` migrates v1–v20 shapes via `migrateConfigToV21`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -240,11 +243,12 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 only; HMAC/auth secrets stay in env (`TRENCHCOAT_ROUTER_*`, ADR 001). Full
 defaults live in `config/seed.example.json` and `src/lib/config.ts`.
 
-### `harness_improvement` (schema 11)
+### `harness_improvement` (schema 11 + schema 21 meta_*)
 
 Agent-gated self-improvement loop (ADR 005). Schema 11 defaults the feature on
 for new installs; migration preserves explicit `enabled:false` /
-`schedule_enabled:false` from older configs.
+`schedule_enabled:false` from older configs. Schema **21** adds meta-lane
+operator controls (ADR 039); meta-utility floors/weights stay code constants.
 
 | Field | Default | Role |
 |---|---|---|
@@ -259,8 +263,34 @@ for new installs; migration preserves explicit `enabled:false` /
 | `require_two_epochs` | `true` | Distinct sealed development + holdout epochs with signals |
 | `allocation_bps` | `1000` | Canary traffic share (10%) when activation starts canary |
 | `min_events` / `min_holdout_events` / `min_mature_paired` | `40` / `20` / `40` | Sample floors |
-| `one_active_experiment` | `true` | Skip schedule while a canary is active |
+| `one_active_experiment` | `true` | Skip schedule while a canary or mid-flight peer lane is active |
 | `auto_open_pr` | `false` | Deprecated; PR path removed from schedule |
+| `meta_enabled` | `true` | Master switch for improver-config meta lane |
+| `meta_schedule_enabled` | `true` | Allow `harness-meta-improve` job |
+| `meta_min_paired_trials` | `8` | Operator hint; host utility still requires ≥8 valid pairs in code |
+| `meta_schedule_days` | `30` | Intended meta wakeup cadence |
+| `meta_require_operator_promotion` | `true` | Refuse auto-promote; require `tc harness meta promote`. First `promotion_eligible` also one-shot Telegram-pings the operator with next steps. |
+
+### Repo `config/harness-improver.json` (ADR 039)
+
+Checked-in, schema-validated improver knobs (not under `~/.trenchcoat/config.json`,
+never synced into `agent/`). Literal meta-lane allowlist path. Closed keys only:
+
+| Block | Bounds (fail closed) |
+|---|---|
+| `mining.minClusterSize` | 3–20 |
+| `mining.maxClusters` | 1–8 |
+| `mining.maxKeepPatterns` | 1–3 |
+| `mining.maxEvidencePerPattern` | 1–32 |
+| `mining.signalKeyPrefixes` | known signal-prefix allowlist only |
+| `propose.weakMetricPriority` | closed metric keys |
+| `propose.maxRationaleChars` / `planAddendum` | length-capped (addendum ≤500) |
+
+Unknown keys reject. Cannot express paths, commands, models, floors, evaluator
+settings, or allowlist expansion. Shadow meta candidates edit a copy under
+`harness-improvements/meta/<id>/` until operator promote ff-integrates the
+repo file. Defaults live in `src/harness/improver-config.ts` when the file is
+absent.
 
 ### `incident_remediation` (schema 13+)
 
@@ -394,9 +424,9 @@ application is not wired yet — only wallets are applied today.
 
 | Command | Behaviour |
 |---|---|
-| `tc run <job>` | run one job (cron entry point); agent-mutating jobs refuse if the workspace writer lock is held (exit 3). Improvement jobs (`harness-improve`, `incident-remediate`, `incident-remediate-weekly`) skip that lock (INV-S15). Jobs include `list-scan`, `farcaster-scan`, scans/research/audit, wallets, plus harness/remediation |
+| `tc run <job>` | run one job (cron entry point); agent-mutating jobs refuse if the workspace writer lock is held (exit 3). Improvement jobs (`harness-improve`, `harness-meta-improve`, `incident-remediate`, `incident-remediate-weekly`) skip that lock (INV-S15 / ADR 027). Jobs include `list-scan`, `farcaster-scan`, scans/research/audit, wallets, plus harness/remediation |
 | `tc config validate` | migrate+parse config in memory; no write |
-| `tc config migrate --write` | persist schema-8 migration to `~/.trenchcoat/config.json` |
+| `tc config migrate --write` | persist schema migration to `~/.trenchcoat/config.json` |
 | `tc watchlist remove <chain:token> --subject <symbol> --reason <text>` | host removal of ignored/revisit/dropped entries; reconciles `state/INDEX.md` |
 | `tc probe farcaster` | Neynar feed probe + dynamic signer status + FC lifecycle/engagement summary |
 | `tc auth farcaster --create --fname <name>` | programmatic bot account + signer (no app tap) |
@@ -412,9 +442,11 @@ application is not wired yet — only wallets are applied today.
 | `tc probe twitter` | scrape all configured targets + lifecycle summary; no membership mutations |
 | `tc source-list review [--dry-run] [--no-sync]` | deterministic promote/demote; dry-run skips state and X writes |
 | `tc source-list sync` | sync desired managed membership to the persisted list id only |
-| `tc harness propose --epoch <id>` | one hypothesis from a sealed scorecard (ADR 005) |
-| `tc harness run` / `tc run harness-improve` | scheduled pipeline: branch + tests + open PR (no merge) |
-| `tc harness prepare\|evaluate\|canary\|promote\|rollback\|status` | confined worktree + holdout + bounded canary |
+| `tc harness propose --epoch <id>` | one hypothesis from a sealed scorecard (ADR 005; writes mining/keep/prior artifacts) |
+| `tc harness run` / `tc run harness-improve` | scheduled policy pipeline → `activation_pending` (no agent activate / canary) |
+| `tc harness prepare\|evaluate\|canary\|promote\|rollback\|status\|activate\|drain\|wait-idle` | confined worktree + holdout + drain-gated activate + bounded canary |
+| `tc harness meta propose\|trial\|status\|promote\|reject` | shadow improver-config lane (ADR 039); promote is operator-only |
+| `tc run harness-meta-improve` | scheduled shadow meta propose/trial step |
 | `tc x-engagement status` | like throttle window usage, follow/like counts, `x-bot-health.json` |
 | `tc x-engagement dry-run <run-id>` | show which bot choices would apply using live inbox or sealed archive `x-fyp-eligible.json`; no X mutations |
 | `tc research <subject>` | operator-priority enqueue + locked research run (`chain:address` preferred); `--skip-agent` / `--dry-collect` supported |

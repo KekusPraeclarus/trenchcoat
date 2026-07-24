@@ -2,7 +2,7 @@
 description: ADR — Bounded harness improvement loop with sealed-audit feedback and agent-gated promotion.
 status: accepted
 date: 2026-07-16
-last_verified: 2026-07-21
+last_verified: 2026-07-24
 ---
 
 # ADR 005 — Bounded harness improvement loop
@@ -32,10 +32,13 @@ retains kill switches and rollback.
    `~/.trenchcoat/agent` while the all-work drain gate is busy, and never starts
    a canary until activation. Operator kill switch: `push_origin: false` keeps
    local-only integrate.
-3. Autonomous mutation is limited to
-   `agent/skills/decision-policy/policy.json`. Audit maths, harness code,
-   router, chat, collectors, secrets, docs, and evaluation fixtures are
-   forbidden. Agents cannot expand their own allowlist.
+3. Autonomous mutation for the **policy lane** is limited to
+   `agent/skills/decision-policy/policy.json`. A separately confined
+   **improver-config lane** may edit only `config/harness-improver.json`
+   under [ADR 039](039-bounded-improver-config-lane.md) (shadow trials +
+   operator promotion). Audit maths, harness code, router, chat,
+   collectors, secrets, docs, and evaluation fixtures remain forbidden.
+   Agents cannot expand their own allowlist.
 4. Runtime sessions emit **typed decision proposals** only; host code validates
    and applies watchlist/ledger/decisions mutations (INV-S1/S2/S10).
 5. Offline evaluation requires distinct development and holdout sealed epochs
@@ -67,10 +70,13 @@ retains kill switches and rollback.
   manifest; `tc harness activate` performs drain-gated sync + canary start.
 - Launchd installs `harness-improve` by default; `--without-harness` opts out.
 - INV-S23–S25 cover proposal ownership, harness confinement, and canary egress
-  blocking.
+  blocking. INV-S24 also cites ADR 038/039 for the improver-config literal.
 - Relative Strength Index remains the chart feature under `indicators.rsi_*`.
+- Enriched propose/plan pipeline (weakness mining, manifesto, keep summaries,
+  prior-attempt index) feeds the same policy lane without widening its
+  allowlist.
 
 ## Enforcement
 
 - `src/orchestrator/proposals.ts`, `src/orchestrator/scorecard.ts`, `src/harness/**`
-- `docs/architecture/harness-improvement.md`, INV-S23–S25
+- `docs/architecture/harness-improvement.md`, INV-S23–S25, ADR 038/039

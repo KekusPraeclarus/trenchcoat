@@ -717,6 +717,7 @@ export function migrateConfigToV17(raw: unknown): unknown {
     || record?.["schema"] === 18
     || record?.["schema"] === 19
     || record?.["schema"] === 20
+    || record?.["schema"] === 21
   ) return raw
 
   const v16 = (
@@ -756,6 +757,7 @@ export function migrateConfigToV18(raw: unknown): unknown {
     record?.["schema"] === 18
     || record?.["schema"] === 19
     || record?.["schema"] === 20
+    || record?.["schema"] === 21
   ) return raw
 
   const v17 = (
@@ -792,7 +794,11 @@ export const TOKEN_COST_V19_DEFAULTS = Object.freeze({
 /** Schema 19: token-cost host gates (distill fractions, chat turn caps) */
 export function migrateConfigToV19(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 19 || record?.["schema"] === 20) return raw
+  if (
+    record?.["schema"] === 19
+    || record?.["schema"] === 20
+    || record?.["schema"] === 21
+  ) return raw
 
   const v18 = (
     record?.["schema"] === 18
@@ -886,7 +892,7 @@ export const WALLET_SIGNALS_V20_DEFAULTS = Object.freeze({
 /** Schema 20: Discord wallet-signal confluence under chat.discord */
 export function migrateConfigToV20(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 20) return raw
+  if (record?.["schema"] === 20 || record?.["schema"] === 21) return raw
 
   const v19 = (
     record?.["schema"] === 19
@@ -925,6 +931,54 @@ export function migrateConfigToV20(raw: unknown): unknown {
           },
         },
       },
+    },
+  }
+}
+
+export const HARNESS_META_V21_DEFAULTS = Object.freeze({
+  meta_enabled: true,
+  meta_schedule_enabled: true,
+  meta_min_paired_trials: 8,
+  meta_schedule_days: 30,
+  meta_require_operator_promotion: true,
+})
+
+/** Schema 21: harness meta-lane operator controls (ADR 039) */
+export function migrateConfigToV21(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 21) return raw
+
+  const v20 = (
+    record?.["schema"] === 20
+      ? record
+      : migrateConfigToV20(raw)
+  ) as Record<string, unknown>
+
+  const prevHi = (v20["harness_improvement"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v20,
+    schema: 21,
+    harness_improvement: {
+      ...prevHi,
+      meta_enabled: prevHi["meta_enabled"] === false
+        ? false
+        : (prevHi["meta_enabled"] ?? HARNESS_META_V21_DEFAULTS.meta_enabled),
+      meta_schedule_enabled: prevHi["meta_schedule_enabled"] === false
+        ? false
+        : (prevHi["meta_schedule_enabled"]
+          ?? HARNESS_META_V21_DEFAULTS.meta_schedule_enabled),
+      meta_min_paired_trials: typeof prevHi["meta_min_paired_trials"] === "number"
+        ? prevHi["meta_min_paired_trials"]
+        : HARNESS_META_V21_DEFAULTS.meta_min_paired_trials,
+      meta_schedule_days: typeof prevHi["meta_schedule_days"] === "number"
+        ? prevHi["meta_schedule_days"]
+        : HARNESS_META_V21_DEFAULTS.meta_schedule_days,
+      meta_require_operator_promotion:
+        prevHi["meta_require_operator_promotion"] === false
+          ? false
+          : (prevHi["meta_require_operator_promotion"]
+            ?? HARNESS_META_V21_DEFAULTS.meta_require_operator_promotion),
     },
   }
 }

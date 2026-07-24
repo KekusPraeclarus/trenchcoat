@@ -4,6 +4,10 @@ import { join, relative, resolve } from "node:path"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { loadHypothesis, saveHypothesis, hypothesisDir } from "./propose.js"
 import type { HarnessHypothesis } from "../contracts/schemas.js"
+import {
+  allowlistForLane,
+  type HarnessLane,
+} from "./paths.js"
 
 export type PrepareResult = Readonly<{
   hypothesis: HarnessHypothesis
@@ -13,6 +17,7 @@ export type PrepareResult = Readonly<{
     ok: boolean
     violations: readonly string[]
   }
+  lane: HarnessLane
 }>
 
 function listFiles(root: string): string[] {
@@ -54,12 +59,12 @@ export function confineDiff(
     "src/router/",
     "src/chat/",
     "src/harness/",
+    "src/contracts/",
     ".env",
     "ops/launchd/",
   ]
   const violations: string[] = []
   for (const raw of changedPaths) {
-    // Collapse traversal before allowlist/forbidden checks
     const path = raw.split("/").reduce<string[]>((acc, part) => {
       if (part === "" || part === ".") return acc
       if (part === "..") {
@@ -85,7 +90,9 @@ export async function prepareWorktree(opts: Readonly<{
   hypothesisId: string
   repoRoot: string
   nowIso: string
+  lane?: HarnessLane
 }>): Promise<PrepareResult> {
+  const lane = opts.lane ?? "policy"
   const hypothesis = loadHypothesis(opts.archiveRoot, opts.hypothesisId)
   if (
     hypothesis.status !== "plan_approved"
@@ -95,7 +102,9 @@ export async function prepareWorktree(opts: Readonly<{
     throw new Error(`Hypothesis ${opts.hypothesisId} status ${hypothesis.status} cannot prepare`)
   }
 
-  const branch = `harness/${opts.hypothesisId}`
+  const branch = lane === "meta"
+    ? `harness-meta/${opts.hypothesisId}`
+    : `harness/${opts.hypothesisId}`
   const worktreePath = resolve(opts.repoRoot, "..", `trench-bot-${opts.hypothesisId}`)
   mkdirSync(hypothesisDir(opts.archiveRoot, opts.hypothesisId), { recursive: true, mode: 0o700 })
 
@@ -106,7 +115,6 @@ export async function prepareWorktree(opts: Readonly<{
       { cwd: opts.repoRoot, encoding: "utf8" },
     )
     if (add.status !== 0) {
-      // Branch may already exist
       const add2 = spawnSync(
         "git",
         ["worktree", "add", worktreePath, branch],
@@ -118,33 +126,36 @@ export async function prepareWorktree(opts: Readonly<{
     }
   }
 
-  // Snapshot baseline file set for later confinement of uncommitted changes
   const files = listFiles(worktreePath)
   await writeAtomicFile(
     join(hypothesisDir(opts.archiveRoot, opts.hypothesisId), "worktree.json"),
     `${JSON.stringify({
       worktreePath,
       branch,
+      lane,
       preparedAt: opts.nowIso,
       baselineFileCount: files.length,
     }, null, 2)}\n`,
   )
 
-  // Write a patch brief the Cursor session may follow (paths only, no secrets)
+  const allowlist = allowlistForLane(lane)
   await writeAtomicFile(
     join(worktreePath, "HARNESS_BRIEF.md"),
     [
       `# Harness patch brief`,
       "",
       `Hypothesis: ${hypothesis.hypothesisId}`,
+      `Lane: ${lane}`,
       `Primary metric: ${hypothesis.primaryMetric}`,
       `Allowlist:`,
-      ...hypothesis.allowlistPaths.map((p) => `- ${p}`),
+      ...allowlist.map((p) => `- ${p}`),
       "",
       hypothesis.rationale,
       "",
-      "Do not edit host audit, router, chat, harness, or secrets.",
-      "Decision-policy changes only.",
+      "Do not edit host audit, router, chat, harness, contracts, or secrets.",
+      lane === "meta"
+        ? "Improver-config changes only."
+        : "Decision-policy changes only.",
       "",
     ].join("\n"),
   )
@@ -152,6 +163,7 @@ export async function prepareWorktree(opts: Readonly<{
   const updated = {
     ...hypothesis,
     status: "prepared" as const,
+    allowlistPaths: [...allowlist],
   }
   await saveHypothesis(opts.archiveRoot, updated)
 
@@ -160,6 +172,7 @@ export async function prepareWorktree(opts: Readonly<{
     worktreePath,
     branch,
     confinement: { ok: true, violations: [] },
+    lane,
   }
 }
 
@@ -190,7 +203,6 @@ export function evaluateWorktreeConfinement(opts: Readonly<{
       ...(untracked.stdout ?? "").split("\n"),
     ].map((s) => s.trim()).filter(Boolean)),
   ]
-  // Ignore the brief we wrote
   const filtered = changed.filter((p) => p !== "HARNESS_BRIEF.md")
   const confinement = confineDiff(filtered, opts.allowlist)
   return { ...confinement, changed: filtered }
@@ -199,8 +211,12 @@ export function evaluateWorktreeConfinement(opts: Readonly<{
 export function readWorktreeMeta(
   archiveRoot: string,
   hypothesisId: string,
-): { worktreePath: string, branch: string } {
+): { worktreePath: string, branch: string, lane?: HarnessLane } {
   const path = join(hypothesisDir(archiveRoot, hypothesisId), "worktree.json")
   if (!existsSync(path)) throw new Error("Worktree not prepared")
-  return JSON.parse(readFileSync(path, "utf8")) as { worktreePath: string, branch: string }
+  return JSON.parse(readFileSync(path, "utf8")) as {
+    worktreePath: string
+    branch: string
+    lane?: HarnessLane
+  }
 }

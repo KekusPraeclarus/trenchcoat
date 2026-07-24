@@ -75,13 +75,17 @@ function fetchOriginMain(repoRoot: string): string {
   return remote.stdout
 }
 
-/** Stage and commit only the decision-policy file in the candidate worktree */
+/** Stage and commit allowlisted path(s) in the candidate worktree */
 export function commitCandidateBranch(
   worktreePath: string,
   title: string,
+  paths: readonly string[] = [DECISION_POLICY_REL_PATH],
 ): string {
   assertNoMergeInProgress(worktreePath)
-  const add = git(worktreePath, ["add", "--", DECISION_POLICY_REL_PATH])
+  if (paths.length === 0) {
+    throw new IntegrateError("commit-failed", "no paths to commit")
+  }
+  const add = git(worktreePath, ["add", "--", ...paths])
   if (add.status !== 0) {
     throw new IntegrateError("commit-failed", add.stderr || "git add failed")
   }
@@ -90,7 +94,7 @@ export function commitCandidateBranch(
     "-m",
     title.slice(0, 200),
     "--",
-    DECISION_POLICY_REL_PATH,
+    ...paths,
   ])
   if (commit.status !== 0) {
     throw new IntegrateError("commit-failed", commit.stderr || "git commit failed")

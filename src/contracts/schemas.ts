@@ -1151,6 +1151,15 @@ export type DecisionBundle = z.infer<typeof DecisionBundleSchema>
 /** Autonomous harness may edit exactly this path — never expands its own allowlist */
 export const POLICY_ALLOWLIST_PATH = "agent/skills/decision-policy/policy.json" as const
 export const DECISION_POLICY_REL_PATH = POLICY_ALLOWLIST_PATH
+/** Meta lane sole patch target (ADR 039) — never synced into agent/ */
+export const IMPROVER_CONFIG_ALLOWLIST_PATH = "config/harness-improver.json" as const
+
+export const KNOWN_SIGNAL_KEY_PREFIXES = [
+  "confidence",
+  "clusters",
+  "role:",
+  "dex:",
+] as const
 
 export const PROTECTED_QUALITY_METRICS = [
   "hitRate",
@@ -1161,6 +1170,163 @@ export const PROTECTED_QUALITY_METRICS = [
   "outcomeCoverage",
 ] as const
 export type ProtectedQualityMetric = typeof PROTECTED_QUALITY_METRICS[number]
+
+export const CONFIDENCE_BINS = [
+  "[0,20)",
+  "[20,40)",
+  "[40,60)",
+  "[60,80)",
+  "[80,100]",
+] as const
+export type ConfidenceBin = typeof CONFIDENCE_BINS[number]
+
+export const HarnessImproverConfigSchema = z.object({
+  schema: z.literal(1),
+  configVersion: SafeIdSchema,
+  mining: z.object({
+    minClusterSize: z.number().int().min(3).max(20).default(5),
+    maxClusters: z.number().int().min(1).max(8).default(8),
+    maxKeepPatterns: z.number().int().min(1).max(3).default(3),
+    maxEvidencePerPattern: z.number().int().min(1).max(32).default(16),
+    signalKeyPrefixes: z.array(z.enum(KNOWN_SIGNAL_KEY_PREFIXES)).min(1).max(8)
+      .default([...KNOWN_SIGNAL_KEY_PREFIXES]),
+  }).default({}),
+  propose: z.object({
+    weakMetricPriority: z.record(z.number()).default({
+      hitRate: 1,
+      ignoreMissRate: 0.8,
+      calibrationBrier: 0.6,
+      paperPnlCostAdjusted: 0.4,
+    }),
+    maxRationaleChars: z.number().int().min(100).max(2_000).default(500),
+  }).default({}),
+  planAddendum: z.string().max(500).default(""),
+}).strict()
+export type HarnessImproverConfig = z.infer<typeof HarnessImproverConfigSchema>
+
+export const HarnessFailureModeSchema = z.enum([
+  "track-miss",
+  "ignore-miss",
+  "drop-not-vindicated",
+  "calibration-miss",
+  "rug-terminal-loss",
+  "outcome-missing",
+])
+export type HarnessFailureMode = z.infer<typeof HarnessFailureModeSchema>
+
+export const HarnessFactorSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("confidence_bin"),
+    bin: z.enum(CONFIDENCE_BINS),
+  }).strict(),
+  z.object({
+    kind: z.literal("signal_key"),
+    key: z.string().min(1).max(64),
+    bucket: z.string().min(1).max(64),
+  }).strict(),
+])
+export type HarnessFactor = z.infer<typeof HarnessFactorSchema>
+
+export const HarnessStratifierSchema = z.object({
+  kind: z.enum(["one_factor", "two_factor"]),
+  factors: z.array(HarnessFactorSchema).min(1).max(2),
+}).strict()
+export type HarnessStratifier = z.infer<typeof HarnessStratifierSchema>
+
+export const HarnessEvidenceRefSchema = z.object({
+  evidenceId: SafeIdSchema,
+  subjectId: SafeIdSchema,
+  subjectType: z.literal("decision"),
+  horizonHours: z.number().int().positive(),
+  failureMode: HarnessFailureModeSchema,
+  signals: z.record(z.number()),
+  verdict: VerdictSchema,
+  outcomeStatus: OutcomeObservationStatusSchema.or(z.literal("absent")),
+  excessReturn: z.number().optional(),
+  bundleHash: Sha256Schema,
+}).strict()
+export type HarnessEvidenceRef = z.infer<typeof HarnessEvidenceRefSchema>
+
+export const HarnessWeaknessPatternSchema = z.object({
+  patternId: SafeIdSchema,
+  failureMode: HarnessFailureModeSchema,
+  stratifier: HarnessStratifierSchema,
+  /** Association template — not a causal claim */
+  label: z.string().min(1).max(280),
+  support: z.number().int().nonnegative(),
+  failureCount: z.number().int().nonnegative(),
+  failureRate: z.number().min(0).max(1),
+  baselineFailureRate: z.number().min(0).max(1),
+  lift: z.number(),
+  score: z.number(),
+  evidenceIds: z.array(SafeIdSchema).max(32),
+  primaryMetricHint: z.enum([
+    "hitRate",
+    "ignoreMissRate",
+    "calibrationBrier",
+    "paperPnlCostAdjusted",
+    "rugExposure",
+  ]).optional(),
+}).strict()
+export type HarnessWeaknessPattern = z.infer<typeof HarnessWeaknessPatternSchema>
+
+export const HarnessWeaknessReportSchema = z.object({
+  schema: z.literal(1),
+  epochId: SafeIdSchema,
+  manifestHash: Sha256Schema,
+  minedAt: IsoTimestampSchema,
+  hitThreshold: z.number().min(0).max(10),
+  improverConfigHash: Sha256Schema,
+  totalSubjects: z.number().int().nonnegative(),
+  failedSubjects: z.number().int().nonnegative(),
+  patterns: z.array(HarnessWeaknessPatternSchema).max(8),
+  evidence: z.array(HarnessEvidenceRefSchema).max(512),
+}).strict()
+export type HarnessWeaknessReport = z.infer<typeof HarnessWeaknessReportSchema>
+
+export const HarnessKeepPatternSchema = z.object({
+  patternId: SafeIdSchema,
+  stratifier: HarnessStratifierSchema,
+  label: z.string().min(1).max(280),
+  support: z.number().int().nonnegative(),
+  hitRate: z.number().min(0).max(1),
+  evidenceIds: z.array(SafeIdSchema).max(32),
+}).strict()
+export type HarnessKeepPattern = z.infer<typeof HarnessKeepPatternSchema>
+
+export const HarnessKeepSummarySchema = z.object({
+  schema: z.literal(1),
+  epochId: SafeIdSchema,
+  manifestHash: Sha256Schema,
+  builtAt: IsoTimestampSchema,
+  hitThreshold: z.number().min(0).max(10),
+  improverConfigHash: Sha256Schema,
+  patterns: z.array(HarnessKeepPatternSchema).max(3),
+  evidence: z.array(HarnessEvidenceRefSchema).max(96),
+}).strict()
+export type HarnessKeepSummary = z.infer<typeof HarnessKeepSummarySchema>
+
+export const PriorAttemptRecordSchema = z.object({
+  schema: z.literal(1),
+  hypothesisId: SafeIdSchema,
+  status: z.enum(["rejected", "rolled_back", "superseded"]),
+  phase: z.string().min(1).max(64),
+  primaryMetric: z.string().min(1).max(64),
+  weaknessPatternId: SafeIdSchema.optional(),
+  planFingerprint: Sha256Schema.optional(),
+  policyDiffFingerprint: Sha256Schema.optional(),
+  resultClass: z.enum([
+    "plan-reject",
+    "holdout-fail",
+    "review-reject",
+    "canary-stop",
+    "rollback",
+    "other",
+  ]).optional(),
+  reasonCode: z.string().min(1).max(64).optional(),
+  recordedAt: IsoTimestampSchema,
+}).strict()
+export type PriorAttemptRecord = z.infer<typeof PriorAttemptRecordSchema>
 
 export const HarnessHypothesisSchema = z.object({
   schema: z.literal(1),
@@ -1197,6 +1363,11 @@ export const HarnessHypothesisSchema = z.object({
     "rolled_back",
     "rejected",
   ]),
+  weaknessPatternId: SafeIdSchema.optional(),
+  evidenceIds: z.array(SafeIdSchema).max(32).optional(),
+  weaknessReportHash: Sha256Schema.optional(),
+  keepSummaryHash: Sha256Schema.optional(),
+  improverConfigHash: Sha256Schema.optional(),
 })
 export type HarnessHypothesis = z.infer<typeof HarnessHypothesisSchema>
 
@@ -1215,6 +1386,7 @@ export const HarnessEvaluationSchema = z.object({
   holdoutConsumed: z.boolean(),
   metrics: z.record(z.number()),
   rejectReason: z.string().max(280).optional(),
+  manifestoValidationHash: Sha256Schema.optional(),
 })
 export type HarnessEvaluation = z.infer<typeof HarnessEvaluationSchema>
 
@@ -1471,8 +1643,7 @@ export const DecisionPolicyDocumentSchema = z.object({
 })
 export type DecisionPolicyDocument = z.infer<typeof DecisionPolicyDocumentSchema>
 
-export const HarnessPlanSchema = z.object({
-  schema: z.literal(1),
+const HarnessPlanBaseFields = {
   hypothesisId: SafeIdSchema,
   createdAt: IsoTimestampSchema,
   model: z.string().min(1).max(128),
@@ -1493,8 +1664,133 @@ export const HarnessPlanSchema = z.object({
   rollbackConditions: z.array(z.string().min(1).max(280)).min(1).max(16),
   currentPolicyHash: Sha256Schema,
   scorecardSummaryHash: Sha256Schema,
+} as const
+
+export const HarnessPlanV1Schema = z.object({
+  schema: z.literal(1),
+  ...HarnessPlanBaseFields,
 })
+export type HarnessPlanV1 = z.infer<typeof HarnessPlanV1Schema>
+
+export const HarnessPredictedFixSchema = z.object({
+  target: z.string().min(1).max(128),
+  change: z.string().min(1).max(500),
+}).strict()
+
+export const HarnessAtRiskRegressionSchema = z.object({
+  metric: z.string().min(1).max(64),
+  direction: z.literal("worse"),
+  mechanism: z.string().min(1).max(500),
+}).strict()
+
+export const HarnessProtectedDirectionSchema = z.enum(["improve", "hold", "worsen"])
+
+export const HarnessPlanV2Schema = z.object({
+  schema: z.literal(2),
+  ...HarnessPlanBaseFields,
+  evidenceIds: z.array(SafeIdSchema).min(1).max(32),
+  rootCauseHypothesis: z.string().min(1).max(1_000),
+  predictedFixes: z.array(HarnessPredictedFixSchema).min(1).max(16),
+  atRiskRegressions: z.array(HarnessAtRiskRegressionSchema).max(16).default([]),
+  preservedBehaviorIds: z.array(SafeIdSchema).max(32).default([]),
+  expectedProtectedDirections: z.record(HarnessProtectedDirectionSchema),
+  weaknessReportHash: Sha256Schema.optional(),
+  keepSummaryHash: Sha256Schema.optional(),
+})
+export type HarnessPlanV2 = z.infer<typeof HarnessPlanV2Schema>
+
+export const HarnessPlanSchema = z.union([HarnessPlanV1Schema, HarnessPlanV2Schema])
 export type HarnessPlan = z.infer<typeof HarnessPlanSchema>
+
+export function isHarnessPlanV2(plan: HarnessPlan): plan is HarnessPlanV2 {
+  return plan.schema === 2
+}
+
+export const HarnessManifestoValidationSchema = z.object({
+  schema: z.literal(1),
+  hypothesisId: SafeIdSchema,
+  validatedAt: IsoTimestampSchema,
+  /** False when an unpredicted protected regression is measured */
+  ok: z.boolean(),
+  predictions: z.array(z.object({
+    metric: z.string().min(1).max(64),
+    predicted: HarnessProtectedDirectionSchema,
+    measured: HarnessProtectedDirectionSchema,
+    matched: z.boolean(),
+    baseline: z.number(),
+    candidate: z.number(),
+  }).strict()).max(32).default([]),
+  unpredictedRegressions: z.array(z.object({
+    metric: z.string().min(1).max(64),
+    baseline: z.number(),
+    candidate: z.number(),
+  }).strict()).max(16).default([]),
+  predictionMisses: z.array(z.object({
+    metric: z.string().min(1).max(64),
+    predicted: HarnessProtectedDirectionSchema,
+    measured: HarnessProtectedDirectionSchema,
+  }).strict()).max(16).default([]),
+}).strict()
+export type HarnessManifestoValidation = z.infer<typeof HarnessManifestoValidationSchema>
+
+export const MetaCandidateSchema = z.object({
+  schema: z.literal(1),
+  candidateId: SafeIdSchema,
+  createdAt: IsoTimestampSchema,
+  baseConfigHash: Sha256Schema,
+  candidateConfigHash: Sha256Schema,
+  status: z.enum([
+    "proposed",
+    "trialing",
+    "promotion_eligible",
+    "promoted",
+    "rejected",
+  ]),
+  rationale: z.string().min(1).max(1_000),
+}).strict()
+export type MetaCandidate = z.infer<typeof MetaCandidateSchema>
+
+export const MetaTrialPairSchema = z.object({
+  schema: z.literal(1),
+  trialId: SafeIdSchema,
+  candidateId: SafeIdSchema,
+  developmentEpochId: SafeIdSchema,
+  holdoutEpochId: SafeIdSchema,
+  createdAt: IsoTimestampSchema,
+  baselineHypothesisId: SafeIdSchema,
+  candidateHypothesisId: SafeIdSchema,
+  baselinePrimaryDelta: z.number().optional(),
+  candidatePrimaryDelta: z.number().optional(),
+  winner: z.enum(["baseline", "candidate", "tie"]).optional(),
+  baselineProtectedRegressions: z.number().int().nonnegative().default(0),
+  candidateProtectedRegressions: z.number().int().nonnegative().default(0),
+  baselineInvalid: z.boolean().default(false),
+  candidateInvalid: z.boolean().default(false),
+  holdoutConsumed: z.boolean().default(false),
+}).strict()
+export type MetaTrialPair = z.infer<typeof MetaTrialPairSchema>
+
+export const MetaUtilitySummarySchema = z.object({
+  schema: z.literal(1),
+  candidateId: SafeIdSchema,
+  computedAt: IsoTimestampSchema,
+  validPairs: z.number().int().nonnegative(),
+  candidateWins: z.number().int().nonnegative(),
+  baselineWins: z.number().int().nonnegative(),
+  ties: z.number().int().nonnegative(),
+  candidateWinRate: z.number().min(0).max(1),
+  baselineWinRate: z.number().min(0).max(1),
+  candidateProtectedRegressions: z.number().int().nonnegative(),
+  baselineProtectedRegressions: z.number().int().nonnegative(),
+  candidateInvalidCount: z.number().int().nonnegative(),
+  baselineInvalidCount: z.number().int().nonnegative(),
+  medianCandidatePrimaryDelta: z.number().optional(),
+  medianBaselinePrimaryDelta: z.number().optional(),
+  safetyIntegrityOk: z.boolean(),
+  promotionEligible: z.boolean(),
+  rejectReason: z.string().max(280).optional(),
+}).strict()
+export type MetaUtilitySummary = z.infer<typeof MetaUtilitySummarySchema>
 
 export const HarnessReviewFindingSchema = z.object({
   id: z.string().min(1).max(64),
@@ -1581,6 +1877,8 @@ export const PairedEpisodeRecordSchema = z.object({
   mature: z.boolean().default(false),
   metricDelta: z.record(z.number()).default({}),
   recordedAt: IsoTimestampSchema,
+  decisionIds: z.array(SafeIdSchema).max(64).optional(),
+  horizonHours: z.number().int().positive().optional(),
 })
 export type PairedEpisodeRecord = z.infer<typeof PairedEpisodeRecordSchema>
 

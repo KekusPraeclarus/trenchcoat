@@ -2,14 +2,14 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-07-22
+last_verified: 2026-07-24
 ---
 
 # Module docs
 
 | Doc | Covers | Read before editing |
 |---|---|---|
-| [orchestrator.md](orchestrator.md) | Job registry (incl. wallet + harness-improve), Cursor CLI sessions, journalled/idempotent run loop, locking, outbox → router, alpha lifecycle, sealed audit epochs, ledger + source scoring, rug-dock, recovery | `src/orchestrator/`, `src/cli.ts`, `src/harness/`, `ops/` |
+| [orchestrator.md](orchestrator.md) | Job registry (incl. wallet + harness-improve / harness-meta-improve), Cursor CLI sessions, journalled/idempotent run loop, locking, outbox → router, alpha lifecycle, sealed audit epochs, ledger + source scoring, rug-dock, recovery | `src/orchestrator/`, `src/cli.ts`, `src/harness/`, `ops/` |
 | [collectors.md](collectors.md) | Social/market collectors, mention dedupe + clusters, source-call extraction, freshness, new pools, exact RSI contract, rate gate, atomic snapshots/provenance | `src/collectors/`, `src/lib/` |
 | [agent-workspace.md](agent-workspace.md) | The bot's instructions, skills, knowledge store (index, research, narratives, sources), state schemas + decision cards, decision weighting, outbox, sandbox config | anything under `agent/` |
 | [chat-agent.md](chat-agent.md) | Telegram bridge, confirmation-gated research, deep-research sub-agents | `src/chat/`, `src/orchestrator/research.ts`, `agent/skills/chat/`, `agent/skills/deep-research/` |
@@ -23,15 +23,16 @@ last_verified: 2026-07-22
 | [token-resolution.md](token-resolution.md) | Canonical identity, isolated shortlist-bounded disambiguation, point-in-time dossier, ground-truth/proxy audit split, strict RSI-rule promotion | `src/lib/resolve.ts`, mention counting, watchlist entry creation |
 | [research-queue.md](research-queue.md) | Candidate buffer, dedupe, priority, revisit/expiry/cap, operator Telegram/CLI path | `src/lib/research-queue.ts`, `src/orchestrator/research.ts`, research job |
 | [security-gate.md](security-gate.md) | GoPlus/RugCheck field→flag mapping, hard-fail vs caution (incl. contextual mint / ADR 011), market-quality preflight, fail-closed semantics | `src/collectors/market/security.ts`, `src/orchestrator/research-verdict.ts` |
-| [snapshot-archive.md](snapshot-archive.md) | Content-addressed archive, evidence bundles, causal outcome records, run journals, sealed epochs, retention/backup, source-score lag | run-loop archiving, attribution inputs, audit reads |
-| [audit-metrics.md](audit-metrics.md) | Epoch/cohort rules, causal execution, honest P&L, horizons, calibration, RSI evaluation, broadcasts, source quality, funnel counterfactuals | `src/orchestrator/audit.ts` |
+| [snapshot-archive.md](snapshot-archive.md) | Content-addressed archive, evidence bundles, causal outcome records (incl. `outcomes/decision/…`), run journals, sealed epochs, retention/backup, source-score lag | run-loop archiving, attribution inputs, audit / harness mining reads |
+| [audit-metrics.md](audit-metrics.md) | Epoch/cohort rules, causal execution, honest P&L, horizons, calibration, RSI evaluation, broadcasts, source quality, funnel counterfactuals, decision-outcome settlement | `src/orchestrator/audit.ts`, `settle-decisions.ts` |
 | [router.md](router.md) | KeepAlive SQLite router, HMAC intake, durable fanout, per-channel Telegram/Discord payloads (host-rendered; watchWindow ADR 013), wallet lifecycle lane | `src/router/`, `src/orchestrator/channel-render.ts`, `src/orchestrator/distill-session.ts`, `src/lib/router-contract.ts`, `src/lib/watch-window.ts` |
 | [smart-wallets.md](smart-wallets.md) | Helius/Infura tracking, deterministic+LLM scoring, promotion/drop, mandatory lifecycle events | `src/wallets/`, wallet collectors |
 | [chart-vision.md](chart-vision.md) | Offline SVG→PNG charts from archived OHLCV, manifests, vision as interpretive evidence | chart renderer, chart-sweep skill |
 | [source-lifecycle.md](source-lifecycle.md) | FYP candidacy, lagged promote/demote, managed private X list (ADR 004) + Farcaster follow-graph (ADR 007) | `src/sources/`, `src/sources/fc-lifecycle.ts`, `src/collectors/twitter/managed-list.ts`, `src/collectors/farcaster/`, `source-list` / `fc-source` CLI |
-| [harness-improvement.md](harness-improvement.md) | Sealed-scorecard hypotheses, confined worktrees, holdout evaluation, bounded-live canaries (ADR 005) | `src/harness/`, `tc harness` |
+| [harness-improvement.md](harness-improvement.md) | Policy lane (ADR 005) + shadow improver-config meta lane (ADR 039); mining/manifesto/keep/prior-attempts; sealed-only inputs; operator meta promote; improver must not edit own code/gates (ADR 038) | `src/harness/`, `tc harness`, `config/harness-improver.json` |
 
-ADRs live under [`docs/adr/`](../adr/). Provider knowledge under [`docs/knowledge/`](../knowledge/).
+ADRs live under [`docs/adr/`](../adr/) (incl. 038/039). Provider knowledge under
+[`docs/knowledge/`](../knowledge/) (incl. [harness-self-improvement-patterns.md](../knowledge/harness-self-improvement-patterns.md)).
 Parallel-worktree merge rules: [`../development.md`](../development.md).
 
 Modules ship incrementally: flip matching `docs/INVARIANTS.md` rows to ENFORCED

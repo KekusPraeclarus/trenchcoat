@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV20 } from "../migrations/config.js"
+import { migrateConfigToV21 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(20),
+  schema: z.literal(21),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -258,6 +258,11 @@ export const ConfigSchema = z.object({
     missingness_max: z.number().min(0).max(1).default(0.3),
     rug_exposure_max: z.number().min(0).max(1).default(0.25),
     one_active_experiment: z.boolean().default(true),
+    meta_enabled: z.boolean().default(true),
+    meta_schedule_enabled: z.boolean().default(true),
+    meta_min_paired_trials: z.number().int().min(1).max(64).default(8),
+    meta_schedule_days: z.number().int().min(1).max(365).default(30),
+    meta_require_operator_promotion: z.boolean().default(true),
   }).default({
     enabled: true,
     schedule_enabled: true,
@@ -281,6 +286,11 @@ export const ConfigSchema = z.object({
     missingness_max: 0.3,
     rug_exposure_max: 0.25,
     one_active_experiment: true,
+    meta_enabled: true,
+    meta_schedule_enabled: true,
+    meta_min_paired_trials: 8,
+    meta_schedule_days: 30,
+    meta_require_operator_promotion: true,
   }),
   incident_remediation: z.object({
     enabled: z.boolean().default(false),
@@ -784,7 +794,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV20(raw))
+  return ConfigSchema.parse(migrateConfigToV21(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

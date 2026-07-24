@@ -6,6 +6,7 @@ import { systemClock } from "../lib/clock.js"
 import { sha256Json } from "../lib/canonical-json.js"
 import { writeAtomicFile, sha256Bytes } from "../lib/fs-atomic.js"
 import { archiveLayout, ensureArchive } from "../lib/archive.js"
+import { loadSealedEpoch } from "../orchestrator/scorecard.js"
 import { WorkspaceLock } from "../lib/lock.js"
 import { log } from "../lib/log.js"
 import {
@@ -39,7 +40,13 @@ import { commitCandidateBranch, fastForwardLocalMain } from "./integrate.js"
 import { deployRuntimeFromRepo } from "./deploy.js"
 import { writePendingAgentDeploymentManifest } from "./drain.js"
 import { DECISION_POLICY_REL_PATH, POLICY_ALLOWLIST } from "./paths.js"
-import type { HarnessPlan } from "../contracts/schemas.js"
+import {
+  HarnessWeaknessReportSchema,
+  PROTECTED_QUALITY_METRICS,
+  isHarnessPlanV2,
+  type HarnessPlan,
+  type HarnessWeaknessReport,
+} from "../contracts/schemas.js"
 import type { SessionOptions, SessionResult } from "../orchestrator/session.js"
 
 export type HarnessImproveReport = Readonly<{
@@ -91,6 +98,10 @@ function hostValidatePlan(
   plan: HarnessPlan,
   primaryMetric: string,
   allowlistPaths: readonly string[],
+  opts?: Readonly<{
+    weaknessReport?: HarnessWeaknessReport
+    holdoutSubjectIds?: ReadonlySet<string>
+  }>,
 ): { ok: true } | { ok: false, reason: string } {
   if (plan.primaryMetric !== primaryMetric) {
     return { ok: false, reason: "plan primaryMetric mismatch vs hypothesis" }
@@ -108,6 +119,34 @@ function hostValidatePlan(
   }
   if (!plan.currentPolicyHash || !plan.scorecardSummaryHash) {
     return { ok: false, reason: "plan missing required hashes" }
+  }
+
+  if (isHarnessPlanV2(plan)) {
+    const report = opts?.weaknessReport
+    if (!report) {
+      return { ok: false, reason: "v2 plan requires weakness report" }
+    }
+    const knownEvidence = new Set(report.evidence.map((e) => e.evidenceId))
+    for (const id of plan.evidenceIds) {
+      if (!knownEvidence.has(id)) {
+        return { ok: false, reason: `evidenceId not in weakness report: ${id}` }
+      }
+      const ev = report.evidence.find((e) => e.evidenceId === id)
+      if (ev && opts?.holdoutSubjectIds?.has(ev.subjectId)) {
+        return { ok: false, reason: `holdout subject forbidden in evidence: ${ev.subjectId}` }
+      }
+    }
+    for (const metric of PROTECTED_QUALITY_METRICS) {
+      if (!(metric in plan.expectedProtectedDirections)) {
+        return { ok: false, reason: `missing protected direction: ${metric}` }
+      }
+    }
+    if (/caus(es|ed|al)\b/iu.test(plan.rootCauseHypothesis)) {
+      return {
+        ok: false,
+        reason: "rootCauseHypothesis must stay associative (no causal claim wording)",
+      }
+    }
   }
   return { ok: true }
 }
@@ -217,6 +256,7 @@ export async function runHarnessImprove(
       nowIso,
       minEvents: hi.min_events,
       minHoldoutEvents: hi.min_holdout_events,
+      repoRoot: opts.repoRoot,
     })
     // Do not advance journal to "proposed" — phase removed
 
@@ -258,10 +298,31 @@ export async function runHarnessImprove(
       planned.planHash,
     )
 
+    const weaknessPath = join(
+      hypothesisDir(opts.archiveRoot, hypothesis.hypothesisId),
+      "weakness-report.json",
+    )
+    let weaknessReport: HarnessWeaknessReport | undefined
+    if (existsSync(weaknessPath)) {
+      try {
+        weaknessReport = HarnessWeaknessReportSchema.parse(
+          JSON.parse(readFileSync(weaknessPath, "utf8")),
+        )
+      } catch {
+        weaknessReport = undefined
+      }
+    }
+    const holdoutSubjects = new Set(
+      loadSealedEpoch(layout, holdoutEpochId).manifest.subjects.map((s) => s.id),
+    )
     const planGate = hostValidatePlan(
       planned.plan,
       hypothesis.primaryMetric,
       hypothesis.allowlistPaths,
+      {
+        ...(weaknessReport ? { weaknessReport } : {}),
+        holdoutSubjectIds: holdoutSubjects,
+      },
     )
     if (!planGate.ok) {
       await writeRejectionReceipt(opts.archiveRoot, {
@@ -543,6 +604,8 @@ export async function runHarnessImprove(
     const evaluationHash = sha256Json(evaluation as never)
     const policyBytes = readFileSync(policyAbs)
     const diffHash = sha256Bytes(policyBytes)
+    const hypDir = hypothesisDir(opts.archiveRoot, hypothesis.hypothesisId)
+    const manifestoPath = join(hypDir, "manifesto-validation.json")
     const implReview = await runHarnessReview({
       archiveRoot: opts.archiveRoot,
       hypothesisId: hypothesis.hypothesisId,
@@ -551,7 +614,9 @@ export async function runHarnessImprove(
       model: hi.reviewer_model,
       nowIso,
       artifactPaths: [
-        join(hypothesisDir(opts.archiveRoot, hypothesis.hypothesisId), "evaluation.json"),
+        join(hypDir, "plan.json"),
+        join(hypDir, "evaluation.json"),
+        ...(existsSync(manifestoPath) ? [manifestoPath] : []),
         policyAbs,
       ],
       planHash: planned.planHash,

@@ -17,7 +17,7 @@ import {
   type BarProvider,
   type BenchmarkProvider,
 } from "./observations.js"
-import { type SourceCallEvent, type WalletBuyOutcome } from "../contracts/schemas.js"
+import { type SourceCallEvent, type WalletBuyOutcome, type CanonicalIdentity } from "../contracts/schemas.js"
 
 /** Scorecard cohort minus fields the epoch manifest owns */
 export type ScorecardCohort = Omit<ScorecardInput, "epochId" | "sealedAt" | "manifestHash">
@@ -48,6 +48,7 @@ export async function runAuditEpoch(args: Readonly<{
     sourceBenchmark?: BenchmarkProvider<SourceCallEvent>
     walletBars?: BarProvider<WalletBuyOutcome>
     walletBenchmark?: BenchmarkProvider<WalletBuyOutcome>
+    identityBars?: BarProvider<CanonicalIdentity>
     feeBpsPerSide?: number
   }>
 }>): Promise<AuditEpochResult> {
@@ -63,6 +64,7 @@ export async function runAuditEpoch(args: Readonly<{
     ...(args.settle?.sourceBenchmark ? { sourceBenchmark: args.settle.sourceBenchmark } : {}),
     ...(args.settle?.walletBars ? { walletBars: args.settle.walletBars } : {}),
     ...(args.settle?.walletBenchmark ? { walletBenchmark: args.settle.walletBenchmark } : {}),
+    ...(args.settle?.identityBars ? { identityBars: args.settle.identityBars } : {}),
     ...(args.settle?.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.settle.feeBpsPerSide } : {}),
   })
 

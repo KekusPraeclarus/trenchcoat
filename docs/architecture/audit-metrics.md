@@ -2,9 +2,10 @@
 description: Audit metric definitions - hit events, horizons, benchmark excess returns, calibration binning, paper-ledger conventions, broadcast precision, discovery-funnel counterfactuals. The formulas that make the scorecard mean something.
 scope: module
 status: draft
-last_verified: 2026-07-19
+last_verified: 2026-07-24
 read_when:
   - Editing src/orchestrator/audit.ts or interpreting scorecard numbers.
+  - Extending harness mining / keep summaries that consume settled decision outcomes.
 ---
 
 # Audit metrics
@@ -174,9 +175,26 @@ A rejected candidate version never reuses that holdout. A promoted rule remains
 shadow-monitored for drift and automatically falls back to the model path when
 its inputs are invalid.
 
-Harness improvement experiments (ADR 005) reuse this same pre-registration /
-forward-holdout discipline for **decision-policy** changes — they do not promote
-Relative Strength Index rules, and they never rewrite this audit definition.
+Harness improvement experiments (ADR 005 / ADR 039) reuse this same
+pre-registration / forward-holdout discipline for **decision-policy** and
+shadow improver-config changes — they do not promote Relative Strength Index
+rules, and they never rewrite this audit definition.
+
+### Decision outcome settlement (mining consumer)
+
+Host `runSettleDecisions` (`src/orchestrator/settle-decisions.ts`) prices each
+archived decision bundle at configured horizons into immutable
+`outcomes/decision/<decision-id>/<horizon>h.json` (resumable; conflicting bytes
+reject). `decisionOutcomeToScorecardFields` folds a settled observation into
+hit / drop-vindicated / ignore-miss flags used by:
+
+- sealed audit scorecard cohorts
+- harness weakness mining + keep-summary (sealed aggregates + numeric signals only)
+- canary paired-episode maturity / stop rules
+
+Missing identity → censored (not a fabricated loss). Provider gaps stay
+`provider-pending`. See [snapshot-archive.md](snapshot-archive.md) and
+[harness-improvement.md](harness-improvement.md).
 
 ## Broadcast precision
 

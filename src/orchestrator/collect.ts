@@ -180,6 +180,7 @@ export async function collectForJob(args: Readonly<{
     case "wallet-review":
     case "wallet-runner-discovery":
     case "harness-improve":
+    case "harness-meta-improve":
     case "incident-remediate":
     case "incident-remediate-weekly":
     case "recover":

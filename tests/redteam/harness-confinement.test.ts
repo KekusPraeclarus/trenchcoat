@@ -56,6 +56,15 @@ describe("harness red-team confinement", () => {
     expect(bad.violations.some((v) => v.includes("HARNESS_BRIEF.md"))).toBe(true)
   })
 
+  it("forbids src/contracts edits", () => {
+    const result = confineDiff(
+      ["src/contracts/schemas.ts"],
+      POLICY_ALLOWLIST,
+    )
+    expect(result.ok).toBe(false)
+    expect(result.violations.some((v) => v.includes("src/contracts"))).toBe(true)
+  })
+
   it("harness prompts never interpolate scraped content placeholders", () => {
     for (const prompt of [
       HARNESS_PROPOSE_PROMPT,

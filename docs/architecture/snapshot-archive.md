@@ -2,9 +2,10 @@
 description: Host-side snapshot archive and decision-time as-of bundles - the immutable record that source attribution and audits read from, and the leakage firewall that makes calibration valid.
 scope: module
 status: draft
-last_verified: 2026-07-21
+last_verified: 2026-07-24
 read_when:
   - Editing the run loop's archiving, source attribution inputs, audit outcome computation, or retention.
+  - Consuming settled decision outcomes for harness mining / keep summaries.
 ---
 
 # Snapshot archive and as-of bundles
@@ -37,7 +38,9 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 │   ├── report.md          # the run's briefing
 │   └── manifest.json      # run id, job, timestamps, file sha256 list
 ├── decisions/<decision-id>.json   # as-of bundles (below)
-├── outcomes/<subject-type>/<subject-id>/<horizon>.json # immutable observations
+├── outcomes/<subject-type>/<subject-id>/<horizon>h.json # immutable observations
+│   # decision subjects: outcomes/decision/<decision-id>/<h>h.json
+│   #   (runSettleDecisions — harness mining / keep / canary consumer)
 ├── epochs/<epoch-id>/
 │   ├── manifest.json      # cutoff, versions, cohort ids, input/output hashes
 │   └── status.json        # building | sealed
@@ -51,6 +54,10 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 └── discovery-log.jsonl    # candidates rejected/expired before research
                            #   (research-queue.md) — counterfactual pricing
 ```
+
+Sibling (not under `archive/`): `~/.trenchcoat/harness-improvements/` holds
+policy hypothesis dirs, `prior-attempts.jsonl`, and `meta/<candidateId>/`
+(ADR 005 / ADR 039) — see [harness-improvement.md](harness-improvement.md).
 
 - The pre-session copy is the **only** input to attribution string-matching —
   never the workspace copy (INV-S12)
@@ -163,6 +170,12 @@ infer driver roles from a later report.
 
 Outcome collection is idempotent and separate from metric aggregation. The
 record key is `(subject_type, subject_id, horizon, observation_spec_version)`.
+**Decision** subjects land at `outcomes/decision/<decision-id>/<horizon>h.json`
+via `runSettleDecisions` after the as-of bundle exists and the horizon +
+settlement delay have elapsed. Harness weakness mining, keep-summary, and
+canary maturity read those settled rows (plus sealed scorecards / archived
+signals) — never inbox prose.
+
 It stores target and benchmark timestamps/prices, pair used, any migration path,
 liquidity, cost-model inputs, raw market blob hashes, provider/fetch metadata,
 quality flags, and one status:

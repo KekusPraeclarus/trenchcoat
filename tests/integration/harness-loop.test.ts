@@ -16,7 +16,7 @@ import { HarnessEvaluationSchema } from "../../src/contracts/schemas.js"
 import { hypothesisDir, saveHypothesis } from "../../src/harness/propose.js"
 import { runHarnessImprove } from "../../src/harness/schedule.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV20 } from "../../src/migrations/config.js"
+import { migrateConfigToV21 } from "../../src/migrations/config.js"
 
 const CONFIG_HASH = `sha256:${"c".repeat(64)}` as const
 
@@ -65,7 +65,7 @@ async function sealFixture(archiveRoot: string, epochId: string, hitRate: number
 
 function writeEnabledConfig(trenchcoatDir: string): void {
   mkdirSync(trenchcoatDir, { recursive: true })
-  const raw = migrateConfigToV20({
+  const raw = migrateConfigToV21({
     schema: 4,
     telegram_channels: [],
     twitter: {
@@ -195,7 +195,11 @@ describe("harness propose/canary lifecycle", () => {
       allocationBps: 1_000,
       policyVersion: `candidate:${hyp.hypothesisId}`,
     })
-    await promoteHypothesis({ archiveRoot, hypothesisId: hyp.hypothesisId })
+    await promoteHypothesis({
+      archiveRoot,
+      hypothesisId: hyp.hypothesisId,
+      minMaturePaired: 0,
+    })
   })
 })
 

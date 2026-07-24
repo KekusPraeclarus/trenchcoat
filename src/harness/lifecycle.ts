@@ -4,6 +4,7 @@ import { writeAtomicFile } from "../lib/fs-atomic.js"
 import {
   HarnessCanaryStateSchema,
   HarnessEvaluationSchema,
+  HarnessManifestoValidationSchema,
   HarnessRejectionReceiptSchema,
   type HarnessCanaryState,
   type HarnessRejectionReceipt,
@@ -11,6 +12,8 @@ import {
 import { canaryStatePath, harnessRoot, loadCanaryState } from "./canary.js"
 import { loadHypothesis, saveHypothesis, hypothesisDir, listHypothesisIds } from "./propose.js"
 import { systemClock } from "../lib/clock.js"
+import { loadConfig } from "../lib/config.js"
+import { rebuildPriorAttemptsIndex } from "./prior-attempts.js"
 
 export async function startCanary(opts: Readonly<{
   archiveRoot: string
@@ -84,6 +87,11 @@ export async function stopCanary(opts: Readonly<{
     const hypothesis = loadHypothesis(opts.archiveRoot, current.hypothesisId)
     await saveHypothesis(opts.archiveRoot, { ...hypothesis, status: "rolled_back" })
   }
+  try {
+    await rebuildPriorAttemptsIndex(opts.archiveRoot)
+  } catch {
+    // index rebuild best-effort; next propose will retry
+  }
   return stopped
 }
 
@@ -124,8 +132,40 @@ export async function promoteHypothesis(opts: Readonly<{
   archiveRoot: string
   hypothesisId: string
   nowIso?: string
+  minMaturePaired?: number
 }>): Promise<void> {
   const state = loadCanaryState(opts.archiveRoot)
+  const dir = hypothesisDir(opts.archiveRoot, opts.hypothesisId)
+
+  if (state?.hypothesisId === opts.hypothesisId) {
+    if (state.stopReason && !state.active && state.stopReason !== "promoted to baseline") {
+      throw new Error(`Cannot promote: canary stopped (${state.stopReason})`)
+    }
+    let minMature = opts.minMaturePaired
+    if (minMature === undefined) {
+      try {
+        minMature = loadConfig().harness_improvement.min_mature_paired
+      } catch {
+        minMature = 40
+      }
+    }
+    if (state.maturePaired < minMature) {
+      throw new Error(
+        `Cannot promote: maturePaired ${state.maturePaired} < min ${minMature}`,
+      )
+    }
+  }
+
+  const manifestoPath = join(dir, "manifesto-validation.json")
+  if (existsSync(manifestoPath)) {
+    const manifesto = HarnessManifestoValidationSchema.parse(
+      JSON.parse(readFileSync(manifestoPath, "utf8")),
+    )
+    if (!manifesto.ok) {
+      throw new Error("Cannot promote: manifesto validation failed")
+    }
+  }
+
   if (state?.active && state.hypothesisId === opts.hypothesisId) {
     await stopCanary({
       archiveRoot: opts.archiveRoot,
@@ -136,13 +176,15 @@ export async function promoteHypothesis(opts: Readonly<{
   }
   const hypothesis = loadHypothesis(opts.archiveRoot, opts.hypothesisId)
   await saveHypothesis(opts.archiveRoot, { ...hypothesis, status: "promoted" })
-  const dir = hypothesisDir(opts.archiveRoot, opts.hypothesisId)
   await writeAtomicFile(
     join(dir, "promotion.json"),
     `${JSON.stringify({
       hypothesisId: opts.hypothesisId,
       promotedAt: opts.nowIso ?? systemClock.nowIso(),
       note: "Agent-gated promotion recorded after canary quality gates",
+      ...(state?.hypothesisId === opts.hypothesisId
+        ? { maturePaired: state.maturePaired }
+        : {}),
     }, null, 2)}\n`,
   )
 }
@@ -232,5 +274,10 @@ export async function writeRejectionReceipt(
   )
   const hypothesis = loadHypothesis(archiveRoot, parsed.hypothesisId)
   await saveHypothesis(archiveRoot, { ...hypothesis, status: "rejected" })
+  try {
+    await rebuildPriorAttemptsIndex(archiveRoot)
+  } catch {
+    // index rebuild best-effort
+  }
   return parsed
 }

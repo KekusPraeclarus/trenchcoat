@@ -1,5 +1,5 @@
 {
-  "schema": 20,
+  "schema": 21,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -420,7 +420,12 @@
     "error_budget": 3,
     "missingness_max": 0.3,
     "rug_exposure_max": 0.25,
-    "one_active_experiment": true
+    "one_active_experiment": true,
+    "meta_enabled": true,
+    "meta_schedule_enabled": true,
+    "meta_min_paired_trials": 8,
+    "meta_schedule_days": 30,
+    "meta_require_operator_promotion": true
   },
   "incident_remediation": {
     "enabled": false,

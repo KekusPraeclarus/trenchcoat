@@ -61,6 +61,11 @@ Commands:
   harness status
   harness promote <hypothesis-id>
   harness rollback --reason <text>
+  harness meta propose [--candidate-id <id>]
+  harness meta trial --candidate <id> --dev-epoch <id> --holdout-epoch <id>
+  harness meta status
+  harness meta promote <candidate-id>
+  harness meta reject <candidate-id>
   router serve
   listen [telegram|discord|channels|x-scan]
   discord watchlist scan
@@ -1449,10 +1454,12 @@ async function cmdHarness(args: string[]): Promise<void> {
     const epochId = epochIdx >= 0 ? args[epochIdx + 1] : undefined
     if (!epochId) usage()
     const { proposeFromSealedEpoch } = await import("./harness/propose.js")
+    const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
     const hyp = await proposeFromSealedEpoch({
       archiveRoot,
       epochId: epochId!,
       nowIso: systemClock.nowIso(),
+      repoRoot: resolveHarnessRepoRoot(),
       ...(cfg?.harness_improvement.min_events !== undefined
         ? { minEvents: cfg.harness_improvement.min_events }
         : {}),
@@ -1736,6 +1743,104 @@ async function cmdHarness(args: string[]): Promise<void> {
     })
     console.log(JSON.stringify(state, null, 2))
     return
+  }
+
+  if (sub === "meta") {
+    const action = args[1]
+    const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
+    const repoRoot = resolveHarnessRepoRoot()
+    if (action === "propose") {
+      const idIdx = args.indexOf("--candidate-id")
+      const candidateId = idIdx >= 0 ? args[idIdx + 1] : undefined
+      const { proposeMetaCandidateFromPrior } = await import("./harness/meta-propose.js")
+      const candidate = await proposeMetaCandidateFromPrior({
+        archiveRoot,
+        repoRoot,
+        nowIso: systemClock.nowIso(),
+        ...(candidateId ? { candidateId } : {}),
+      })
+      console.log(JSON.stringify(candidate, null, 2))
+      return
+    }
+    if (action === "trial") {
+      const candIdx = args.indexOf("--candidate")
+      const candidateId = candIdx >= 0 ? args[candIdx + 1] : undefined
+      const devIdx = args.indexOf("--dev-epoch")
+      const holdIdx = args.indexOf("--holdout-epoch")
+      const developmentEpochId = devIdx >= 0 ? args[devIdx + 1] : undefined
+      const holdoutEpochId = holdIdx >= 0 ? args[holdIdx + 1] : undefined
+      if (!candidateId || !developmentEpochId || !holdoutEpochId) usage()
+      const { setMetaCandidateStatus } = await import("./harness/meta-propose.js")
+      const { runMetaTrialPair, recomputeAndSaveUtility } = await import("./harness/meta-trial.js")
+      await setMetaCandidateStatus({
+        archiveRoot,
+        candidateId: candidateId!,
+        status: "trialing",
+      })
+      const pair = await runMetaTrialPair({
+        archiveRoot,
+        repoRoot,
+        candidateId: candidateId!,
+        developmentEpochId: developmentEpochId!,
+        holdoutEpochId: holdoutEpochId!,
+        nowIso: systemClock.nowIso(),
+      })
+      const utility = await recomputeAndSaveUtility({
+        archiveRoot,
+        candidateId: candidateId!,
+        nowIso: systemClock.nowIso(),
+      })
+      if (utility.promotionEligible) {
+        const eligible = await setMetaCandidateStatus({
+          archiveRoot,
+          candidateId: candidateId!,
+          status: "promotion_eligible",
+        })
+        const { notifyMetaPromotionEligible } = await import(
+          "./harness/meta-operator-notify.js"
+        )
+        await notifyMetaPromotionEligible({
+          archiveRoot,
+          candidate: eligible,
+          utility,
+          nowIso: systemClock.nowIso(),
+        })
+      }
+      console.log(JSON.stringify({ pair, utility }, null, 2))
+      return
+    }
+    if (action === "status") {
+      const { metaStatusSnapshot } = await import("./harness/meta-propose.js")
+      console.log(JSON.stringify(metaStatusSnapshot(archiveRoot), null, 2))
+      return
+    }
+    if (action === "promote") {
+      const candidateId = args[2]
+      if (!candidateId) usage()
+      const { promoteMetaCandidate } = await import("./harness/meta-propose.js")
+      const result = await promoteMetaCandidate({
+        archiveRoot,
+        repoRoot,
+        candidateId,
+        nowIso: systemClock.nowIso(),
+      })
+      console.log(JSON.stringify(result, null, 2))
+      if (!result.ok) process.exit(2)
+      return
+    }
+    if (action === "reject") {
+      const candidateId = args[2]
+      if (!candidateId) usage()
+      const { rejectMetaCandidate } = await import("./harness/meta-propose.js")
+      const rejected = await rejectMetaCandidate({
+        archiveRoot,
+        candidateId,
+        nowIso: systemClock.nowIso(),
+      })
+      console.log(JSON.stringify(rejected, null, 2))
+      return
+    }
+    usage()
   }
 
   usage()

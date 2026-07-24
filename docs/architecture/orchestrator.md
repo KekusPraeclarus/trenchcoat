@@ -44,14 +44,15 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
 | `review` | daily 07:00 | sealed report manifests (path-only) + pending alpha + watchlist/macro + **host health snapshot** + skip-ledger counts; scope also from empty queues / silent wallets / stale FC / recurring skips | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
-| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | peak source-call settle + wallet/Fomo FIFO copy-trade + horizon diagnostics + ledger entry finalisation | **no agent** — resumable settlement writers (ADR 031/032) |
+| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | peak source-call settle + wallet/Fomo FIFO copy-trade + horizon diagnostics + ledger entry finalisation; refreshes harness canary maturity from settled decision outcomes | **no agent** — resumable settlement writers (ADR 031/032) |
 | `wallet-discovery` | every 6h | watchlist token identities → Helius/Infura/Robinhood early buyers | host stages `candidate` wallets + cursors; evidence-only agent reads frozen snapshot |
 | `wallet-runner-discovery` | every 30m (off/shadow by default) | Gecko fresh pools → DexScreener identity + closed 6h metrics → verified buyers | host writes `state/wallet-runners.json`; registers `new-pools` candidates after recurrence; ADR 020 |
 | `wallet-scan-solana` | every 5m | Helius finalized wallet actions | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
 | `wallet-scan-evm` | every 15m | Infura (eth/base) + throttled Robinhood public RPC | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
 | `wallet-review` | daily / after scans | lagged settled buy outcomes + bounded voter + persisted exclusion evidence | **no agent** — promote/drop + `wallet.lifecycle` router events |
 | `discord-wallet-signal-scan` | every 5m | Discord Cielo/relay wallet-alert REST poll → buy confluence / sell pressure; isolated from `wallets.json` (ADR 035) | **no agent** |
-| `harness-improve` | weekly (off by default) | sealed scorecard epochs only | **no agent write to prod** — confined worktree + tests + optional `gh pr create` (ADR 005); never merges, never starts canary |
+| `harness-improve` | weekly (on by default; `--without-harness` opts out) | sealed scorecard epochs + settled decision outcomes / signals only | **no agent write to prod** — confined worktree + `test:all` + agent-gated plan/impl review; ff `origin/main` then local main + runtime deploy → `activation_pending` (ADR 005); never activates agent or starts canary from schedule |
+| `harness-meta-improve` | ~monthly / when fresh epoch pair appears (`meta_schedule_days`) | sealed epochs only; shadow improver-config trials | **no agent write to prod** — paired offline meta-utility; never integrates/deploys/activates until `tc harness meta promote` (ADR 039); INV-S15 lock-exempt |
 | `incident-remediate` | hourly (off by default) | health/logs/skips | host remediation lane (ADR 017); Telegram approval for high-risk |
 | `incident-remediate-weekly` | Monday 08:00 local (off by default) | deferred queue | at most one revalidated deferred incident |
 
@@ -130,11 +131,12 @@ One writer at a time, two levels:
   `src/lib/lock.ts`) — acquired first by `runJob` for **agent-mutating** jobs.
   `tc run` exits 3 if held. Chat research sub-agents and recovery share this
   lock for their full duration (INV-S15). **Exempt (ADR 027 + ADR 031):**
-  `harness-improve`, `incident-remediate`, `incident-remediate-weekly`,
-  `outcomes-settle`, `wallet-scan-solana`, `wallet-scan-evm`, and
-  `wallet-review` never take a full-job hold — improvement lanes use their own
-  confinement; wallet settle/scan/review run provider I/O unlocked and take a
-  brief `withAgentWorkspaceLock` only for `wallets.json` / ledger RMW.
+  `harness-improve`, `harness-meta-improve`, `incident-remediate`,
+  `incident-remediate-weekly`, `outcomes-settle`, `wallet-scan-solana`,
+  `wallet-scan-evm`, and `wallet-review` never take a full-job hold —
+  improvement lanes use their own confinement; wallet settle/scan/review run
+  provider I/O unlocked and take a brief `withAgentWorkspaceLock` only for
+  `wallets.json` / ledger RMW.
 - **Job-level guard** — the CLI additionally refuses to start a job whose
   previous run is still live, so a slow job can't stack on itself.
 
@@ -284,6 +286,9 @@ reasoning, confidence, and cited sources) is the raw material. Weekly:
    first post-decision execution bar (`decisionTs` from the archived decision
    bundle). A drop on an unfilled position cancels it (`censored`); a drop on an
    `open` position marks `exit-pending` (exit bar finalisation is a follow-up).
+   After settle, the job refreshes harness canary maturity from already-written
+   decision outcomes. Host `runSettleDecisions` is the writer for
+   `outcomes/decision/<id>/<h>h.json` (mining / keep / canary / audit folds).
    The model never books ledger entries (INV-S10).
 4. Deterministic host code computes scorecard aggregates. The audit agent receives
    only the frozen figures and compares decisions vs outcomes: were track-calls
@@ -299,8 +304,8 @@ reasoning, confidence, and cited sources) is the raw material. Weekly:
 The action-realised + mark-to-market paper P&L and fixed +72h cohort return are
 the paired headline numbers. Peak-close is MFE diagnostics, never booked P&L.
 Lessons feed back into skills only via a developer edit or the host-owned
-Harness Improvement Loop (ADR 005) — the runtime bot does not rewrite its own
-instructions.
+Harness Improvement Loop (ADR 005 policy lane; ADR 039 shadow improver-config) —
+the runtime bot does not rewrite its own instructions.
 
 Note: audit still stubs headline `paperPnl*` until scorecard persistence is
 wired; entry finalisation already runs via `outcomes-settle` / `settle-ledger.ts`.
@@ -566,6 +571,7 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/gate-evidence.ts` — archive-then-live security gate receipts
 - `src/orchestrator/market-bars.ts` — live DexScreener/GeckoTerminal BarProviders
 - `src/orchestrator/outcomes-settle.ts` — peak shills + wallet/Fomo copy-trade + horizon diagnostics + ledger entry finalisation (ADR 031/032)
+- `src/orchestrator/settle-decisions.ts` — decision-bundle → `outcomes/decision/…` (harness mining / canary consumer)
 - `src/orchestrator/settle-source-peaks.ts` / `settle-wallet-copy-trades.ts` / `settle-fomo-copy-trades.ts` — ADR 032 settlers
 - `src/orchestrator/settle-ledger.ts` — entry-pending → open at first post-decision bar
 - `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
@@ -573,7 +579,7 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/recovery.ts` — resume/discard-inbox stub (full recovery ladder open)
 - `src/orchestrator/sources.ts` — archive source-call outcome loader (host `sources.json` writer still open)
 - `src/orchestrator/wallet-*.ts` — host-only wallet discovery/scan/review/seed
-- `src/harness/**` — harness-improve schedule / confine / evaluate / canary / PR
+- `src/harness/**` — harness-improve / harness-meta-improve schedule, confine, evaluate, canary, meta-utility (ADR 005/039)
 
 ## Gotchas and security-sensitive boundaries
 
