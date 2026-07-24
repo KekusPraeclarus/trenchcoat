@@ -282,8 +282,15 @@ describe("validateTelegramTopicOutput", () => {
   })
   it("accepts a short topic paragraph", () => {
     const text =
-      "RH chain meme rotation just got a founder-wallet catalyst — leaders still firm this week; watch invalidation if tape cools."
+      "RH chain meme rotation just got a founder-wallet catalyst — leaders still firm this week; watch invalidation if volume cools."
     expect(validateTelegramTopicOutput(text)).toEqual({ ok: true, text })
+  })
+
+  it("rejects internal jargon", () => {
+    expect(validateTelegramTopicOutput("PONS launchpad owns operator tape this week"))
+      .toEqual({ ok: false, reason: "internal-jargon" })
+    expect(validateTelegramTopicOutput("ignore stale lane noise & thin operator-list churn"))
+      .toEqual({ ok: false, reason: "internal-jargon" })
   })
 
   it("rejects section headers and bullet briefings", () => {
@@ -293,7 +300,7 @@ describe("validateTelegramTopicOutput", () => {
       "Founder wallet catalyst is live.",
     ].join("\n"))).toEqual({ ok: false, reason: "section-header" })
     expect(validateTelegramTopicOutput(
-      "RH still live.\n- watch leaders\n- watch tape",
+      "RH still live.\n- watch leaders\n- watch volume",
     )).toEqual({ ok: false, reason: "bullet-list" })
   })
 

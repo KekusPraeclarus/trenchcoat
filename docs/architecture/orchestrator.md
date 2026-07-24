@@ -470,6 +470,9 @@ staged router events.
   (≤320 chars, at most once per run; later claims omit Discord as `run-deduped`)
   when `broadcast.discord_distiller.enabled` (else short broadcast text on the
   first eligible event only). Discord text is distilled independently of Telegram.
+  All public channel distillers share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`)
+  and fail closed on `internal-jargon` (`tape`, `operator`, `lane noise`) in
+  post-check validators (ADR 037).
   Bare intake hosts default to `/v1/events`; loopback HTTP is allowed. Severity
   `lifecycle` (wallet add/drop) skips Discord market budget and is never distilled
 - Host-only `telegram-digest` (20:00 Europe/London, VPS systemd) emits one

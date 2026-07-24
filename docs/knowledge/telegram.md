@@ -40,6 +40,13 @@ last_verified: 2026-07-23
   claim type + `horizonHours` (audit settlement stays 24/72/168) — ADR 013
 - See [ADR 013](../adr/013-watch-window-decoupled.md) for the watchWindow vs
   horizonHours split
+- Public-copy rules (ADR 037): `PUBLIC_COPY_RULES` in `src/prompts/host.ts`,
+  mirrored in `agent/AGENTS.md` voice rules, enforced mechanically by
+  `internal-jargon` reject in `distill-session.ts`. Channel copy never uses
+  internal terms ("tape", "operator", "lane noise"), never tells readers what
+  to ignore, and uses forward-looking time phrasing at most once instead of
+  framing every update as "this week's" news. `watchWindow` (ADR 013) sets the
+  time scale when time is mentioned — it is not a headline template.
 
 ## Alpha ingestion vs operator chat
 

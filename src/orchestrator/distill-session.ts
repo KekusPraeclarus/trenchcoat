@@ -46,6 +46,8 @@ const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
 /** Bare @handle — excludes twitter:@ / farcaster:@ (colon precedes @) */
 const BARE_AT_HANDLE = /(?<![a-z:])@[\w.-]+/iu
 const TICKER_TOKEN = /\$[A-Za-z][A-Za-z0-9]{0,15}\b/gu
+// Public readers don't know the bot's internals; see PUBLIC_COPY_RULES in prompts/host.ts
+const INTERNAL_JARGON = /\btape\b|\boperator(?:s|-list|-facing)?\b|\blane noise\b/iu
 const MARKDOWN_BODY_MARKERS = /(?:^|\n)\s*#{1,6}\s|(?:\*\*|__|`)/u
 
 export type DistillSessionRunner = (
@@ -313,6 +315,7 @@ export function validateDiscordDistillOutput(
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
+  if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
   const tickers = text.match(TICKER_TOKEN) ?? []
   if (tickers.length > DISCORD_TICKER_MAX) return { ok: false, reason: "ticker-overflow" }
   if (statusQuoFillerPattern().test(text)) return { ok: false, reason: "status-quo-filler" }
@@ -344,6 +347,7 @@ export function validateTelegramTopicOutput(
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
+  if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
   if (TOPIC_SECTION_HEADER.test(text)) return { ok: false, reason: "section-header" }
   if (TOPIC_BULLET_LINE.test(text)) return { ok: false, reason: "bullet-list" }
   if (mentionsOtherNarrative(text, otherNarratives)) {
@@ -369,6 +373,7 @@ function validatePlainDigestBody(body: string): { ok: true; text: string } | { o
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
+  if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
   if (MARKDOWN_BODY_MARKERS.test(text)) return { ok: false, reason: "markdown-in-body" }
   return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
