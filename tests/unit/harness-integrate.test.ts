@@ -43,6 +43,8 @@ function initRepoPair(): {
   git(repoRoot, ["commit", "-m", "base"])
   const baseSha = git(repoRoot, ["rev-parse", "HEAD"])
   git(repoRoot, ["push", "-u", "origin", "main"])
+  // Bare clone HEAD often stays on an unborn default branch; pin it to main
+  git(root, ["--git-dir", remote, "symbolic-ref", "HEAD", "refs/heads/main"])
 
   const branch = "harness/test-hyp"
   git(repoRoot, ["checkout", "-b", branch])

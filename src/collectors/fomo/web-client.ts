@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
-import { chromium, type Browser, type BrowserContext, type Page, type Response } from "playwright"
+import { type Browser, type BrowserContext, type Page, type Response } from "playwright"
+import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertFomoProfileReady, fomoProfileDir } from "../social/fomo-auth.js"
 import { classifyFomoRequest, type FomoAllowedPost } from "./request-policy.js"
 import {
@@ -80,7 +81,7 @@ export class FomoWebClient {
   private async openContext(): Promise<BrowserContext> {
     if (this.context) return this.context
     assertFomoProfileReady(fomoProfileDir())
-    this.browser = await chromium.launch({
+    this.browser = await launchChromium({
       headless: this.opts.headless !== false,
       args: ["--disable-blink-features=AutomationControlled"],
     })

@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-07-27
 ---
 
 # X / Twitter (Playwright)
@@ -13,6 +13,18 @@ last_verified: 2026-07-21
 - Create/refresh: `pnpm dev:cli auth twitter` (headed; operator completes login)
 - Session marker: `storage-state.json` mode 600; scrapes refuse without it
 - Challenges → fail closed with re-auth instruction; never auto-solve
+
+## Host browser binaries
+
+- Runtime deploy (`ops/install-systemd.sh` `deploy_runtime`) runs
+  `pnpm exec playwright install chromium` in `~/.trenchcoat/runtime` staging
+- Cache lives under `~/.cache/ms-playwright/`
+- Scrape, engagement, managed-list, profile-history, Fomo, and auth paths call
+  `ensureChromiumInstalled` / `launchChromium` from `src/lib/playwright-chromium.ts`
+  before `chromium.launch`
+- One-time recovery when the binary is missing:
+  `cd ~/.trenchcoat/runtime && pnpm exec playwright install chromium`
+  then `systemctl --user restart trenchcoat-x-scan`
 
 ## Read-only scrape
 

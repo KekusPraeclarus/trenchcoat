@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { spawnSync } from "node:child_process"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -124,15 +125,25 @@ describe("decision-bundle signals", () => {
 })
 
 describe("resolveAuditCodeCommit", () => {
-  it("prefers deployment manifest sourceCommit", () => {
+  it("falls back to git HEAD when deployment manifest is missing", () => {
     const root = mkdtempSync(join(tmpdir(), "tc-commit-"))
-    const runtimeRoot = join(root, "runtime")
-    mkdirSync(runtimeRoot, { recursive: true })
-    // Minimal valid deployment.json via writing fields resolveAuditCodeCommit reads through loadDeploymentManifest
-    // loadDeploymentManifest requires schema 2 + hashes — use git fallback instead when manifest invalid
+    const repo = join(root, "repo")
+    mkdirSync(repo, { recursive: true })
+    const git = (args: readonly string[]) => {
+      const out = spawnSync("git", [...args], { cwd: repo, encoding: "utf8" })
+      if ((out.status ?? 1) !== 0) {
+        throw new Error(out.stderr || out.stdout || args.join(" "))
+      }
+    }
+    git(["init"])
+    git(["config", "user.email", "test@test"])
+    git(["config", "user.name", "test"])
+    writeFileSync(join(repo, "README"), "x\n")
+    git(["add", "README"])
+    git(["commit", "-m", "init"])
     const sha = resolveAuditCodeCommit({
       runtimeRoot: join(root, "missing-runtime"),
-      repoRoot: "/Users/kyran/Documents/trench-bot",
+      repoRoot: repo,
     })
     expect(sha).toMatch(/^[a-f0-9]{7,64}$/)
     expect(sha).not.toBe("local")

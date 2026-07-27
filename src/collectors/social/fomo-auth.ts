@@ -1,10 +1,9 @@
 import { mkdirSync, writeFileSync, existsSync, chmodSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { spawnSync } from "node:child_process"
 import { chromium, type BrowserContext } from "playwright"
 import { defaultConfigPath } from "../../lib/config.js"
-import { log } from "../../lib/log.js"
+import { ensureChromiumInstalled } from "../../lib/playwright-chromium.js"
 
 export function fomoProfileDir(): string {
   return join(homedir(), ".trenchcoat", "fomo-profile")
@@ -20,25 +19,6 @@ export async function ensureFomoProfileDir(): Promise<string> {
   )
   try { chmodSync(dir, 0o700) } catch { /* ignore */ }
   return dir
-}
-
-function ensureChromiumInstalled(): void {
-  const probe = spawnSync(
-    process.execPath,
-    ["-e", "require('playwright').chromium.executablePath()"],
-    { encoding: "utf8" },
-  )
-  const path = (probe.stdout || "").trim()
-  if (path && existsSync(path)) return
-
-  log.info("installing playwright chromium")
-  const install = spawnSync("pnpm", ["exec", "playwright", "install", "chromium"], {
-    cwd: process.cwd(),
-    stdio: "inherit",
-  })
-  if (install.status !== 0) {
-    throw new Error("Failed to install Playwright Chromium — run: pnpm exec playwright install chromium")
-  }
 }
 
 async function waitForFomoLoggedIn(context: BrowserContext, timeoutMs: number): Promise<void> {

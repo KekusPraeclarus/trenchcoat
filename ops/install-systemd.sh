@@ -201,11 +201,16 @@ deploy_runtime() {
       echo "pnpm install --prod failed in runtime staging" >&2
       exit 1
     fi
-    if ! find node_modules -name better_sqlite3.node -type f | grep -q .; then
+    if !find node_modules -name better_sqlite3.node -type f | grep -q .; then
       echo "better_sqlite3.node missing after prod install — refusing to deploy" >&2
       echo "check package.json pnpm.onlyBuiltDependencies and pnpm-workspace.yaml allowBuilds" >&2
       exit 1
     fi
+    if ! pnpm exec playwright install chromium; then
+      echo "playwright install chromium failed in runtime staging" >&2
+      exit 1
+    fi
+    echo "playwright chromium installed for runtime staging"
   )
 
   PKG_VERSION="$("$NODE_BIN" -e "console.log(require('$RUNTIME_STAGING/package.json').version)")"

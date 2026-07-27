@@ -1,10 +1,9 @@
 import { mkdirSync, writeFileSync, existsSync, chmodSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { spawnSync } from "node:child_process"
 import { chromium, type BrowserContext } from "playwright"
-import { defaultConfigPath, loadConfig } from "../../lib/config.js"
-import { log } from "../../lib/log.js"
+import { defaultConfigPath } from "../../lib/config.js"
+import { ensureChromiumInstalled } from "../../lib/playwright-chromium.js"
 
 export function twitterProfileDir(): string {
   return join(homedir(), ".trenchcoat", "twitter-profile")
@@ -20,25 +19,6 @@ export async function ensureTwitterProfileDir(): Promise<string> {
   )
   try { chmodSync(dir, 0o700) } catch { /* ignore */ }
   return dir
-}
-
-function ensureChromiumInstalled(): void {
-  const probe = spawnSync(
-    process.execPath,
-    ["-e", "require('playwright').chromium.executablePath()"],
-    { encoding: "utf8" },
-  )
-  const path = (probe.stdout || "").trim()
-  if (path && existsSync(path)) return
-
-  log.info("installing playwright chromium")
-  const install = spawnSync("pnpm", ["exec", "playwright", "install", "chromium"], {
-    cwd: process.cwd(),
-    stdio: "inherit",
-  })
-  if (install.status !== 0) {
-    throw new Error("Failed to install Playwright Chromium — run: pnpm exec playwright install chromium")
-  }
 }
 
 async function waitForLoggedIn(context: BrowserContext, timeoutMs: number): Promise<void> {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
-import { chromium, type BrowserContext, type Page, type Route } from "playwright"
+import { type BrowserContext, type Page, type Route } from "playwright"
 import { sha256Json } from "../../lib/canonical-json.js"
+import { launchChromium } from "../../lib/playwright-chromium.js"
 import { twitterProfileDir, ensureTwitterProfileDir } from "../social/twitter-auth.js"
 import { assertTwitterSessionReady } from "./scrape.js"
 import type { XListSyncReceipt } from "../../contracts/schemas.js"
@@ -215,7 +216,7 @@ export async function createManagedPrivateList(args: Readonly<{
 }>): Promise<ManagedListIdentity> {
   await ensureTwitterProfileDir()
   const state = assertTwitterSessionReady()
-  const browser = await chromium.launch({ headless: args.headless === true })
+  const browser = await launchChromium({ headless: args.headless === true })
   try {
     const context = await browser.newContext({
       storageState: state,
@@ -296,7 +297,7 @@ export async function syncManagedListMembership(args: Readonly<{
 
   await ensureTwitterProfileDir()
   const state = assertTwitterSessionReady()
-  const browser = await chromium.launch({ headless: args.headless !== false })
+  const browser = await launchChromium({ headless: args.headless !== false })
   try {
     const context = await browser.newContext({
       storageState: state,

@@ -1,5 +1,6 @@
-import { chromium, type BrowserContext, type Page, type Route } from "playwright"
+import { type BrowserContext, type Page, type Route } from "playwright"
 import { sha256Json } from "../../lib/canonical-json.js"
+import { launchChromium } from "../../lib/playwright-chromium.js"
 import { ensureTwitterProfileDir } from "../social/twitter-auth.js"
 import { assertTwitterSessionReady } from "./scrape.js"
 import { graphqlOperationName } from "./managed-list.js"
@@ -231,7 +232,7 @@ export async function openPlaywrightEngagementSession(args: Readonly<{
 }> = {}): Promise<PlaywrightEngagementSession> {
   await ensureTwitterProfileDir()
   const state = assertTwitterSessionReady()
-  const browser = await chromium.launch({ headless: args.headless !== false })
+  const browser = await launchChromium({ headless: args.headless !== false })
   const context = await browser.newContext({
     storageState: state,
     viewport: { width: 1280, height: 900 },

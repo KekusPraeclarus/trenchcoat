@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { randomBytes } from "node:crypto"
-import { chromium, type Page } from "playwright"
+import { type Page } from "playwright"
 import { writeAtomicFile } from "../../lib/fs-atomic.js"
+import { launchChromium } from "../../lib/playwright-chromium.js"
 import { normalizeXHandle } from "../fomo/mappers.js"
 import { twitterProfileDir } from "../social/twitter-auth.js"
 import { assertTwitterSessionReady } from "./scrape.js"
@@ -323,7 +324,7 @@ export async function scrapeProfileHistory(args: Readonly<{
     }
   }
 
-  const browser = await chromium.launch({ headless: args.headless !== false })
+  const browser = await launchChromium({ headless: args.headless !== false })
   try {
     const context = await browser.newContext({
       storageState: resolve(state || storageStatePath()),

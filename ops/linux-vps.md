@@ -148,6 +148,11 @@ If router crash-loops with `Could not locate the bindings file` / `better_sqlite
 pnpm ignored the native build (need `pnpm.onlyBuiltDependencies` + redeploy). Emergency:
 `cd ~/.trenchcoat/runtime/node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3 && npx node-gyp rebuild && systemctl --user restart trenchcoat-router`.
 
+If x-scan err log shows `browserType.launch: Executable doesn't exist`, install the
+matching Chromium binary and restart:
+`cd ~/.trenchcoat/runtime && pnpm exec playwright install chromium && systemctl --user restart trenchcoat-x-scan`.
+`ops/install-systemd.sh` now runs that install on every runtime deploy.
+
 Installer writes `~/bin/trenchcoat-deploy` → `~/.trenchcoat/bin/trenchcoat-deploy`.
 
 Optional: lock the Actions SSH key to that entrypoint only (same line in

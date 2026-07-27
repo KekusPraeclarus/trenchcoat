@@ -75,7 +75,8 @@ export function rankEarlyRunnerBuyers(
       return Number.isFinite(ts) && ts >= Date.parse(args.firstSeenAt) && ts <= windowEnd
     })
     .sort((a, b) => Date.parse(a.boughtAtIso) - Date.parse(b.boughtAtIso)
-      || a.providerEventId.localeCompare(b.providerEventId))
+      || a.providerEventId.localeCompare(b.providerEventId)
+      || a.walletAddress.localeCompare(b.walletAddress))
 
   const seen = new Set<string>()
   const buyers: string[] = []

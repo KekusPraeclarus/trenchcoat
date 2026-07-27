@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright"
+import { type Browser, type BrowserContext, type Page } from "playwright"
 import type { TrenchcoatConfig } from "../../lib/config.js"
 import type { CanonicalIdentity } from "../../contracts/schemas.js"
+import { launchChromium } from "../../lib/playwright-chromium.js"
 import { twitterProfileDir } from "../social/twitter-auth.js"
 import { parseTwitterSearchPage, type TwitterPost } from "../twitter/session.js"
 import {
@@ -281,7 +282,7 @@ export async function openPersistentReadOnlyTwitter(
   opts: Readonly<{ headless?: boolean }> = {},
 ): Promise<PersistentTwitterSession> {
   const state = assertTwitterSessionReady()
-  let browser = await chromium.launch({ headless: opts.headless !== false })
+  let browser = await launchChromium({ headless: opts.headless !== false })
   let opened = await openReadOnlySession(browser, state)
 
   return {
@@ -293,7 +294,7 @@ export async function openPersistentReadOnlyTwitter(
     relaunch: async () => {
       await opened.context.close().catch(() => undefined)
       await browser.close().catch(() => undefined)
-      browser = await chromium.launch({ headless: opts.headless !== false })
+      browser = await launchChromium({ headless: opts.headless !== false })
       opened = await openReadOnlySession(browser, state)
       return opened.page
     },
@@ -374,7 +375,7 @@ export async function scrapeConfiguredTwitter(
   const targets = resolveTwitterTargets(config)
   const maxPages = config.twitter.max_pages_per_run
 
-  const browser = await chromium.launch({ headless: opts.headless !== false })
+  const browser = await launchChromium({ headless: opts.headless !== false })
   try {
     return await scrapeTargetsWithRecovery({
       targets,
@@ -430,7 +431,7 @@ export async function scrapeResearchTokenTwitter(args: Readonly<{
     }
   }
 
-  const browser = await chromium.launch({ headless: args.headless !== false })
+  const browser = await launchChromium({ headless: args.headless !== false })
   const bundles: TwitterScrapeBundle[] = []
   const globalSeen = new Map<string, TwitterPost>()
   let challenged = false

@@ -18,7 +18,12 @@ function run(
     timeout: timeoutMs,
     env: process.env,
   })
-  const detail = ((out.stderr || out.stdout) ?? "").slice(0, 1_000)
+  // Prefer the end of the stream so vitest failure summaries survive truncation
+  const combined = `${out.stdout ?? ""}\n${out.stderr ?? ""}`.trim()
+  const tail = combined.slice(-1_000)
+  const detail = out.status === null
+    ? `timeout-or-signal: ${tail || out.error?.message || "no output"}`
+    : tail
   return { ok: out.status === 0, detail }
 }
 

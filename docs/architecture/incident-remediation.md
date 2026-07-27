@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-07-27
 ---
 
 # Incident remediation
@@ -31,6 +31,8 @@ claim-index writes take a brief agent lock only for that mutation.
    `lint` / `test:all`) → ff-only push →
    deploy → smoke → revert+`runtime.prev` on failure. Diagnose/propose/review
    Cursor sessions use **ask** mode ([ADR 029](../adr/029-remediation-propose-ask-mode.md));
+   gate command `detail` keeps the **tail** of output so vitest failure summaries
+   survive the 1k truncation.
    diagnose/propose may return typed `not-viable` (host closes the incident).
    Distinguish `propose:session failed` (infra) from `pre-review-reject` (product).
    Retries after pre-review reject/revise pass `priorPreReviewPath` into propose
