@@ -49,7 +49,7 @@ the router process, broadcasts never fan out. SQLite lives at
 | Durability | SQLite WAL: events, destination snapshots, deliveries, attempts, nonces, idempotency tombstones |
 | Ingress codes | `202` new event, `200` exact duplicate (same eventId + payload hash), `409` eventId/payload conflict (incident log) |
 | Fanout | At-least-once to Telegram and Discord. Providers have no idempotency primitive; ambiguous timeouts record duplicate risk |
-| Lanes | Discord `finding.broadcast` consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render (hot-day ops 100/100, ADR 033); Telegram is uncapped by message count after validation (`telegram_overview.daily_cap` = LLM sessions only, ops 50); `wallet.lifecycle` and `finding.correction` never spend Discord market budget |
+| Lanes | `finding.broadcast` fanout uses the same rendered text on Telegram and Discord (ADR 041); `telegram_overview.daily_cap` = LLM sessions only; `wallet.lifecycle` and `finding.correction` skip channel render |
 | Text ownership | Lifecycle one-liners are host-rendered from trusted reason codes/metrics. LLM prose is never forwarded. Correction copy is host-rendered from sealed revalidation artifacts (INV-S28) |
 
 ## Event shapes
@@ -79,13 +79,13 @@ internal-only narrative/decision invalidations). Host `renderChannelPayloads`
 | Destination | Source |
 |---|---|
 | Telegram (intraday) | One fail-closed **short topic paragraph** per normalized `auditClaim.subject` per run when `broadcast.telegram_overview.enabled` (bounded topic packet only — never the global chat report; ≤800 chars; no section headers / bullet briefings; no other-narrative inventory; no host plumbing / workspace paths / provenance or bare @handles); on miss uses packet fallback. Same-subject followers omit `channels.telegram` (`topic-merged`). No daily message-count limit |
-| Telegram (daily) | Host-only `narrative.digest` at 20:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one message (≤3,400 chars); quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId` |
-| Discord | Fail-closed **own** bottom-line distill from the chat report (≤320 chars, ≤3 tickers, no provenance or bare @handles, no trader roll calls, no status-quo filler / unchanged-stage restatement) — never reuse Telegram topic text; at most one Discord payload per run — later claims omit `channels.discord` (`run-deduped`, no budget burn); prior narrative heat passed as `unchangedStages`; LLM distill sessions also capped by `llm_budget_fraction` / hot-day fraction (ADR 034, receipt `llm-budget-fraction`); on any miss falls back to `event.text`. Consumes `broadcast.daily_budget` / `urgent_ceiling`; over budget omits `channels.discord` |
+| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one message (≤3,400 chars); quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId` |
+| Discord | Same text as Telegram when `channels.telegram` is set (`forwarded`); topic-merged followers omit both destinations |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
 When `channels` is present and a destination payload is absent, that destination is
-skipped (`skipped-discord-budget` / `skipped-no-channel-payload`). Discord is
-intentionally single-shot per run; intraday Telegram is one message per subject.
+skipped (`skipped-no-channel-payload`). Intraday Telegram is one message per subject;
+Discord mirrors Telegram leaders only (ADR 041).
 
 ## Delivery workers
 

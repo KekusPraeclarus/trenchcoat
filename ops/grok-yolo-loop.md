@@ -139,7 +139,7 @@ ALL_OK
 ### Session learning
 
 - `install-launchd.sh` strips `.sh` when copying ops wrappers into `~/.trenchcoat/bin/`; any new wrapper that execs a sibling must resolve both names (documented in orchestrator.md).
-- Empty `docs/gotchas.md` Entries — nothing to drain.
+- Empty `ops/gotchas.md` Entries — nothing to drain.
 
 ---
 

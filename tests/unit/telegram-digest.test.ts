@@ -27,21 +27,21 @@ function writeNarrativeLog(agentRoot: string, entries: unknown[]): void {
 }
 
 describe("London digest window", () => {
-  it("selects the latest London date whose 20:00 cutoff has passed", () => {
+  it("selects the latest London date whose 04:00 cutoff has passed", () => {
     // 2026-03-29 is BST start in UK (01:00 UTC → 02:00 BST)
-    const beforeCutoff = new Date("2026-03-29T18:59:00.000Z") // 19:59 BST
+    const beforeCutoff = new Date("2026-03-29T02:59:00.000Z") // 03:59 BST
     expect(resolveDigestLondonDate(beforeCutoff)).toBe("2026-03-28")
-    const afterCutoff = new Date("2026-03-29T19:00:00.000Z") // 20:00 BST
+    const afterCutoff = new Date("2026-03-29T03:00:00.000Z") // 04:00 BST
     expect(resolveDigestLondonDate(afterCutoff)).toBe("2026-03-29")
   })
 
   it("handles GMT winter time and prior-day windows", () => {
-    const winter = new Date("2026-01-15T20:00:00.000Z") // 20:00 GMT
+    const winter = new Date("2026-01-15T04:00:00.000Z") // 04:00 GMT
     expect(londonDateKey(winter)).toBe("2026-01-15")
     expect(resolveDigestLondonDate(winter)).toBe("2026-01-15")
     const window = digestWindowForLondonDate("2026-01-15")
-    expect(window.windowEnd).toBe(new Date(londonLocalToUtcMs("2026-01-15", 20)).toISOString())
-    expect(window.windowStart).toBe(new Date(londonLocalToUtcMs("2026-01-14", 20)).toISOString())
+    expect(window.windowEnd).toBe(new Date(londonLocalToUtcMs("2026-01-15", 4)).toISOString())
+    expect(window.windowStart).toBe(new Date(londonLocalToUtcMs("2026-01-14", 4)).toISOString())
     expect(previousLondonDate("2026-01-15")).toBe("2026-01-14")
   })
 

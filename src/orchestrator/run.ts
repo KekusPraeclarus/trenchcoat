@@ -138,6 +138,26 @@ import {
   type JobSkipReason,
 } from "./preconditions.js"
 
+function topicDistillCapPath(layout: ArchiveLayout, distillDay: string): string {
+  return join(layout.broadcastBudget, `topic-distill-${distillDay}.json`)
+}
+
+function loadTopicDistillUsedToday(layout: ArchiveLayout, distillDay: string): number {
+  const primary = topicDistillCapPath(layout, distillDay)
+  const legacy = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
+  const path = existsSync(primary) ? primary : legacy
+  if (!existsSync(path)) return 0
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as { used?: unknown }
+    if (typeof raw.used === "number" && Number.isFinite(raw.used) && raw.used >= 0) {
+      return Math.floor(raw.used)
+    }
+  } catch {
+    // fall through
+  }
+  return 0
+}
+
 const HOST_ONLY_JOBS = new Set([
   "source-list-review",
   "fc-source-review",
@@ -1094,28 +1114,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           prepareRun: async (pendingRunId) => {
             const config = loadConfig()
             const distillDay = dayKey(new Date(nowIso))
-            const distillCapPath = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
-            let usedToday = 0
-            if (existsSync(distillCapPath)) {
-              try {
-                const raw = JSON.parse(readFileSync(distillCapPath, "utf8")) as { used?: unknown }
-                if (typeof raw.used === "number" && Number.isFinite(raw.used) && raw.used >= 0) {
-                  usedToday = Math.floor(raw.used)
-                }
-              } catch {
-                usedToday = 0
-              }
-            }
-            const receiptPath = join(runArchiveDir(layout, pendingRunId), "chat-summary-receipt.json")
-            const chatSummary = (() => {
-              if (!existsSync(receiptPath)) return undefined
-              try {
-                return ChatSummaryReceiptSchema.parse(JSON.parse(readFileSync(receiptPath, "utf8")))
-              } catch {
-                return undefined
-              }
-            })()
-            const distillCfg = config.broadcast.discord_distiller
+            const distillCapPath = topicDistillCapPath(layout, distillDay)
+            const usedToday = loadTopicDistillUsedToday(layout, distillDay)
             const telegramOverviewCfg = config.broadcast.telegram_overview
             const retryNarratives = (() => {
               try {
@@ -1129,8 +1129,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
                 return []
               }
             })()
-            const retryUnchanged = statusQuoNarratives(retryNarratives)
-            const distillRunSession = distillCfg.enabled || telegramOverviewCfg.enabled
+            const topicRunSession = telegramOverviewCfg.enabled
               ? async (distillArgs: Readonly<{ prompt: string; message: string }>) => {
                 const session = await runOneShotSession({
                   prompt: `${distillArgs.prompt}\n\n${distillArgs.message}`,
@@ -1150,40 +1149,22 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
               layout,
               runId: pendingRunId,
               nowIso,
-              ...(chatSummary ? { chatSummary } : {}),
-              discordBudget: {
-                dailyBudget: config.broadcast.daily_budget,
-                urgentCeiling: config.broadcast.urgent_ceiling,
-              },
-              distiller: {
-                enabled: distillCfg.enabled,
-                dailyCap: distillCfg.daily_cap,
-                usedToday,
-                llmBudgetFraction: distillCfg.llm_budget_fraction,
-                hotDayLlmBudgetFraction: distillCfg.hot_day_llm_budget_fraction,
-                ...(distillRunSession && distillCfg.enabled
-                  ? { runSession: distillRunSession }
-                  : {}),
-              },
               telegramOverview: {
                 enabled: telegramOverviewCfg.enabled,
                 dailyCap: telegramOverviewCfg.daily_cap,
                 usedToday,
                 llmBudgetFraction: telegramOverviewCfg.llm_budget_fraction,
                 hotDayLlmBudgetFraction: telegramOverviewCfg.hot_day_llm_budget_fraction,
-                ...(distillRunSession && telegramOverviewCfg.enabled
-                  ? { runSession: distillRunSession }
-                  : {}),
+                ...(topicRunSession ? { runSession: topicRunSession } : {}),
               },
               hotDayMinStagedEvents: config.broadcast.hot_day_min_staged_events,
-              ...(retryUnchanged.length > 0 ? { unchangedStages: retryUnchanged } : {}),
               activeNarratives: retryNarratives,
             })
-            if (rendered.distillUsedToday !== usedToday) {
+            if (rendered.topicDistillUsedToday !== usedToday) {
               await writeJsonRecordFsync(distillCapPath, {
                 schema: 1,
                 day: distillDay,
-                used: rendered.distillUsedToday,
+                used: rendered.topicDistillUsedToday,
                 updatedAt: nowIso,
               } as never)
             }
@@ -1218,18 +1199,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       const config = loadConfig()
       const nowIso = systemClock.nowIso()
       const distillDay = dayKey(new Date(nowIso))
-      const distillCapPath = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
-      let usedToday = 0
-      if (existsSync(distillCapPath)) {
-        try {
-          const raw = JSON.parse(readFileSync(distillCapPath, "utf8")) as { used?: unknown }
-          if (typeof raw.used === "number" && Number.isFinite(raw.used) && raw.used >= 0) {
-            usedToday = Math.floor(raw.used)
-          }
-        } catch {
-          usedToday = 0
-        }
-      }
+      const distillCapPath = topicDistillCapPath(layout, distillDay)
+      const usedToday = loadTopicDistillUsedToday(layout, distillDay)
       const digestCfg = config.broadcast.telegram_digest
       const overviewCfg = config.broadcast.telegram_overview
       const runSession = async (sessionArgs: Readonly<{ prompt: string; message: string }>) => {
@@ -1766,14 +1737,6 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         return loadConfig().broadcast
       } catch {
         return {
-          daily_budget: 5,
-          urgent_ceiling: 10,
-          discord_distiller: {
-            enabled: false,
-            daily_cap: 10,
-            llm_budget_fraction: 0.5,
-            hot_day_llm_budget_fraction: 0.25,
-          },
           telegram_overview: {
             enabled: false,
             daily_cap: 10,
@@ -1898,22 +1861,11 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
     let channelRender: Awaited<ReturnType<typeof renderChannelPayloads>> | undefined
     if (journal.phase === "alpha-purged" && !canary.blockExternalEffects && ingest.staged > 0) {
-      const distillCfg = broadcast.discord_distiller
       const telegramOverviewCfg = broadcast.telegram_overview
       const distillDay = dayKey(new Date(ingestNowIso))
-      const distillCapPath = join(layout.broadcastBudget, `discord-distill-${distillDay}.json`)
-      let distillUsedToday = 0
-      if (existsSync(distillCapPath)) {
-        try {
-          const raw = JSON.parse(readFileSync(distillCapPath, "utf8")) as { used?: number }
-          if (typeof raw.used === "number" && Number.isFinite(raw.used) && raw.used >= 0) {
-            distillUsedToday = Math.floor(raw.used)
-          }
-        } catch {
-          distillUsedToday = 0
-        }
-      }
-      const runSession = distillCfg.enabled || telegramOverviewCfg.enabled
+      const distillCapPath = topicDistillCapPath(layout, distillDay)
+      const topicDistillUsedToday = loadTopicDistillUsedToday(layout, distillDay)
+      const topicRunSession = telegramOverviewCfg.enabled
         ? async (args: Readonly<{ prompt: string; message: string }>) => {
           const session = await runOneShotSession({
             prompt: `${args.prompt}\n\n${args.message}`,
@@ -1933,36 +1885,22 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         layout: layout,
         runId,
         nowIso: ingestNowIso,
-        ...(chatSummary ? { chatSummary } : {}),
-        discordBudget: {
-          dailyBudget: broadcast.daily_budget,
-          urgentCeiling: broadcast.urgent_ceiling,
-        },
-        distiller: {
-          enabled: distillCfg.enabled,
-          dailyCap: distillCfg.daily_cap,
-          usedToday: distillUsedToday,
-          llmBudgetFraction: distillCfg.llm_budget_fraction,
-          hotDayLlmBudgetFraction: distillCfg.hot_day_llm_budget_fraction,
-          ...(runSession && distillCfg.enabled ? { runSession } : {}),
-        },
         telegramOverview: {
           enabled: telegramOverviewCfg.enabled,
           dailyCap: telegramOverviewCfg.daily_cap,
-          usedToday: distillUsedToday,
+          usedToday: topicDistillUsedToday,
           llmBudgetFraction: telegramOverviewCfg.llm_budget_fraction,
           hotDayLlmBudgetFraction: telegramOverviewCfg.hot_day_llm_budget_fraction,
-          ...(runSession && telegramOverviewCfg.enabled ? { runSession } : {}),
+          ...(topicRunSession ? { runSession: topicRunSession } : {}),
         },
         hotDayMinStagedEvents: broadcast.hot_day_min_staged_events,
-        ...(unchangedStages.length > 0 ? { unchangedStages } : {}),
         activeNarratives: narrativeLogAfter ?? narrativeLogBefore,
       })
-      if (channelRender.distillUsedToday !== distillUsedToday) {
+      if (channelRender.topicDistillUsedToday !== topicDistillUsedToday) {
         await writeJsonRecordFsync(distillCapPath, {
           schema: 1,
           day: distillDay,
-          used: channelRender.distillUsedToday,
+          used: channelRender.topicDistillUsedToday,
           updatedAt: ingestNowIso,
         } as never)
       }
@@ -2012,8 +1950,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         channelRender: {
           rendered: channelRender.rendered,
           skipped: channelRender.skipped,
-          usedDistill: channelRender.usedDistill,
-          discordBudgetSkipped: channelRender.discordBudgetSkipped,
+          usedTelegramOverview: channelRender.usedTelegramOverview,
+          topicDistillUsedToday: channelRender.topicDistillUsedToday,
         },
       } : {}),
       ...(chatSummary ? {

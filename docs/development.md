@@ -83,5 +83,5 @@ host-only Farcaster custody path `src/collectors/farcaster/signer.ts` (ADR 007 /
 INV-A1). Do not broaden that allowlist for trade or agent-mounted code.
 ## Context graph
 
-Start at [README.md](README.md). Surprises go into [gotchas.md](gotchas.md);
+Start at [README.md](README.md). Surprises go into [../ops/gotchas.md](../ops/gotchas.md);
 drain during context maintenance. Probe suite: [../ops/context-probes.md](../ops/context-probes.md).

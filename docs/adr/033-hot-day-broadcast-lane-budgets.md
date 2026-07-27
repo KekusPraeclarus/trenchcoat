@@ -3,6 +3,7 @@ title: "033 — Hot-day broadcast lane budgets (Discord 100 / Telegram overview 
 status: accepted
 date: 2026-07-23
 last_verified: 2026-07-23
+superseded_in_part_by: "041-unified-broadcast-fanout.md"
 ---
 
 # ADR 033: Hot-day broadcast lane budgets

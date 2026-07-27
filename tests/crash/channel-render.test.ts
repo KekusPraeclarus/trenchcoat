@@ -96,17 +96,6 @@ describe("channel render crash resume", () => {
       layout,
       runId,
       nowIso: NOW,
-      chatSummary: {
-        schema: 1,
-        runId,
-        validatedAt: NOW,
-        promoted: true,
-        itemIds: [],
-        reportPath: `reports/chat/${runId}.md`,
-        untrustedEvidence: true,
-      },
-      discordBudget: { dailyBudget: 5, urgentCeiling: 10 },
-      distiller: { enabled: false, dailyCap: 10, usedToday: 0 },
       telegramOverview: {
         enabled: true,
         dailyCap: 10,
@@ -133,6 +122,6 @@ describe("channel render crash resume", () => {
     })
     const posted = JSON.parse(bodies[0] ?? "{}")
     expect(posted.channels?.telegram?.text).toBe("RH still peaking. Fresh PFP lane on top.")
-    expect(posted.channels?.discord?.text).toBe(ITEM.text)
+    expect(posted.channels?.discord?.text).toBe("RH still peaking. Fresh PFP lane on top.")
   })
 })

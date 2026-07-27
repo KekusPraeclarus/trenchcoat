@@ -3,7 +3,6 @@
  * payloads (INV-B2). Fixed host prompts, quoted untrusted input, strict
  * post-checks, never write state.
  *
- * Discord: run-scoped bottom-line, silent on unchanged-stage heat.
  * Telegram intraday: one short topic paragraph per subject group.
  * Telegram daily: section bodies for the narrative map (host renders headers).
  */
@@ -19,19 +18,14 @@ import { isMatureFraming } from "../lib/narrative-framing.js"
 import { hasLocalWorkspaceRefs } from "../lib/telegram-format.js"
 import { scrubLeakedHourHorizons, watchWindowClaimFragment } from "../lib/watch-window.js"
 import {
-  DISCORD_DISTILLER_PROMPT,
   TELEGRAM_DAILY_DIGEST_PROMPT,
   TELEGRAM_TOPIC_PROMPT,
 } from "../prompts/host.js"
 import {
-  restatesUnchangedNarrativeStage,
-  statusQuoFillerPattern,
   type StageKnown,
 } from "./narrative-stage-dedupe.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
 
-export const DISCORD_TEXT_MAX = 320
-export const DISCORD_TICKER_MAX = 3
 /** Intraday topic update — one short paragraph, not a briefing */
 export const TELEGRAM_TOPIC_TEXT_MAX = 800
 /** Daily narrative map hard cap (one Telegram message) */
@@ -45,8 +39,6 @@ const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u
 const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
 /** Bare @handle — excludes twitter:@ / farcaster:@ (colon precedes @) */
 const BARE_AT_HANDLE = /(?<![a-z:])@[\w.-]+/iu
-const TICKER_TOKEN = /\$[A-Za-z][A-Za-z0-9]{0,15}\b/gu
-// Public readers don't know the bot's internals; see PUBLIC_COPY_RULES in prompts/host.ts
 const INTERNAL_JARGON = /\btape\b|\boperator(?:s|-list|-facing)?\b|\blane noise\b/iu
 const MARKDOWN_BODY_MARKERS = /(?:^|\n)\s*#{1,6}\s|(?:\*\*|__|`)/u
 
@@ -59,20 +51,6 @@ export type DistillBudgetFraction = Readonly<{
   hotDayLlmBudgetFraction: number
   hotDayMinStagedEvents: number
   stagedEventsThisRun: number
-}>
-
-export type DistillArgs = Readonly<{
-  reportText: string
-  fallbackText: string
-  auditClaim?: AuditClaim
-  /** Narratives at unchanged heat — must not be restated at that stage (Discord) */
-  unchangedStages?: readonly StageKnown[]
-  dailyCap: number
-  usedToday: number
-  runSession?: DistillSessionRunner
-  enabled?: boolean
-  /** When set, LLM sessions stop at floor(dailyCap * fraction) with reason llm-budget-fraction */
-  budgetFraction?: DistillBudgetFraction
 }>
 
 export type TopicPacketMember = Readonly<{
@@ -160,22 +138,6 @@ function claimLine(auditClaim?: AuditClaim): string {
     : "type=unknown subject=unknown direction=unknown"
 }
 
-function stageList(stages: readonly StageKnown[] | undefined): string {
-  const mapped = (stages ?? [])
-    .slice(0, 24)
-    .map((entry) => {
-      const label = preferredNarrativeLabel({
-        slug: entry.slug,
-        title: entry.title,
-        ...(entry.framing ? { framing: entry.framing } : {}),
-      })
-      const framing = framingAnnotation(entry)
-      return `${label}=${entry.stage}${framing}`
-    })
-    .join(", ")
-  return mapped.length > 0 ? mapped : "(none)"
-}
-
 function stripFence(raw: string): string {
   let text = raw.trim()
   if (text.startsWith("```") && text.endsWith("```")) {
@@ -191,21 +153,6 @@ function charLen(text: string): number {
 function clipChars(text: string, max: number): string {
   if (charLen(text) <= max) return text
   return [...text].slice(0, max).join("")
-}
-
-export function distillUserMessage(args: Readonly<{
-  reportText: string
-  auditClaim?: AuditClaim
-  unchangedStages?: readonly StageKnown[]
-}>): string {
-  return [
-    "Rewrite the quoted report as a single Discord bottom-line using the system rules.",
-    `auditClaim (context only): ${claimLine(args.auditClaim)}`,
-    `unchangedStages: ${stageList(args.unchangedStages)}`,
-    "<untrusted-report>",
-    args.reportText,
-    "</untrusted-report>",
-  ].join("\n")
 }
 
 export function telegramTopicUserMessage(packet: TopicPacket): string {
@@ -301,37 +248,6 @@ function mentionsOtherNarrative(
     if (lower.includes(entry.slug.toLowerCase())) return true
   }
   return false
-}
-
-/** Mechanical Discord style post-check. Returns reason on reject. */
-export function validateDiscordDistillOutput(
-  raw: string,
-  unchangedStages: readonly StageKnown[] = [],
-  maturedNarratives: readonly StageKnown[] = [],
-): { ok: true; text: string } | { ok: false; reason: string } {
-  const text = stripFence(raw)
-  if (text.length < 1) return { ok: false, reason: "empty" }
-  if (charLen(text) > DISCORD_TEXT_MAX) return { ok: false, reason: "too-long" }
-  if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
-  if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
-  if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
-  if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
-  const tickers = text.match(TICKER_TOKEN) ?? []
-  if (tickers.length > DISCORD_TICKER_MAX) return { ok: false, reason: "ticker-overflow" }
-  if (statusQuoFillerPattern().test(text)) return { ok: false, reason: "status-quo-filler" }
-  if (
-    unchangedStages.length > 0
-    && restatesUnchangedNarrativeStage(text, unchangedStages)
-  ) {
-    return { ok: false, reason: "unchanged-stage-restatement" }
-  }
-  const matured = maturedNarratives.length > 0
-    ? maturedNarratives
-    : maturedNarrativeLabels(unchangedStages)
-  if (usesStaleRotationFraming(text, matured)) {
-    return { ok: false, reason: "stale-narrative-framing" }
-  }
-  return { ok: true, text: scrubLeakedHourHorizons(text) }
 }
 
 /** Mechanical Telegram topic post-check — short paragraph, no briefing layout. */
@@ -545,54 +461,6 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
   const rendered = parts.join("\n\n")
   if (charLen(rendered) > TELEGRAM_DIGEST_TEXT_MAX) return null
   return rendered
-}
-
-/**
- * Compress a chat report into a Discord bottom-line. Fail-closed to fallbackText
- * on any miss: disabled, missing runner, cap exhausted, session error, or
- * post-check reject. Host attaches at most one Discord payload per run.
- */
-export async function runDiscordDistiller(args: DistillArgs): Promise<DistillResult> {
-  const fallback = (reason: string, used: number, capExhausted = false): DistillResult => ({
-    text: args.fallbackText,
-    usedFallback: true,
-    reason,
-    used,
-    capExhausted,
-  })
-
-  if (args.enabled === false) {
-    return fallback("disabled", args.usedToday)
-  }
-  const cap = resolveDistillLlmCap({
-    dailyCap: args.dailyCap,
-    usedToday: args.usedToday,
-    ...(args.budgetFraction ? { budgetFraction: args.budgetFraction } : {}),
-  })
-  if (!cap.ok) {
-    return fallback(cap.reason, args.usedToday, cap.capExhausted)
-  }
-  if (!args.runSession) {
-    return fallback("no-runner", args.usedToday)
-  }
-
-  const used = args.usedToday + 1
-  const unchanged = args.unchangedStages ?? []
-  try {
-    const raw = await args.runSession({
-      prompt: DISCORD_DISTILLER_PROMPT,
-      message: distillUserMessage({
-        reportText: args.reportText,
-        ...(args.auditClaim ? { auditClaim: args.auditClaim } : {}),
-        ...(unchanged.length > 0 ? { unchangedStages: unchanged } : {}),
-      }),
-    })
-    const checked = validateDiscordDistillOutput(raw, unchanged)
-    if (!checked.ok) return fallback(checked.reason, used)
-    return { text: checked.text, usedFallback: false, used, capExhausted: false }
-  } catch {
-    return fallback("session-error", used)
-  }
 }
 
 /**

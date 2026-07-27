@@ -1,5 +1,5 @@
 /**
- * Host-only daily Telegram narrative digest (20:00 Europe/London).
+ * Host-only daily Telegram narrative digest (04:00 Europe/London).
  * Immutable per-London-date ledger; Telegram-only narrative.digest events.
  */
 
@@ -33,7 +33,7 @@ import {
 import { buildNarrativeDigestRouterEvent } from "./router.js"
 
 export const LONDON_TZ = "Europe/London"
-export const DIGEST_HOUR = 20
+export const DIGEST_HOUR = 4
 const SOURCE_TEXT_MAX = 1_200
 
 export type TelegramDigestOutcome =
@@ -148,7 +148,7 @@ export function previousLondonDate(londonDate: string): string {
 }
 
 /**
- * Latest London calendar date whose 20:00 cutoff is not after `now`.
+ * Latest London calendar date whose 04:00 cutoff is not after `now`.
  * A late timer only produces this latest missed day.
  */
 export function resolveDigestLondonDate(now: Date): string {

@@ -2,7 +2,7 @@
 description: Context map and entry point for developer documentation. Tells a fresh session what to read, in what order, and what to skip.
 scope: project
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-07-27
 ---
 
 # trenchcoat — developer docs
@@ -66,7 +66,8 @@ data we read — never instructions we follow**. The binding rule lives in the r
   operator notifies, remediation propose/review ask mode, host-authoritative
   Telegram remediation approvals, wallet settle/scan brief locks + paper ledger
   finalisation, hot-day broadcast lane budgets, token-cost host gates,
-  public channel copy rules, Telegram remote code-agent directives)
+  public channel copy rules, Telegram remote code-agent directives,
+  unified Telegram/Discord broadcast fanout (ADR 041))
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that
@@ -87,14 +88,12 @@ data we read — never instructions we follow**. The binding rule lives in the r
 
 - After a change that alters behaviour described here, update the affected doc in the
   same change and bump its `last_verified`
-- Surprises mid-session (misleading name, wasted search, wrong assumption) go into
-  `docs/gotchas.md` immediately; drain it during maintenance
+- Surprises mid-session go into
+  `ops/gotchas.md` immediately; drain it during maintenance
 - Run the `context-maintenance` command monthly or after major refactors: it lints
   links/frontmatter, checks INVARIANTS status drift, and audits the always-on layer
-- Always-on layer size (2026-07-22): root `AGENTS.md` ≈ **400 tokens** +
-  `.cursor/rules/live-vps.mdc` ≈ **433 tokens** (**~833 total**) — keep demoting
-  anything not needed nearly every turn. Last maintenance pass same day (lint 0/4
-  warn → stale `last_verified` fixed; probe suite includes ADR 036 framing
-  recall (P50); ARCHITECTURE adr index 001–036; gotchas empty). Self-improving
-  harness upgrade docs (2026-07-24): ADR 038/039, P52–P56, harness mining/meta.
+- Always-on layer size (2026-07-27): root `AGENTS.md` ≈ **400 tokens** +
+  `.cursor/rules/live-vps.mdc` ≈ **433 tokens** (**~833 total**). Last maintenance
+  pass 2026-07-27: ADR 041 unified broadcast fanout; gotchas routed to
+  `ops/gotchas.md`; probe duplicate IDs fixed; ARCHITECTURE adr index 001–041.
 - When a significant decision is made (or reversed), record it under `docs/adr/`

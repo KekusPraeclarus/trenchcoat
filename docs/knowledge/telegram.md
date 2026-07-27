@@ -23,13 +23,12 @@ last_verified: 2026-07-24
   briefing). `telegram_overview.daily_cap` is an **LLM session** cap only
   (hot-day ops: **50** — ADR 033); Telegram **message count** stays uncapped
   after worthiness. Cap miss → packet/fallback text, still delivered. The daily
-  **narrative map** is a separate host-only `narrative.digest` at 20:00
+  **narrative map** is a separate host-only `narrative.digest` at 04:00
   Europe/London (`broadcast.telegram_digest.enabled`) covering retention-active
   narratives that had a host-approved Telegram development in the window
   (≤3,400 chars); quiet actives are omitted rather than padded with
-  "nothing happened". Discord stays a run-scoped **own**
-  bottom-line distill (at most one Discord payload per run — never a reuse of
-  the TG topic text)
+  "nothing happened". Discord receives the same rendered text as Telegram
+  leaders (ADR 041); daily digest stays Telegram-only
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,
   remediation failure lines, and high-risk approval cards are host-composed
   (plain-language what/why + sanitized summaries), optionally polished by

@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
-  DISCORD_TEXT_MAX,
-  distillUserMessage,
   renderDailyDigestCompactFallback,
   resolveDistillLlmCap,
-  runDiscordDistiller,
   runTelegramTopicDistiller,
   telegramTopicUserMessage,
   TELEGRAM_DIGEST_TEXT_MAX,
   TELEGRAM_TOPIC_TEXT_MAX,
-  validateDiscordDistillOutput,
   validateTelegramDailyDigestOutput,
   validateTelegramTopicOutput,
 } from "../../src/orchestrator/distill-session.js"
@@ -22,204 +18,7 @@ const CLAIM = {
   verificationRule: "rotation",
 }
 
-describe("validateDiscordDistillOutput", () => {
-  it("accepts a short novel update", () => {
-    const ok = validateDiscordDistillOutput(
-      "RH chain meme rotation bumped to peaking. Capital rotating into RH infra.",
-    )
-    expect(ok).toEqual({
-      ok: true,
-      text: "RH chain meme rotation bumped to peaking. Capital rotating into RH infra.",
-    })
-  })
-
-  it("rejects provenance handles", () => {
-    expect(validateDiscordDistillOutput("Flip (twitter:@brian_armstrong)").ok).toBe(false)
-    expect(validateDiscordDistillOutput("cast farcaster:@amc reacted").ok).toBe(false)
-  })
-
-  it("rejects bare @handles", () => {
-    expect(validateDiscordDistillOutput("Flip (@brian_armstrong) live").ok).toBe(false)
-    expect(validateDiscordDistillOutput("palgrani & @stockcoin_flap pushing").ok).toBe(false)
-  })
-
-  it("rejects ticker overflow", () => {
-    const text = "Lane: $A vs $B vs $C vs $D"
-    expect(validateDiscordDistillOutput(text)).toEqual({
-      ok: false,
-      reason: "ticker-overflow",
-    })
-  })
-
-  it("rejects status-quo filler", () => {
-    expect(validateDiscordDistillOutput("Under that you still have RH-chain rotation").ok).toBe(false)
-    expect(validateDiscordDistillOutput("RH continues to dominate").ok).toBe(false)
-    expect(validateDiscordDistillOutput("Sentiment remains split").ok).toBe(false)
-    expect(validateDiscordDistillOutput("rh rotation still peaking").ok).toBe(false)
-  })
-
-  it("rejects unchanged-stage restatement when prior heat is known", () => {
-    const unchanged = [{
-      slug: "rh-chain-meme-rotation",
-      title: "Robinhood chain meme rotation",
-      stage: "peaking" as const,
-    }]
-    expect(validateDiscordDistillOutput(
-      "RH chain meme rotation bumped to peaking on this scan. Fresh lanes elsewhere.",
-      unchanged,
-    )).toEqual({ ok: false, reason: "unchanged-stage-restatement" })
-  })
-
-  it("rejects stale rotation framing for matured narratives", () => {
-    const matured = [{
-      slug: "rh-chain-meme-rotation",
-      title: "RH Chain agent infra",
-      stage: "peaking" as const,
-      framing: "ecosystem" as const,
-    }]
-    expect(validateDiscordDistillOutput(
-      "RH rotation still loud on infra catalysts this week.",
-      [],
-      matured,
-    )).toEqual({ ok: false, reason: "stale-narrative-framing" })
-  })
-
-  it("rejects overlong and control chars", () => {
-    expect(validateDiscordDistillOutput("x".repeat(DISCORD_TEXT_MAX + 1)).ok).toBe(false)
-    expect(validateDiscordDistillOutput("bad\u0000text").ok).toBe(false)
-  })
-})
-
-describe("runDiscordDistiller", () => {
-  it("fails closed when disabled or missing runner", async () => {
-    const disabled = await runDiscordDistiller({
-      reportText: "# report",
-      fallbackText: "fallback line",
-      dailyCap: 10,
-      usedToday: 0,
-      enabled: false,
-    })
-    expect(disabled).toMatchObject({ text: "fallback line", usedFallback: true, reason: "disabled" })
-
-    const noRunner = await runDiscordDistiller({
-      reportText: "# report",
-      fallbackText: "fallback line",
-      dailyCap: 10,
-      usedToday: 0,
-      enabled: true,
-    })
-    expect(noRunner).toMatchObject({ text: "fallback line", usedFallback: true, reason: "no-runner" })
-  })
-
-  it("fails closed on cap exhaustion without launching a session", async () => {
-    let launched = 0
-    const result = await runDiscordDistiller({
-      reportText: "# report",
-      fallbackText: "fallback line",
-      dailyCap: 2,
-      usedToday: 2,
-      enabled: true,
-      runSession: async () => {
-        launched += 1
-        return "should not run"
-      },
-    })
-    expect(launched).toBe(0)
-    expect(result).toMatchObject({
-      text: "fallback line",
-      usedFallback: true,
-      reason: "cap-exhausted",
-      capExhausted: true,
-    })
-  })
-
-  it("accepts a clean session output and increments used", async () => {
-    const result = await runDiscordDistiller({
-      reportText: "# report\nnew lane",
-      fallbackText: "fallback line",
-      auditClaim: CLAIM,
-      dailyCap: 10,
-      usedToday: 3,
-      enabled: true,
-      runSession: async ({ message }) => {
-        expect(message).toContain("<untrusted-report>")
-        expect(message).toContain("subject=rh-chain-meme-rotation")
-        expect(message).toContain("watchWindow=this week")
-        return "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip"
-      },
-    })
-    expect(result).toEqual({
-      text: "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip",
-      usedFallback: false,
-      used: 4,
-      capExhausted: false,
-    })
-  })
-
-  it("fails closed when session returns status-quo filler", async () => {
-    const result = await runDiscordDistiller({
-      reportText: "# report",
-      fallbackText: "fallback line",
-      dailyCap: 10,
-      usedToday: 0,
-      enabled: true,
-      runSession: async () => "Under that you still have RH-chain rotation",
-    })
-    expect(result).toMatchObject({
-      text: "fallback line",
-      usedFallback: true,
-      reason: "status-quo-filler",
-      used: 1,
-    })
-  })
-
-  it("fails closed on session error", async () => {
-    const result = await runDiscordDistiller({
-      reportText: "# report",
-      fallbackText: "fallback line",
-      dailyCap: 10,
-      usedToday: 0,
-      enabled: true,
-      runSession: async () => {
-        throw new Error("boom")
-      },
-    })
-    expect(result).toMatchObject({
-      text: "fallback line",
-      usedFallback: true,
-      reason: "session-error",
-      used: 1,
-    })
-  })
-
-  it("fails closed on llm-budget-fraction without launching a session", async () => {
-    let launched = 0
-    const result = await runDiscordDistiller({
-      reportText: "# report",
-      fallbackText: "fallback line",
-      dailyCap: 10,
-      usedToday: 5,
-      enabled: true,
-      budgetFraction: {
-        llmBudgetFraction: 0.5,
-        hotDayLlmBudgetFraction: 0.25,
-        hotDayMinStagedEvents: 20,
-        stagedEventsThisRun: 3,
-      },
-      runSession: async () => {
-        launched += 1
-        return "should not run"
-      },
-    })
-    expect(launched).toBe(0)
-    expect(result).toMatchObject({
-      text: "fallback line",
-      usedFallback: true,
-      reason: "llm-budget-fraction",
-      capExhausted: false,
-    })
-  })
-
+describe("resolveDistillLlmCap", () => {
   it("uses hot-day fraction when staged events meet the threshold", () => {
     expect(resolveDistillLlmCap({
       dailyCap: 10,
@@ -247,22 +46,6 @@ describe("runDiscordDistiller", () => {
     })).toEqual({ ok: true })
   })
 
-  it("frames distill input with auditClaim and unchangedStages", () => {
-    const msg = distillUserMessage({
-      reportText: "body",
-      auditClaim: CLAIM,
-      unchangedStages: [{
-        slug: "rh-chain-meme-rotation",
-        title: "Robinhood chain meme rotation",
-        stage: "peaking",
-      }],
-    })
-    expect(msg).toContain("Discord bottom-line")
-    expect(msg).toContain("type=rotation")
-    expect(msg).toContain("watchWindow=this week")
-    expect(msg).toContain("unchangedStages: RH Chain Meme Rotation=peaking")
-    expect(msg).toContain("<untrusted-report>\nbody\n</untrusted-report>")
-  })
 })
 
 describe("validateTelegramTopicOutput", () => {
@@ -487,7 +270,7 @@ describe("runTelegramTopicDistiller", () => {
     expect(msg).not.toContain("Chat recall")
   })
 
-  it("annotates mature framing on topic and discord distill packets", () => {
+  it("annotates mature framing on topic distill packets", () => {
     const msg = telegramTopicUserMessage({
       subject: "rh-chain-meme-rotation",
       subjectLabel: "RH Chain agent infra",
@@ -509,18 +292,6 @@ describe("runTelegramTopicDistiller", () => {
     })
     expect(msg).toContain("framing=ecosystem")
     expect(msg).toContain("subjectLabel=RH Chain agent infra")
-
-    const discord = distillUserMessage({
-      reportText: "report",
-      unchangedStages: [{
-        slug: "rh-chain-meme-rotation",
-        title: "RH Chain agent infra",
-        stage: "peaking",
-        framing: "ecosystem",
-      }],
-    })
-    expect(discord).toContain("framing=ecosystem")
-    expect(discord).toContain("RH Chain agent infra=peaking")
   })
 })
 

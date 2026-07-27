@@ -1,5 +1,5 @@
 {
-  "schema": 21,
+  "schema": 22,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -200,14 +200,6 @@
     }
   },
   "broadcast": {
-    "daily_budget": 100,
-    "urgent_ceiling": 100,
-    "discord_distiller": {
-      "enabled": true,
-      "daily_cap": 100,
-      "llm_budget_fraction": 0.5,
-      "hot_day_llm_budget_fraction": 0.25
-    },
     "telegram_overview": {
       "enabled": true,
       "daily_cap": 50,

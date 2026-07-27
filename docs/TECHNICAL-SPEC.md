@@ -234,10 +234,9 @@ Minimising burn without harming results, enforced by design rather than hope:
   instructions found in them (INV-P*). Alpha-channel text is *more* likely to be
   manipulative than random tweets — same rule, higher suspicion.
 - **The agent proposes broadcasts, the orchestrator sends them.** Outbox items are
-  schema-checked (length cap, severity, refs) before forwarding. Discord
-  `watch`/`notable` consume `broadcast.daily_budget`; Discord `urgent` bypasses it
-  (failsafe ceiling only). Telegram is uncapped after validation. The sandboxed
-  agent can never reach the router directly.
+  schema-checked (length cap, severity, refs) before forwarding. Discord receives
+  the same host-rendered text as Telegram leaders (ADR 041). Telegram is uncapped
+  after validation. The sandboxed agent can never reach the router directly.
 - **Every piece of evidence has provenance.** Snapshot items carry their source
   handle; decisions cite sources; audits grade sources; scans weight by grade.
 - **Autonomy with a paper trail, not a leash.** No approval gates anywhere; instead

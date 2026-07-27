@@ -718,6 +718,7 @@ export function migrateConfigToV17(raw: unknown): unknown {
     || record?.["schema"] === 19
     || record?.["schema"] === 20
     || record?.["schema"] === 21
+    || record?.["schema"] === 22
   ) return raw
 
   const v16 = (
@@ -758,6 +759,7 @@ export function migrateConfigToV18(raw: unknown): unknown {
     || record?.["schema"] === 19
     || record?.["schema"] === 20
     || record?.["schema"] === 21
+    || record?.["schema"] === 22
   ) return raw
 
   const v17 = (
@@ -798,6 +800,7 @@ export function migrateConfigToV19(raw: unknown): unknown {
     record?.["schema"] === 19
     || record?.["schema"] === 20
     || record?.["schema"] === 21
+    || record?.["schema"] === 22
   ) return raw
 
   const v18 = (
@@ -892,7 +895,7 @@ export const WALLET_SIGNALS_V20_DEFAULTS = Object.freeze({
 /** Schema 20: Discord wallet-signal confluence under chat.discord */
 export function migrateConfigToV20(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 20 || record?.["schema"] === 21) return raw
+  if (record?.["schema"] === 20 || record?.["schema"] === 21 || record?.["schema"] === 22) return raw
 
   const v19 = (
     record?.["schema"] === 19
@@ -979,6 +982,36 @@ export function migrateConfigToV21(raw: unknown): unknown {
           ? false
           : (prevHi["meta_require_operator_promotion"]
             ?? HARNESS_META_V21_DEFAULTS.meta_require_operator_promotion),
+    },
+  }
+}
+
+/** Schema 22: unified broadcast fanout — drop Discord message budget and distiller (ADR 041) */
+export function migrateConfigToV22(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 22) return raw
+
+  const v21 = (
+    record?.["schema"] === 21
+      ? record
+      : migrateConfigToV21(raw)
+  ) as Record<string, unknown>
+
+  const prevBroadcast = (v21["broadcast"] ?? {}) as Record<string, unknown>
+  const prevTelegram = (prevBroadcast["telegram_overview"] ?? {}) as Record<string, unknown>
+  const prevDigest = (prevBroadcast["telegram_digest"] ?? {}) as Record<string, unknown>
+  const prevWorthiness = (prevBroadcast["worthiness"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v21,
+    schema: 22,
+    broadcast: {
+      telegram_overview: prevTelegram,
+      telegram_digest: prevDigest,
+      hot_day_min_staged_events: typeof prevBroadcast["hot_day_min_staged_events"] === "number"
+        ? prevBroadcast["hot_day_min_staged_events"]
+        : 20,
+      worthiness: prevWorthiness,
     },
   }
 }

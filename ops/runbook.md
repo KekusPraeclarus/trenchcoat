@@ -48,7 +48,7 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
 | `narrative-source-review` | daily (promote/demote + gated follow) |
 | `delivery-retry` | every 15m (host-only; retries staged router ingress without a terminal receipt; skips when router env missing or backlog empty) |
-| `telegram-digest` | **VPS systemd only** — `*-*-* 20:00:00 Europe/London` (host-only daily narrative map; requires `broadcast.telegram_digest.enabled`; no Mac launchd timer) |
+| `telegram-digest` | **VPS systemd only** — `*-*-* 04:00:00 Europe/London` (host-only daily narrative map; requires `broadcast.telegram_digest.enabled`; no Mac launchd timer) |
 
 Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbook:
 [ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
@@ -309,7 +309,7 @@ predeploy backup only when migration itself corrupted host state.
   `loadConfig` migrates in memory — re-save or copy from repo `config.json` to
   persist `narratives` on disk.
 - **Daily Telegram digest** — VPS systemd timer `trenchcoat-job-telegram-digest`
-  at 20:00 Europe/London (`broadcast.telegram_digest.enabled`). Inspect
+  at 04:00 Europe/London (`broadcast.telegram_digest.enabled`). Inspect
   `archive/telegram-digests/<London-date>.json` for `prepared` /
   `no-active-narratives` / `no-window-developments` / `capacity-exceeded`.
   Quiet actives (no host-approved Telegram development in the window) are

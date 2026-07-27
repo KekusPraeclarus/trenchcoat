@@ -5,7 +5,6 @@
 
 import type {
   AlphaDigestReceipt,
-  BroadcastBudgetLedger,
   BroadcastItem,
   DeliveryReceipt,
   ExonerationProposal,
@@ -76,19 +75,6 @@ export type OutboxIngestResult = Readonly<{
   rejected: number
   rejects: readonly { reason: string; itemHash?: `sha256:${string}` }[]
   items: readonly BroadcastItem[]
-}>
-
-export type BroadcastLedgerApi = Readonly<{
-  load(layout: ArchiveLayout, dayKey: string): Promise<BroadcastBudgetLedger>
-  reserve(args: {
-    layout: ArchiveLayout
-    dayKey: string
-    reservationKey: string
-    severity: BroadcastItem["severity"]
-    dailyBudget: number
-    urgentCeiling: number
-    nowIso: string
-  }): Promise<{ ok: boolean; ledger: BroadcastBudgetLedger; reason?: string }>
 }>
 
 export type DeliveryApi = Readonly<{

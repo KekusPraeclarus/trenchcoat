@@ -356,27 +356,8 @@ describe("wallet outcomes + review", () => {
   })
 })
 
-describe("prop_inv_s20_lifecycle_budget_and_line", () => {
-  it("lifecycle severity never consumes market broadcast budget", async () => {
-    const { canSendBroadcast, dayKey } = await import("../../src/orchestrator/broadcast.js")
-    const market = {
-      severity: "watch" as const,
-      text: "market note",
-      refs: ["state/watchlist.json"],
-      auditClaim: {
-        type: "token-upside" as const,
-        subject: "solana:token",
-        direction: "up" as const,
-        horizonHours: 72,
-        verificationRule: "token.up.72h",
-      },
-    }
-    const exhausted = { dayKey: dayKey(), used: 5, urgentUsed: 0 }
-    expect(canSendBroadcast(market, exhausted, {
-      daily_budget: 5,
-      urgent_ceiling: 10,
-    }).ok).toBe(false)
-
+describe("prop_inv_s20_lifecycle_line", () => {
+  it("wallet lifecycle line stays within broadcast text cap", async () => {
     const { renderWalletLifecycleLine } = await import("../../src/lib/router-contract.js")
     const line = renderWalletLifecycleLine({
       action: "added",
@@ -386,7 +367,6 @@ describe("prop_inv_s20_lifecycle_budget_and_line", () => {
     })
     expect(line.startsWith("wallet added:")).toBe(true)
     expect([...line].length).toBeLessThanOrEqual(280)
-    // wallet.lifecycle events use severity lifecycle and never enter canSendBroadcast
     expect(line).not.toMatch(/watch|notable|urgent/u)
   })
 })

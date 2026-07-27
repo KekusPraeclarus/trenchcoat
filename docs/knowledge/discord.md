@@ -12,11 +12,7 @@ last_verified: 2026-07-23
 - Router-only webhook delivery with `wait=true`
 - `allowed_mentions.parse=[]` always
 - At-least-once; ambiguous timeouts may duplicate
-- Consumes `broadcast.daily_budget` / `urgent_ceiling` at channel-render (Telegram
-  uncapped by count; market proposals still need host worthiness approval —
-  ADR 014). Hot-day ops target **100 / 100** (schema max 200; defaults still
-  5 / 10) — ADR 033. Over budget → omit `channels.discord` (`budget-skipped`);
-  at most one Discord payload per run (`run-deduped`)
+- Broadcast fanout receives the same host-rendered text as Telegram (ADR 041)
 - Env: `DISCORD_WEBHOOK_URL`
 
 ## Research bot (Gateway)

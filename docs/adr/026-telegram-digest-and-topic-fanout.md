@@ -29,8 +29,8 @@ Telegram has two independent output modes:
    bounded host packet only (never `reports/chat` or unrelated narratives).
    Config key `broadcast.telegram_overview` is preserved for live continuity;
    internal intent is a short topic update.
-2. **Daily** — one host-only `telegram-digest` job at **20:00 Europe/London**
-   (VPS systemd calendar timer only). Emits a Telegram-only `narrative.digest`
+2. **Daily** — one host-only `telegram-digest` job at **04:00 Europe/London**
+   (VPS systemd calendar timer only; was 20:00 before ADR 041). Emits a Telegram-only `narrative.digest`
    covering retention-active narratives that had a host-approved Telegram
    development in the prior 20:00→20:00 London window. Quiet active narratives
    are omitted — absence is the signal; never pad with "no development" filler.
@@ -46,6 +46,9 @@ same-subject developments remain eligible. Outbox envelopes are capped at eight
 items per run.
 
 Discord behavior is unchanged.
+
+> **Update (ADR 041):** Discord now forwards the same rendered text as Telegram.
+> Digest window anchor moved to 04:00 Europe/London.
 
 ## Consequences
 

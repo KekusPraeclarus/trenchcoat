@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV21 } from "../migrations/config.js"
+import { migrateConfigToV22 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(21),
+  schema: z.literal(22),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -155,21 +155,7 @@ export const ConfigSchema = z.object({
     }).default({}),
   }),
   broadcast: z.object({
-    // Discord-only daily message budget (Telegram is uncapped after schema validation)
-    daily_budget: z.number().int().min(0).max(200).default(5),
-    urgent_ceiling: z.number().int().min(1).max(200).default(10),
-    discord_distiller: z.object({
-      enabled: z.boolean().default(false),
-      daily_cap: z.number().int().min(0).max(200).default(10),
-      llm_budget_fraction: z.number().min(0).max(1).default(0.5),
-      hot_day_llm_budget_fraction: z.number().min(0).max(1).default(0.25),
-    }).default({
-      enabled: false,
-      daily_cap: 10,
-      llm_budget_fraction: 0.5,
-      hot_day_llm_budget_fraction: 0.25,
-    }),
-    // Telegram topic deep-dive LLM (shares distill session counter with Discord)
+    // Telegram topic deep-dive LLM
     telegram_overview: z.object({
       enabled: z.boolean().default(false),
       daily_cap: z.number().int().min(0).max(200).default(10),
@@ -181,7 +167,7 @@ export const ConfigSchema = z.object({
       llm_budget_fraction: 0.5,
       hot_day_llm_budget_fraction: 0.25,
     }),
-    // Host-only daily Telegram narrative map (20:00 Europe/London)
+    // Host-only daily Telegram narrative map (04:00 Europe/London)
     telegram_digest: z.object({
       enabled: z.boolean().default(false),
     }).default({ enabled: false }),
@@ -794,7 +780,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV21(raw))
+  return ConfigSchema.parse(migrateConfigToV22(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

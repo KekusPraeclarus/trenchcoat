@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV21 } from "../../src/migrations/config.js"
+import { migrateConfigToV22 } from "../../src/migrations/config.js"
 import { ensureArchive, runArchiveDir } from "../../src/lib/archive.js"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { trySealTelegramAlphaPath } from "../../src/orchestrator/collect.js"
@@ -23,7 +23,7 @@ const RUN = "telegram-alpha-2026-07-20T17-00-00-000Z"
 const EVM = "0xDB87393727b666c43f5aecB03d8B419bA54D9b03"
 
 function writeMinimalConfig(dir: string): void {
-  const cfg = ConfigSchema.parse(migrateConfigToV21({
+  const cfg = ConfigSchema.parse(migrateConfigToV22({
     schema: 5,
     twitter: {
       operator_list_urls: [

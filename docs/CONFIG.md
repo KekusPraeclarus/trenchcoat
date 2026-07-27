@@ -42,7 +42,9 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **21** (harness meta lane operator controls under
+Current schema is **22** (unified Telegram/Discord broadcast fanout — ADR 041;
+drops `broadcast.daily_budget`, `urgent_ceiling`, `discord_distiller`; prior
+schema **21** harness meta lane operator controls under
 `harness_improvement.meta_*` — ADR 039; prior schema **20** Discord
 `chat.discord.wallet_signals` confluence — ADR 035; prior schema **19**
 token-cost host gates: distill LLM budget fractions, chat turn/prompt caps —
@@ -59,7 +61,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v20 shapes via `migrateConfigToV21`.
+`loadConfig` migrates v1–v21 shapes via `migrateConfigToV22`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -141,21 +143,17 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     // farcaster_search: watchlist-scan only; operator/queue research dossiers skip FC
   },
   "broadcast": {
-    "daily_budget": 100,
-    "urgent_ceiling": 100,
-    "discord_distiller": { "enabled": false, "daily_cap": 100, "llm_budget_fraction": 0.5, "hot_day_llm_budget_fraction": 0.25 },
     "telegram_overview": { "enabled": false, "daily_cap": 50, "llm_budget_fraction": 0.5, "hot_day_llm_budget_fraction": 0.25 },
     "telegram_digest": { "enabled": false },
     "hot_day_min_staged_events": 20,
     "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
   },
-  // daily_budget / urgent_ceiling = Discord message caps only (schema max 200; hot-day ops: 100 — ADR 033)
   // telegram_overview = intraday short topic paragraph LLM (config key preserved; ADR 026)
-  //   daily_cap = LLM sessions only (hot-day ops: 50); Telegram message count stays uncapped (ADR 033)
-  //   llm_budget_fraction = fraction of daily_cap that may open an LLM distill session (rest use event.text; ADR 034)
+  //   daily_cap = LLM sessions only (hot-day ops: 50); message count uncapped after validation
+  //   llm_budget_fraction = fraction of daily_cap that may open an LLM distill session (rest use fallback; ADR 034)
   //   hot_day_llm_budget_fraction = tighter fraction when staged events this run ≥ hot_day_min_staged_events
-  // telegram_digest = host-only daily narrative map at 20:00 Europe/London (schema 18)
-  // discord_distiller / telegram_overview daily_cap = LLM session caps (shared used counter in archive)
+  // telegram_digest = host-only daily narrative map at 04:00 Europe/London (schema 18; ADR 041)
+  // Discord receives the same rendered text as Telegram leaders (ADR 041)
   // worthiness = host approve/reject gate before stage (fail-closed; default composer-2.5-fast; ADR 014)
   "narratives": { "retention_days": 14 },
   "source_safety": { "intent_classifier_daily_cap": 20 },

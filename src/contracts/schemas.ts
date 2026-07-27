@@ -216,7 +216,7 @@ export const RouterChannelPayloadsSchema = z.object({
     text: z.string().min(1).max(64_000),
   }).optional(),
   discord: z.object({
-    text: z.string().min(1).max(1_000),
+    text: z.string().min(1).max(64_000),
   }).optional(),
 }).strict()
 export type RouterChannelPayloads = z.infer<typeof RouterChannelPayloadsSchema>
@@ -1552,19 +1552,6 @@ export const ChatSummaryReceiptSchema = z.object({
   untrustedEvidence: z.literal(true),
 })
 export type ChatSummaryReceipt = z.infer<typeof ChatSummaryReceiptSchema>
-
-export const BroadcastBudgetLedgerSchema = z.object({
-  schema: z.literal(1),
-  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
-  used: z.number().int().nonnegative().default(0),
-  urgentUsed: z.number().int().nonnegative().default(0),
-  reservations: z.record(z.object({
-    severity: BroadcastSeveritySchema,
-    reservedAt: IsoTimestampSchema,
-  })).default({}),
-  updatedAt: IsoTimestampSchema,
-})
-export type BroadcastBudgetLedger = z.infer<typeof BroadcastBudgetLedgerSchema>
 
 export const BroadcastRejectReceiptSchema = z.object({
   schema: z.literal(1),

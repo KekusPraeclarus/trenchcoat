@@ -64,7 +64,7 @@ Unrecognized → **drop** (do not invent side).
 
 ## 1) Known bot: Cielo classic (primary — this relay)
 
-**Telegram raw** lives in `tests/fixtures/cielo/`. **Discord form** strips `#` from hashtags, removes color-circle emojis into embed sidebar, inlines links as `[label](<url>)`.
+**Telegram raw** lives in `tests/fixtures/cielo/`. **Discord form** strips `#` from hashtags, removes color-circle emojis into embed sidebar, inlines links as markdown label-plus-URL pairs.
 
 ### Example A — SOL buy (🟢 → green sidebar `0x57f287`)
 
@@ -251,7 +251,7 @@ Dedup: same `(channelId, messageId)` once. Same actor + same CA + same side with
 
 - Read `embeds[].description` (+ `embeds[].color`); also scan `content`
 - Ignore bot’s own messages / research replies if identifiable
-- Links may be `[ViewTx](<https://…>)` — extract URL from markdown
+- Links may be `[ViewTx](https://example.com/tx)` style markdown. Extract the URL from the link target.
 - Color map used by this relay:
 
 | Emoji | Color | Meaning for spot |

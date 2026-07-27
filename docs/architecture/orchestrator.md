@@ -454,16 +454,11 @@ staged router events.
   events (reworded same-catalyst rejected; genuinely new same-subject developments
   allowed). Agent still authors `text`; the host never invents market broadcast
   copy. Envelopes are capped at eight items per run (`outbox-items-cap`)
-- Discord budget only: `watch`/`notable` consume `broadcast.daily_budget` (schema default 5; hot-day ops 100; schema max 200 — ADR 033)
-  when attaching `channels.discord` in `renderChannelPayloads`. **`urgent` bypasses
-  that Discord daily budget** but still hits `urgent_ceiling` (default 10/day) as a
-  Discord failsafe (INV-B4). Intraday Telegram is one short topic paragraph per
-  normalized subject per run (not message-count limited; ≤800 chars). Separate:
-  `broadcast.discord_distiller.daily_cap` and `broadcast.telegram_overview.daily_cap`
-  cap LLM sessions (shared used counter under
-  `archive/broadcast-budget/discord-distill-<day>.json`), not Discord message count
-- Over Discord budget: omit `channels.discord` (router skips Discord; Telegram still
-  sends on leaders). Receipted as `budget-skipped`, never silently dropped
+- Intraday Telegram is one short topic paragraph per normalized subject per run
+  (not message-count limited; ≤800 chars). `broadcast.telegram_overview.daily_cap`
+  caps LLM topic-distill sessions (counter under
+  `archive/broadcast-budget/topic-distill-<day>.json`; legacy `discord-distill-*`
+  still read for the same UTC day)
 - Host stages validated items, then `renderChannelPayloads` attaches per-destination
   text before HMAC-POST to the long-lived router (`com.trenchcoat.router` /
   `tc router serve`; `TRENCHCOAT_ROUTER_*` — see [router.md](router.md)). Telegram
@@ -471,16 +466,13 @@ staged router events.
   packet (leader claim + group member texts + matching narrative snapshot; never
   the global chat report) when `broadcast.telegram_overview.enabled` — receipts
   `topic-deep-dive` / `topic-fallback`; same-subject followers omit
-  `channels.telegram` (`topic-merged`). Discord gets a fail-closed bottom-line distill
-  (≤320 chars, at most once per run; later claims omit Discord as `run-deduped`)
-  when `broadcast.discord_distiller.enabled` (else short broadcast text on the
-  first eligible event only). Discord text is distilled independently of Telegram.
-  All public channel distillers share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`)
-  and fail closed on `internal-jargon` (`tape`, `operator`, `lane noise`) in
-  post-check validators (ADR 037).
-  Bare intake hosts default to `/v1/events`; loopback HTTP is allowed. Severity
-  `lifecycle` (wallet add/drop) skips Discord market budget and is never distilled
-- Host-only `telegram-digest` (20:00 Europe/London, VPS systemd) emits one
+  `channels.telegram` (`topic-merged`). Discord receives the same string as
+  Telegram when a leader payload exists (`forwarded` receipt). All public channel
+  distillers share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`) and fail closed on
+  `internal-jargon` (`tape`, `operator`, `lane noise`) in post-check validators
+  (ADR 037). Bare intake hosts default to `/v1/events`; loopback HTTP is allowed.
+  Severity `lifecycle` (wallet add/drop) skips channel render and is never distilled
+- Host-only `telegram-digest` (04:00 Europe/London, VPS systemd) emits one
   Telegram-only `narrative.digest` covering retention-active narratives that
   had a host-approved Telegram development in the window (≤3,400 Markdown
   chars). Quiet actives are omitted — no "nothing happened" filler. Immutable

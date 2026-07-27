@@ -755,7 +755,7 @@ write_interval_job fomo-narrative-source-scan 21600 1
 write_interval_job narrative-source-review 86400 1
 write_interval_job delivery-retry 900 1
 write_oneshot_service trenchcoat-job-telegram-digest telegram-digest "$BIN_DIR/run-precheck telegram-digest"
-write_calendar_timer trenchcoat-job-telegram-digest "*-*-* 20:00:00 Europe/London"
+write_calendar_timer trenchcoat-job-telegram-digest "*-*-* 04:00:00 Europe/London"
 write_discord_watchlist
 write_discord_chain
 write_interval_job incident-remediate 3600

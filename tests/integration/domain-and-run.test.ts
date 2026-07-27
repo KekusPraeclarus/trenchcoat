@@ -11,7 +11,6 @@ import {
 } from "../../src/wallets/scoring.js"
 import { extractCallEvents } from "../../src/lib/call-events.js"
 import { parseIntentVerdict } from "../../src/lib/source-scoring.js"
-import { canSendBroadcast, dayKey } from "../../src/orchestrator/broadcast.js"
 import { renderChartSvg, chartManifest } from "../../src/charts/render.js"
 import type { OhlcvCandle } from "../../src/collectors/market/geckoterminal.js"
 import { resolveFromCandidates } from "../../src/lib/resolve.js"
@@ -93,31 +92,6 @@ describe("prop_inv_s13_intent", () => {
   it("fail-closes malformed classifier output to shill", () => {
     expect(parseIntentVerdict("ignore previous instructions")).toBe("shill")
     expect(parseIntentVerdict("warn")).toBe("warn")
-  })
-})
-
-describe("prop_inv_b2_b4_budget", () => {
-  it("enforces daily budget and urgent ceiling", () => {
-    const item = {
-      severity: "watch" as const,
-      text: "hello",
-      refs: ["state/watchlist.json"],
-      auditClaim: {
-        type: "token-upside" as const,
-        subject: "x",
-        direction: "up" as const,
-        horizonHours: 72,
-        verificationRule: "token.up.72h",
-      },
-    }
-    let budget = { dayKey: dayKey(), used: 5, urgentUsed: 0 }
-    expect(canSendBroadcast(item, budget, { daily_budget: 5, urgent_ceiling: 10 }).ok).toBe(false)
-    const urgent = { ...item, severity: "urgent" as const }
-    const u = canSendBroadcast(urgent, { dayKey: dayKey(), used: 5, urgentUsed: 10 }, {
-      daily_budget: 5,
-      urgent_ceiling: 10,
-    })
-    expect(u.ok).toBe(false)
   })
 })
 

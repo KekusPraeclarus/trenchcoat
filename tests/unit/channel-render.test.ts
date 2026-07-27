@@ -10,9 +10,7 @@ import { chatReportPath } from "../../src/orchestrator/chat-report.js"
 
 const RUN_ID = "20260718T190000Z-channel"
 const NOW = "2026-07-18T19:00:00.000Z"
-const DISCORD_BUDGET = { dailyBudget: 5, urgentCeiling: 10 } as const
 const TG_OFF = { enabled: false, dailyCap: 10, usedToday: 0 } as const
-const DC_OFF = { enabled: false, dailyCap: 10, usedToday: 0 } as const
 
 const ITEM = {
   severity: "notable" as const,
@@ -93,8 +91,6 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      discordBudget: DISCORD_BUDGET,
-      distiller: DC_OFF,
       telegramOverview: TG_OFF,
     })
     expect(report.rendered).toBe(1)
@@ -131,8 +127,6 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      discordBudget: DISCORD_BUDGET,
-      distiller: DC_OFF,
       telegramOverview: TG_OFF,
     })
     const event = outbox.list()[0]
@@ -140,7 +134,7 @@ describe("renderChannelPayloads", () => {
     expect(event?.channels?.discord?.text).toContain("[X-only]")
   })
 
-  it("attaches telegram topic deep-dive and distilled discord text", async () => {
+  it("forwards the same telegram topic text to Discord", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-render-rep-"))
     const agentRoot = join(root, "agent")
     mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
@@ -167,34 +161,13 @@ describe("renderChannelPayloads", () => {
 
     const overviewText =
       "RH chain meme rotation has fresh capital rotating into infra — watch invalidation if leaders cool this week."
-    const discordText = "Dominant lane right now: Brian Armstrong Coinbase Man PFP flip"
 
     let tgLaunches = 0
-    let dcLaunches = 0
     const report = await renderChannelPayloads({
       agentRoot,
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      chatSummary: {
-        schema: 1,
-        runId: RUN_ID,
-        validatedAt: NOW,
-        promoted: true,
-        itemIds: [],
-        reportPath: `reports/chat/${RUN_ID}.md`,
-        untrustedEvidence: true,
-      },
-      discordBudget: DISCORD_BUDGET,
-      distiller: {
-        enabled: true,
-        dailyCap: 10,
-        usedToday: 0,
-        runSession: async () => {
-          dcLaunches += 1
-          return discordText
-        },
-      },
       telegramOverview: {
         enabled: true,
         dailyCap: 10,
@@ -214,24 +187,17 @@ describe("renderChannelPayloads", () => {
         evidence: ["twitter:@a:1"],
         stage: "peaking",
       }],
-      unchangedStages: [{
-        slug: "rh-chain-meme-rotation",
-        title: "RH",
-        stage: "peaking",
-      }],
     })
-    expect(report.usedDistill).toBe(1)
     expect(report.usedTelegramOverview).toBe(1)
-    expect(report.distillUsedToday).toBe(2)
+    expect(report.topicDistillUsedToday).toBe(1)
     expect(tgLaunches).toBe(1)
-    expect(dcLaunches).toBe(1)
     const event = outbox.list()[0]
     expect(event?.channels?.telegram?.text).toBe(overviewText)
     expect(event?.channels?.telegram?.text).not.toContain("Chat recall")
     expect(event?.channels?.telegram?.text).not.toContain("Receipt paths")
-    expect(event?.channels?.discord?.text).toBe(discordText)
+    expect(event?.channels?.discord?.text).toBe(overviewText)
     expect(report.receipts[0]?.telegram).toBe("topic-deep-dive")
-    expect(report.receipts[0]?.discord).toBe("distilled")
+    expect(report.receipts[0]?.discord).toBe("forwarded")
     expect(existsSync(join(runArchiveDir(layout, RUN_ID), "channel-render-receipts.json"))).toBe(true)
   })
 
@@ -252,17 +218,6 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      chatSummary: {
-        schema: 1,
-        runId: RUN_ID,
-        validatedAt: NOW,
-        promoted: true,
-        itemIds: [],
-        reportPath: `reports/chat/${RUN_ID}.md`,
-        untrustedEvidence: true,
-      },
-      discordBudget: DISCORD_BUDGET,
-      distiller: DC_OFF,
       telegramOverview: {
         enabled: true,
         dailyCap: 10,
@@ -273,6 +228,7 @@ describe("renderChannelPayloads", () => {
     expect(report.usedTelegramOverview).toBe(0)
     const event = outbox.list()[0]
     expect(event?.channels?.telegram?.text).toContain(ITEM.text)
+    expect(event?.channels?.discord?.text).toContain(ITEM.text)
     expect(event?.channels?.telegram?.text).not.toMatch(/\*\*[^*\n]+\*\*\s*\n/)
     expect(report.receipts[0]?.telegram).toBe("topic-fallback")
     expect(report.receipts[0]?.telegramReason).toBe("workspace-path")
@@ -315,8 +271,6 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      discordBudget: DISCORD_BUDGET,
-      distiller: DC_OFF,
       telegramOverview: {
         enabled: true,
         dailyCap: 10,
@@ -370,7 +324,9 @@ describe("renderChannelPayloads", () => {
     const rhFollower = rhEvents.find((event) => !event.channels?.telegram)
     expect(rhLeader?.severity).toBe("urgent")
     expect(rhLeader?.channels?.telegram?.text).toContain("founder wallet catalyst")
+    expect(rhLeader?.channels?.discord?.text).toBe(rhLeader?.channels?.telegram?.text)
     expect(rhFollower?.channels?.telegram).toBeUndefined()
+    expect(rhFollower?.channels?.discord).toBeUndefined()
     expect(bySubject.get("base-trust-collapse")?.channels?.telegram?.text).toContain("delist chatter")
     expect(report.receipts.filter((receipt) => receipt.telegram === "topic-merged")).toHaveLength(1)
     expect(report.receipts.filter((receipt) => receipt.telegram === "topic-deep-dive")).toHaveLength(2)
@@ -394,16 +350,6 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      discordBudget: DISCORD_BUDGET,
-      distiller: {
-        enabled: true,
-        dailyCap: 10,
-        usedToday: 0,
-        runSession: async () => {
-          launches += 1
-          return "should not run"
-        },
-      },
       telegramOverview: {
         enabled: true,
         dailyCap: 10,
@@ -448,43 +394,16 @@ describe("renderChannelPayloads", () => {
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      discordBudget: DISCORD_BUDGET,
-      distiller: { enabled: true, dailyCap: 10, usedToday: 0 },
       telegramOverview: TG_OFF,
     })
     expect(report.skipped).toBe(1)
     expect(outbox.list()[0]?.channels).toBeUndefined()
   })
 
-  it("omits Discord when the Discord daily budget is exhausted", async () => {
-    const root = mkdtempSync(join(tmpdir(), "tc-render-budget-"))
+  it("forwards Discord on every Telegram leader in the run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-forward-"))
     const agentRoot = join(root, "agent")
     mkdirSync(agentRoot, { recursive: true })
-    const layout = await ensureArchive(join(root, "archive"))
-    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
-    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
-
-    const report = await renderChannelPayloads({
-      agentRoot,
-      layout,
-      runId: RUN_ID,
-      nowIso: NOW,
-      discordBudget: { dailyBudget: 0, urgentCeiling: 10 },
-      distiller: DC_OFF,
-      telegramOverview: TG_OFF,
-    })
-    expect(report.rendered).toBe(1)
-    expect(report.discordBudgetSkipped).toBe(1)
-    const event = outbox.list()[0]
-    expect(event?.channels?.telegram?.text).toBe(ITEM.text)
-    expect(event?.channels?.discord).toBeUndefined()
-    expect(report.receipts[0]?.discord).toBe("budget-skipped")
-  })
-
-  it("attaches Discord to at most one event per run", async () => {
-    const root = mkdtempSync(join(tmpdir(), "tc-render-dedupe-"))
-    const agentRoot = join(root, "agent")
-    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
     const layout = await ensureArchive(join(root, "archive"))
     const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
     const second = {
@@ -512,108 +431,23 @@ describe("renderChannelPayloads", () => {
     await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
     await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, second))
     await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, third))
-    writeFileSync(
-      chatReportPath(agentRoot, RUN_ID),
-      "# Chat recall\n\n## Host summary\n\n- RH owns attention. Stockcoin early. ANSEM watch.\n",
-    )
 
-    const discordText =
-      "RH owns attention. Watch ANSEM for risk-on & stockcoin framing for early noise."
-    let dcLaunches = 0
     const report = await renderChannelPayloads({
       agentRoot,
       layout,
       runId: RUN_ID,
       nowIso: NOW,
-      chatSummary: {
-        schema: 1,
-        runId: RUN_ID,
-        validatedAt: NOW,
-        promoted: true,
-        itemIds: [],
-        reportPath: `reports/chat/${RUN_ID}.md`,
-        untrustedEvidence: true,
-      },
-      discordBudget: DISCORD_BUDGET,
-      distiller: {
-        enabled: true,
-        dailyCap: 10,
-        usedToday: 0,
-        runSession: async () => {
-          dcLaunches += 1
-          return discordText
-        },
-      },
       telegramOverview: TG_OFF,
     })
 
     expect(report.rendered).toBe(3)
-    expect(report.usedDistill).toBe(1)
-    expect(dcLaunches).toBe(1)
     const events = outbox.list()
     expect(events).toHaveLength(3)
     const withDiscord = events.filter((e) => e.channels?.discord?.text)
-    expect(withDiscord).toHaveLength(1)
-    expect(withDiscord[0]?.channels?.discord?.text).toBe(discordText)
-    expect(events.every((e) => e.channels?.telegram?.text)).toBe(true)
-    expect(report.receipts.map((r) => r.discord)).toEqual([
-      "distilled",
-      "run-deduped",
-      "run-deduped",
-    ])
-
-    const { loadBroadcastLedger } = await import("../../src/orchestrator/broadcast-ledger.js")
-    const { dayKey } = await import("../../src/orchestrator/broadcast.js")
-    const ledger = loadBroadcastLedger(layout, dayKey(new Date(NOW)))
-    expect(Object.keys(ledger.reservations)).toHaveLength(1)
-  })
-
-  it("skips Discord LLM distill when llm-budget-fraction is exhausted", async () => {
-    const root = mkdtempSync(join(tmpdir(), "tc-render-frac-"))
-    const agentRoot = join(root, "agent")
-    mkdirSync(join(agentRoot, "reports", "chat"), { recursive: true })
-    const layout = await ensureArchive(join(root, "archive"))
-    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
-    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, ITEM))
-    writeFileSync(
-      chatReportPath(agentRoot, RUN_ID),
-      "# Chat recall\n\n## Host summary\n\n- RH owns attention.\n",
-    )
-
-    let launches = 0
-    const report = await renderChannelPayloads({
-      agentRoot,
-      layout,
-      runId: RUN_ID,
-      nowIso: NOW,
-      chatSummary: {
-        schema: 1,
-        runId: RUN_ID,
-        validatedAt: NOW,
-        promoted: true,
-        itemIds: [],
-        reportPath: `reports/chat/${RUN_ID}.md`,
-        untrustedEvidence: true,
-      },
-      discordBudget: DISCORD_BUDGET,
-      distiller: {
-        enabled: true,
-        dailyCap: 10,
-        usedToday: 5,
-        llmBudgetFraction: 0.5,
-        hotDayLlmBudgetFraction: 0.25,
-        runSession: async () => {
-          launches += 1
-          return "should not run"
-        },
-      },
-      telegramOverview: TG_OFF,
-      hotDayMinStagedEvents: 20,
-    })
-
-    expect(launches).toBe(0)
-    expect(report.usedDistill).toBe(0)
-    expect(report.receipts[0]?.distillReason).toBe("llm-budget-fraction")
-    expect(outbox.list()[0]?.channels?.discord?.text).toBe(ITEM.text)
+    expect(withDiscord).toHaveLength(3)
+    for (const event of withDiscord) {
+      expect(event.channels?.discord?.text).toBe(event.channels?.telegram?.text)
+    }
+    expect(report.receipts.every((receipt) => receipt.discord === "forwarded")).toBe(true)
   })
 })
