@@ -11,7 +11,7 @@ import {
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { writeAtomicFile, sha256Bytes } from "../lib/fs-atomic.js"
-import { WorkspaceLock, agentLockPath } from "../lib/lock.js"
+import { WorkspaceLock, agentLockPath, clearStaleWorkspaceLock } from "../lib/lock.js"
 import { archiveLayout } from "../lib/archive.js"
 import { buildHealthSnapshot, type HealthSnapshot } from "../orchestrator/health.js"
 import { findIncompleteRunRefs } from "../orchestrator/resume.js"
@@ -278,6 +278,7 @@ export async function waitForAgentIdle(
 
   for (;;) {
     await abandonOrphanedRuns(abandonOpts)
+    clearStaleWorkspaceLock(opts.agentRoot)
     const snapshot = await buildDrainSnapshot({
       agentRoot: opts.agentRoot,
       archiveRoot: opts.archiveRoot,

@@ -71,6 +71,42 @@ export function agentLockPath(agentRoot: string): string {
   return join(agentRoot, ".lock")
 }
 
+/** Drop owner files when the recorded pid is gone */
+export function clearStaleWorkspaceLock(agentRoot: string): boolean {
+  const lockPath = agentLockPath(agentRoot)
+  const ownerPath = `${lockPath}.owner`
+  if (!existsSync(ownerPath)) return false
+  const pid = Number(readFileSync(ownerPath, "utf8").trim())
+  if (Number.isInteger(pid) && pid > 0) {
+    try {
+      process.kill(pid, 0)
+      return false
+    } catch {
+      // stale owner
+    }
+  }
+  try { unlinkSync(ownerPath) } catch { /* race */ }
+  try { unlinkSync(lockPath) } catch { /* race */ }
+  return true
+}
+
+/** Best-effort nudge to a live lock holder (deploy pause abandon) */
+export function signalWorkspaceLockHolder(
+  agentRoot: string,
+  signal: NodeJS.Signals = "SIGTERM",
+): boolean {
+  const ownerPath = `${agentLockPath(agentRoot)}.owner`
+  if (!existsSync(ownerPath)) return false
+  const pid = Number(readFileSync(ownerPath, "utf8").trim())
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, signal)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }

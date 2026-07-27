@@ -7,7 +7,7 @@ import {
   DEPLOY_PAUSE_MAX_RUNNING_MS,
   isDeployPaused,
 } from "../lib/deploy-pause.js"
-import { agentLockPath } from "../lib/lock.js"
+import { agentLockPath, signalWorkspaceLockHolder } from "../lib/lock.js"
 import { log } from "../lib/log.js"
 import { RUN_PHASES, markRunFailed, type RunJournal } from "./journal.js"
 import { createJournalStore } from "./journal-store.js"
@@ -137,15 +137,16 @@ export async function abandonOrphanedRuns(args: Readonly<{
       continue
     }
     try {
+      const failureCode = ref.status === "abandoned"
+        ? "orphan-created"
+        : deployPauseActive && (ref.ageMs ?? 0) >= DEPLOY_PAUSE_MAX_RUNNING_MS
+          ? "deploy-wait-timeout"
+          : "orphan-stale"
       await failRunJournal({
         archiveRoot: args.archiveRoot,
         agentRoot: args.agentRoot,
         runId: ref.runId,
-        code: ref.status === "abandoned"
-          ? "orphan-created"
-          : deployPauseActive && (ref.ageMs ?? 0) >= DEPLOY_PAUSE_MAX_RUNNING_MS
-            ? "deploy-wait-timeout"
-            : "orphan-stale",
+        code: failureCode,
         message: ref.status === "abandoned"
           ? `abandoned phase=created ageMs=${ref.ageMs ?? "unknown"}`
           : deployPauseActive && (ref.ageMs ?? 0) >= DEPLOY_PAUSE_MAX_RUNNING_MS
@@ -153,6 +154,9 @@ export async function abandonOrphanedRuns(args: Readonly<{
             : `orphaned incomplete phase=${ref.phase} ageMs=${ref.ageMs ?? "unknown"} lockHeld=${lockHeld}`,
         nowIso,
       })
+      if (failureCode === "deploy-wait-timeout" && lockHeld) {
+        signalWorkspaceLockHolder(args.agentRoot)
+      }
       failed.push(ref.runId)
       log.warn("abandoned orphaned run", {
         runId: ref.runId,
