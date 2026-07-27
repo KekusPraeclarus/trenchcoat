@@ -1,6 +1,12 @@
 import { existsSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { archiveLayout } from "../lib/archive.js"
 import { systemClock } from "../lib/clock.js"
+import {
+  DEPLOY_PAUSE_MAX_RUNNING_MS,
+  isDeployPaused,
+} from "../lib/deploy-pause.js"
 import { agentLockPath } from "../lib/lock.js"
 import { log } from "../lib/log.js"
 import { RUN_PHASES, markRunFailed, type RunJournal } from "./journal.js"
@@ -45,12 +51,17 @@ export function shouldAbandonIncomplete(args: Readonly<{
   lockHeld: boolean
   /** When true, also fail phase=created journals past ABANDONED_CREATED_MS */
   includeCreatedAbandoned?: boolean
+  /** When true, fail long-running journals even if the workspace lock is live */
+  deployPauseActive?: boolean
 }>): boolean {
   const { ref, lockHeld } = args
   if (ref.status === "abandoned") return args.includeCreatedAbandoned === true
   if (ref.status !== "running") return false
   const ageMs = ref.ageMs
   if (ageMs === undefined) return false
+  if (args.deployPauseActive === true && ageMs >= DEPLOY_PAUSE_MAX_RUNNING_MS) {
+    return true
+  }
   if (ageMs >= ABANDONED_RUNNING_MS) return true
   if (isPreSealPhase(ref.phase) && !lockHeld && ageMs >= ORPHAN_PRESEAL_NO_LOCK_MS) {
     return true
@@ -95,6 +106,7 @@ export type AbandonResult = Readonly<{
 export async function abandonOrphanedRuns(args: Readonly<{
   agentRoot: string
   archiveRoot: string
+  home?: string
   nowIso?: string
   /** When set, only fail these run ids (operator select) */
   onlyRunIds?: readonly string[]
@@ -102,6 +114,8 @@ export async function abandonOrphanedRuns(args: Readonly<{
   dryRun?: boolean
 }>): Promise<AbandonResult> {
   const nowIso = args.nowIso ?? systemClock.nowIso()
+  const home = args.home ?? join(homedir(), ".trenchcoat")
+  const deployPauseActive = isDeployPaused(home, Date.parse(nowIso))
   const lockHeld = workspaceLockHeldAlive(args.agentRoot)
   const refs = await findIncompleteRunRefs(archiveLayout(args.archiveRoot), nowIso)
   const failed: string[] = []
@@ -112,6 +126,7 @@ export async function abandonOrphanedRuns(args: Readonly<{
     if (!shouldAbandonIncomplete({
       ref,
       lockHeld,
+      deployPauseActive,
       ...(args.includeCreatedAbandoned ? { includeCreatedAbandoned: true } : {}),
     })) {
       skipped.push(ref.runId)
@@ -126,10 +141,16 @@ export async function abandonOrphanedRuns(args: Readonly<{
         archiveRoot: args.archiveRoot,
         agentRoot: args.agentRoot,
         runId: ref.runId,
-        code: ref.status === "abandoned" ? "orphan-created" : "orphan-stale",
+        code: ref.status === "abandoned"
+          ? "orphan-created"
+          : deployPauseActive && (ref.ageMs ?? 0) >= DEPLOY_PAUSE_MAX_RUNNING_MS
+            ? "deploy-wait-timeout"
+            : "orphan-stale",
         message: ref.status === "abandoned"
           ? `abandoned phase=created ageMs=${ref.ageMs ?? "unknown"}`
-          : `orphaned incomplete phase=${ref.phase} ageMs=${ref.ageMs ?? "unknown"} lockHeld=${lockHeld}`,
+          : deployPauseActive && (ref.ageMs ?? 0) >= DEPLOY_PAUSE_MAX_RUNNING_MS
+            ? `deploy pause blocked phase=${ref.phase} ageMs=${ref.ageMs ?? "unknown"} lockHeld=${lockHeld}`
+            : `orphaned incomplete phase=${ref.phase} ageMs=${ref.ageMs ?? "unknown"} lockHeld=${lockHeld}`,
         nowIso,
       })
       failed.push(ref.runId)

@@ -136,7 +136,8 @@ after CLI changes. Flags: `--dry-run`, `--no-load`, `--without-harness`,
 `--jobs-only`, `--sync-env`, `--allow-dirty`, `--skip-agent-wait`. Before
 reloading launchd/systemd units the installer sets deploy-pause (stops scheduled
 jobs), runs `tc harness wait-idle` (default 30m; auto-fails orphaned incomplete
-journals), reloads units, then clears the pause and kickstarts deferred jobs;
+journals and running journals older than 30m while deploy pause is active),
+reloads units, then clears the pause and kickstarts deferred jobs;
 `--skip-agent-wait` bypasses the idle wait (unsafe). If the install aborts, the
 EXIT trap clears the pause **and restores schedulers** so a killed deploy cannot
 leave the host permanently quiet. Pause files older than 45m also auto-clear

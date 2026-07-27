@@ -9,6 +9,7 @@ import {
   noteDeferredJob,
   readDeployPause,
   DEPLOY_PAUSE_MAX_AGE_MS,
+  DEPLOY_PAUSE_MAX_RUNNING_MS,
 } from "../../src/lib/deploy-pause.js"
 import {
   shouldAbandonIncomplete,
@@ -79,11 +80,44 @@ describe("orphan abandon predicates", () => {
       ref: {
         runId: "research-2026-07-20T10-00-00-000Z",
         status: "running",
-        phase: "committed",
+        phase: "collected",
         ageMs: ABANDONED_RUNNING_MS,
       },
       lockHeld: true,
     })).toBe(true)
+  })
+
+  it("fails long-running journals during deploy pause even when lock is live", () => {
+    expect(shouldAbandonIncomplete({
+      ref: {
+        runId: "narrative-scan-2026-07-27T05-11-11-588Z",
+        status: "running",
+        phase: "collected",
+        ageMs: DEPLOY_PAUSE_MAX_RUNNING_MS,
+      },
+      lockHeld: true,
+      deployPauseActive: true,
+    })).toBe(true)
+    expect(shouldAbandonIncomplete({
+      ref: {
+        runId: "narrative-scan-2026-07-27T05-11-11-588Z",
+        status: "running",
+        phase: "collected",
+        ageMs: DEPLOY_PAUSE_MAX_RUNNING_MS - 1,
+      },
+      lockHeld: true,
+      deployPauseActive: true,
+    })).toBe(false)
+    expect(shouldAbandonIncomplete({
+      ref: {
+        runId: "narrative-scan-2026-07-27T05-11-11-588Z",
+        status: "running",
+        phase: "collected",
+        ageMs: DEPLOY_PAUSE_MAX_RUNNING_MS,
+      },
+      lockHeld: true,
+      deployPauseActive: false,
+    })).toBe(false)
   })
 
   it("only fails created-abandoned when requested", () => {
@@ -126,6 +160,34 @@ describe("failRunJournal / abandonOrphanedRuns", () => {
     expect(failed.status).toBe("failed")
     expect(failed.failure?.code).toBe("operator-abandon")
     expect((await store.load(runId))?.status).toBe("failed")
+  })
+
+  it("abandons long-running journals during deploy pause", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-deploy-abandon-"))
+    const archiveRoot = join(root, "archive")
+    const agentRoot = join(root, "agent")
+    const home = join(root, "home")
+    mkdirSync(agentRoot, { recursive: true })
+    mkdirSync(home, { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const store = createJournalStore(layout)
+    const runId = "narrative-scan-2026-07-27T05-11-11-588Z"
+    let journal = createRunJournal(runId)
+    journal = advanceRunJournal(journal, "collected", sha256Json({ ok: true }))
+    await store.save(journal)
+    await beginDeployPause({ home, reason: "install-systemd", nowIso: "2026-07-27T06:21:00.000Z" })
+
+    const result = await abandonOrphanedRuns({
+      agentRoot,
+      archiveRoot,
+      home,
+      nowIso: "2026-07-27T06:51:02.000Z",
+    })
+    expect(result.failed).toContain(runId)
+    const failed = await store.load(runId)
+    expect(failed?.status).toBe("failed")
+    expect(failed?.failure?.code).toBe("deploy-wait-timeout")
+    await endDeployPause(home)
   })
 
   it("abandons pre-seal orphans when lock is free", async () => {

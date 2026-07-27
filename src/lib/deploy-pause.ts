@@ -8,6 +8,9 @@ export const DEPLOY_PAUSE_SCHEMA = 1 as const
 /** Orphaned pause files older than this are auto-cleared so a killed install cannot strand the host */
 export const DEPLOY_PAUSE_MAX_AGE_MS = 45 * 60 * 1000
 
+/** Running journals past this age may be failed during deploy pause so wait-idle can finish */
+export const DEPLOY_PAUSE_MAX_RUNNING_MS = 30 * 60 * 1000
+
 export type DeployPauseFile = Readonly<{
   schema: typeof DEPLOY_PAUSE_SCHEMA
   pausedAt: string

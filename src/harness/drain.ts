@@ -269,13 +269,15 @@ export async function waitForAgentIdle(
   const started = Date.now()
 
   const { abandonOrphanedRuns } = await import("../orchestrator/abandon.js")
-  await abandonOrphanedRuns({
+  const abandonOpts = {
     agentRoot: opts.agentRoot,
     archiveRoot: opts.archiveRoot,
+    ...(opts.home ? { home: opts.home } : {}),
     ...(opts.nowIso ? { nowIso: opts.nowIso } : {}),
-  })
+  }
 
   for (;;) {
+    await abandonOrphanedRuns(abandonOpts)
     const snapshot = await buildDrainSnapshot({
       agentRoot: opts.agentRoot,
       archiveRoot: opts.archiveRoot,
