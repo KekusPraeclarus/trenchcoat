@@ -6,9 +6,10 @@ import { loadConfig } from "../lib/config.js"
 import { getChain, validateAddress } from "../lib/chains.js"
 import { ensureArchive, putMarketBlob } from "../lib/archive.js"
 import {
-  fetchClosedOhlcvPages,
   type FetchLike,
+  type OhlcvCandle,
 } from "../collectors/market/geckoterminal.js"
+import { fetchSolanaAwareOhlcvPages } from "../collectors/market/ohlcv-resolve.js"
 import { aggregateClosedCandles } from "../collectors/market/aggregate.js"
 import {
   computeWilderRsi,
@@ -22,6 +23,8 @@ const FIFTEEN_MIN = 15 * 60
 const ONE_HOUR = 60 * 60
 const FOUR_HOUR = 4 * 60 * 60
 const SAFE_PAIR = /^[A-Za-z0-9]+$/u
+const CHART_MAX_BARS = 96
+const INTER_SUBJECT_SLEEP_MS = 1_500
 
 export type ChartCollectResult = Readonly<{
   snapshotNames: readonly string[]
@@ -51,6 +54,29 @@ function safeTokenName(symbolDisplay: string | undefined, tokenAddress: string):
   return (symbolDisplay ?? tokenAddress).replace(/[^A-Za-z0-9]/gu, "").slice(0, 16) || "tok"
 }
 
+/** Trailing contiguous closed bars ending at the newest candle (E2). */
+function selectTrailingContiguousSeries(
+  candles: readonly OhlcvCandle[],
+  intervalSeconds: number,
+  maxBars: number,
+): OhlcvCandle[] {
+  if (candles.length < 2) return []
+  const sorted = [...candles].sort((a, b) => a.startTime - b.startTime)
+  let end = sorted.length - 1
+  const run: OhlcvCandle[] = [sorted[end]!]
+  while (run.length < maxBars && end > 0) {
+    const prev = sorted[end - 1]!
+    if (sorted[end]!.startTime - prev.startTime !== intervalSeconds) break
+    run.unshift(prev)
+    end -= 1
+  }
+  return run.length >= 2 ? run : []
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export async function collectChartSweep(args: Readonly<{
   runId: string
   writer: SnapshotWriter
@@ -58,6 +84,7 @@ export async function collectChartSweep(args: Readonly<{
   agentRoot: string
   archiveRoot: string
   fetcher?: FetchLike
+  sleep?: (ms: number) => Promise<void>
 }>): Promise<ChartCollectResult> {
   const config = loadConfig()
   const store = new StateStore(join(args.agentRoot, "state"))
@@ -67,6 +94,7 @@ export async function collectChartSweep(args: Readonly<{
   ))
   const reportDir = join(args.agentRoot, "reports", args.runId)
   mkdirSync(reportDir, { recursive: true, mode: 0o700 })
+  const sleep = args.sleep ?? defaultSleep
 
   if (active.length === 0) {
     await args.writer.writeInbox(args.runId, "chart-collection-status", {
@@ -107,6 +135,7 @@ export async function collectChartSweep(args: Readonly<{
   let chartsWritten = 0
   const seenPairs = new Set<string>()
   const statusLines: string[] = []
+  let subjectAttempts = 0
 
   for (const entry of active) {
     const { chain, tokenAddress, pairAddress, symbolDisplay } = entry.identity
@@ -127,17 +156,17 @@ export async function collectChartSweep(args: Readonly<{
     }
 
     try {
-      const raw15m = await fetchClosedOhlcvPages(
+      const { candles: raw15m, source: ohlcvSource } = await fetchSolanaAwareOhlcvPages({
         fetcher,
-        {
-          network: chainEntry.geckoterminalNetwork,
-          poolAddress: pairAddress,
-          aggregateMinutes: 15,
-          limit: 1_000,
-        },
-        asOf,
-        3,
-      )
+        chain,
+        tokenAddress,
+        network: chainEntry.geckoterminalNetwork,
+        poolAddress: pairAddress,
+        aggregateMinutes: 15,
+        limit: 1_000,
+        asOfEpochSeconds: asOf,
+        maxPages: 3,
+      })
       const candles1h = aggregateClosedCandles(raw15m, FIFTEEN_MIN, ONE_HOUR)
       const candles4h = aggregateClosedCandles(raw15m, FIFTEEN_MIN, FOUR_HOUR)
       const blobHash = await putMarketBlob(archive, {
@@ -155,31 +184,55 @@ export async function collectChartSweep(args: Readonly<{
         })),
       })
 
-      const rsi1h = computeWilderRsi(
+      let rsi1h = computeWilderRsi(
         candles1h,
         ONE_HOUR,
         config.indicators.rsi_period,
         config.indicators.rsi_min_active_bars,
       )
-      const rsi4h = computeWilderRsi(
+      let rsi4h = computeWilderRsi(
         candles4h,
         FOUR_HOUR,
         config.indicators.rsi_period,
         config.indicators.rsi_min_active_bars,
       )
-      const volZ = computeVolumeZScore(candles1h, ONE_HOUR)
-      const ema = computeEmaStructure(candles1h, ONE_HOUR)
-      const breakout = computeRangeBreakout(candles1h, ONE_HOUR)
+      let volZ = computeVolumeZScore(candles1h, ONE_HOUR)
+      let ema = computeEmaStructure(candles1h, ONE_HOUR)
+      let breakout = computeRangeBreakout(candles1h, ONE_HOUR)
 
-      const chartSeries = candles1h.slice(-96)
+      const chart1h = selectTrailingContiguousSeries(candles1h, ONE_HOUR, CHART_MAX_BARS)
+      const chart15m = selectTrailingContiguousSeries(raw15m, FIFTEEN_MIN, CHART_MAX_BARS)
+      let chartSeries = chart1h
+      let chartTimeframe = ONE_HOUR
+      let chartStatus = "ok"
+      if (chartSeries.length < 2 && chart15m.length >= 2) {
+        chartSeries = chart15m
+        chartTimeframe = FIFTEEN_MIN
+        chartStatus = "chart-15m-fallback"
+        if (!rsi1h.valid || !rsi4h.valid) {
+          rsi1h = computeWilderRsi(
+            chart15m,
+            FIFTEEN_MIN,
+            config.indicators.rsi_period,
+            config.indicators.rsi_min_active_bars,
+          )
+          volZ = computeVolumeZScore(chart15m, FIFTEEN_MIN)
+          ema = computeEmaStructure(chart15m, FIFTEEN_MIN)
+          breakout = computeRangeBreakout(chart15m, FIFTEEN_MIN)
+        }
+      } else if (chartSeries.length < 2) {
+        chartStatus = "chart-insufficient-bars"
+      }
+
       let imageHash: string | undefined
       let candleHash: string | undefined
       const safeSym = safeTokenName(symbolDisplay, tokenAddress)
       if (chartSeries.length >= 2) {
         try {
-          const png = renderChartPng(chartSeries, ONE_HOUR)
-          const written = await args.writer.writeChartPng(args.runId, `chart-${safeSym}-1h`, png)
-          const manifest = chartManifest(chartSeries, pairAddress, ONE_HOUR)
+          const png = renderChartPng(chartSeries, chartTimeframe)
+          const suffix = chartTimeframe === ONE_HOUR ? "1h" : "15m"
+          const written = await args.writer.writeChartPng(args.runId, `chart-${safeSym}-${suffix}`, png)
+          const manifest = chartManifest(chartSeries, pairAddress, chartTimeframe)
           imageHash = written.hash
           candleHash = manifest.candleHash
           await args.writer.writeInbox(args.runId, `chart-manifest-${safeSym}`, {
@@ -190,7 +243,7 @@ export async function collectChartSweep(args: Readonly<{
               provenance: `${args.runId}:chart-manifest:${pairAddress}`,
               text: [
                 `pair=${pairAddress}`,
-                `timeframeSeconds=${ONE_HOUR}`,
+                `timeframeSeconds=${chartTimeframe}`,
                 `candleHash=${manifest.candleHash}`,
                 `imageHash=${manifest.imageHash}`,
                 `featureSpecVersion=${manifest.featureSpecVersion}`,
@@ -222,6 +275,7 @@ export async function collectChartSweep(args: Readonly<{
             `pair=${pairAddress}`,
             `symbol=${symbolDisplay ?? ""}`,
             `sourceBlob=${blobHash}`,
+            `ohlcvSource=${ohlcvSource}`,
             featureLine("rsi1h", rsi1h),
             featureLine("rsi4h", rsi4h),
             featureLine("volZ", volZ),
@@ -236,12 +290,20 @@ export async function collectChartSweep(args: Readonly<{
         }],
       })
       names.push(safeName)
-      statusLines.push(`subject=${symbolDisplay ?? tokenAddress} status=ok candles15m=${raw15m.length}`)
+      statusLines.push(
+        `subject=${symbolDisplay ?? tokenAddress} status=${chartStatus}`
+          + ` candles15m=${raw15m.length} ohlcvSource=${ohlcvSource}`,
+      )
     } catch (error) {
       statusLines.push(
         `subject=${symbolDisplay ?? tokenAddress} status=provider-error`
           + ` detail=${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`,
       )
+    } finally {
+      subjectAttempts += 1
+      if (subjectAttempts < active.length) {
+        await sleep(INTER_SUBJECT_SLEEP_MS)
+      }
     }
   }
 

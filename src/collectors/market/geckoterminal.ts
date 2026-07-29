@@ -1,4 +1,4 @@
-import { gatedFetch, readJsonBody } from "../../lib/http.js"
+import { gatedFetch, gatedFetchWithRetry, readJsonBody } from "../../lib/http.js"
 
 export const GECKOTERMINAL_ROOT = "https://api.geckoterminal.com/api/v2"
 export const GECKOTERMINAL_API_VERSION = "20230302"
@@ -256,7 +256,7 @@ export async function fetchClosedOhlcv(
     throw new TypeError("timeoutMs must be an integer from 1 to 60000")
   }
 
-  const response = await gatedFetch(fetcher, buildGeckoOhlcvUrl(request), {
+  const response = await gatedFetchWithRetry(fetcher, buildGeckoOhlcvUrl(request), {
     host: "api.geckoterminal.com",
     capacity: 25,
     refillPerSecond: 25 / 60,

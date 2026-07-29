@@ -7,10 +7,11 @@ import {
   FomoTradeOutcomeSchema,
   FomoTraderScoresFileSchema,
   type FomoTradeOutcome,
+  type FomoTradeSettlementStatus,
   type FomoTraderScore,
   type FomoTraderScoresFile,
 } from "../contracts/schemas.js"
-import { barPricedReturn, matchFifoCloses } from "./copy-trade-fifo.js"
+import { classifyFifoSellAttempts } from "./copy-trade-fifo.js"
 import type { PriceBar } from "./observations.js"
 
 type Batch = Readonly<{ name: string; body: Record<string, unknown>; outcomes: FomoTradeOutcome[] }>
@@ -44,6 +45,11 @@ function median(values: readonly number[]): number {
   return (sorted[mid - 1]! + sorted[mid]!) / 2
 }
 
+function canReclassify(outcome: FomoTradeOutcome): boolean {
+  if (!outcome.settlementStatus) return true
+  return outcome.settlementStatus === "provider-pending"
+}
+
 function scoresFromSettled(
   trades: readonly FomoTradeOutcome[],
   scoreCutoff: string,
@@ -52,6 +58,7 @@ function scoresFromSettled(
   const cutoffMs = Date.parse(scoreCutoff)
   const byHandle = new Map<string, number[]>()
   for (const t of trades) {
+    if (t.settlementStatus !== "priced") continue
     if (t.realizedReturn === undefined || !t.settledAt) continue
     if (Date.parse(t.settledAt) > cutoffMs) continue
     if (t.side !== "sell" && t.side !== "buy") continue
@@ -81,7 +88,9 @@ export type FomoCopyTradeSettleReport = Readonly<{
   scanned: number
   closed: number
   priced: number
-  pendingBars: number
+  sellOnly: number
+  nonPriceable: number
+  providerPending: number
   batchesUpdated: number
   tradersScored: number
 }>
@@ -90,6 +99,36 @@ export type FomoBarProvider = (
   token: Readonly<{ chain: string; tokenAddress: string }>,
   horizonHours: number,
 ) => Promise<readonly PriceBar[] | undefined> | readonly PriceBar[] | undefined
+
+function stampStatus(
+  outcome: FomoTradeOutcome,
+  status: FomoTradeSettlementStatus,
+  nowIso: string,
+  close?: Readonly<{
+    realizedReturn: number
+    linkedBuyEventId?: string
+    holdHours?: number
+  }>,
+): FomoTradeOutcome {
+  if (status === "priced" && close) {
+    return {
+      ...outcome,
+      settlementStatus: "priced",
+      settledAt: nowIso,
+      realizedReturn: close.realizedReturn,
+      ...(close.linkedBuyEventId ? { linkedBuyEventId: close.linkedBuyEventId } : {}),
+      ...(close.holdHours !== undefined ? { holdHours: close.holdHours } : {}),
+    }
+  }
+  return {
+    ...outcome,
+    settlementStatus: status,
+    settledAt: undefined,
+    realizedReturn: undefined,
+    linkedBuyEventId: undefined,
+    holdHours: undefined,
+  }
+}
 
 /**
  * FIFO copy-trade settle for Fomo feed trades (handle+token). Never writes wallets.json.
@@ -120,7 +159,9 @@ export async function runSettleFomoCopyTrades(args: Readonly<{
     scanned: 0,
     closed: 0,
     priced: 0,
-    pendingBars: 0,
+    sellOnly: 0,
+    nonPriceable: 0,
+    providerPending: 0,
     batchesUpdated: 0,
     tradersScored: 0,
   }
@@ -146,49 +187,73 @@ export async function runSettleFomoCopyTrades(args: Readonly<{
       barCache.set(cacheKey, bars)
     }
 
-    const closes = matchFifoCloses(legs, (buyAt, sellAt) => (
-      barPricedReturn(bars ?? [], buyAt, sellAt, args.feeBpsPerSide)
-    ))
+    const attempts = classifyFifoSellAttempts(
+      legs,
+      bars ?? [],
+      args.feeBpsPerSide,
+    )
 
     const buyAgg = new Map<string, { weighted: number; weight: number; hold: number }>()
-    for (const close of closes) {
-      report.closed += 1
-      report.priced += 1
-      const weight = Number(BigInt(close.amountRaw))
-      const prev = buyAgg.get(close.buyEventId) ?? { weighted: 0, weight: 0, hold: 0 }
-      buyAgg.set(close.buyEventId, {
-        weighted: prev.weighted + close.realizedReturn * weight,
-        weight: prev.weight + weight,
-        hold: close.holdHours,
-      })
+    for (const attempt of attempts) {
+      if (attempt.kind === "sell-only") {
+        const sellRef = byEvent.get(attempt.sellEventId)
+        if (!sellRef || !canReclassify(sellRef.outcome)) continue
+        updates.set(attempt.sellEventId, stampStatus(sellRef.outcome, "sell-only", args.nowIso))
+        report.sellOnly += 1
+        continue
+      }
 
-      const sellRef = byEvent.get(close.sellEventId)
-      if (sellRef && sellRef.outcome.realizedReturn === undefined) {
-        updates.set(close.sellEventId, {
-          ...sellRef.outcome,
-          settledAt: args.nowIso,
-          realizedReturn: close.realizedReturn,
-          linkedBuyEventId: close.buyEventId,
-          holdHours: close.holdHours,
+      if (attempt.kind === "priced" && attempt.close) {
+        report.closed += 1
+        report.priced += 1
+        const close = attempt.close
+        const weight = Number(BigInt(close.amountRaw))
+        const prev = buyAgg.get(close.buyEventId) ?? { weighted: 0, weight: 0, hold: 0 }
+        buyAgg.set(close.buyEventId, {
+          weighted: prev.weighted + close.realizedReturn * weight,
+          weight: prev.weight + weight,
+          hold: close.holdHours,
         })
+
+        const sellRef = byEvent.get(close.sellEventId)
+        if (sellRef && canReclassify(sellRef.outcome)) {
+          updates.set(close.sellEventId, stampStatus(sellRef.outcome, "priced", args.nowIso, {
+            realizedReturn: close.realizedReturn,
+            linkedBuyEventId: close.buyEventId,
+            holdHours: close.holdHours,
+          }))
+        }
+        continue
+      }
+
+      const status: FomoTradeSettlementStatus = attempt.kind === "non-priceable"
+        ? "non-priceable"
+        : "provider-pending"
+      if (status === "non-priceable") report.nonPriceable += 1
+      else report.providerPending += 1
+
+      const sellRef = byEvent.get(attempt.sellEventId)
+      if (sellRef && canReclassify(sellRef.outcome)) {
+        updates.set(attempt.sellEventId, stampStatus(sellRef.outcome, status, args.nowIso))
+      }
+      if (attempt.buyEventId) {
+        const buyRef = byEvent.get(attempt.buyEventId)
+        if (buyRef && canReclassify(buyRef.outcome)) {
+          updates.set(attempt.buyEventId, stampStatus(buyRef.outcome, status, args.nowIso))
+        }
       }
     }
 
     for (const [buyId, agg] of buyAgg) {
       const buyRef = byEvent.get(buyId)
-      if (!buyRef || buyRef.outcome.realizedReturn !== undefined) continue
+      if (!buyRef || !canReclassify(buyRef.outcome)) continue
       updates.set(buyId, {
         ...buyRef.outcome,
+        settlementStatus: "priced",
         settledAt: args.nowIso,
         realizedReturn: agg.weight > 0 ? agg.weighted / agg.weight : 0,
         holdHours: agg.hold,
       })
-    }
-
-    for (const t of trades) {
-      if (t.side !== "sell") continue
-      if (t.realizedReturn !== undefined || updates.has(t.eventId)) continue
-      report.pendingBars += 1
     }
   }
 

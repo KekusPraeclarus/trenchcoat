@@ -211,11 +211,21 @@ message, and keeps GramJS sessions under `~/.trenchcoat/telegram-session/`
 Host collector for `chart-sweep`. Active watchlist subjects only
 (`tracking` / `watching`):
 
-1. Fetch closed **15m** OHLCV from GeckoTerminal (gated)
-2. Aggregate to **1h** and **4h** via `aggregateClosedCandles`
-3. Compute Wilder RSI (1h/4h), volume z-score, EMA structure, range breakout
-4. Archive the raw 15m blob; write indicator snapshots; render 1h PNG charts +
-   chart manifests (`candleHash` / `imageHash` / `sourceBlob`)
+1. Fetch closed **15m** OHLCV via `fetchSolanaAwareOhlcvPages` — GeckoTerminal
+   primary (`gatedFetchWithRetry`, default 3 attempts, honours `Retry-After`);
+   on retryable Gecko failures: **Solana** cascades **SolanaTracker** (preferred)
+   then **Birdeye**; **ethereum/base/bsc** cascade **Birdeye** only (optional
+   `SOLANATRACKER_API_KEY` / `BIRDEYE_API_KEY`). Status lines record
+   `ohlcvSource=gecko|solanatracker|birdeye`.
+2. **1500ms** sleep between subjects to stay under Gecko's 25/min gate.
+3. Aggregate to **1h** and **4h** via `aggregateClosedCandles`
+4. Compute Wilder RSI (1h/4h), volume z-score, EMA structure, range breakout;
+   when 1h/4h history is insufficient but trailing contiguous **15m** bars exist,
+   indicators fall back to the 15m series (D2).
+5. Archive the raw 15m blob; write indicator snapshots; render PNG charts from
+   trailing contiguous **1h** bars when possible, else **15m** fallback
+   (`chart-15m-fallback`, max 96 bars). Otherwise `chart-insufficient-bars`.
+   Chart manifests (`candleHash` / `imageHash` / `sourceBlob`).
 
 Empty active watchlist → host precondition skip in `runJob` before `createRunId`
 (`archive/skips/chart-sweep.jsonl`, `runId: none`). Collector still defense-in-depth
@@ -257,7 +267,8 @@ Daily knowledge distillation (07:00 local cadence unchanged). Before creating a
 run id, `evaluateReviewPrerequisites` requires traditional scope (sealed
 complete reports in lookback, pending `alpha-queue/`, or active watchlist) **or**
 health-derived scope from the shared snapshot: empty actionable research queue,
-ambiguous depth, silent wallets, FC stale streak, recurring skip reasons,
+ambiguous depth, silent wallets, FC stale streak, recurring skip reasons
+(excluding expected `research/daily-cap` and `delivery-retry/no-pending-ingress`),
 incomplete/abandoned runs, or router ingress backlog. Otherwise one skip log
 line and no run directory.
 

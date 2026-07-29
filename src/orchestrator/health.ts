@@ -22,6 +22,12 @@ import { xBotHealthEscalation } from "./x-bot-health.js"
 
 export const HEALTH_SNAPSHOT_SCHEMA = 1 as const
 
+/** Skip ledger pairs that are expected in normal operation — excluded from recurring-skip warnings */
+export const EXPECTED_RECURRING_SKIPS: ReadonlySet<string> = Object.freeze(new Set([
+  "research/daily-cap",
+  "delivery-retry/no-pending-ingress",
+]))
+
 /** Jobs surfaced in status/review; cadence ages are advisory only.
  * Narrative freshness is lastSuccess age for narrative-scan from sealed
  * complete journals — never inferred from INDEX.md line dates. */
@@ -131,6 +137,11 @@ export type HealthFomoState = Readonly<{
   shadowMode: boolean
   /** FOMO never certifies legacy research/wallet health */
   parallelOnly: true
+  /** Non-secret presence of Solana OHLCV fallback credentials for FOMO settle */
+  solanaOhlcvFallback: Readonly<{
+    solanaTracker: boolean
+    birdeye: boolean
+  }>
 }>
 
 export type HealthFinding = Readonly<{
@@ -533,9 +544,18 @@ function fomoState(): HealthFomoState {
       enabled: cfg.fomo.enabled,
       shadowMode: cfg.fomo.shadow_mode,
       parallelOnly: true,
+      solanaOhlcvFallback: {
+        solanaTracker: Boolean(process.env["SOLANATRACKER_API_KEY"]?.trim()),
+        birdeye: Boolean(process.env["BIRDEYE_API_KEY"]?.trim()),
+      },
     }
   } catch {
-    return { enabled: false, shadowMode: true, parallelOnly: true }
+    return {
+      enabled: false,
+      shadowMode: true,
+      parallelOnly: true,
+      solanaOhlcvFallback: { solanaTracker: false, birdeye: false },
+    }
   }
 }
 
@@ -738,9 +758,11 @@ function buildWarnings(
   }
 
   let recurringSkips = 0
-  for (const reasons of Object.values(snapshot.skipReasons)) {
-    for (const count of Object.values(reasons)) {
-      if (count >= 3) recurringSkips += 1
+  for (const [job, reasons] of Object.entries(snapshot.skipReasons)) {
+    for (const [reason, count] of Object.entries(reasons)) {
+      if (count < 3) continue
+      if (EXPECTED_RECURRING_SKIPS.has(`${job}/${reason}`)) continue
+      recurringSkips += 1
     }
   }
   if (recurringSkips > 0) {
@@ -960,7 +982,7 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
       + (dep.sourceHash ? ` src=${dep.sourceHash.slice(0, 19)}` : ""),
   )
   lines.push(
-    `fomo: enabled=${snapshot.fomo.enabled} shadow=${snapshot.fomo.shadowMode} (parallel-only)`,
+    `fomo: enabled=${snapshot.fomo.enabled} shadow=${snapshot.fomo.shadowMode} (parallel-only) fallback=st:${snapshot.fomo.solanaOhlcvFallback.solanaTracker} be:${snapshot.fomo.solanaOhlcvFallback.birdeye}`,
   )
 
   let jobLines = 0

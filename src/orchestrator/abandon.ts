@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { archiveLayout } from "../lib/archive.js"
@@ -25,6 +25,11 @@ export const ABANDONED_RUNNING_MS = ABANDONED_CREATED_MS
  * (resume of pre-seal is unsupported — mark failed and re-run).
  */
 export const ORPHAN_PRESEAL_NO_LOCK_MS = 30 * 60_000
+
+/** Minimum interval between automatic orphan-abandon scans from runJob */
+export const ORPHAN_ABANDON_THROTTLE_MS = 15 * 60_000
+
+const ORPHAN_ABANDON_THROTTLE_FILE = "last-orphan-abandon.json"
 
 const COMMITTED_IDX = RUN_PHASES.indexOf("committed")
 
@@ -176,5 +181,62 @@ export async function abandonOrphanedRuns(args: Readonly<{
     examined: refs.length,
     failed,
     skipped,
+  }
+}
+
+function orphanAbandonThrottlePath(home: string): string {
+  return join(home, ORPHAN_ABANDON_THROTTLE_FILE)
+}
+
+function readOrphanAbandonThrottle(home: string): number | undefined {
+  const path = orphanAbandonThrottlePath(home)
+  if (!existsSync(path)) return undefined
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as { lastAttemptAt?: unknown }
+    const t = Date.parse(typeof raw.lastAttemptAt === "string" ? raw.lastAttemptAt : "")
+    return Number.isFinite(t) ? t : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeOrphanAbandonThrottle(home: string, nowIso: string): void {
+  const path = orphanAbandonThrottlePath(home)
+  writeFileSync(path, `${JSON.stringify({
+    schema: 1,
+    lastAttemptAt: nowIso,
+  }, null, 2)}\n`, { mode: 0o600 })
+}
+
+/**
+ * Throttled orphan abandon for runJob — at most once per ORPHAN_ABANDON_THROTTLE_MS.
+ * Errors are logged and never thrown to the caller.
+ */
+export async function maybeAbandonOrphansThrottled(args: Readonly<{
+  agentRoot: string
+  archiveRoot: string
+  home?: string
+  nowIso?: string
+}>): Promise<AbandonResult | undefined> {
+  const nowIso = args.nowIso ?? systemClock.nowIso()
+  const home = args.home ?? join(homedir(), ".trenchcoat")
+  const nowMs = Date.parse(nowIso)
+  const lastMs = readOrphanAbandonThrottle(home)
+  if (lastMs !== undefined && nowMs - lastMs < ORPHAN_ABANDON_THROTTLE_MS) {
+    return undefined
+  }
+  writeOrphanAbandonThrottle(home, nowIso)
+  try {
+    return await abandonOrphanedRuns({
+      agentRoot: args.agentRoot,
+      archiveRoot: args.archiveRoot,
+      home,
+      nowIso,
+    })
+  } catch (error) {
+    log.error("orphan abandon throttle failed", {
+      detail: error instanceof Error ? error.message : "unknown",
+    })
+    return undefined
   }
 }

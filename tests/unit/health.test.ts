@@ -240,6 +240,10 @@ describe("buildHealthSnapshot", () => {
     expect(health.fomo.parallelOnly).toBe(true)
     expect(typeof health.fomo.enabled).toBe("boolean")
     expect(typeof health.fomo.shadowMode).toBe("boolean")
+    expect(health.fomo.solanaOhlcvFallback).toMatchObject({
+      solanaTracker: expect.any(Boolean),
+      birdeye: expect.any(Boolean),
+    })
     // FOMO is parallel-only: empty research/wallets still warn regardless of fomo
     expect(health.warnings.some((w) => /research queue empty/u.test(w))).toBe(true)
     expect(health.warnings.some((w) => /wallets silent/u.test(w))).toBe(true)
@@ -247,7 +251,7 @@ describe("buildHealthSnapshot", () => {
     const text = formatHealthText(health)
     expect(text).toContain("trenchcoat health")
     expect(text).toContain("research: actionable=0")
-    expect(text).toMatch(/^fomo: enabled=\S+ shadow=\S+ \(parallel-only\)$/mu)
+    expect(text).toMatch(/^fomo: enabled=\S+ shadow=\S+ \(parallel-only\) fallback=st:\S+ be:\S+$/mu)
     expect(text).not.toMatch(/TELEGRAM_|HMAC|token=/iu)
 
     const json = toHealthJsonPayload(health)
@@ -291,5 +295,49 @@ describe("buildHealthSnapshot", () => {
       r.runId === runId && r.status === "abandoned"
     ))).toBe(true)
     expect(JSON.stringify(toHealthJsonPayload(health))).not.toMatch(/sk-|secret|api[_-]?key/iu)
+  })
+
+  it("does not warn on allowlisted recurring skip reasons", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-health-allowlist-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const state = new StateStore(join(agentRoot, "state"))
+    await state.saveWatchlist({ schema: 1, entries: [] })
+    await state.saveWallets({
+      schema: 1,
+      wallets: [],
+      transitions: [],
+      pendingTransitionIds: [],
+      cursors: [],
+      exclusions: [],
+    })
+
+    for (let i = 0; i < 3; i += 1) {
+      await recordJobSkip({
+        job: "research",
+        reason: "daily-cap",
+        archiveRoot,
+        skippedAt: `2026-07-18T1${i}:00:00.000Z`,
+      })
+      await recordJobSkip({
+        job: "delivery-retry",
+        reason: "no-pending-ingress",
+        archiveRoot,
+        skippedAt: `2026-07-18T1${i}:30:00.000Z`,
+      })
+    }
+
+    const health = await buildHealthSnapshot({
+      agentRoot,
+      archiveRoot,
+      nowIso: NOW,
+      layout,
+    })
+
+    expect(health.skipReasons["research"]?.["daily-cap"]).toBe(3)
+    expect(health.skipReasons["delivery-retry"]?.["no-pending-ingress"]).toBe(3)
+    expect(health.warnings.some((w) => /recurring skip/u.test(w))).toBe(false)
   })
 })

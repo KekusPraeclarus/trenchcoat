@@ -20,7 +20,9 @@ assets, no remote fonts, no live price fetches inside the renderer.
    feature version, bar cutoff.
 4. Chart-sweep skill reads the image plus deterministic indicators. Vision output
    is interpretive evidence only.
-5. Audit treats vision claims as a separate slice; promotion never depends on
+5. PNG timeframe may be **1h** (preferred) or **15m** when 1h aggregation is too
+   gappy; both use closed bars from the archived blob only — never invented prices.
+6. Audit treats vision claims as a separate slice; promotion never depends on
    vision alone.
 
 ## Invariants

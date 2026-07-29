@@ -216,11 +216,186 @@ describe("FIFO copy-trade", () => {
       loadBars: () => bars,
       scoreCutoffHours: 0,
     })
-    expect(report.priced).toBeGreaterThanOrEqual(1)
+    expect(report.priced).toBe(1)
+    expect(report.sellOnly).toBe(0)
+    expect(report.nonPriceable).toBe(0)
+    expect(report.providerPending).toBe(0)
     expect(report.tradersScored).toBe(1)
     const store = new StateStore(join(agentRoot, "state"))
     expect(store.loadFomoTraderScores().traders[0]?.handle).toBe("alice")
     expect(store.loadWallets().wallets).toHaveLength(0)
+    const body = JSON.parse(readFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), "utf8"))
+    const buy = body.outcomes.find((o: { eventId: string }) => o.eventId === "ft_buy1")
+    const sell = body.outcomes.find((o: { eventId: string }) => o.eventId === "ft_sell1")
+    expect(buy.settlementStatus).toBe("priced")
+    expect(sell.settlementStatus).toBe("priced")
+    expect(buy.realizedReturn).toBeCloseTo(0.3)
+  })
+
+  it("counts sell-only FOMO sells without a prior buy", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-fifo-f-sellonly-"))
+    const layout = archiveLayout(root)
+    mkdirSync(layout.outcomes, { recursive: true })
+    writeFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), `${JSON.stringify({
+      schema: 1,
+      runId: "run-1",
+      outcomes: [{
+        schema: 1,
+        eventId: "ft_sell_only",
+        handle: "alice",
+        chain: "solana",
+        tokenAddress: TOKEN,
+        side: "sell",
+        tradedAt: "2026-07-01T00:00:00.000Z",
+      }],
+    }, null, 2)}\n`)
+
+    const report = await runSettleFomoCopyTrades({
+      layout,
+      nowIso: "2026-07-02T00:00:00.000Z",
+      loadBars: () => [{ ts: "2026-07-01T00:05:00.000Z", open: 10, finalized: true }],
+    })
+    expect(report.sellOnly).toBe(1)
+    expect(report.priced).toBe(0)
+    expect(report.nonPriceable).toBe(0)
+    expect(report.providerPending).toBe(0)
+    const body = JSON.parse(readFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), "utf8"))
+    expect(body.outcomes[0].settlementStatus).toBe("sell-only")
+    expect(body.outcomes[0].realizedReturn).toBeUndefined()
+  })
+
+  it("counts same-candle FOMO closes as non-priceable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-fifo-f-samecandle-"))
+    const layout = archiveLayout(root)
+    mkdirSync(layout.outcomes, { recursive: true })
+    writeFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), `${JSON.stringify({
+      schema: 1,
+      runId: "run-1",
+      outcomes: [
+        {
+          schema: 1,
+          eventId: "ft_buy",
+          handle: "alice",
+          chain: "solana",
+          tokenAddress: TOKEN,
+          side: "buy",
+          tradedAt: "2026-07-01T00:00:00.000Z",
+        },
+        {
+          schema: 1,
+          eventId: "ft_sell",
+          handle: "alice",
+          chain: "solana",
+          tokenAddress: TOKEN,
+          side: "sell",
+          tradedAt: "2026-07-01T00:03:00.000Z",
+        },
+      ],
+    }, null, 2)}\n`)
+
+    const bars: PriceBar[] = [
+      { ts: "2026-07-01T00:05:00.000Z", open: 10, finalized: true },
+    ]
+    const report = await runSettleFomoCopyTrades({
+      layout,
+      nowIso: "2026-07-02T00:00:00.000Z",
+      loadBars: () => bars,
+    })
+    expect(report.nonPriceable).toBe(1)
+    expect(report.priced).toBe(0)
+    expect(report.providerPending).toBe(0)
+    const body = JSON.parse(readFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), "utf8"))
+    expect(body.outcomes.every((o: { settlementStatus: string }) => o.settlementStatus === "non-priceable")).toBe(true)
+    expect(body.outcomes.every((o: { realizedReturn?: number }) => o.realizedReturn === undefined)).toBe(true)
+  })
+
+  it("counts missing usable bars as provider-pending", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-fifo-f-pending-"))
+    const layout = archiveLayout(root)
+    mkdirSync(layout.outcomes, { recursive: true })
+    writeFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), `${JSON.stringify({
+      schema: 1,
+      runId: "run-1",
+      outcomes: [
+        {
+          schema: 1,
+          eventId: "ft_buy",
+          handle: "alice",
+          chain: "solana",
+          tokenAddress: TOKEN,
+          side: "buy",
+          tradedAt: "2026-07-01T00:00:00.000Z",
+        },
+        {
+          schema: 1,
+          eventId: "ft_sell",
+          handle: "alice",
+          chain: "solana",
+          tokenAddress: TOKEN,
+          side: "sell",
+          tradedAt: "2026-07-01T06:00:00.000Z",
+        },
+      ],
+    }, null, 2)}\n`)
+
+    const report = await runSettleFomoCopyTrades({
+      layout,
+      nowIso: "2026-07-02T00:00:00.000Z",
+      loadBars: () => [],
+    })
+    expect(report.providerPending).toBe(1)
+    expect(report.priced).toBe(0)
+    const body = JSON.parse(readFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), "utf8"))
+    expect(body.outcomes.every((o: { settlementStatus: string }) => o.settlementStatus === "provider-pending")).toBe(true)
+  })
+
+  it("classifies one sell in each accounting bucket", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-fifo-f-buckets-"))
+    const layout = archiveLayout(root)
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    mkdirSync(layout.outcomes, { recursive: true })
+    const tokenB = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    const tokenC = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+    const tokenD = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+    writeFileSync(join(layout.outcomes, "fomo-trade-run-1.json"), `${JSON.stringify({
+      schema: 1,
+      runId: "run-1",
+      outcomes: [
+        { schema: 1, eventId: "sell_only", handle: "a", chain: "solana", tokenAddress: TOKEN, side: "sell", tradedAt: "2026-07-01T00:00:00.000Z" },
+        { schema: 1, eventId: "np_buy", handle: "b", chain: "solana", tokenAddress: tokenB, side: "buy", tradedAt: "2026-07-01T00:00:00.000Z" },
+        { schema: 1, eventId: "np_sell", handle: "b", chain: "solana", tokenAddress: tokenB, side: "sell", tradedAt: "2026-07-01T00:03:00.000Z" },
+        { schema: 1, eventId: "pp_buy", handle: "c", chain: "solana", tokenAddress: tokenC, side: "buy", tradedAt: "2026-07-01T00:00:00.000Z" },
+        { schema: 1, eventId: "pp_sell", handle: "c", chain: "solana", tokenAddress: tokenC, side: "sell", tradedAt: "2026-07-01T06:00:00.000Z" },
+        { schema: 1, eventId: "pr_buy", handle: "d", chain: "solana", tokenAddress: tokenD, side: "buy", tradedAt: "2026-07-01T00:00:00.000Z" },
+        { schema: 1, eventId: "pr_sell", handle: "d", chain: "solana", tokenAddress: tokenD, side: "sell", tradedAt: "2026-07-01T06:00:00.000Z" },
+      ],
+    }, null, 2)}\n`)
+
+    const barsFor = (token: string): PriceBar[] => {
+      if (token === TOKEN) return [{ ts: "2026-07-01T00:05:00.000Z", open: 10, finalized: true }]
+      if (token === tokenB) return [{ ts: "2026-07-01T00:05:00.000Z", open: 10, finalized: true }]
+      if (token === tokenD) {
+        return [
+          { ts: "2026-07-01T00:05:00.000Z", open: 10, finalized: true },
+          { ts: "2026-07-01T06:05:00.000Z", open: 13, finalized: true },
+        ]
+      }
+      return []
+    }
+
+    const report = await runSettleFomoCopyTrades({
+      layout,
+      nowIso: "2026-07-02T00:00:00.000Z",
+      agentRoot,
+      loadBars: ({ tokenAddress }) => barsFor(tokenAddress),
+      scoreCutoffHours: 0,
+    })
+    expect(report.sellOnly).toBe(1)
+    expect(report.nonPriceable).toBe(1)
+    expect(report.providerPending).toBe(1)
+    expect(report.priced).toBe(1)
+    expect(report.tradersScored).toBe(1)
   })
 })
 

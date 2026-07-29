@@ -27,6 +27,8 @@ read_when:
 | `COINGECKO_DEMO_KEY` | collectors | trending endpoint |
 | `HELIUS_API_KEY` | wallet jobs | Solana finalized wallet feeds |
 | `INFURA_API_KEY` | wallet jobs | Ethereum/Base finalized wallet feeds |
+| `SOLANATRACKER_API_KEY` | collectors | optional Solana OHLCV fallback when Gecko fails (preferred over Birdeye on Solana) |
+| `BIRDEYE_API_KEY` | collectors | optional OHLCV fallback — Solana last resort after SolanaTracker; primary fallback for ethereum/base/bsc |
 | `NEYNAR_API_KEY` | collectors | Farcaster feeds / engagement / research |
 | `NEYNAR_WALLET_ID` | auth farcaster --create | App wallet for FID registration (optional) |
 | `FARCASTER_APP_FID` / `FARCASTER_APP_MNEMONIC` | auth farcaster --create | Sponsors SignedKeyRequest on create (optional) |

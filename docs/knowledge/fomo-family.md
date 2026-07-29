@@ -36,7 +36,7 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
   `run-with-lock-retry fomo-trader-sync -- --skip-agent`. Not listed in
   `KEY_HEALTH_JOBS` — verify via archive run / `fomo-leaderboard` inbox, not
   `tc status` job lines.
-- `fomo-signal-scan` — feed / alerts / derived convergence & pressure;
+  - `fomo-signal-scan` — feed / alerts / derived convergence & pressure;
   trending/hot may enqueue research when gates + config allow. Native/wrap gas
   mints and reserved chain symbols never burn the daily enqueue cap
   (`max_enqueues_per_day`, default 3). Feed cards are `multi_user_buy|sell`
@@ -45,6 +45,14 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
   `archive/outcomes/fomo-trade-*.json` and settle FIFO into
   `state/fomo-trader-scores.json` (never `wallets.json`; INV-S19 / ADR 032).
   Profile `address`/`evmAddress` remain banned from wallet nomination.
+  **Score eligibility:** only FIFO-matched buy→sell pairs with two distinct
+  eligible finalized five-minute OHLCV observations receive `settlementStatus:
+  priced` and enter `fomo-trader-scores.json`. Sell-only rows (no prior buy for
+  that handle+token), same-candle holds, and other non-priceable matches are
+  annotated `sell-only` or `non-priceable` and never invent a loss or score.
+  Provider outages remain `provider-pending` and are retried on later
+  `outcomes-settle` runs. Solana bar pricing uses GeckoTerminal with
+  SolanaTracker/Birdeye fallback when configured.
 - `fomo-x-source-review` — classify nominated X accounts; host merge extracts
   historical calls for shillers (`awaiting-review-epoch`) and registers narrative
   probation for narrative/both

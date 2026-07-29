@@ -7,9 +7,9 @@ import { sha256Json } from "../lib/canonical-json.js"
 import { getChain, chainSlugFromProviderId } from "../lib/chains.js"
 import {
   fetchGeckoNewPools,
-  fetchClosedOhlcv,
   type FetchLike,
 } from "../collectors/market/geckoterminal.js"
+import { fetchSolanaAwareOhlcvPages } from "../collectors/market/ohlcv-resolve.js"
 import { fetchDexScreenerPair } from "../collectors/market/providers.js"
 import { discoverSolanaEarlyBuyers, isSolanaExecutableAccount } from "../collectors/wallets/helius-provider.js"
 import {
@@ -187,12 +187,17 @@ export async function runWalletRunnerDiscovery(args: Readonly<{
         let return6h: number | undefined
         let volume6hUsd: number | undefined
         try {
-          const candles = await fetchClosedOhlcv(fetcher, {
+          const { candles } = await fetchSolanaAwareOhlcvPages({
+            fetcher,
+            chain,
+            tokenAddress,
             network,
             poolAddress: pool.address,
             aggregateMinutes: 5,
             limit: 80,
-          }, nowSec)
+            asOfEpochSeconds: nowSec,
+            maxPages: 3,
+          })
           const metrics = sixHourReturnAndVolume(candles)
           return6h = metrics.return6h
           volume6hUsd = metrics.volume6hUsd

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest"
+import { afterEach, describe, expect, it, beforeEach } from "vitest"
 import {
   clearMarketBarPoolCache,
   createLiveSourceBarProvider,
@@ -8,6 +8,7 @@ import type { SourceCallEvent, WalletBuyOutcome } from "../../src/contracts/sche
 
 const TOKEN = "So11111111111111111111111111111111111111112"
 const PAIR = "pool111111111111111111111111111111111111111"
+const env = { ...process.env }
 
 function sourceEvent(): SourceCallEvent {
   return {
@@ -42,6 +43,11 @@ function walletBuy(): WalletBuyOutcome {
 describe("live market bar providers", () => {
   beforeEach(() => {
     clearMarketBarPoolCache()
+    process.env = { ...env }
+  })
+
+  afterEach(() => {
+    process.env = { ...env }
   })
 
   it("returns empty bars when upstream fails (never invents prices)", async () => {
@@ -86,6 +92,48 @@ describe("live market bar providers", () => {
 
     const sourceBars = createLiveSourceBarProvider(fetcher, () => "2026-07-20T00:00:00.000Z")
     const bars = await sourceBars(sourceEvent(), 72)
+    expect(bars?.length).toBeGreaterThan(0)
+    expect(bars!.every((b) => b.finalized && b.open > 0)).toBe(true)
+  })
+
+  it("recovers Solana OHLCV via SolanaTracker when GeckoTerminal returns 429", async () => {
+    process.env["SOLANATRACKER_API_KEY"] = "st-key"
+    const asOf = Math.floor(Date.parse("2026-07-20T00:00:00.000Z") / 1000)
+    const aligned = asOf - (asOf % 300) - 300
+    const fetcher = async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes("dexscreener")) {
+        return new Response(JSON.stringify({
+          pairs: [{
+            chainId: "solana",
+            pairAddress: PAIR,
+            baseToken: { address: TOKEN, symbol: "SOL", name: "Sol" },
+            quoteToken: { address: "quote", symbol: "USDC", name: "USDC" },
+            liquidity: { usd: 1_000_000 },
+            txns: { h24: { buys: 10, sells: 10 } },
+            url: "https://dexscreener.com/solana/x",
+          }],
+        }), { status: 200, headers: { "content-type": "application/json" } })
+      }
+      if (url.includes("geckoterminal")) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "0" },
+        })
+      }
+      if (url.includes("solanatracker")) {
+        return new Response(JSON.stringify({
+          ohlcv: [
+            { time: aligned - 300, open: 1, high: 1.1, low: 0.9, close: 1.05, volume: 100 },
+            { time: aligned, open: 1.05, high: 1.2, low: 1.0, close: 1.1, volume: 100 },
+          ],
+        }), { status: 200, headers: { "content-type": "application/json" } })
+      }
+      throw new Error(`unexpected url ${url}`)
+    }
+
+    const walletBars = createLiveWalletBarProvider(fetcher, () => "2026-07-20T00:00:00.000Z")
+    const bars = await walletBars(walletBuy(), 72)
     expect(bars?.length).toBeGreaterThan(0)
     expect(bars!.every((b) => b.finalized && b.open > 0)).toBe(true)
   })

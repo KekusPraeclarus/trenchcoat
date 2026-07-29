@@ -286,6 +286,23 @@ export function materializeObservation(input: MaterializeInput): OutcomeObservat
   })
 }
 
+export type CopyTradePriceability = "priced" | "non-priceable" | "provider-pending"
+
+/** Whether finalized bars can price a buy→sell leg pair without inventing returns */
+export function copyTradePriceability(args: Readonly<{
+  bars: readonly PriceBar[]
+  entryTs: string
+  exitTs: string
+}>): CopyTradePriceability {
+  const obs = observationsFromBars(args.bars)
+  if (obs.length === 0) return "provider-pending"
+  const entry = firstEligibleObservation(args.entryTs, obs)
+  const exit = firstEligibleObservation(args.exitTs, obs)
+  if (!entry || !exit) return "provider-pending"
+  if (Date.parse(exit.ts) <= Date.parse(entry.ts)) return "non-priceable"
+  return "priced"
+}
+
 /** Open-to-open return between two event timestamps (copy-trade legs) */
 export function materializeCopyTradeReturn(args: Readonly<{
   bars: readonly PriceBar[]
@@ -293,11 +310,10 @@ export function materializeCopyTradeReturn(args: Readonly<{
   exitTs: string
   feeBpsPerSide?: number
 }>): number | undefined {
+  if (copyTradePriceability(args) !== "priced") return undefined
   const obs = observationsFromBars(args.bars)
-  const entry = firstEligibleObservation(args.entryTs, obs)
-  const exit = firstEligibleObservation(args.exitTs, obs)
-  if (!entry || !exit) return undefined
-  if (Date.parse(exit.ts) <= Date.parse(entry.ts)) return undefined
+  const entry = firstEligibleObservation(args.entryTs, obs)!
+  const exit = firstEligibleObservation(args.exitTs, obs)!
   const raw = exit.open / entry.open - 1
   return args.feeBpsPerSide !== undefined
     ? applyFeeBps(raw, args.feeBpsPerSide)

@@ -112,6 +112,7 @@ import {
   hashTrackingCandidates,
 } from "../discord/tracking-hooks.js"
 import { findIncompleteRuns, nextPhase } from "./resume.js"
+import { maybeAbandonOrphansThrottled } from "./abandon.js"
 import { isQuarantined, quarantineRun } from "./quarantine.js"
 import { runResearchPasses } from "./research.js"
 import {
@@ -277,6 +278,12 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       exitCode: 3,
     }
   }
+
+  await maybeAbandonOrphansThrottled({
+    agentRoot: opts.paths.agentRoot,
+    archiveRoot: opts.paths.archiveRoot,
+    home: trenchHome,
+  })
 
   const lock = jobRequiresAgentWorkspaceLock(job.name)
     ? new WorkspaceLock(agentLockPath(opts.paths.agentRoot))

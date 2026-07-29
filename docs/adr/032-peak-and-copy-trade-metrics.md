@@ -42,6 +42,11 @@ quality scores.
    from `fomo-signal-scan` (`archive/outcomes/fomo-trade-*.json`), keyed by
    `(handle, chain, token)`. Scores live in `state/fomo-trader-scores.json`.
    Profile `address` / `evmAddress` still never enter `wallets.json`.
+   Settlement annotates each archived leg with `settlementStatus`:
+   `sell-only` (no open buy), `non-priceable` (matched but same-candle or
+   otherwise unpriceable on five-minute bars), `provider-pending` (retryable
+   bar outage), or `priced` (distinct eligible bars). Only `priced` closes
+   contribute to trader scores — never invented losses.
 
 4. **`outcomes-settle`** runs: horizon diagnostics → source peaks → wallet
    horizon diagnostics → wallet copy-trade → Fomo copy-trade → ledger settle.

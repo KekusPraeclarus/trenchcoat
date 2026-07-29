@@ -176,7 +176,9 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   deployment provenance (commit, dirty flag, schema compatibility). FOMO appears
   in a separate parallel section and never certifies legacy research/wallet
   health. Health degradation prints as warnings; config/auth/runtime integrity
-  failures still exit non-zero. `tc status --json` emits a bounded JSON payload
+  failures still exit non-zero. Allowlisted recurring skips (`research/daily-cap`,
+  `delivery-retry/no-pending-ingress`) are expected noise and omitted from the
+  recurring-skip warning. `tc status --json` emits a bounded JSON payload
   of the same snapshot. A job whose last completed run is older than 3x its
   cadence is treated as unhealthy in operator review of that snapshot.
 - Telegram `/status` — same host-derived summary (not merely `trenchcoat online`).

@@ -9,6 +9,11 @@ last_verified: 2026-07-20
 
 ## GeckoTerminal
 - OHLCV source of truth; closed candles only; pagination + new pools
+- `gatedFetchWithRetry` on OHLCV (default 3 attempts, honours `Retry-After`)
+- Solana fallback when Gecko is retryable-failed: **SolanaTracker** preferred
+  (~3 rps), then **Birdeye** (~1 rps). Non-Solana (ethereum/base/bsc): **Birdeye**
+  only. Optional `SOLANATRACKER_API_KEY` / `BIRDEYE_API_KEY`; chart-sweep sleeps
+  1500ms between subjects
 - Budget below 25/min shared gate
 
 ## DexScreener

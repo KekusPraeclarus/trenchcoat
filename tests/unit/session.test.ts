@@ -173,6 +173,8 @@ describe("prop_inv_i3_scrub_child_env", () => {
       NEYNAR_API_KEY: "ny",
       HELIUS_API_KEY: "he",
       INFURA_API_KEY: "in",
+      SOLANATRACKER_API_KEY: "st",
+      BIRDEYE_API_KEY: "be",
       DISCORD_WEBHOOK_URL: "https://discord.example/hook",
       TAVILY_API_KEY: "tavily",
     }

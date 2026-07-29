@@ -144,6 +144,10 @@ Chat *reads* (the conversational session answering from INDEX/reports) take no
 lock — they tolerate a mid-run snapshot of state. Agent state writes must go
 through the writer lock (INV-S15), except the brief-RMW exemptions above.
 
+`ops/run-with-lock-retry.sh` (installed as `run-with-lock-retry`) retries exit 3
+from workspace lock contention with `MAX_ATTEMPTS=8` and jittered delay
+`60 + (random % 241)` seconds (60–300s) between attempts.
+
 ## Run idempotency and crash consistency
 
 Every run has an **archive-authoritative journal**
@@ -157,7 +161,9 @@ sanitised code/message before exit 2. SIGTERM/SIGINT during `runJob` persist
 `signal-interrupted` before exit 143 so reload cannot leave forever-`running`
 zombies. Pre-seal resume is **not** supported — orphans are marked failed
 (`tc run fail <id>`, `tc status --heal-apply`, or `wait-idle` auto-abandon:
-pre-seal + no live lock + age ≥30m, or any running age ≥6h). Phases are fsynced
+pre-seal + no live lock + age ≥30m, or any running age ≥6h). `runJob` also calls
+`maybeAbandonOrphansThrottled` before lock acquire (≤1 scan per 15m) to fail
+orphans without operator action. Phases are fsynced
 and atomically renamed. Recovery resumes post-seal incomplete phases only; it
 does not replay earlier side effects. Periodic Git (`tc backup`) is backup-only
 and never gates completion.
@@ -198,7 +204,9 @@ FOMO is a separate parallel section and cannot declare legacy arms healthy.
 Health warnings are non-fatal; preflight/config/runtime failures still exit
 non-zero. Review keeps empty queues, silent wallets, stale FC, and recurring
 skips in scope even without agent report directories (cadence remains once-daily
-07:00).
+07:00). Expected recurring skips (`research/daily-cap`,
+`delivery-retry/no-pending-ingress`) stay in the skip ledger but do not emit
+the recurring-skip warning.
 
 **INDEX reconcile** — host `reconcileIndex` rewrites `state/INDEX.md` (integrity-
 protected) after accepted decision proposals (watchlist mutations), after
@@ -563,7 +571,7 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/market-bars.ts` — live DexScreener/GeckoTerminal BarProviders
 - `src/orchestrator/outcomes-settle.ts` — peak shills + wallet/Fomo copy-trade + horizon diagnostics + ledger entry finalisation (ADR 031/032)
 - `src/orchestrator/settle-decisions.ts` — decision-bundle → `outcomes/decision/…` (harness mining / canary consumer)
-- `src/orchestrator/settle-source-peaks.ts` / `settle-wallet-copy-trades.ts` / `settle-fomo-copy-trades.ts` — ADR 032 settlers
+- `src/orchestrator/settle-source-peaks.ts` / `settle-wallet-copy-trades.ts` / `settle-fomo-copy-trades.ts` — ADR 032 settlers. Fomo copy-trade reports `sellOnly`, `nonPriceable`, `providerPending`, and `priced` (no `pendingBars`); only `priced` rows write `fomo-trader-scores.json`.
 - `src/orchestrator/settle-ledger.ts` — entry-pending → open at first post-decision bar
 - `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
   calibration, source attribution (ledger marking via outcomes-settle)

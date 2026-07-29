@@ -7,9 +7,9 @@
 import { getChain, type ChainEntry } from "../lib/chains.js"
 import { searchDexScreener, type MarketPair } from "../collectors/market/providers.js"
 import {
-  fetchClosedOhlcvPages,
   type FetchLike,
 } from "../collectors/market/geckoterminal.js"
+import { fetchSolanaAwareOhlcvPages } from "../collectors/market/ohlcv-resolve.js"
 import type { SourceCallEvent, WalletBuyOutcome, CanonicalIdentity } from "../contracts/schemas.js"
 import type { BarProvider, PriceBar } from "./observations.js"
 
@@ -127,17 +127,17 @@ async function loadBarsForToken(
     const needCandles = Math.ceil((needHours * 60) / 5) + 12
     const limit = Math.min(CANDLES_PER_PAGE, Math.max(100, needCandles))
     const maxPages = needHours >= 168 ? 24 : MAX_OHLCV_PAGES
-    const candles = await fetchClosedOhlcvPages(
+    const { candles } = await fetchSolanaAwareOhlcvPages({
       fetcher,
-      {
-        network: chain.geckoterminalNetwork,
-        poolAddress: pool,
-        aggregateMinutes: 5,
-        limit,
-      },
-      asOf,
+      chain: chain.slug,
+      tokenAddress,
+      network: chain.geckoterminalNetwork,
+      poolAddress: pool,
+      aggregateMinutes: 5,
+      limit,
+      asOfEpochSeconds: asOf,
       maxPages,
-    )
+    })
     return candlesToBars(candles)
   } catch {
     return []

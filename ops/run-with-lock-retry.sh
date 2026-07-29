@@ -17,7 +17,7 @@ shift
 
 TC="${TRENCHCOAT_BIN:-$HOME/.trenchcoat/bin/trenchcoat}"
 PAUSE_FILE="${TRENCHCOAT_HOME:-$HOME/.trenchcoat}/deploy-pause.json"
-MAX_ATTEMPTS=3
+MAX_ATTEMPTS=8
 attempt=1
 
 # Match src/lib/deploy-pause.ts DEPLOY_PAUSE_MAX_AGE_MS (45m) — clear orphans
@@ -64,7 +64,7 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
     exit 3
   fi
   r="$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')"
-  delay=$((30 + (r % 151)))
+  delay=$((60 + (r % 241)))
   echo "workspace lock held; retry $attempt/${MAX_ATTEMPTS} in ${delay}s" >&2
   sleep "$delay"
   attempt=$((attempt + 1))

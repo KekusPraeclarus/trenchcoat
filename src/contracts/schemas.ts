@@ -934,6 +934,14 @@ export const WalletBuyOutcomeSchema = z.object({
 })
 export type WalletBuyOutcome = z.infer<typeof WalletBuyOutcomeSchema>
 
+export const FomoTradeSettlementStatusSchema = z.enum([
+  "sell-only",
+  "non-priceable",
+  "provider-pending",
+  "priced",
+])
+export type FomoTradeSettlementStatus = z.infer<typeof FomoTradeSettlementStatusSchema>
+
 /** Fomo feed trade (handle-keyed; never enters wallets.json) */
 export const FomoTradeOutcomeSchema = z.object({
   schema: z.literal(1),
@@ -943,6 +951,7 @@ export const FomoTradeOutcomeSchema = z.object({
   tokenAddress: AddressSchema,
   side: WalletTradeSideSchema,
   tradedAt: IsoTimestampSchema,
+  settlementStatus: FomoTradeSettlementStatusSchema.optional(),
   settledAt: IsoTimestampSchema.optional(),
   realizedReturn: z.number().optional(),
   linkedBuyEventId: SafeIdSchema.optional(),
