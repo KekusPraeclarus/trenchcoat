@@ -573,6 +573,7 @@ export async function runTelegramOverviewDistiller(
  */
 export async function runTelegramDailyDigestDistiller(args: Readonly<{
   packet: DailyDigestPacket
+  titleLondonDate: string
   dailyCap: number
   usedToday: number
   runSession?: DistillSessionRunner
@@ -606,7 +607,7 @@ export async function runTelegramDailyDigestDistiller(args: Readonly<{
     const checked = validateTelegramDailyDigestOutput(raw, activeSlugs)
     if (!checked.ok) return empty(checked.reason, used)
     const rendered = renderDailyDigestMarkdown({
-      londonDate: args.packet.londonDate,
+      londonDate: args.titleLondonDate,
       narratives: args.packet.activeNarratives,
       sectionsBySlug: Object.fromEntries(
         checked.sections.map((section) => [section.slug, section.body]),

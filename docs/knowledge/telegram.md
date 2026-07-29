@@ -25,8 +25,9 @@ last_verified: 2026-07-24
   after worthiness. Cap miss → packet/fallback text, still delivered. The daily
   **narrative map** is a separate host-only `narrative.digest` at 04:00
   Europe/London (`broadcast.telegram_digest.enabled`) covering retention-active
-  narratives that had a host-approved Telegram development in the window
-  (≤3,400 chars); quiet actives are omitted rather than padded with
+  narratives that had a host-approved Telegram development in the prior
+  04:00→04:00 London window (title uses the activity day, not the delivery
+  day; ≤3,400 chars); quiet actives are omitted rather than padded with
   "nothing happened". Discord receives the same rendered text as Telegram
   leaders (ADR 041); daily digest stays Telegram-only
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,

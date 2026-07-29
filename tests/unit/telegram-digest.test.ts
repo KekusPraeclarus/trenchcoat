@@ -7,6 +7,7 @@ import { Outbox } from "../../src/lib/outbox.js"
 import { buildBroadcastRouterEvent, buildNarrativeDigestRouterEvent } from "../../src/orchestrator/router.js"
 import {
   digestWindowForLondonDate,
+  digestActivityLondonDate,
   extractDigestSourceEvents,
   londonDateKey,
   londonLocalToUtcMs,
@@ -48,6 +49,11 @@ describe("London digest window", () => {
   it("does not backfill older days on a late timer", () => {
     const late = new Date("2026-07-18T22:30:00.000Z") // 23:30 BST
     expect(resolveDigestLondonDate(late)).toBe("2026-07-18")
+  })
+
+  it("labels the digest title with the activity day, not the delivery day", () => {
+    expect(digestActivityLondonDate("2026-07-29")).toBe("2026-07-28")
+    expect(digestActivityLondonDate("2026-01-15")).toBe("2026-01-14")
   })
 })
 
@@ -137,7 +143,7 @@ describe("prepareTelegramDigest", () => {
     expect(launches).toBe(1)
     expect(first.record.event?.type).toBe("narrative.digest")
     expect(first.record.event?.channels?.discord).toBeUndefined()
-    expect(first.record.event?.text).toContain("**Daily narrative map")
+    expect(first.record.event?.text).toContain("**Daily narrative map — 2026-07-17**")
     expect(first.record.event?.text).toContain("**RH Chain Meme Rotation — peaking**")
     expect(first.record.event?.text).not.toContain("agent title ignored")
     expect(first.record.event?.text).not.toContain("No host-approved development")

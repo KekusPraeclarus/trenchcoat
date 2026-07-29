@@ -147,6 +147,11 @@ export function previousLondonDate(londonDate: string): string {
   return londonDateKey(new Date(midnight - 1))
 }
 
+/** Calendar date of activity summarized by a digest (prior 04:00→04:00 London window). */
+export function digestActivityLondonDate(londonDate: string): string {
+  return previousLondonDate(londonDate)
+}
+
 /**
  * Latest London calendar date whose 04:00 cutoff is not after `now`.
  * A late timer only produces this latest missed day.
@@ -330,6 +335,7 @@ export async function prepareTelegramDigest(args: Readonly<{
 }>> {
   const now = new Date(args.nowIso)
   const londonDate = resolveDigestLondonDate(now)
+  const activityLondonDate = digestActivityLondonDate(londonDate)
   const existing = loadDigestRecord(args.layout, londonDate)
   if (existing) {
     return {
@@ -446,6 +452,7 @@ export async function prepareTelegramDigest(args: Readonly<{
       activeNarratives: interesting,
       developmentsBySlug: developments,
     },
+    titleLondonDate: activityLondonDate,
     dailyCap: args.dailyCap,
     usedToday,
     enabled: args.enabled,
@@ -458,7 +465,7 @@ export async function prepareTelegramDigest(args: Readonly<{
       distilled.sections.map((section) => [section.slug, section.body]),
     )
     const rendered = renderDailyDigestMarkdown({
-      londonDate,
+      londonDate: activityLondonDate,
       narratives: interesting,
       sectionsBySlug,
     })
@@ -470,7 +477,7 @@ export async function prepareTelegramDigest(args: Readonly<{
 
   if (text === null) {
     text = renderDailyDigestCompactFallback({
-      londonDate,
+      londonDate: activityLondonDate,
       narratives: interesting,
       developmentsBySlug: developments,
     })
