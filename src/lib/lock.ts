@@ -18,8 +18,27 @@ export const AGENT_LOCK_EXEMPT_JOBS = Object.freeze(new Set([
   "wallet-review",
 ]))
 
+/**
+ * Lock-exempt jobs that still need single-instance concurrency control via a
+ * job-scoped mutex under `~/.trenchcoat/locks/` (not `agent/.lock`).
+ * Catch-up `outcomes-settle` against a large wallet-buy backlog can run for
+ * hours; without this mutex, timer + manual kicks stack and thrash bar APIs.
+ */
+export const JOB_MUTEX_JOBS = Object.freeze(new Set([
+  "outcomes-settle",
+]))
+
 export function jobRequiresAgentWorkspaceLock(job: string): boolean {
   return !AGENT_LOCK_EXEMPT_JOBS.has(job)
+}
+
+export function jobRequiresJobMutex(job: string): boolean {
+  return JOB_MUTEX_JOBS.has(job)
+}
+
+/** `~/.trenchcoat/locks/<job>.lock` (+ `.owner`) for JOB_MUTEX_JOBS */
+export function jobMutexPath(home: string, job: string): string {
+  return join(home, "locks", `${job}.lock`)
 }
 
 /** Exclusive workspace lock via O_EXCL owner file. Stale pid owners are cleared. */

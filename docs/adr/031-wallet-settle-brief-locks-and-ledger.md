@@ -59,6 +59,10 @@ ledger path.
   still take a long wall-clock time (live Dex/Gecko pricing). After this
   ADR it must **not** hold `agent/.lock` for that duration — killing an
   old full-lock settle mid-flight is correct ops when it starves scans.
+- Single-instance control for that long settle uses a **job mutex**
+  (`~/.trenchcoat/locks/outcomes-settle.lock`), not `agent/.lock`. Orphan
+  abandon must not apply the 30m no-`agent/.lock` rule to
+  `outcomes-settle` journals (24h hard age only).
 - Deploy required before live timers benefit; local code alone does not
   change VPS runtime.
 

@@ -7,7 +7,12 @@ import {
   DEPLOY_PAUSE_MAX_RUNNING_MS,
   isDeployPaused,
 } from "../lib/deploy-pause.js"
-import { agentLockPath, signalWorkspaceLockHolder } from "../lib/lock.js"
+import {
+  agentLockPath,
+  jobMutexPath,
+  JOB_MUTEX_JOBS,
+  signalWorkspaceLockHolder,
+} from "../lib/lock.js"
 import { log } from "../lib/log.js"
 import { RUN_PHASES, markRunFailed, type RunJournal } from "./journal.js"
 import { createJournalStore } from "./journal-store.js"
@@ -19,6 +24,13 @@ import {
 
 /** Any still-running journal older than this is treated as an orphan */
 export const ABANDONED_RUNNING_MS = ABANDONED_CREATED_MS
+
+/**
+ * Catch-up `outcomes-settle` can price a large wallet-buy backlog for many
+ * hours (ADR 031). Do not hard-abandon while under this age — the job is
+ * agent-lock exempt and intentionally long-running.
+ */
+export const OUTCOMES_SETTLE_ABANDON_MS = 24 * 3_600_000
 
 /**
  * Pre-seal journals with no live writer lock after this age are SIGTERM orphans
@@ -38,8 +50,20 @@ export function isPreSealPhase(phase: IncompleteRunRef["phase"]): boolean {
   return idx >= 0 && idx < COMMITTED_IDX
 }
 
-export function workspaceLockHeldAlive(agentRoot: string): boolean {
-  const ownerPath = `${agentLockPath(agentRoot)}.owner`
+/** Job name prefix of a run id (`outcomes-settle-2026-…` → `outcomes-settle`) */
+export function jobNameFromRunId(runId: string): string | undefined {
+  const stamp = runId.match(/-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/u)
+  if (!stamp || stamp.index === undefined || stamp.index === 0) return undefined
+  return runId.slice(0, stamp.index)
+}
+
+export function hardAbandonAgeMs(runId: string): number {
+  return jobNameFromRunId(runId) === "outcomes-settle"
+    ? OUTCOMES_SETTLE_ABANDON_MS
+    : ABANDONED_RUNNING_MS
+}
+
+function pidAliveFromOwnerFile(ownerPath: string): boolean {
   if (!existsSync(ownerPath)) return false
   const pid = Number(readFileSync(ownerPath, "utf8").trim())
   if (!Number.isInteger(pid) || pid <= 0) return false
@@ -51,6 +75,32 @@ export function workspaceLockHeldAlive(agentRoot: string): boolean {
   }
 }
 
+export function workspaceLockHeldAlive(agentRoot: string): boolean {
+  return pidAliveFromOwnerFile(`${agentLockPath(agentRoot)}.owner`)
+}
+
+/** True when a JOB_MUTEX_JOBS mutex owner pid is still alive */
+export function jobMutexHeldAlive(home: string, job: string): boolean {
+  if (!JOB_MUTEX_JOBS.has(job)) return false
+  return pidAliveFromOwnerFile(`${jobMutexPath(home, job)}.owner`)
+}
+
+/**
+ * Agent-lock-exempt jobs that hold a job mutex must not be treated as
+ * pre-seal orphans just because `agent/.lock` is free (ADR 031).
+ */
+export function skipPreSealNoLockAbandon(args: Readonly<{
+  runId: string
+  home?: string
+}>): boolean {
+  const job = jobNameFromRunId(args.runId)
+  if (!job || !JOB_MUTEX_JOBS.has(job)) return false
+  if (args.home && jobMutexHeldAlive(args.home, job)) return true
+  // Even without a live mutex (legacy pre-mutex process), do not apply the
+  // 30m no-lock rule — only the longer hard age cap may abandon these jobs.
+  return true
+}
+
 export function shouldAbandonIncomplete(args: Readonly<{
   ref: IncompleteRunRef
   lockHeld: boolean
@@ -58,6 +108,8 @@ export function shouldAbandonIncomplete(args: Readonly<{
   includeCreatedAbandoned?: boolean
   /** When true, fail long-running journals even if the workspace lock is live */
   deployPauseActive?: boolean
+  /** Host home for job-mutex liveness (`~/.trenchcoat`) */
+  home?: string
 }>): boolean {
   const { ref, lockHeld } = args
   if (ref.status === "abandoned") return args.includeCreatedAbandoned === true
@@ -67,8 +119,13 @@ export function shouldAbandonIncomplete(args: Readonly<{
   if (args.deployPauseActive === true && ageMs >= DEPLOY_PAUSE_MAX_RUNNING_MS) {
     return true
   }
-  if (ageMs >= ABANDONED_RUNNING_MS) return true
-  if (isPreSealPhase(ref.phase) && !lockHeld && ageMs >= ORPHAN_PRESEAL_NO_LOCK_MS) {
+  if (ageMs >= hardAbandonAgeMs(ref.runId)) return true
+  if (
+    isPreSealPhase(ref.phase)
+    && !lockHeld
+    && ageMs >= ORPHAN_PRESEAL_NO_LOCK_MS
+    && !skipPreSealNoLockAbandon({ runId: ref.runId, ...(args.home ? { home: args.home } : {}) })
+  ) {
     return true
   }
   return false
@@ -131,6 +188,7 @@ export async function abandonOrphanedRuns(args: Readonly<{
     if (!shouldAbandonIncomplete({
       ref,
       lockHeld,
+      home,
       deployPauseActive,
       ...(args.includeCreatedAbandoned ? { includeCreatedAbandoned: true } : {}),
     })) {

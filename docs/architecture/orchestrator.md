@@ -161,9 +161,13 @@ sanitised code/message before exit 2. SIGTERM/SIGINT during `runJob` persist
 `signal-interrupted` before exit 143 so reload cannot leave forever-`running`
 zombies. Pre-seal resume is **not** supported — orphans are marked failed
 (`tc run fail <id>`, `tc status --heal-apply`, or `wait-idle` auto-abandon:
-pre-seal + no live lock + age ≥30m, or any running age ≥6h). `runJob` also calls
-`maybeAbandonOrphansThrottled` before lock acquire (≤1 scan per 15m) to fail
-orphans without operator action. Phases are fsynced
+pre-seal + no live lock + age ≥30m for agent-lock jobs, or any running age ≥6h;
+`outcomes-settle` is exempt from the 30m no-lock rule and uses a 24h hard age
+cap because catch-up pricing is intentionally long and agent-lock-free).
+`outcomes-settle` also takes a job mutex under `~/.trenchcoat/locks/` so a
+second timer/manual kick exits 3 (`run-with-lock-retry`) instead of stacking.
+`runJob` also calls `maybeAbandonOrphansThrottled` before lock acquire (≤1 scan
+per 15m) to fail orphans without operator action. Phases are fsynced
 and atomically renamed. Recovery resumes post-seal incomplete phases only; it
 does not replay earlier side effects. Periodic Git (`tc backup`) is backup-only
 and never gates completion.

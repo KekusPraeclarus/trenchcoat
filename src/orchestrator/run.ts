@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { WorkspaceLock, agentLockPath, jobRequiresAgentWorkspaceLock } from "../lib/lock.js"
+import { WorkspaceLock, agentLockPath, jobMutexPath, jobRequiresAgentWorkspaceLock, jobRequiresJobMutex } from "../lib/lock.js"
 import { isDeployPaused, noteDeferredJob } from "../lib/deploy-pause.js"
 import { createRunId } from "../lib/run-id.js"
 import {
@@ -296,6 +296,18 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       exitCode: 3,
     }
   }
+  const jobMutex = jobRequiresJobMutex(job.name)
+    ? new WorkspaceLock(jobMutexPath(trenchHome, job.name))
+    : null
+  if (jobMutex && !jobMutex.tryAcquire()) {
+    lock?.release()
+    log.error("job mutex held", { job: job.name })
+    return {
+      runId: "none",
+      journal: createRunJournal("lock-held"),
+      exitCode: 3,
+    }
+  }
   // Improvement lanes keep journals archive-only so they never contend on agent/reports
   const mirrorJournalToAgent = jobRequiresAgentWorkspaceLock(job.name)
 
@@ -337,6 +349,11 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           detail: error instanceof Error ? error.message : "unknown",
         })
       } finally {
+        try {
+          jobMutex?.release()
+        } catch {
+          // already released
+        }
         try {
           lock?.release()
         } catch {
@@ -2148,7 +2165,10 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
   } finally {
     process.off("SIGTERM", onSignal)
     process.off("SIGINT", onSignal)
-    if (!signalHandled) lock?.release()
+    if (!signalHandled) {
+      jobMutex?.release()
+      lock?.release()
+    }
     if (drainResearchAfter && job.name !== "research") {
       scheduleResearchDrain(opts.paths)
     }

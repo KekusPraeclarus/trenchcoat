@@ -15,6 +15,7 @@ import {
   shouldAbandonIncomplete,
   ORPHAN_PRESEAL_NO_LOCK_MS,
   ABANDONED_RUNNING_MS,
+  OUTCOMES_SETTLE_ABANDON_MS,
   failRunJournal,
   abandonOrphanedRuns,
 } from "../../src/orchestrator/abandon.js"
@@ -73,6 +74,39 @@ describe("orphan abandon predicates", () => {
       },
       lockHeld: true,
     })).toBe(false)
+  })
+
+  it("does not fail outcomes-settle on the 30m no-lock rule", () => {
+    expect(shouldAbandonIncomplete({
+      ref: {
+        runId: "outcomes-settle-2026-07-29T15-31-44-222Z",
+        status: "running",
+        phase: "integrity-checked",
+        ageMs: ORPHAN_PRESEAL_NO_LOCK_MS,
+      },
+      lockHeld: false,
+    })).toBe(false)
+  })
+
+  it("fails outcomes-settle only after the 24h hard age cap", () => {
+    expect(shouldAbandonIncomplete({
+      ref: {
+        runId: "outcomes-settle-2026-07-29T15-31-44-222Z",
+        status: "running",
+        phase: "integrity-checked",
+        ageMs: OUTCOMES_SETTLE_ABANDON_MS - 1,
+      },
+      lockHeld: false,
+    })).toBe(false)
+    expect(shouldAbandonIncomplete({
+      ref: {
+        runId: "outcomes-settle-2026-07-29T15-31-44-222Z",
+        status: "running",
+        phase: "integrity-checked",
+        ageMs: OUTCOMES_SETTLE_ABANDON_MS,
+      },
+      lockHeld: false,
+    })).toBe(true)
   })
 
   it("fails any running journal past the hard age cap", () => {
@@ -211,5 +245,30 @@ describe("failRunJournal / abandonOrphanedRuns", () => {
     expect(result.failed).toContain(runId)
     expect((await store.load(runId))?.status).toBe("failed")
     expect(existsSync(join(agentRoot, ".lock"))).toBe(false)
+  })
+
+  it("does not abandon a mid-flight outcomes-settle when agent lock is free", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-settle-no-orphan-"))
+    const archiveRoot = join(root, "archive")
+    const agentRoot = join(root, "agent")
+    mkdirSync(agentRoot, { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const store = createJournalStore(layout)
+    const runId = "outcomes-settle-2026-07-29T15-31-44-222Z"
+    let journal = createRunJournal(runId)
+    journal = advanceRunJournal(journal, "collected", sha256Json({ ok: true }))
+    journal = advanceRunJournal(journal, "agent-checked", sha256Json({ skipped: true }))
+    journal = advanceRunJournal(journal, "integrity-checked", sha256Json({ ok: true }))
+    await store.save(journal)
+
+    // Age from runId (~15:31) vs now 17:30 → >30m, still under 24h hard cap
+    const result = await abandonOrphanedRuns({
+      agentRoot,
+      archiveRoot,
+      nowIso: "2026-07-29T17:30:00.000Z",
+    })
+    expect(result.failed).not.toContain(runId)
+    expect(result.skipped).toContain(runId)
+    expect((await store.load(runId))?.status).toBe("running")
   })
 })
