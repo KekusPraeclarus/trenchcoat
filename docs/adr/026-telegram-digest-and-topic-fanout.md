@@ -32,13 +32,13 @@ Telegram has two independent output modes:
 2. **Daily** — one host-only `telegram-digest` job at **04:00 Europe/London**
    (VPS systemd calendar timer only; was 20:00 before ADR 041). Emits a Telegram-only `narrative.digest`
    covering retention-active narratives that had a host-approved Telegram
-   development in the prior 20:00→20:00 London window. Quiet active narratives
+   development in the prior 04:00→04:00 London window. Quiet active narratives
    are omitted — absence is the signal; never pad with "no development" filler.
-   Immutable ledger at `archive/telegram-digests/<London-date>.json`. Day-keyed
+   One paragraph per section; host may deliver across multiple Telegram
+   messages without page labels but never splits a section. Immutable ledger at
+   `archive/telegram-digests/<London-date>.json`. Day-keyed
    `eventId`; retries reuse the exact stored event. No active narratives, or
-   active but no window developments → durable no-send record. Listed
-   development headers alone over capacity → `capacity-exceeded`, run incident,
-   failed job (never silent truncate or split).
+   active but no window developments → durable no-send record.
 
 Worthiness history is subject-scoped for 48h and includes accepted **plus**
 still-staged candidates. Reworded same-catalyst rejects; genuinely new

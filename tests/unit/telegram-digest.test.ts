@@ -284,7 +284,7 @@ describe("prepareTelegramDigest", () => {
     expect(prepared.record.event?.text).not.toContain("No host-approved development")
   })
 
-  it("fails capacity-exceeded without staging when development headers cannot fit", async () => {
+  it("uses compact fallback without truncating section bodies on busy days", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-digest-cap-"))
     const agentRoot = join(root, "agent")
     mkdirSync(agentRoot, { recursive: true })
@@ -341,10 +341,14 @@ describe("prepareTelegramDigest", () => {
         throw new Error("model unavailable")
       },
     })
-    expect(prepared.record.outcome).toBe("capacity-exceeded")
-    expect(prepared.record.event).toBeUndefined()
+    expect(prepared.record.outcome).toBe("prepared")
+    expect(prepared.record.renderMethod).toBe("fallback")
+    expect(prepared.record.event?.text).toContain("very-long-narrative-label-number-0")
+    expect(prepared.record.event?.text).toContain("moved")
     const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
     expect(outbox.list()).toHaveLength(0)
+    await stageTelegramDigestEvent({ layout, runId: RUN_ID, record: prepared.record })
+    expect(outbox.list()).toHaveLength(1)
   })
 
   it("selects sources by receipt deliveredAt inside the window", async () => {

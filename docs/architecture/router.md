@@ -79,7 +79,7 @@ internal-only narrative/decision invalidations). Host `renderChannelPayloads`
 | Destination | Source |
 |---|---|
 | Telegram (intraday) | One fail-closed **short topic paragraph** per normalized `auditClaim.subject` per run when `broadcast.telegram_overview.enabled` (bounded topic packet only — never the global chat report; ≤800 chars; no section headers / bullet briefings; no other-narrative inventory; no host plumbing / workspace paths / provenance or bare @handles); on miss uses packet fallback. Same-subject followers omit `channels.telegram` (`topic-merged`). No daily message-count limit |
-| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one message (≤3,400 chars); quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId` |
+| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one or more messages (one paragraph per section; section-aware split, no page labels); quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId` |
 | Discord | Same text as Telegram when `channels.telegram` is set (`forwarded`); topic-merged followers omit both destinations |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
@@ -107,6 +107,8 @@ Discord mirrors Telegram leaders only (ADR 041).
   Host never truncates — `telegramSendFormattedChunks` in `src/lib/telegram-bot.ts`
   chunks at ~3400 chars of markdown on paragraph boundaries (numbered `1/n` …),
   used by router fanout (`src/router/deliver.ts`) and the operator chat listener.
+  Daily `narrative.digest` uses `telegramSendDailyDigestChunks` instead: section-
+  aware packing with no page labels and no section splits.
   Chat replies longer than ~7600 chars also persist under `agent/reports/chat/`
   with a short summary pointing at the file.
 - Discord: webhook `wait=true`, `allowed_mentions.parse=[]`. Soft chunk ~1900

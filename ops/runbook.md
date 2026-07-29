@@ -312,12 +312,12 @@ predeploy backup only when migration itself corrupted host state.
 - **Daily Telegram digest** — VPS systemd timer `trenchcoat-job-telegram-digest`
   at 04:00 Europe/London (`broadcast.telegram_digest.enabled`). Inspect
   `archive/telegram-digests/<London-date>.json` for `prepared` /
-  `no-active-narratives` / `no-window-developments` / `capacity-exceeded`.
-  Quiet actives (no host-approved Telegram development in the window) are
-  omitted from the map — absence is the signal. Retries reuse the immutable
-  event (same `eventId` / payload). Capacity overflow fails the job with a run
-  incident — never silent truncate. Manual: `trenchcoat run telegram-digest`
-  (Linux). Do **not** load a Mac launchd timer while the VPS is production.
+  `no-active-narratives` / `no-window-developments`. Quiet actives (no
+  host-approved Telegram development in the window) are omitted from the map —
+  absence is the signal. Retries reuse the immutable event (same `eventId` /
+  payload). Delivery may span multiple Telegram messages but never splits a
+  section. Manual: `trenchcoat run telegram-digest` (Linux). Do **not** load a
+  Mac launchd timer while the VPS is production.
 - **Adding a Telegram channel** — add to `~/.trenchcoat/config.json` under
   `telegram_channels` with `mode: "preview"` (preferred). Restart
   **`com.trenchcoat.channels`** (`launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels`),

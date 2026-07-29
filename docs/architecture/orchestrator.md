@@ -474,14 +474,13 @@ staged router events.
   Severity `lifecycle` (wallet add/drop) skips channel render and is never distilled
 - Host-only `telegram-digest` (04:00 Europe/London, VPS systemd) emits one
   Telegram-only `narrative.digest` covering retention-active narratives that
-  had a host-approved Telegram development in the window (≤3,400 Markdown
-  chars). Quiet actives are omitted — no "nothing happened" filler. Immutable
-  ledger under `archive/telegram-digests/<London-date>.json`. No active
-  narratives, or active but no window developments → durable no-send record.
-  Listed development headers alone over capacity → `capacity-exceeded` incident
-  and failed job (never silent truncate). Retries reuse the exact stored event
-- Send failures never fail the run (except digest capacity-exceeded); durable
-  fanout retries with dead-letter visibility
+  had a host-approved Telegram development in the window (one paragraph per
+  section; section-aware multi-message delivery without page labels). Quiet
+  actives are omitted — no "nothing happened" filler. Immutable ledger under
+  `archive/telegram-digests/<London-date>.json`. No active narratives, or active
+  but no window developments → durable no-send record. Retries reuse the exact
+  stored event
+- Send failures never fail the run; durable fanout retries with dead-letter visibility
 
 ### Broadcast audit (proposals vs fanout)
 

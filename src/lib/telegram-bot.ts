@@ -3,6 +3,7 @@
 import { formatTelegramOperatorText, stripLocalWorkspaceRefs } from "./telegram-format.js"
 import { deslugNarrativeLabelsInText } from "./narrative-label.js"
 import { scrubLeakedHourHorizons } from "./watch-window.js"
+import { parseDailyDigestUnits } from "../orchestrator/distill-session.js"
 
 export type TelegramBotFetcher = (
   url: string,
@@ -132,9 +133,28 @@ export async function telegramSendFormattedChunks(
   chatId: string,
   text: string,
   limit = TELEGRAM_SAFE_CHUNK,
+  opts?: Readonly<{ numbered?: boolean }>,
 ): Promise<{ parts: number; messageIds: string[] }> {
   const mdLimit = Math.max(64, Math.min(limit, TELEGRAM_SAFE_CHUNK) - 400)
-  const parts = splitTelegramText(stripLocalWorkspaceRefs(text), mdLimit)
+  const parts = splitTelegramText(stripLocalWorkspaceRefs(text), mdLimit, opts)
+  const messageIds: string[] = []
+  for (const part of parts) {
+    const result = await telegramSendOperatorMessage(fetcher, token, chatId, part)
+    if (result.messageId) messageIds.push(result.messageId)
+  }
+  return { parts: parts.length, messageIds }
+}
+
+/** Daily digest fanout: section-aware chunks, no page labels. */
+export async function telegramSendDailyDigestChunks(
+  fetcher: TelegramBotFetcher,
+  token: string,
+  chatId: string,
+  text: string,
+  limit = TELEGRAM_SAFE_CHUNK,
+): Promise<{ parts: number; messageIds: string[] }> {
+  const mdLimit = Math.max(64, Math.min(limit, TELEGRAM_SAFE_CHUNK) - 400)
+  const parts = splitDailyDigestTelegramText(stripLocalWorkspaceRefs(text), mdLimit)
   const messageIds: string[] = []
   for (const part of parts) {
     const result = await telegramSendOperatorMessage(fetcher, token, chatId, part)
@@ -157,10 +177,37 @@ export async function telegramSendOperatorMessageChunks(
 
 /**
  * Split text into Telegram-safe chunks at paragraph boundaries.
- * Numbered `1/n` … when more than one part. Prefers not to break fenced
- * code blocks; falls back to hard splits when a single block exceeds the limit.
+ * Numbered `1/n` … when more than one part (unless `numbered: false`).
+ * Prefers not to break fenced code blocks; falls back to hard splits when a
+ * single block exceeds the limit.
  */
 export function splitTelegramText(
+  text: string,
+  limit = TELEGRAM_SAFE_CHUNK,
+  opts?: Readonly<{ numbered?: boolean }>,
+): string[] {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return [""]
+  if (!Number.isSafeInteger(limit) || limit < 64) {
+    throw new TypeError("telegram chunk limit must be an integer >= 64")
+  }
+  if (trimmed.length <= limit) return [trimmed]
+
+  const numbered = opts?.numbered !== false
+  const prefixBudget = (total: number, index: number): number => {
+    if (!numbered || total <= 1) return 0
+    return `${index + 1}/${total}\n`.length
+  }
+
+  const units = splitPreserveCodeFences(trimmed)
+  const packed = packUnits(units, limit, prefixBudget)
+  if (packed.length <= 1 || !numbered) return packed
+
+  return packed.map((body, index) => `${index + 1}/${packed.length}\n${body}`)
+}
+
+/** Pack a daily digest across Telegram messages without splitting sections. */
+export function splitDailyDigestTelegramText(
   text: string,
   limit = TELEGRAM_SAFE_CHUNK,
 ): string[] {
@@ -171,16 +218,11 @@ export function splitTelegramText(
   }
   if (trimmed.length <= limit) return [trimmed]
 
-  const prefixBudget = (total: number, index: number): number => {
-    if (total <= 1) return 0
-    return `${index + 1}/${total}\n`.length
+  const units = parseDailyDigestUnits(trimmed)
+  if (units.length === 0) {
+    return splitTelegramText(trimmed, limit, { numbered: false })
   }
-
-  const units = splitPreserveCodeFences(trimmed)
-  const packed = packUnits(units, limit, prefixBudget)
-  if (packed.length <= 1) return packed
-
-  return packed.map((body, index) => `${index + 1}/${packed.length}\n${body}`)
+  return packUnits(units, limit, () => 0)
 }
 
 function fenceToggles(para: string): number {

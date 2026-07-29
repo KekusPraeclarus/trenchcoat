@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  splitDailyDigestTelegramText,
   splitTelegramText,
   TELEGRAM_SAFE_CHUNK,
   telegramSendFormattedChunks,
@@ -56,6 +57,28 @@ describe("splitTelegramText", () => {
     expect(parts.every((p) => p.length <= 500)).toBe(true)
     const rejoined = parts.map((p) => p.replace(/^\d+\/\d+\n/u, "")).join(" ")
     expect(rejoined.replace(/\s+/gu, " ")).toContain("word word")
+  })
+})
+
+describe("splitDailyDigestTelegramText", () => {
+  it("keeps digest sections intact across multiple messages without page labels", () => {
+    const sectionA = "**RH Chain Meme Rotation — peaking**\n\n" + "a".repeat(2_500)
+    const sectionB = "**Pons Launchpad Attention — peaking**\n\n" + "b".repeat(2_500)
+    const digest = [
+      "**Daily narrative map — 2026-07-28**",
+      sectionA,
+      sectionB,
+    ].join("\n\n")
+    const parts = splitDailyDigestTelegramText(digest, 3_000)
+    expect(parts.length).toBeGreaterThan(1)
+    expect(parts.every((part) => !/^\d+\/\d+\n/u.test(part))).toBe(true)
+    expect(parts.some((part) => part.includes("RH Chain Meme Rotation"))).toBe(true)
+    expect(parts.some((part) => part.includes("Pons Launchpad Attention"))).toBe(true)
+    for (const part of parts) {
+      const hasAStart = part.includes("RH Chain Meme Rotation")
+      const hasBStart = part.includes("Pons Launchpad Attention")
+      expect(!(hasAStart && hasBStart)).toBe(true)
+    }
   })
 })
 

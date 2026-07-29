@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
-import { splitTelegramText, telegramSendFormattedChunks } from "../lib/telegram-bot.js"
+import { splitTelegramText, telegramSendDailyDigestChunks, telegramSendFormattedChunks } from "../lib/telegram-bot.js"
 
 export type DestinationRow = Readonly<{
   id: string
@@ -56,8 +56,11 @@ export async function deliverTelegram(
   botToken: string,
   chatId: string,
   text: string,
+  opts?: Readonly<{ dailyDigest?: boolean }>,
 ): Promise<{ messageIds: string[] }> {
-  const result = await telegramSendFormattedChunks(fetcher, botToken, chatId, text)
+  const result = opts?.dailyDigest
+    ? await telegramSendDailyDigestChunks(fetcher, botToken, chatId, text)
+    : await telegramSendFormattedChunks(fetcher, botToken, chatId, text)
   return { messageIds: result.messageIds }
 }
 
@@ -200,7 +203,9 @@ export async function processDelivery(
     let messageIds: string[] = []
     if (dest.kind === "telegram") {
       if (!opts.telegramBotToken) throw Object.assign(new Error("no telegram token"), { retryable: false })
-      const result = await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, text)
+      const result = await deliverTelegram(fetcher, opts.telegramBotToken, dest.target, text, {
+        dailyDigest: event.type === "narrative.digest",
+      })
       messageIds = result.messageIds
     } else if (dest.kind === "discord") {
       const replyTo = event.type === "finding.correction"

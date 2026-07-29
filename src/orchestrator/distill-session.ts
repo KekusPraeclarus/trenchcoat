@@ -28,8 +28,8 @@ import type { NarrativeLogEntry } from "./narrative-log.js"
 
 /** Intraday topic update — one short paragraph, not a briefing */
 export const TELEGRAM_TOPIC_TEXT_MAX = 800
-/** Daily narrative map hard cap (one Telegram message) */
-export const TELEGRAM_DIGEST_TEXT_MAX = 3_400
+/** Soft per-section body cap for distiller input packets (not a delivery truncate). */
+export const TELEGRAM_DIGEST_SECTION_INPUT_MAX = 4_000
 /** @deprecated Use TELEGRAM_TOPIC_TEXT_MAX — alias for callers/tests */
 export const TELEGRAM_TEXT_MAX = TELEGRAM_TOPIC_TEXT_MAX
 const TOPIC_SECTION_HEADER = /(?:^|\n)\s*\*\*[^*\n]{2,80}\*\*\s*(?:\n|$)/u
@@ -282,9 +282,15 @@ export function validateTelegramOverviewOutput(
   return validateTelegramTopicOutput(raw, [])
 }
 
+/** Collapse whitespace and internal newlines to one paragraph. */
+export function normalizeDigestSectionBody(body: string): string {
+  return body.trim().replace(/\s*\n+\s*/gu, " ").replace(/\s+/gu, " ").trim()
+}
+
 function validatePlainDigestBody(body: string): { ok: true; text: string } | { ok: false; reason: string } {
-  const text = body.trim()
+  const text = normalizeDigestSectionBody(body)
   if (text.length < 1) return { ok: false, reason: "empty-body" }
+  if (/\n/u.test(body.trim())) return { ok: false, reason: "multi-paragraph" }
   if (CONTROL_CHARS.test(text)) return { ok: false, reason: "control-chars" }
   if (PROVENANCE_HANDLE.test(text)) return { ok: false, reason: "provenance-handle" }
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
@@ -336,6 +342,50 @@ export function validateTelegramDailyDigestOutput(
     if (!seen.has(slug)) return { ok: false, reason: "missing-slug" }
   }
   return { ok: true, sections }
+}
+
+const DIGEST_TITLE_RE = /^\*\*Daily narrative map — \d{4}-\d{2}-\d{2}\*\*$/u
+const DIGEST_HEADER_RE = /^\*\*[^*\n]+ — (?:peaking|emerging|fading)\*\*$/u
+
+/**
+ * Split a rendered daily digest into atomic Telegram units: title line, then
+ * each narrative header+body block. Units are never split across messages.
+ */
+export function parseDailyDigestUnits(text: string): string[] {
+  const blocks = text.trim().split(/\n{2,}/u).map((block) => block.trim()).filter((block) => block.length > 0)
+  if (blocks.length === 0) return []
+
+  const units: string[] = []
+  let index = 0
+  if (DIGEST_TITLE_RE.test(blocks[0] ?? "")) {
+    units.push(blocks[0]!)
+    index = 1
+  }
+
+  while (index < blocks.length) {
+    const header = blocks[index]!
+    if (!DIGEST_HEADER_RE.test(header)) {
+      if (units.length > 0) {
+        units[units.length - 1] = `${units[units.length - 1]}\n\n${header}`
+      } else {
+        units.push(header)
+      }
+      index += 1
+      continue
+    }
+    const next = blocks[index + 1]
+    const hasBody = next !== undefined
+      && !DIGEST_HEADER_RE.test(next)
+      && !DIGEST_TITLE_RE.test(next)
+    if (hasBody) {
+      units.push(`${header}\n\n${next}`)
+      index += 2
+    } else {
+      units.push(header)
+      index += 1
+    }
+  }
+  return units
 }
 
 const STAGE_ORDER: Record<NarrativeLogEntry["stage"], number> = {
@@ -425,7 +475,7 @@ export function resolveDistillLlmCap(args: Readonly<{
 /**
  * Compact deterministic daily digest for narratives with window developments.
  * Quiet slugs are omitted (absence is the signal). Returns null when the set
- * is empty or mandatory headers alone exceed the cap.
+ * is empty. Each section is one paragraph; delivery may span multiple messages.
  */
 export function renderDailyDigestCompactFallback(args: Readonly<{
   londonDate: string
@@ -435,32 +485,13 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
   const ordered = selectDigestNarratives(args.narratives, args.developmentsBySlug)
   if (ordered.length === 0) return null
 
-  const title = `**Daily narrative map — ${args.londonDate}**`
-  const headers = ordered.map((entry) => (
-    `**${snapshotLabel(entry)} — ${entry.stage}**`
-  ))
-  // title + blank line between each header block: n headers → n separators before bodies
-  let used = charLen(title)
-  for (const header of headers) {
-    used += 2 + charLen(header) // \n\n + header
-  }
-  if (used > TELEGRAM_DIGEST_TEXT_MAX) return null
-
-  const remaining = TELEGRAM_DIGEST_TEXT_MAX - used
-  const bodyBudgetPer = Math.floor(remaining / ordered.length)
-  const parts: string[] = [title]
+  const parts: string[] = [`**Daily narrative map — ${args.londonDate}**`]
   for (const entry of ordered) {
-    const header = `**${snapshotLabel(entry)} — ${entry.stage}**`
-    const bodySource = (args.developmentsBySlug[entry.slug] ?? "").trim()
-    // each body costs \n\n before it
-    const bodyMax = Math.max(0, bodyBudgetPer - 2)
-    const body = clipChars(bodySource.replace(/\s+/gu, " "), bodyMax)
-    parts.push(header)
+    const body = normalizeDigestSectionBody(args.developmentsBySlug[entry.slug] ?? "")
+    parts.push(`**${snapshotLabel(entry)} — ${entry.stage}**`)
     if (body.length > 0) parts.push(body)
   }
-  const rendered = parts.join("\n\n")
-  if (charLen(rendered) > TELEGRAM_DIGEST_TEXT_MAX) return null
-  return rendered
+  return parts.join("\n\n")
 }
 
 /**
@@ -606,16 +637,6 @@ export async function runTelegramDailyDigestDistiller(args: Readonly<{
     })
     const checked = validateTelegramDailyDigestOutput(raw, activeSlugs)
     if (!checked.ok) return empty(checked.reason, used)
-    const rendered = renderDailyDigestMarkdown({
-      londonDate: args.titleLondonDate,
-      narratives: args.packet.activeNarratives,
-      sectionsBySlug: Object.fromEntries(
-        checked.sections.map((section) => [section.slug, section.body]),
-      ),
-    })
-    if (charLen(rendered) > TELEGRAM_DIGEST_TEXT_MAX) {
-      return empty("too-long", used)
-    }
     return { sections: checked.sections, usedFallback: false, used, capExhausted: false }
   } catch {
     return empty("session-error", used)

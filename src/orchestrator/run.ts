@@ -1247,23 +1247,6 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "telegram-digest.json"),
         `${JSON.stringify(prepared.report, null, 2)}\n`,
       )
-      if (prepared.record.outcome === "capacity-exceeded") {
-        await appendRunIncident(layout, runId, {
-          schema: 1,
-          incidentId: sha256Json({
-            runId,
-            kind: "telegram-digest-capacity",
-            londonDate: prepared.record.londonDate,
-          }),
-          runId,
-          kind: "other",
-          message: `telegram-digest capacity-exceeded for ${prepared.record.londonDate}`,
-          occurredAt: nowIso,
-        })
-        throw new Error(
-          `telegram-digest capacity-exceeded for ${prepared.record.londonDate}`,
-        )
-      }
     }
     let auditReport: unknown
     if (job.name === "audit" && !opts.dryCollect) {

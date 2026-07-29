@@ -165,8 +165,6 @@ export function buildRouterPayload(
   return buildBroadcastRouterEvent(runId, occurredAt, item)
 }
 
-const TELEGRAM_DIGEST_TEXT_MAX = 3_400
-
 /** Build an immutable narrative.digest RouterEvent for the daily Telegram map */
 export function buildNarrativeDigestRouterEvent(args: Readonly<{
   runId: string
@@ -201,9 +199,6 @@ export function buildNarrativeDigestRouterEvent(args: Readonly<{
   }
   const text = args.text.trim()
   if (text.length < 1) throw new TypeError("digest text is empty")
-  if ([...text].length > TELEGRAM_DIGEST_TEXT_MAX) {
-    throw new TypeError("digest text exceeds Telegram cap")
-  }
 
   const eventId = sha256Json({
     type: "narrative.digest",

@@ -21,8 +21,8 @@ import {
   runTelegramDailyDigestDistiller,
   renderDailyDigestCompactFallback,
   renderDailyDigestMarkdown,
+  normalizeDigestSectionBody,
   selectDigestNarratives,
-  TELEGRAM_DIGEST_TEXT_MAX,
   type TopicNarrativeSnapshot,
 } from "./distill-session.js"
 import {
@@ -34,13 +34,11 @@ import { buildNarrativeDigestRouterEvent } from "./router.js"
 
 export const LONDON_TZ = "Europe/London"
 export const DIGEST_HOUR = 4
-const SOURCE_TEXT_MAX = 1_200
 
 export type TelegramDigestOutcome =
   | "prepared"
   | "no-active-narratives"
   | "no-window-developments"
-  | "capacity-exceeded"
 
 export type TelegramDigestRecord = Readonly<{
   schema: 1
@@ -288,10 +286,10 @@ function developmentsBySlug(
   }
   const out: Record<string, string> = {}
   for (const entry of active) {
-    const joined = (buckets.get(entry.slug) ?? []).join("\n\n").trim()
-    out[entry.slug] = joined.length > SOURCE_TEXT_MAX
-      ? [...joined].slice(-SOURCE_TEXT_MAX).join("")
-      : joined
+    const paragraphs = (buckets.get(entry.slug) ?? [])
+      .map((text) => normalizeDigestSectionBody(text))
+      .filter((text) => text.length > 0)
+    out[entry.slug] = paragraphs.join(" ")
   }
   return out
 }
@@ -464,15 +462,12 @@ export async function prepareTelegramDigest(args: Readonly<{
     const sectionsBySlug = Object.fromEntries(
       distilled.sections.map((section) => [section.slug, section.body]),
     )
-    const rendered = renderDailyDigestMarkdown({
+    text = renderDailyDigestMarkdown({
       londonDate: activityLondonDate,
       narratives: interesting,
       sectionsBySlug,
     })
-    if ([...rendered].length <= TELEGRAM_DIGEST_TEXT_MAX) {
-      text = rendered
-      renderMethod = "distilled"
-    }
+    renderMethod = "distilled"
   }
 
   if (text === null) {
@@ -485,31 +480,7 @@ export async function prepareTelegramDigest(args: Readonly<{
   }
 
   if (text === null) {
-    const record: TelegramDigestRecord = {
-      schema: 1,
-      londonDate,
-      windowStart,
-      windowEnd,
-      activeNarrativeSlugs: activeSlugs,
-      sourceEventIds,
-      inputHash,
-      outcome: "capacity-exceeded",
-      preparedAt: args.nowIso,
-    }
-    await persistDigestRecord(args.layout, record)
-    return {
-      record,
-      usedToday,
-      report: {
-        schema: 1,
-        runId: args.runId,
-        londonDate,
-        outcome: "capacity-exceeded",
-        reused: false,
-        activeCount: active.length,
-        sourceCount: sources.length,
-      },
-    }
+    throw new Error("telegram-digest prepared text missing despite window developments")
   }
 
   const event = buildNarrativeDigestRouterEvent({

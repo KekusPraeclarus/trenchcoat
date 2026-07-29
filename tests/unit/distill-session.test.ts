@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  normalizeDigestSectionBody,
+  parseDailyDigestUnits,
   renderDailyDigestCompactFallback,
   resolveDistillLlmCap,
   runTelegramTopicDistiller,
   telegramTopicUserMessage,
-  TELEGRAM_DIGEST_TEXT_MAX,
   TELEGRAM_TOPIC_TEXT_MAX,
   validateTelegramDailyDigestOutput,
   validateTelegramTopicOutput,
@@ -296,7 +297,7 @@ describe("runTelegramTopicDistiller", () => {
 })
 
 describe("daily digest rendering", () => {
-  it("keeps compact fallback within the Telegram cap", () => {
+  it("keeps full section bodies in compact fallback", () => {
     const narratives = Array.from({ length: 12 }, (_, index) => ({
       slug: `lane-${index}`,
       stage: (index % 3 === 0 ? "peaking" : index % 3 === 1 ? "emerging" : "fading") as
@@ -304,15 +305,16 @@ describe("daily digest rendering", () => {
       tickers: [],
       lastSeen: `2026-07-18T${String(10 + index).padStart(2, "0")}:00:00.000Z`,
     }))
+    const body = "Host-approved topic summary for the window with enough detail to matter."
     const rendered = renderDailyDigestCompactFallback({
       londonDate: "2026-07-18",
       narratives,
       developmentsBySlug: Object.fromEntries(
-        narratives.map((entry) => [entry.slug, "Host-approved topic summary for the window."]),
+        narratives.map((entry) => [entry.slug, body]),
       ),
     })
     expect(rendered).not.toBeNull()
-    expect([...(rendered ?? "")].length).toBeLessThanOrEqual(TELEGRAM_DIGEST_TEXT_MAX)
+    expect(rendered).toContain(body)
     for (const entry of narratives) {
       expect(rendered).toContain(entry.slug.replace("lane-", "Lane "))
     }
@@ -375,19 +377,40 @@ describe("daily digest rendering", () => {
     })).toBeNull()
   })
 
-  it("returns null when mandatory headers alone exceed the cap", () => {
+  it("renders many sections without truncating bodies", () => {
     const narratives = Array.from({ length: 80 }, (_, index) => ({
       slug: `very-long-narrative-label-number-${index}`,
       stage: "peaking" as const,
       tickers: [],
       lastSeen: "2026-07-18T19:00:00.000Z",
     }))
-    expect(renderDailyDigestCompactFallback({
+    const rendered = renderDailyDigestCompactFallback({
       londonDate: "2026-07-18",
       narratives,
       developmentsBySlug: Object.fromEntries(
-        narratives.map((entry) => [entry.slug, "moved"]),
+        narratives.map((entry) => [entry.slug, "moved on fresh catalyst"]),
       ),
-    })).toBeNull()
+    })
+    expect(rendered).toContain("moved on fresh catalyst")
+    expect(rendered).toContain("Very Long Narrative Label Number 79")
+  })
+
+  it("normalizes multi-line developments to one paragraph", () => {
+    expect(normalizeDigestSectionBody("line one\n\nline two")).toBe("line one line two")
+  })
+
+  it("parses digest units as title plus intact sections", () => {
+    const digest = [
+      "**Daily narrative map — 2026-07-28**",
+      "**RH Chain Meme Rotation — peaking**",
+      "Still peaking on wallet lore.",
+      "**Pons Launchpad Attention — peaking**",
+      "Pad volume keeps stacking.",
+    ].join("\n\n")
+    expect(parseDailyDigestUnits(digest)).toEqual([
+      "**Daily narrative map — 2026-07-28**",
+      "**RH Chain Meme Rotation — peaking**\n\nStill peaking on wallet lore.",
+      "**Pons Launchpad Attention — peaking**\n\nPad volume keeps stacking.",
+    ])
   })
 })

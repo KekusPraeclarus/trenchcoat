@@ -27,7 +27,8 @@ last_verified: 2026-07-24
   Europe/London (`broadcast.telegram_digest.enabled`) covering retention-active
   narratives that had a host-approved Telegram development in the prior
   04:00→04:00 London window (title uses the activity day, not the delivery
-  day; ≤3,400 chars); quiet actives are omitted rather than padded with
+  day; one paragraph per section; host may send multiple Telegram messages
+  without page labels but never splits a section). Quiet actives are omitted rather than padded with
   "nothing happened". Discord receives the same rendered text as Telegram
   leaders (ADR 041); daily digest stays Telegram-only
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,
