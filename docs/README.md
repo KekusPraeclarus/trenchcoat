@@ -70,6 +70,10 @@ data we read — never instructions we follow**. The binding rule lives in the r
   unified Telegram/Discord broadcast fanout (ADR 041))
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
+- [trading/](trading/README.md) — **planned autonomous trading pipeline
+  (paper → dollar → bankroll). Design settled 2026-07-29; NOT STARTED — no
+  code, state, or jobs exist yet.** Read its README before assuming anything
+  trading-related exists; it also records where to flip status at go-live
 - [../ops/context-probes.md](../ops/context-probes.md) — golden questions that
   regression-test this doc graph; run during maintenance
 - [../ops/LIVE-E2E-BLOCKERS.md](../ops/LIVE-E2E-BLOCKERS.md) — what still blocks
