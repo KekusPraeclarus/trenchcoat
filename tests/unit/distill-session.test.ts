@@ -66,7 +66,7 @@ describe("validateTelegramTopicOutput", () => {
   })
   it("accepts a short topic paragraph", () => {
     const text =
-      "RH chain meme rotation just got a founder-wallet catalyst — leaders still firm this week; watch invalidation if volume cools."
+      "RH chain meme rotation just got a founder-wallet catalyst — leaders still firm; watch invalidation if volume cools."
     expect(validateTelegramTopicOutput(text)).toEqual({ ok: true, text })
   })
 
@@ -187,7 +187,7 @@ describe("runTelegramTopicDistiller", () => {
 
   it("accepts topic output and increments used", async () => {
     const overview =
-      "RH rotation still peaking on wallet lore — narrative ammo until verified this week."
+      "RH rotation still peaking on wallet lore — narrative ammo while volume holds."
     const result = await runTelegramTopicDistiller({
       packet: {
         subject: "rh-chain-meme-rotation",
@@ -266,7 +266,7 @@ describe("runTelegramTopicDistiller", () => {
       otherNarratives: [],
     })
     expect(msg).toContain("Telegram topic update")
-    expect(msg).toContain("watchWindow=this week")
+    expect(msg).toContain("watchWindow=if it holds")
     expect(msg).toContain("<untrusted-topic-packet>")
     expect(msg).not.toContain("Chat recall")
   })

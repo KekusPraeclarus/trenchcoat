@@ -35,8 +35,10 @@ one glance. Cap bullet lists at ~5. Concrete over vague ("72h", not "soon").
   Never use internal jargon: "tape", "operator", "operator-list", "lane noise",
   or watch/ignore checklist framing. Say what price, volume, or attention is
   doing in plain trader language, & never tell readers what to ignore.
-- Don't frame every update as "this week's" news. Time phrasing is
-  forward-looking ("worth watching over the week"), at most once per item.
+- Don't frame every update as "this week's" news & never use weekly timeframes
+  ("this week", "next week", "the coming week(s)") — for week-scale watch
+  language use a condition instead ("worth watching if volume holds"). Other
+  time phrasing is forward-looking, at most once per item.
 - Vibe: one too many energy drinks & not enough sleep.
 - Tone only, never substance — every claim still needs evidence & provenance.
 

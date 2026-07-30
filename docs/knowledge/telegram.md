@@ -39,9 +39,10 @@ last_verified: 2026-07-24
   normalizes common typos (`Rem 92da…` → `rem-92da…`) and applies approvals
   before chat (ADR 030). Raw Discord text never enters these messages.
 - Fanout + operator sends convert markdown → HTML, deslug kebab narrative
-  labels (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`), and scrub leaked
-  hour tokens (`72h` → `the next few days`) — natural watch prose (`this week`,
-  `this month`) is left alone. Distill injects host-derived `watchWindow` from
+  labels (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`), and scrub watch
+  prose: leaked hour tokens (`72h` → `the next few days`) and weekly timeframes
+  (`this week`, `over the coming weeks` → `if it holds`) — other natural prose
+  (`this month`) is left alone. Distill injects host-derived `watchWindow` from
   claim type + `horizonHours` (audit settlement stays 24/72/168) — ADR 013
 - See [ADR 013](../adr/013-watch-window-decoupled.md) for the watchWindow vs
   horizonHours split
@@ -49,9 +50,10 @@ last_verified: 2026-07-24
   mirrored in `agent/AGENTS.md` voice rules, enforced mechanically by
   `internal-jargon` reject in `distill-session.ts`. Channel copy never uses
   internal terms ("tape", "operator", "lane noise"), never tells readers what
-  to ignore, and uses forward-looking time phrasing at most once instead of
-  framing every update as "this week's" news. `watchWindow` (ADR 013) sets the
-  time scale when time is mentioned — it is not a headline template.
+  to ignore, and never uses weekly timeframes — week-scale watch language is a
+  condition ("worth watching if volume holds"); other forward-looking time
+  phrasing appears at most once. `watchWindow` (ADR 013) sets the time scale
+  when time is mentioned — it is not a headline template.
 
 ## Alpha ingestion vs operator chat
 

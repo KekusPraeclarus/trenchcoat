@@ -160,7 +160,7 @@ describe("renderChannelPayloads", () => {
     writeFileSync(chatReportPath(agentRoot, RUN_ID), reportMd)
 
     const overviewText =
-      "RH chain meme rotation has fresh capital rotating into infra — watch invalidation if leaders cool this week."
+      "RH chain meme rotation has fresh capital rotating into infra — watch invalidation if volume cools."
 
     let tgLaunches = 0
     const report = await renderChannelPayloads({
@@ -324,6 +324,7 @@ describe("renderChannelPayloads", () => {
     const rhFollower = rhEvents.find((event) => !event.channels?.telegram)
     expect(rhLeader?.severity).toBe("urgent")
     expect(rhLeader?.channels?.telegram?.text).toContain("founder wallet catalyst")
+    expect(rhLeader?.channels?.telegram?.text).not.toMatch(/week/iu)
     expect(rhLeader?.channels?.discord?.text).toBe(rhLeader?.channels?.telegram?.text)
     expect(rhFollower?.channels?.telegram).toBeUndefined()
     expect(rhFollower?.channels?.discord).toBeUndefined()

@@ -2,7 +2,7 @@
 
 import { formatTelegramOperatorText, stripLocalWorkspaceRefs } from "./telegram-format.js"
 import { deslugNarrativeLabelsInText } from "./narrative-label.js"
-import { scrubLeakedHourHorizons } from "./watch-window.js"
+import { scrubWatchProse } from "./watch-window.js"
 import { parseDailyDigestUnits } from "../orchestrator/distill-session.js"
 
 export type TelegramBotFetcher = (
@@ -102,7 +102,7 @@ export async function telegramSendOperatorMessage(
       token,
       chatId,
       deslugNarrativeLabelsInText(
-        scrubLeakedHourHorizons(stripLocalWorkspaceRefs(text)),
+        scrubWatchProse(stripLocalWorkspaceRefs(text)),
       ),
     )
   }

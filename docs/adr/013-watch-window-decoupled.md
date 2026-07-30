@@ -2,7 +2,7 @@
 description: ADR — Channel watch prose uses host-derived watchWindow; audit horizonHours stays settlement math only.
 scope: project
 status: accepted
-last_verified: 2026-07-20
+last_verified: 2026-07-30
 ---
 
 # ADR 013 — Watch window decoupled from audit horizon
@@ -14,8 +14,9 @@ hour horizons (`72h`, `in 72 hr`) because `auditClaim.horizonHours` was framed i
 the prompt and outbound copy tried to regex-rewrite every variant into one fixed
 phrase (`the next few days`). That was both rigid and over-engineered: audit
 settlement is intentionally locked to +24h / +72h / +7d, while trader-facing prose
-needs day / week / month language (`this week`, `this month`, `through next month`)
-that is not the same object as the settlement clock.
+needs day / conditional / month language (`the next few days`, `if it holds`,
+`this month`, `through next month`) that is not the same object as the settlement
+clock. Weekly timeframes were later banned from watch copy entirely (see below).
 
 ## Decision
 
@@ -27,8 +28,13 @@ that is not the same object as the settlement clock.
   sentiment claims stay closer to the hour bucket.
 - Inject `watchWindow=…` into distill claim lines (omit prose-facing
   `horizonHours=N`). Prompts require that scale or a synonym; never paste `Nh`.
+- Weekly timeframes never reach watch copy: week-scale buckets derive the
+  conditional `if it holds` (prompts turn it into e.g. "worth watching if volume
+  holds"), and the outbound scrub rewrites weekly phrases (`this week`, `over the
+  coming weeks`, `next week`) to the same conditional. Day and month windows are
+  unchanged.
 - Outbound / post-check scrub is thin: replace leaked `24h|72h|168h` (and common
-  wrappers) only; leave natural phrases alone.
+  wrappers) plus the weekly-timeframe rewrite; leave other natural phrases alone.
 - Separately (same session, delivery path): router Telegram fanout uses the same
   markdown→HTML + `parse_mode: HTML` path as operator DMs (`telegramSendFormattedChunks`),
   and deslugs kebab narrative labels for display (`rh-chain-meme-rotation` →
@@ -39,8 +45,8 @@ that is not the same object as the settlement clock.
 - Channel copy can say month-scale watch windows without expanding claim horizons
   or lying about settlement maturity.
 - Agents must not invent `watchWindow`; host policy is the single source.
-- Thin scrub cannot invent month-scale language from a bare `72h` leak — that
-  remains a day/few-days/week default; good prose must come from distill following
+- Thin scrub cannot infer claim type from a bare hour leak — week-scale `168h`
+  leaks default to `this month`; good prose must come from distill following
   `watchWindow`.
 - Future sessions should not reintroduce a heavy phrase rewriter or paste
   `horizonHours` into copy-facing distill framing.

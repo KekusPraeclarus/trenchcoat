@@ -16,7 +16,7 @@ import {
 import type { NarrativeFraming } from "../lib/narrative-framing.js"
 import { isMatureFraming } from "../lib/narrative-framing.js"
 import { hasLocalWorkspaceRefs } from "../lib/telegram-format.js"
-import { scrubLeakedHourHorizons, watchWindowClaimFragment } from "../lib/watch-window.js"
+import { scrubWatchProse, watchWindowClaimFragment } from "../lib/watch-window.js"
 import {
   TELEGRAM_DAILY_DIGEST_PROMPT,
   TELEGRAM_TOPIC_PROMPT,
@@ -272,7 +272,7 @@ export function validateTelegramTopicOutput(
   if (usesStaleRotationFraming(text, maturedNarrativeLabels(maturedNarratives))) {
     return { ok: false, reason: "stale-narrative-framing" }
   }
-  return { ok: true, text: scrubLeakedHourHorizons(text) }
+  return { ok: true, text: scrubWatchProse(text) }
 }
 
 /** @deprecated Prefer validateTelegramTopicOutput */
@@ -297,7 +297,7 @@ function validatePlainDigestBody(body: string): { ok: true; text: string } | { o
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
   if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
   if (MARKDOWN_BODY_MARKERS.test(text)) return { ok: false, reason: "markdown-in-body" }
-  return { ok: true, text: scrubLeakedHourHorizons(text) }
+  return { ok: true, text: scrubWatchProse(text) }
 }
 
 export function validateTelegramDailyDigestOutput(

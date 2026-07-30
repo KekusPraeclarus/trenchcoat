@@ -3,7 +3,7 @@ description: ADR — Public Discord/Telegram copy bans internal jargon and crutc
 scope: project
 status: accepted
 date: 2026-07-24
-last_verified: 2026-07-24
+last_verified: 2026-07-30
 related: [013, 012, 026, 036]
 ---
 
@@ -35,8 +35,10 @@ caused the bad output.
    - No internal jargon (`tape`, `operator`, `operator-list`, `lane noise`,
      `call rail`, watch/ignore checklist framing)
    - Never tell readers what to "ignore" — omit noise instead
-   - Time phrasing is forward-looking only ("watch how it develops over the
-     week") and appears at most once; never frame the update as "this week's news"
+   - Time phrasing is forward-looking only and appears at most once; never frame
+     the update as "this week's news". Weekly timeframes are banned entirely —
+     week-scale watch language uses a condition instead ("worth watching if
+     volume holds"); daily/monthly phrasing stays allowed.
    - Describe market/price/volume/attention in plain trader language
 
 2. **Mechanical post-check (`INTERNAL_JARGON` in `src/orchestrator/distill-session.ts`).**
@@ -50,10 +52,12 @@ caused the bad output.
    not seed internal vocabulary. Worthiness and other JSON-only host prompts are
    unchanged — they never reach public channels.
 
-4. **`watchWindow` relationship (ADR 013 unchanged).** Host still derives
-   `watchWindow` from claim type + `horizonHours` for settlement-scale guidance.
-   Prompts now require forward-looking phrasing at that scale when time is
-   mentioned at all, not headline "this week" repetition.
+4. **`watchWindow` relationship (ADR 013).** Host still derives `watchWindow`
+   from claim type + `horizonHours` for settlement-scale guidance. Prompts
+   require forward-looking phrasing at that scale when time is mentioned at
+   all, not headline repetition. Week-scale buckets now derive the conditional
+   `if it holds`, and the egress scrub (`scrubWatchProse`) rewrites any weekly
+   timeframe phrase that still slips through to the same conditional.
 
 ## Consequences
 
@@ -64,8 +68,9 @@ caused the bad output.
   leak patterns need prompt updates and possibly regex extension.
 - Operator-facing docs and worthiness JSON may still use "tape" / "operator" /
   "lane" internally; only channel egress is restricted.
-- `this week` remains a valid host `watchWindow` value; only its misuse as
-  crutch headline framing is banned.
+- `this week` is no longer a host `watchWindow` value (superseded 2026-07-30):
+  week-scale claims derive `if it holds` and weekly phrases are scrubbed on
+  egress.
 
 ## Alternatives considered
 
@@ -74,8 +79,10 @@ caused the bad output.
 - **Heavy phrase rewriter on outbound text** — rejected; same failure mode as
   ADR 013's abandoned hour-horizon rewriter — hides bad distill instead of
   rejecting and retrying.
-- **Ban `this week` entirely in scrub** — rejected; forward-looking week-scale
-  watch language is fine; the problem is framing every update as weekly news.
+- **Ban `this week` entirely in scrub** — rejected at the time; forward-looking
+  week-scale watch language was considered fine. Superseded 2026-07-30: weekly
+  timeframes are now banned in watch copy and rewritten to the conditional
+  `if it holds` on egress.
 
 ## Follow-ups
 
