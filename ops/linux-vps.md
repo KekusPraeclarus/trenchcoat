@@ -72,7 +72,7 @@ EOF
 chmod 600 ~/.ssh/config
 
 mkdir -p ~/src
-git clone git@github.com:AbstractLogica/trenchcoat.git ~/src/trenchcoat
+git clone git@github.com:KekusPraeclarus/trenchcoat.git ~/src/trenchcoat
 cd ~/src/trenchcoat
 pnpm install
 ```
