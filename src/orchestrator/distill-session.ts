@@ -39,7 +39,9 @@ const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u
 const PROVENANCE_HANDLE = /(?:twitter|farcaster):@[\w.-]+/iu
 /** Bare @handle — excludes twitter:@ / farcaster:@ (colon precedes @) */
 const BARE_AT_HANDLE = /(?<![a-z:])@[\w.-]+/iu
-const INTERNAL_JARGON = /\btape\b|\boperator(?:s|-list|-facing)?\b|\blane noise\b/iu
+/** Banned public copy: pipeline jargon + "cat(s)" as CoinGecko category shorthand. */
+const INTERNAL_JARGON =
+  /\btape\b|\boperator(?:s|-list|-facing)?\b|\blane noise\b|\b(?:CG|CoinGecko)\s+cats?\b|\bcats?\s+#\d+\b|\bcat\s+(?:back\s+on|gone\s+from)\b|\b(?:on|off|from)\s+(?:CG|CoinGecko)\b/iu
 const MARKDOWN_BODY_MARKERS = /(?:^|\n)\s*#{1,6}\s|(?:\*\*|__|`)/u
 
 export type DistillSessionRunner = (

@@ -1,9 +1,9 @@
 ---
-description: ADR — Public Discord/Telegram copy bans internal jargon and crutch time framing; host prompts + mechanical distill reject.
+description: ADR — Public Discord/Telegram copy bans internal jargon, CG category list chatter, and crutch time framing; host prompts + mechanical distill reject.
 scope: project
 status: accepted
 date: 2026-07-24
-last_verified: 2026-07-30
+last_verified: 2026-08-04
 related: [013, 012, 026, 036]
 ---
 
@@ -21,6 +21,9 @@ sounding like operator checklists:
   distill prompts echoed the host-derived `watchWindow` (often `this week` for
   narrative claims — ADR 013) as headline framing instead of optional
   forward-looking watch language
+- CoinGecko trending-category list churn: sprays of "X cat #N on CG" /
+  "off CG cats" messages, with `cat`/`cats` as category shorthand that reads
+  as cat memecoins
 
 Channel readers are public traders with zero knowledge of host distillers,
 worthiness gates, or narrative slugs. The Discord bottom-line prompt even
@@ -34,6 +37,8 @@ caused the bad output.
    topic, daily digest bodies, watch updates, and correction copy. Rules:
    - No internal jargon (`tape`, `operator`, `operator-list`, `lane noise`,
      `call rail`, watch/ignore checklist framing)
+   - Never abbreviate CoinGecko categories as `cat`/`cats`; no CG list-position
+     chatter (`on CG` / `off CG` / `cat #N`)
    - Never tell readers what to "ignore" — omit noise instead
    - Time phrasing is forward-looking only and appears at most once; never frame
      the update as "this week's news". Weekly timeframes are banned entirely —
@@ -44,15 +49,23 @@ caused the bad output.
 2. **Mechanical post-check (`INTERNAL_JARGON` in `src/orchestrator/distill-session.ts`).**
    Fail-closed distill validation rejects Discord bottom-lines, Telegram topic
    paragraphs, and daily digest section bodies that match `\btape\b`,
-   `\boperator…\b`, or `\blane noise\b`. Reason: `internal-jargon`. Prompt-only
-   fixes are insufficient when models drift.
+   `\boperator…\b`, `\blane noise\b`, or CG category list-position / `cat`
+   shorthand patterns. Reason: `internal-jargon`. Prompt-only fixes are
+   insufficient when models drift.
 
-3. **Agent voice mirror (`agent/AGENTS.md`).** Outbox `text` is source material
+3. **Outbox mechanical gate (`cg-category-list-churn`).**
+   `evaluateMechanicalBroadcastGate` rejects proposal `text` that is CoinGecko
+   category enter/leave/rank chatter (including founder-urgent pass-through).
+   Category ranks stay inbox confirmation context for capital-flow rotation;
+   they are not channel fuel. Agent skills (`narrative-scan`, broadcast
+   checklist) mirror the same bar.
+
+4. **Agent voice mirror (`agent/AGENTS.md`).** Outbox `text` is source material
    for distillers; the runtime agent gets the same audience rules so drafts do
    not seed internal vocabulary. Worthiness and other JSON-only host prompts are
    unchanged — they never reach public channels.
 
-4. **`watchWindow` relationship (ADR 013).** Host still derives `watchWindow`
+5. **`watchWindow` relationship (ADR 013).** Host still derives `watchWindow`
    from claim type + `horizonHours` for settlement-scale guidance. Prompts
    require forward-looking phrasing at that scale when time is mentioned at
    all, not headline repetition. Week-scale buckets now derive the conditional
@@ -64,10 +77,10 @@ caused the bad output.
 - Public posts read like a trader wrote them, not like pipeline telemetry.
 - Distill retries may increase briefly when models emit banned jargon; fallback
   paths still apply after retry exhaustion.
-- The mechanical regex is intentionally narrow (tape/operator/lane noise) — new
-  leak patterns need prompt updates and possibly regex extension.
+- The mechanical regex stays narrow — new leak patterns need prompt updates and
+  possibly regex extension (CG category list patterns added 2026-08-04).
 - Operator-facing docs and worthiness JSON may still use "tape" / "operator" /
-  "lane" internally; only channel egress is restricted.
+  "lane" / "category" internally; only channel egress is restricted.
 - `this week` is no longer a host `watchWindow` value (superseded 2026-07-30):
   week-scale claims derive `if it holds` and weekly phrases are scrubbed on
   egress.
@@ -83,6 +96,8 @@ caused the bad output.
   week-scale watch language was considered fine. Superseded 2026-07-30: weekly
   timeframes are now banned in watch copy and rewritten to the conditional
   `if it holds` on egress.
+- **Worthiness-only CG filter** — rejected; worthiness never sees proposal
+  wording (claim+refs only), so list-churn must be a mechanical text gate.
 
 ## Follow-ups
 

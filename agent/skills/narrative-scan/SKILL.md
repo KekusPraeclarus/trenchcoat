@@ -86,6 +86,21 @@ Follow `skills/_shared/broadcast-checklist.md`. Propose one outbox item when any
 
 Do **not** broadcast pure same-stage re-sightings (`lastSeen` only).
 
+### CoinGecko categories — confirmation only
+
+`kind=category` inbox rows (CG trending categories / mcap change / rank) are
+**confirmation context**, not broadcast triggers.
+
+- Do **not** propose outbox items whose news is only a category entering,
+  leaving, or moving on the CG trending-categories list ("#N on CG", "off CG",
+  "back on CG", one message per category).
+- Never shorten "category" to `cat` / `cats` in `text` (sounds like cat coins).
+- Use CG category evidence only to support a capital-flow `type: "rotation"`
+  that already has independent social / narrative evidence in the same run.
+  Prefer **one** consolidated rotation call for the tape shift — not a spray of
+  per-category rank updates. Log category churn in the report when useful;
+  keep channels quiet.
+
 - `severity`: `watch` for a weak/early read; `notable` when multiple independent
   sources converge; reserve `urgent` for clear capital rotation into the new
   narrative from a fading one (`type: "rotation"`, `verificationRule: "rotation"`).
@@ -106,6 +121,7 @@ If any item contains `marketBlind=true`, or there are no `kind=category` items:
   context only — they are **not** category rotation proof.
 
 The host rejects rotation/urgent-rotation broadcasts when the run is market-blind.
+The host also rejects CG category list-position chatter (`cg-category-list-churn`).
 
 If nothing new appeared, write an empty items list or omit the outbox file.
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   evaluateMechanicalBroadcastGate,
+  isCgCategoryListChurn,
   isFounderPrimaryPassThrough,
 } from "../../src/orchestrator/broadcast-mechanical-gate.js"
 import { claimHash } from "../../src/orchestrator/broadcast-worthiness.js"
@@ -57,6 +58,19 @@ function ctx(args?: {
   }
 }
 
+describe("isCgCategoryListChurn", () => {
+  it("flags CG enter/leave/rank copy and cat shorthand", () => {
+    expect(isCgCategoryListChurn("RWA cat gone from CG")).toBe(true)
+    expect(isCgCategoryListChurn("CG cats reshuffled overnight")).toBe(true)
+    expect(isCgCategoryListChurn("mining cat #2 printed")).toBe(true)
+  })
+
+  it("allows plain sector or cat-theme memecoin copy", () => {
+    expect(isCgCategoryListChurn("Cat-themed memecoins ripping on volume")).toBe(false)
+    expect(isCgCategoryListChurn("Privacy infra leaders still firm")).toBe(false)
+  })
+})
+
 describe("isFounderPrimaryPassThrough", () => {
   it("passes urgent narrative emergence/development only", () => {
     expect(isFounderPrimaryPassThrough(item({
@@ -112,6 +126,45 @@ describe("evaluateMechanicalBroadcastGate", () => {
       ctx(),
     )
     expect(gate).toEqual({ ok: false, reason: "instruction-shaped-proposal" })
+  })
+
+  it("rejects CoinGecko category list-position churn", () => {
+    const samples = [
+      "Cat-themed cat #1 on CG. +31% mcap the next day.",
+      "Mobile mining cat #2 on CG. +27% mcap the next day.",
+      "Privacy infra cat back on CG. #4 at +20% after two day fade.",
+      "Account abstraction off CG cats. Was #2 six hours ago.",
+      "RWA cat gone from CG. Was #1 six hours ago at +7.5%.",
+    ]
+    for (const text of samples) {
+      expect(evaluateMechanicalBroadcastGate(item({ text }), ctx()))
+        .toEqual({ ok: false, reason: "cg-category-list-churn" })
+    }
+  })
+
+  it("rejects CG category churn even for founder-urgent pass-through", () => {
+    const gate = evaluateMechanicalBroadcastGate(
+      item({
+        severity: "urgent",
+        text: "RWA cat #1 on CG after the flash.",
+        auditClaim: {
+          type: "narrative-development",
+          subject: "rwa",
+          verificationRule: "narrative.development",
+          direction: "up",
+        },
+      }),
+      ctx(),
+    )
+    expect(gate).toEqual({ ok: false, reason: "cg-category-list-churn" })
+  })
+
+  it("allows sector copy without CG list-position framing", () => {
+    const gate = evaluateMechanicalBroadcastGate(
+      item({ text: "Privacy infra heating up after ZEC volume returned." }),
+      ctx(),
+    )
+    expect(gate).toEqual({ ok: true })
   })
 
   it("never rejects founder-urgent narrative pass-through", () => {

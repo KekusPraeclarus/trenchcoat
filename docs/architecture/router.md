@@ -101,9 +101,9 @@ Discord mirrors Telegram leaders only (ADR 041).
   `horizonHours`) so copy can use day/week/month phrasing without echoing `Nh`
   ([ADR 013](../adr/013-watch-window-decoupled.md)). All public channel prompts
   share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`, ADR 037): no internal jargon
-  ("tape", "operator", "lane noise"), no "ignore X" closers, forward-looking
-  time phrasing at most once per message; distill validators reject
-  `internal-jargon` before fanout.
+  ("tape", "operator", "lane noise"), no CG category `cat`/`on CG` list chatter,
+  no "ignore X" closers, forward-looking time phrasing at most once per message;
+  distill validators reject `internal-jargon` before fanout.
   Host never truncates — `telegramSendFormattedChunks` in `src/lib/telegram-bot.ts`
   chunks at ~3400 chars of markdown on paragraph boundaries (numbered `1/n` …),
   used by router fanout (`src/router/deliver.ts`) and the operator chat listener.

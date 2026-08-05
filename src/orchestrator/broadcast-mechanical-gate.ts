@@ -1,6 +1,7 @@
 /**
  * Host mechanical pre-gate before broadcast worthiness LLM (token-burn).
- * Fail-closed duplicates / instruction spam; founder-urgent narrative pass-through.
+ * Fail-closed duplicates / instruction spam / CG category list churn;
+ * founder-urgent narrative pass-through (except CG category noise).
  */
 
 import type { BroadcastItem } from "../contracts/schemas.js"
@@ -18,6 +19,19 @@ export type MechanicalBroadcastGateContext = Readonly<{
   recentAcceptedClaims: readonly MarketClaimRecord[]
   nowIso: string
 }>
+
+/**
+ * CoinGecko trending-category list position as the headline (enter / leave /
+ * rank). Category ranks are confirmation context, not broadcast fuel.
+ * Also catches "cat"/"cats" as category shorthand near CG.
+ */
+const CG_CATEGORY_LIST_CHURN =
+  /\b(?:on|off|from)\s+(?:CG|CoinGecko)\b|\b(?:CG|CoinGecko)\s+cats?\b|\bcats?\s+#\d+\b|\bcat\s+(?:back\s+on|gone\s+from)\b/iu
+
+/** True when text is CoinGecko category list-position chatter. */
+export function isCgCategoryListChurn(text: string): boolean {
+  return CG_CATEGORY_LIST_CHURN.test(text)
+}
 
 /** Urgent narrative emergence/development — never mechanically reject (ADR 024 pass-through). */
 export function isFounderPrimaryPassThrough(item: BroadcastItem): boolean {
@@ -66,6 +80,11 @@ export function evaluateMechanicalBroadcastGate(
 ): { ok: true } | { ok: false; reason: string } {
   const subject = item.auditClaim.subject.trim().toLowerCase()
   const hash = claimHash(item.auditClaim)
+
+  // Always — CG category list churn is never a public broadcast (incl. founder-urgent).
+  if (isCgCategoryListChurn(item.text)) {
+    return { ok: false, reason: "cg-category-list-churn" }
+  }
 
   if (isFounderPrimaryPassThrough(item)) {
     ctx.proposedSubjectsSeen.add(subject)

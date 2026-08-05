@@ -63,3 +63,9 @@ paste the kebab slug. Host rejects `stale-narrative-framing` when matured subjec
 still use `\brotation\b` as lane framing. Checklist `direction: "rotation"` on
 development claims means capital/attention shift direction — **not** permission to
 name the lane a rotation.
+
+**CoinGecko categories are not channel fodder.** Do not broadcast category
+enter/leave/rank moves on their own. Never write `cat`/`cats` for "category"
+(cat-memecoin confusion). Host rejects `cg-category-list-churn` for "on/off/from
+CG", "CG cats", and `cat #N` style copy. Use category ranks only as supporting
+evidence inside a real narrative/rotation claim that already has social proof.

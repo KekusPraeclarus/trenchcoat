@@ -75,6 +75,10 @@ describe("validateTelegramTopicOutput", () => {
       .toEqual({ ok: false, reason: "internal-jargon" })
     expect(validateTelegramTopicOutput("ignore stale lane noise & thin operator-list churn"))
       .toEqual({ ok: false, reason: "internal-jargon" })
+    expect(validateTelegramTopicOutput("RWA cat #1 on CG after the flash"))
+      .toEqual({ ok: false, reason: "internal-jargon" })
+    expect(validateTelegramTopicOutput("Account abstraction off CG cats already"))
+      .toEqual({ ok: false, reason: "internal-jargon" })
   })
 
   it("rejects section headers and bullet briefings", () => {

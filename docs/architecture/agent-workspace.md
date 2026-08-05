@@ -376,11 +376,14 @@ Broadcast `text` is written in the outward persona voice (bot's `AGENTS.md`).
 The bot's instructions set the bar high: broadcast only what a busy trader must
 see — "Attention seems to have shifted to RobinHood chain", "$REPPO is teasing a
 new update, charts are reacting accordingly", a new-token call with a one-line
-why. Narrative shifts get a few short sentences of explanation. `urgent` is
-reserved for new narrative forming, sudden sentiment collapse, early chain
-rotation — it bypasses the Discord daily budget, so crying wolf is the cardinal sin; the
-audit tracks urgent precision specifically. Telegram stays uncapped after validation. Everything else belongs in the report,
-where the chat agent can surface it on request.
+why. Narrative shifts get a few short sentences of explanation. CoinGecko
+category ranks are confirmation context only — never a spray of per-category
+"on CG" / `cat #N` updates, and never `cat`/`cats` as category shorthand (ADR
+037 / `cg-category-list-churn`). `urgent` is reserved for new narrative forming,
+sudden sentiment collapse, early chain rotation — crying wolf is the cardinal
+sin; the audit tracks urgent precision specifically. Telegram stays uncapped
+after validation. Everything else belongs in the report, where the chat agent
+can surface it on request.
 
 ## Writing the bot's instructions and skills
 

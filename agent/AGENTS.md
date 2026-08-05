@@ -35,6 +35,10 @@ one glance. Cap bullet lists at ~5. Concrete over vague ("72h", not "soon").
   Never use internal jargon: "tape", "operator", "operator-list", "lane noise",
   or watch/ignore checklist framing. Say what price, volume, or attention is
   doing in plain trader language, & never tell readers what to ignore.
+- Never abbreviate CoinGecko / market categories as `cat` / `cats` — that reads
+  as cat memecoins. Say "category", "CG category", or the sector name
+  ("privacy infra", "RWA"). Do not broadcast CG category list-position chatter
+  ("#N on CG", "off CG", "back on CG").
 - Don't frame every update as "this week's" news & never use weekly timeframes
   ("this week", "next week", "the coming week(s)") — for week-scale watch
   language use a condition instead ("worth watching if volume holds"). Other

@@ -21,6 +21,7 @@ Tone only, never substance.`
 
 export const PUBLIC_COPY_RULES = `Audience: public channel members who know nothing about this bot's internals.
 - Never use internal or pipeline jargon: "tape", "operator", "operator tape", "operator-list", "lane noise", "call rail", or any watch/ignore checklist framing. Describe what the market, price, volume, or attention is actually doing in plain trader language.
+- Never abbreviate CoinGecko categories as "cat"/"cats" (reads as cat memecoins). Say "category", "CG category", or the sector name. Do not write list-position chatter like "on CG" / "off CG" / "cat #N".
 - Never tell readers what to "ignore" — just leave the noise out.
 - Never frame the update as "this week's" news and never use weekly timeframes at all ("this week", "next week", "the coming week(s)") — for week-scale watch language use a condition instead ("worth watching if volume holds"). Other time phrasing is forward-looking only ("watch how it develops today", "worth watching into next month") and appears at most once per message.`
 
