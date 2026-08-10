@@ -55,6 +55,19 @@ describe("job preconditions", () => {
     }
   })
 
+  it("skips both farcaster jobs when the lane is disabled", async () => {
+    for (const job of ["farcaster-scan", "fc-source-review"] as const) {
+      const { agentRoot, archiveRoot } = emptyWorkspace()
+      const result = await evaluateJobPreconditions({
+        job,
+        agentRoot,
+        archiveRoot,
+        nowIso: NOW,
+      })
+      expect(result).toMatchObject({ skip: true, reason: "farcaster-disabled" })
+    }
+  })
+
   it("wallet-discovery skips when subjects lack wallet-supported chains", async () => {
     const { agentRoot, archiveRoot } = emptyWorkspace()
     const state = new StateStore(join(agentRoot, "state"))

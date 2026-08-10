@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS incidents (
   kind TEXT NOT NULL,
   detail TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS provider_message_index (
+  message_id TEXT PRIMARY KEY,
+  delivery_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  destination_id TEXT NOT NULL,
+  part_index INTEGER NOT NULL,
+  part_total INTEGER NOT NULL,
+  indexed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS provider_message_index_event
+  ON provider_message_index(event_id);
 `
 
 export function openRouterDb(path: string): Database.Database {

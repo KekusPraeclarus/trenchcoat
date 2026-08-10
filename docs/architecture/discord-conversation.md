@@ -2,7 +2,7 @@
 description: Discord conversational agent — addressing gate, ask-mode session over main workspace, agent-triggered research with synthesis.
 scope: module
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-08-10
 read_when:
   - Editing src/discord/conversation*.ts or skills/discord-chat.
   - Changing Discord channel message routing after research/tracking.
@@ -84,7 +84,17 @@ conversational agent: no addressing gate, no replies, no reactions. Conversation
 threads (including bot/webhook context and reply-chain ancestors) are evidence
 only. See [incident-remediation.md](incident-remediation.md).
 
+## Broadcast feedback reactions (passive)
+
+The same Gateway bot also watches reactions on delivered broadcasts. It reads
+`👍` and `👎` from the operator only, in the configured feedback channel only.
+This path sends no Discord reply. It needs the `GuildMessageReactions` intent
+plus the `Message` and `Reaction` partials, and the bot needs View Channel,
+Read Message History, and Add Reactions in that channel. See
+[broadcast-feedback.md](broadcast-feedback.md).
+
 ## References
 
 - ADR 022 — Discord conversational agent
-- INV-D1 (fourth host exception), INV-D9, INV-S15
+- ADR 043 — Operator broadcast feedback
+- INV-D1 (fourth host exception), INV-D9, INV-S15, INV-B6

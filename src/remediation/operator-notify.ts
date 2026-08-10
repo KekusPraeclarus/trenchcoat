@@ -53,14 +53,35 @@ function entryBlurb(entry: SuggestionLedgerEntry): string {
   return `• ${label}${category}: ${clipLine(body, SUMMARY_MAX)}${id}`
 }
 
+/** Outcomes worth one detailed line each in the operator digest */
+const DETAILED_OUTCOMES: ReadonlySet<string> = Object.freeze(new Set([
+  "queued",
+  "queued-waiting",
+  "built",
+]))
+
+/**
+ * Split a ledger day into detailed entries and routine forming noise. Forming
+ * entries never carry a decision yet, so the digest reports their count only.
+ */
+export function splitSuggestionDigestEntries(
+  entries: readonly SuggestionLedgerEntry[],
+): Readonly<{ detailed: readonly SuggestionLedgerEntry[]; formingCount: number }> {
+  const detailed = entries.filter((e) => DETAILED_OUTCOMES.has(e.outcome))
+  const formingCount = entries.filter((e) => e.outcome === "forming").length
+  return { detailed, formingCount }
+}
+
 /** Deterministic operator-facing digest (no model). */
 export function renderSuggestionDigestHost(args: Readonly<{
   day: string
   entries: readonly SuggestionLedgerEntry[]
 }>): string {
+  const { detailed, formingCount } = splitSuggestionDigestEntries(args.entries)
   const lines = [
-    `Discord suggestions ${args.day} — ${args.entries.length} noteworthy`,
-    ...args.entries.map(entryBlurb),
+    `Discord suggestions ${args.day} — ${detailed.length} noteworthy`,
+    ...detailed.map(entryBlurb),
+    ...(formingCount > 0 ? [`• Forming: ${formingCount} thread(s) still incomplete`] : []),
     "",
     "queued = admitted to remediation; waiting = capacity hold; forming = incomplete idea.",
   ]
@@ -182,7 +203,8 @@ export async function renderSuggestionDigest(args: Readonly<{
       hostText,
       facts: {
         day: args.day,
-        items: args.entries.map((e) => ({
+        formingCount: splitSuggestionDigestEntries(args.entries).formingCount,
+        items: splitSuggestionDigestEntries(args.entries).detailed.map((e) => ({
           outcome: e.outcome,
           label: OUTCOME_LABEL[e.outcome] ?? e.outcome,
           category: e.category ?? null,

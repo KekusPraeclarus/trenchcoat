@@ -80,7 +80,7 @@ describe("list-scan chat report promotion", () => {
     expect(readFileSync(reportPath, "utf8")).toContain(LIST_SCAN_ITEM.text)
   })
 
-  it("promotes host recall with zero staged broadcasts", async () => {
+  it("collapses a routine run with zero staged broadcasts into one line", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-list-chat-zero-"))
     const agentRoot = join(root, "agent")
     const layout = await ensureArchive(join(root, "archive"))
@@ -101,6 +101,9 @@ describe("list-scan chat report promotion", () => {
     expect(receipt.hostOnly).toBe(true)
     const report = readFileSync(join(agentRoot, "reports", "chat", `${RUN_ID}.md`), "utf8")
     expect(report).toContain("job: list-scan")
-    expect(report).toContain("staged: 0")
+    expect(report).toContain("- activity: routine")
+    expect(report).toContain("routine run, no movement")
+    expect(report).not.toContain("## Staged broadcasts")
+    expect(report).not.toContain("## Receipt paths")
   })
 })

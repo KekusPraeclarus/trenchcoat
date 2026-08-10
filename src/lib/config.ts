@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV22 } from "../migrations/config.js"
+import { migrateConfigToV23 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(22),
+  schema: z.literal(23),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -177,10 +177,31 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(true),
       model: z.string().min(1).max(64).default("composer-2.5-fast"),
     }).default({ enabled: true, model: "composer-2.5-fast" }),
+    /** Operator reaction feedback on delivered broadcasts (ADR 043, INV-B6) */
+    feedback: z.object({
+      enabled: z.boolean().default(false),
+      /** Discord channel that carries broadcasts; must be a chat.discord channel */
+      channel_id: z.string().regex(/^\d{17,20}$/u).optional(),
+      followup_ttl_hours: z.literal(72).default(72),
+      followup_model: z.string().min(1).max(64).default("composer-2.5-fast"),
+      history_days: z.number().int().min(1).max(90).default(30),
+      reconcile_max_messages: z.number().int().min(1).max(500).default(100),
+      candidate_min_policy_examples: z.number().int().min(1).max(200).default(5),
+      candidate_min_completed_down: z.number().int().min(1).max(200).default(3),
+      candidate_min_preference_pairs: z.number().int().min(1).max(200).default(2),
+    }).default({}),
   }),
   narratives: z.object({
     retention_days: z.number().int().min(1).max(90).default(14),
-  }).default({ retention_days: 14 }),
+    /** Curation floors for social evidence behind narrative claims (ADR 042) */
+    evidence_quality: z.object({
+      enabled: z.boolean().default(true),
+      max_promotional_share: z.number().min(0).max(1).default(0.5),
+      min_independent_authors: z.number().int().min(1).max(20).default(2),
+      min_fresh_posts: z.number().int().min(1).max(50).default(2),
+      primary_source_handles: z.array(z.string().min(1).max(64)).max(200).default([]),
+    }).default({}),
+  }).default({}),
   review: z.object({
     lookback_days: z.number().int().min(1).max(90).default(7),
     max_reports: z.number().int().min(1).max(100).default(30),
@@ -320,7 +341,7 @@ export const ConfigSchema = z.object({
       max_active_suggestion_incidents: z.number().int().min(0).max(5).default(1),
       forming_ttl_days: z.number().int().min(1).max(30).default(7),
       max_forming_rounds: z.number().int().min(1).max(20).default(5),
-      ambient_thread_gap_ms: z.number().int().min(60_000).max(3_600_000).default(900_000),
+      ambient_thread_gap_ms: z.number().int().min(60_000).max(3_600_000).default(300_000),
       min_confidence: z.number().min(0).max(1).default(0.7),
     }).default({
       enabled: false,
@@ -330,7 +351,7 @@ export const ConfigSchema = z.object({
       max_active_suggestion_incidents: 1,
       forming_ttl_days: 7,
       max_forming_rounds: 5,
-      ambient_thread_gap_ms: 900_000,
+      ambient_thread_gap_ms: 300_000,
       min_confidence: 0.7,
     }),
   }).default({
@@ -367,7 +388,7 @@ export const ConfigSchema = z.object({
       max_active_suggestion_incidents: 1,
       forming_ttl_days: 7,
       max_forming_rounds: 5,
-      ambient_thread_gap_ms: 900_000,
+      ambient_thread_gap_ms: 300_000,
       min_confidence: 0.7,
     },
   }),
@@ -685,6 +706,29 @@ export const ConfigSchema = z.object({
       })
     }
   }
+  const feedback = cfg.broadcast.feedback
+  if (feedback.enabled) {
+    if (!cfg.chat.discord.enabled) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "chat.discord.enabled required when broadcast.feedback.enabled",
+        path: ["broadcast", "feedback", "enabled"],
+      })
+    }
+    if (!feedback.channel_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "broadcast.feedback.channel_id required when enabled",
+        path: ["broadcast", "feedback", "channel_id"],
+      })
+    } else if (!cfg.chat.discord.channel_ids.includes(feedback.channel_id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "broadcast.feedback.channel_id must appear in chat.discord.channel_ids",
+        path: ["broadcast", "feedback", "channel_id"],
+      })
+    }
+  }
 })
 
 export type TrenchcoatConfig = z.infer<typeof ConfigSchema>
@@ -780,7 +824,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV22(raw))
+  return ConfigSchema.parse(migrateConfigToV23(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

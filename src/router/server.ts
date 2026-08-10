@@ -6,6 +6,10 @@ import { acceptEvent, ensureDefaultDestinations } from "./accept.js"
 import { leaseNextDelivery, processDelivery } from "./deliver.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { log } from "../lib/log.js"
+import { backfillDiscordProviderMessages } from "./message-index.js"
+
+/** Reaction history window for the Discord provider message index (ADR 043) */
+const PROVIDER_MESSAGE_HISTORY_DAYS = 30
 
 export type RouterServerOptions = Readonly<{
   dbPath: string
@@ -28,6 +32,18 @@ export type RouterServer = Readonly<{
 
 export function createRouterServer(opts: RouterServerOptions): RouterServer {
   const db = openRouterDb(opts.dbPath)
+  // Reactions can arrive on broadcasts delivered before this index existed
+  try {
+    const indexed = backfillDiscordProviderMessages(db, {
+      nowMs: Date.now(),
+      historyDays: PROVIDER_MESSAGE_HISTORY_DAYS,
+    })
+    if (indexed > 0) log.info("router indexed discord messages", { count: indexed })
+  } catch (error) {
+    log.warn("router message index backfill failed", {
+      detail: error instanceof Error ? error.message : "unknown",
+    })
+  }
   ensureDefaultDestinations(db, {
     ...(opts.telegramChatId ? { telegramChatId: opts.telegramChatId } : {}),
     ...(opts.discordWebhookUrl ? { discordWebhookUrl: opts.discordWebhookUrl } : {}),

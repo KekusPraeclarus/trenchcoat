@@ -82,6 +82,11 @@ import {
 } from "./chat-report.js"
 import { ingestOutbox } from "./outbox-ingest.js"
 import {
+  copyGuidanceBlock,
+  loadBroadcastOutputTuning,
+  resolveTuningRepoRoot,
+} from "./broadcast-output-tuning.js"
+import {
   DEFAULT_WORTHINESS_MODEL,
   WORTHINESS_TIMEOUT_MS,
 } from "./broadcast-worthiness.js"
@@ -135,6 +140,7 @@ import {
 } from "../contracts/schemas.js"
 import {
   evaluateJobPreconditions,
+  harnessSkipReasonFromSlug,
   recordJobSkip,
   type JobSkipReason,
 } from "./preconditions.js"
@@ -264,6 +270,45 @@ function archiveWalletEvidenceReport(args: Readonly<{
     }, null, 2)}\n`,
   )
   return { present: true, archived: true }
+}
+
+/**
+ * Record a typed skip for either harness lane. Both lanes report their own
+ * skips instead of the shared precondition path, because readiness depends on
+ * sealed archive state that only the lane itself can read.
+ */
+async function recordHarnessLaneSkip(args: Readonly<{
+  job: "harness-improve" | "harness-meta-improve"
+  archiveRoot: string
+  report: unknown
+}>): Promise<void> {
+  const report = args.report
+  if (!report || typeof report !== "object") return
+  const typed = report as {
+    status?: string
+    reasonSlug?: string
+    reason?: string
+    developmentEpochId?: string
+    holdoutEpochId?: string
+    nextAction?: string
+    candidateId?: string
+  }
+  if (typed.status !== "skipped") return
+  await recordJobSkip({
+    job: args.job,
+    reason: harnessSkipReasonFromSlug(typed.reasonSlug),
+    archiveRoot: args.archiveRoot,
+    skippedAt: systemClock.nowIso(),
+    details: {
+      ...(typed.reason ? { detail: typed.reason.slice(0, 200) } : {}),
+      ...(typed.developmentEpochId
+        ? { developmentEpochId: typed.developmentEpochId }
+        : {}),
+      ...(typed.holdoutEpochId ? { holdoutEpochId: typed.holdoutEpochId } : {}),
+      ...(typed.candidateId ? { candidateId: typed.candidateId } : {}),
+      ...(typed.nextAction ? { nextAction: typed.nextAction.slice(0, 200) } : {}),
+    },
+  })
 }
 
 export async function runJob(opts: RunOptions): Promise<RunResult> {
@@ -478,6 +523,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       narrativeLogReport?: unknown
       engagementReport?: unknown
       fcEngagementReport?: unknown
+      harnessReport?: unknown
       platformNotes?: readonly string[]
     } = {}
     const canary = loadActiveCanaryAssignment(opts.paths.archiveRoot, runId)
@@ -658,6 +704,10 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         job.name === "fomo-x-source-review"
           ? `Follow skills/fomo-x-source-review/SKILL.md. Write only reports/${runId}/fomo-x-classification.json. Cite sealed post IDs from inbox/${runId}/x-source-manifest.json only. Never mutate state/ or follow accounts.`
           : "",
+        // Operator-approved copy guidance only; never raw feedback (ADR 043)
+        WALLET_EVIDENCE_JOBS.has(job.name)
+          ? ""
+          : copyGuidanceBlock(loadBroadcastOutputTuning(resolveTuningRepoRoot())),
       ].filter(Boolean).join("\n")
       const session = await runOneShotSession({
         prompt,
@@ -920,6 +970,12 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "harness-improve.json"),
         `${JSON.stringify(harnessImproveReport, null, 2)}\n`,
       )
+      chatFactsExtras = { ...chatFactsExtras, harnessReport: harnessImproveReport }
+      await recordHarnessLaneSkip({
+        job: "harness-improve",
+        archiveRoot: opts.paths.archiveRoot,
+        report: harnessImproveReport,
+      })
     }
     let harnessMetaImproveReport: unknown
     if (job.name === "harness-meta-improve") {
@@ -934,6 +990,12 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         join(reportDir, "harness-meta-improve.json"),
         `${JSON.stringify(harnessMetaImproveReport, null, 2)}\n`,
       )
+      chatFactsExtras = { ...chatFactsExtras, harnessReport: harnessMetaImproveReport }
+      await recordHarnessLaneSkip({
+        job: "harness-meta-improve",
+        archiveRoot: opts.paths.archiveRoot,
+        report: harnessMetaImproveReport,
+      })
     }
     let incidentRemediateReport: unknown
     if (job.name === "incident-remediate" || job.name === "incident-remediate-weekly") {
@@ -1775,6 +1837,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         destinations: claim.destinations,
       }))
     const worthinessCfg = broadcast.worthiness
+    const outputTuning = loadBroadcastOutputTuning(resolveTuningRepoRoot())
     const worthinessRunSession = worthinessCfg.enabled
       ? async (sessionArgs: Readonly<{ prompt: string; message: string }>) => {
         const session = await runOneShotSession({
@@ -1800,11 +1863,17 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         nowIso: ingestNowIso,
         job: job.name,
         ...(collection.marketBlind ? { marketBlind: true } : {}),
+        ...(collection.narrativeEvidenceQuality
+          ? { narrativeEvidenceQuality: collection.narrativeEvidenceQuality }
+          : {}),
         ...(narrativeLogBefore.length > 0 ? { narrativeLogBefore } : {}),
         ...(narrativeLogAfter ? { narrativeLogAfter } : {}),
         worthiness: {
           enabled: worthinessCfg.enabled,
           ...(worthinessRunSession ? { runSession: worthinessRunSession } : {}),
+          ...(outputTuning.worthinessGuidance.length > 0
+            ? { guidance: outputTuning.worthinessGuidance }
+            : {}),
           context: {
             job: job.name,
             ...(typeof collection.collectionStatus === "string"
@@ -1838,6 +1907,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ...(chatFactsExtras.fcEngagementReport
             ? { fcEngagementReport: chatFactsExtras.fcEngagementReport }
             : {}),
+          ...(chatFactsExtras.harnessReport
+            ? { harnessReport: chatFactsExtras.harnessReport }
+            : {}),
           ...(chatFactsExtras.platformNotes
             ? { platformNotes: chatFactsExtras.platformNotes }
             : {}),
@@ -1846,6 +1918,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             `reports/${runId}/agent.md`,
             ...(job.name === "list-scan" ? [`reports/${runId}/x-engagement-host.json`] : []),
             ...(job.name === "farcaster-scan" ? [`reports/${runId}/fc-engagement-host.json`] : []),
+            ...(job.name === "harness-improve"
+              ? [`archive/runs/${runId}/host-reports/harness-improve.json`]
+              : []),
           ],
         }),
         blockPromotion: canary.blockExternalEffects,

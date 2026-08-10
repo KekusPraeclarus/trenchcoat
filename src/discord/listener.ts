@@ -3,7 +3,12 @@ import {
   GatewayIntentBits,
   Partials,
   type Message,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type PartialUser,
+  type User,
 } from "discord.js"
+import type Database from "better-sqlite3"
 import { join } from "node:path"
 import { systemClock } from "../lib/clock.js"
 import { loadConfig } from "../lib/config.js"
@@ -40,6 +45,20 @@ import {
   handleConversationTurn,
   reclaimConversationState,
 } from "./conversation.js"
+import {
+  applyBroadcastReaction,
+  feedbackConfigSlice,
+  gateReactionEvent,
+  openFeedbackRouterDb,
+  operatorUserId,
+  reconcileBroadcastFeedback,
+  type FeedbackConfigSlice,
+  type ReactionSnapshot,
+} from "./broadcast-feedback-listener.js"
+import {
+  FEEDBACK_DOWN_EMOJI,
+  FEEDBACK_UP_EMOJI,
+} from "../broadcast-feedback/schemas.js"
 
 export type DiscordListenerOpts = Readonly<{
   token: string
@@ -271,6 +290,74 @@ async function handleResearchMessage(
   })
 }
 
+/**
+ * Read the operator's live reactions on one broadcast message. Add and remove
+ * events both re-read the full set, so the ledger state matches Discord even
+ * after a missed event.
+ */
+async function readOperatorReactions(
+  message: Message,
+  operatorId: string,
+): Promise<ReactionSnapshot> {
+  let up = false
+  let down = false
+  for (const reaction of message.reactions.cache.values()) {
+    const emoji = reaction.emoji.name
+    if (emoji !== FEEDBACK_UP_EMOJI && emoji !== FEEDBACK_DOWN_EMOJI) continue
+    let reacted = false
+    try {
+      const users = await reaction.users.fetch()
+      reacted = users.has(operatorId)
+    } catch {
+      reacted = false
+    }
+    if (!reacted) continue
+    if (emoji === FEEDBACK_UP_EMOJI) up = true
+    else down = true
+  }
+  return { up, down }
+}
+
+async function handleBroadcastReaction(args: Readonly<{
+  reaction: MessageReaction | PartialMessageReaction
+  user: User | PartialUser
+  db: Database.Database
+  config: FeedbackConfigSlice
+  operatorId: string
+}>): Promise<void> {
+  const gate = gateReactionEvent({
+    config: args.config,
+    operatorUserId: args.operatorId,
+    reactingUserId: args.user.id,
+    channelId: args.reaction.message.channelId,
+    emoji: args.reaction.emoji.name ?? "",
+  })
+  if (!gate.admit) return
+
+  const message = args.reaction.message.partial
+    ? await args.reaction.message.fetch()
+    : (args.reaction.message as Message)
+  const reactions = await readOperatorReactions(message, args.operatorId)
+  const result = await applyBroadcastReaction({
+    db: args.db,
+    messageId: message.id,
+    operatorUserId: args.operatorId,
+    reactions,
+    config: args.config,
+  })
+  if ("skipped" in result) return
+  if (result.outcome === "unchanged") return
+  log.info("broadcast feedback recorded", {
+    feedbackId: result.record.feedbackId,
+    state: result.record.state,
+    outcome: result.outcome,
+  })
+  if (result.needsFollowup) {
+    const { requestFeedbackFollowup } = await import("../broadcast-feedback/notify.js")
+    await requestFeedbackFollowup({ record: result.record })
+  }
+}
+
 async function pumpLoop(repoRoot: string, token: string): Promise<void> {
   for (;;) {
     const result = await processNextDiscordRequest({ repoRoot, token })
@@ -298,8 +385,9 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMessageReactions,
     ],
-    partials: [Partials.Channel],
+    partials: [Partials.Channel, Partials.Message, Partials.Reaction],
   })
 
   const writeBeat = async (lastError?: string) => {
@@ -342,6 +430,30 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
     })
   })
 
+  const feedbackConfig = feedbackConfigSlice()
+  const operatorId = operatorUserId()
+  const feedbackDb = feedbackConfig.enabled && feedbackConfig.channelId && operatorId
+    ? openFeedbackRouterDb()
+    : undefined
+  if (feedbackDb && operatorId) {
+    const onReaction = (
+      reaction: MessageReaction | PartialMessageReaction,
+      user: User | PartialUser,
+    ) => {
+      void handleBroadcastReaction({
+        reaction,
+        user,
+        db: feedbackDb,
+        config: feedbackConfig,
+        operatorId,
+      }).catch((error) => {
+        log.warn(`discord feedback error: ${error instanceof Error ? error.message : "unknown"}`)
+      })
+    }
+    client.on("messageReactionAdd", onReaction)
+    client.on("messageReactionRemove", onReaction)
+  }
+
   client.on("error", (error) => {
     log.warn(`discord gateway error: ${error.message}`)
     void writeBeat(error.message)
@@ -360,6 +472,25 @@ export async function runDiscordListener(opts: DiscordListenerOpts): Promise<voi
   const reclaimed = await reclaimOrphanedDiscordRequests()
   if (reclaimed > 0) {
     log.info("discord reclaimed orphaned requests", { count: reclaimed })
+  }
+  if (feedbackDb && operatorId) {
+    const reconciled = await reconcileBroadcastFeedback({
+      db: feedbackDb,
+      operatorUserId: operatorId,
+      config: feedbackConfig,
+      readReactions: async (messageId) => {
+        const channel = await client.channels.fetch(feedbackConfig.channelId!)
+        if (!channel || !channel.isTextBased()) return undefined
+        const message = await channel.messages.fetch(messageId)
+        return readOperatorReactions(message, operatorId)
+      },
+    }).catch((error) => {
+      log.warn(`discord feedback reconcile failed: ${error instanceof Error ? error.message : "unknown"}`)
+      return 0
+    })
+    if (reconciled > 0) {
+      log.info("discord reconciled broadcast feedback", { count: reconciled })
+    }
   }
   const convReclaimed = await reclaimConversationState()
   if (convReclaimed > 0) {

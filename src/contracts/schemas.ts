@@ -1640,6 +1640,130 @@ export const DecisionPolicyDocumentSchema = z.object({
 })
 export type DecisionPolicyDocument = z.infer<typeof DecisionPolicyDocumentSchema>
 
+/**
+ * Approved output guidance from operator feedback (ADR 043). Host-owned file
+ * in the repo; prompts read it, models never write it.
+ */
+export const BroadcastOutputTuningSchema = z.object({
+  schema: z.literal(1),
+  updatedAt: IsoTimestampSchema,
+  /** Short copy rules injected into agent job prompts and topic distillation */
+  copyGuidance: z.array(z.string().min(1).max(200)).max(5).default([]),
+  /** Short rules injected into the worthiness user message */
+  worthinessGuidance: z.array(z.string().min(1).max(200)).max(5).default([]),
+  sourceCandidateId: SafeIdSchema.optional(),
+})
+export type BroadcastOutputTuning = z.infer<typeof BroadcastOutputTuningSchema>
+
+export const FeedbackTagEnumSchema = z.enum([
+  "tone",
+  "jargon",
+  "timing",
+  "accuracy",
+  "wrong-subject",
+  "too-long",
+  "too-short",
+  "missing-context",
+  "other",
+])
+
+/** One preferred/rejected pair over broadcasts with the same claim shape */
+export const OperatorPreferencePairSchema = z.object({
+  pairId: SafeIdSchema,
+  claimType: BroadcastClaimTypeSchema,
+  severity: BroadcastSeveritySchema,
+  preferredEventId: z.string().min(8).max(128),
+  rejectedEventId: z.string().min(8).max(128),
+  rejectedTags: z.array(FeedbackTagEnumSchema).min(1).max(9),
+})
+export type OperatorPreferencePair = z.infer<typeof OperatorPreferencePairSchema>
+
+/** One decision-policy example derived from a market broadcast reaction */
+export const FeedbackPolicyExampleSchema = z.object({
+  exampleId: SafeIdSchema,
+  eventId: z.string().min(8).max(128),
+  runId: SafeIdSchema,
+  subject: z.string().min(1).max(256),
+  claimType: BroadcastClaimTypeSchema,
+  signals: z.record(z.number()),
+  originalVerdict: z.enum(["track", "drop", "ignore", "revisit"]),
+  targetVerdict: z.enum(["track", "drop", "ignore", "revisit"]),
+  polarity: z.enum(["approval", "correction"]),
+  split: z.enum(["development", "holdout"]),
+})
+export type FeedbackPolicyExample = z.infer<typeof FeedbackPolicyExampleSchema>
+
+/**
+ * Sealed feedback dataset. Contains only system output, bounded tags, derived
+ * summaries, and event metadata — never raw operator prose (INV-S24).
+ */
+export const SealedFeedbackDatasetSchema = z.object({
+  schema: z.literal(1),
+  datasetId: SafeIdSchema,
+  sealedAt: IsoTimestampSchema,
+  ledgerHash: Sha256Schema,
+  counts: z.object({
+    up: z.number().int().min(0),
+    completedDown: z.number().int().min(0),
+    preferencePairs: z.number().int().min(0),
+    policyExamples: z.number().int().min(0),
+  }),
+  preferencePairs: z.array(OperatorPreferencePairSchema).max(500).default([]),
+  policyExamples: z.array(FeedbackPolicyExampleSchema).max(500).default([]),
+  tagCounts: z.record(z.number().int().min(0)).default({}),
+})
+export type SealedFeedbackDataset = z.infer<typeof SealedFeedbackDatasetSchema>
+
+/** Numeric-only preference view read by standard harness evaluation */
+export const OperatorPreferenceSetSchema = z.object({
+  schema: z.literal(1),
+  datasetId: SafeIdSchema,
+  sealedAt: IsoTimestampSchema,
+  pairs: z.array(z.object({
+    pairId: SafeIdSchema,
+    claimType: BroadcastClaimTypeSchema,
+    severity: BroadcastSeveritySchema,
+    preferredSignals: z.record(z.number()),
+    rejectedSignals: z.record(z.number()),
+  })).max(500).default([]),
+})
+export type OperatorPreferenceSet = z.infer<typeof OperatorPreferenceSetSchema>
+
+export const FEEDBACK_CANDIDATE_ALLOWED_PATHS = Object.freeze([
+  "agent/skills/decision-policy/policy.json",
+  "config/broadcast-output-tuning.json",
+] as const)
+
+export const FeedbackPolicyEvaluationSchema = z.object({
+  schema: z.literal(1),
+  developmentAgreementBefore: z.number().min(0).max(1),
+  developmentAgreementAfter: z.number().min(0).max(1),
+  holdoutAgreementBefore: z.number().min(0).max(1),
+  holdoutAgreementAfter: z.number().min(0).max(1),
+  marketHoldoutEpochId: SafeIdSchema.optional(),
+  protectedMetricsPass: z.boolean(),
+  pass: z.boolean(),
+  failReasons: z.array(z.string().min(1).max(200)).max(16).default([]),
+})
+export type FeedbackPolicyEvaluation = z.infer<typeof FeedbackPolicyEvaluationSchema>
+
+export const FeedbackCandidateSchema = z.object({
+  schema: z.literal(1),
+  candidateId: SafeIdSchema,
+  createdAt: IsoTimestampSchema,
+  datasetId: SafeIdSchema,
+  status: z.enum(["proposed", "applied", "dismissed"]),
+  /** Repo-relative paths; only the two allowlisted files may appear */
+  changedPaths: z.array(z.enum(FEEDBACK_CANDIDATE_ALLOWED_PATHS)).min(1).max(2),
+  rationale: z.string().min(1).max(1_000),
+  outputTuning: BroadcastOutputTuningSchema.optional(),
+  policyDocument: DecisionPolicyDocumentSchema.optional(),
+  evaluation: FeedbackPolicyEvaluationSchema.optional(),
+  appliedAt: IsoTimestampSchema.optional(),
+  dismissedAt: IsoTimestampSchema.optional(),
+})
+export type FeedbackCandidate = z.infer<typeof FeedbackCandidateSchema>
+
 const HarnessPlanBaseFields = {
   hypothesisId: SafeIdSchema,
   createdAt: IsoTimestampSchema,

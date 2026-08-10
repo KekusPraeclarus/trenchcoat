@@ -185,6 +185,55 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
     }
   })
 
+  it("indexes discord provider message ids after delivery", async () => {
+    const { openRouterDb } = await import("../../src/router/db.js")
+    const { processDelivery } = await import("../../src/router/deliver.js")
+    const { resolveDeliveryByDiscordMessageId } = await import(
+      "../../src/router/message-index.js"
+    )
+    const dir = mkdtempSync(join(tmpdir(), "tc-index-"))
+    const db = openRouterDb(join(dir, "router.sqlite3"))
+    const event = buildBroadcastRouterEvent(
+      "run-index-1",
+      "2026-07-16T18:00:00.000Z",
+      item,
+    )
+    db.prepare(
+      `INSERT INTO destinations(id, kind, target, enabled)
+       VALUES ('dest-discord', 'discord', 'https://discord.test/api/webhooks/1/token', 1)`,
+    ).run()
+    db.prepare(
+      `INSERT INTO events(event_id, payload_hash, type, payload_json, occurred_at, run_id, accepted_at)
+       VALUES (?, 'hash', ?, ?, ?, ?, 1)`,
+    ).run(event.eventId, event.type, JSON.stringify(event), event.occurredAt, event.runId)
+    db.prepare(
+      `INSERT INTO deliveries(id, event_id, destination_id, status, attempt_count, updated_at)
+       VALUES ('del-index-1', ?, 'dest-discord', 'pending', 0, 1)`,
+    ).run(event.eventId)
+
+    const fetcher = async () => new Response(
+      JSON.stringify({ id: "100000000000000042" }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )
+    await processDelivery(
+      db,
+      fetcher as unknown as typeof fetch,
+      {
+        id: "del-index-1",
+        event_id: event.eventId,
+        destination_id: "dest-discord",
+        status: "pending",
+        attempt_count: 0,
+      },
+      {},
+    )
+
+    const indexed = resolveDeliveryByDiscordMessageId(db, "100000000000000042")
+    expect(indexed?.eventId).toBe(event.eventId)
+    expect(indexed?.deliveryId).toBe("del-index-1")
+    expect(indexed?.partTotal).toBe(1)
+  })
+
   it("rejects off-host HTTP and accepts literal loopback HTTP", () => {
     expect(() => validateRouterUrl("http://127.0.0.1:8787/v1/events")).not.toThrow()
     expect(() => validateRouterUrl("http://localhost:8787/v1/events")).not.toThrow()

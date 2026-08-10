@@ -116,6 +116,14 @@ replies, DMs, and retweets stay blocked (INV-R2).
 
 ### Farcaster (Neynar)
 
+- **Dormant by default.** `farcaster.enabled` is false, installers omit both
+  Farcaster schedules unless you pass `--with-farcaster`, and `farcaster-scan`
+  plus `fc-source-review` skip with reason `farcaster-disabled`. Health shows
+  `fc: disabled` with no warning, `narrative-scan` writes
+  `farcasterScan=disabled`, and `watchlist-scan` makes Farcaster search calls
+  only when **both** `farcaster.enabled` and
+  `research.farcaster_search.enabled` are true. The rest of this section
+  describes behaviour after an explicit opt-in.
 - API-first via `api.neynar.com` (`NEYNAR_API_KEY`). No Playwright; no browser
   profile. Signer credentials live under `~/.trenchcoat/farcaster/signer.json`
   (mode 600, INV-I3) after `pnpm dev:cli auth farcaster`.
@@ -259,7 +267,18 @@ one social platform (X / Farcaster / Telegram) remain visible but are capped at
 `watch` and rendered as `X-only` / `Farcaster-only` / equivalent; market and
 FOMO provenance do not count as corroboration. `skipAgent` when `usableEvidence`
 is false (no sealed social and no market items).
-social reuse and no trending payload).
+
+**Curation (ADR 042).** Before writing the derived `narrative-social-*`
+snapshots, `curateSocialEvidence` (`src/orchestrator/social-evidence.ts`) drops
+collector status lines, expired posts, duplicates (`dedupeKey`, then URL, then
+normalized text hash, across all sources at once), and promotional posts
+(`promotion-pattern`, then `repeated-promotion` for the same author).
+`assessNarrativeEvidenceQuality` grades the curated set as `strong`, `limited`,
+or `none` against `narratives.evidence_quality`, and the scan writes the grade
+to `narrative-evidence-quality` in the run inbox. `ingestOutbox` rejects
+narrative claim types below `strong` with
+`narrative-evidence-quality:<floor>`. Sealed collector archives are never
+filtered, so raw social history stays byte-identical.
 
 ### Review collector (`review-collect.ts`)
 

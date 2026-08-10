@@ -98,9 +98,15 @@ function clipReason(value: string): string {
 export function worthinessUserMessage(args: Readonly<{
   item: BroadcastItem
   context: WorthinessContext
+  /** Operator-approved guidance lines (ADR 043); bounded host text only */
+  guidance?: readonly string[]
 }>): string {
+  const guidance = args.guidance ?? []
   return [
     "Decide whether this market broadcast is worth sending from claim, refs, and history only. Reply with JSON only.",
+    ...(guidance.length > 0
+      ? [`<operator-guidance>\n${guidance.map((line) => `- ${line}`).join("\n")}\n</operator-guidance>`]
+      : []),
     `job: ${args.context.job}`,
     `collectionStatus: ${args.context.collectionStatus ?? "unknown"}`,
     `marketBlind: ${args.context.marketBlind === true ? "true" : "false"}`,
@@ -150,6 +156,7 @@ export async function runBroadcastWorthiness(args: Readonly<{
   context: WorthinessContext
   runSession?: WorthinessSessionRunner
   enabled?: boolean
+  guidance?: readonly string[]
 }>): Promise<WorthinessResult> {
   if (args.enabled === false) {
     return { ok: true, worth: true, reason: "disabled" }
@@ -163,6 +170,7 @@ export async function runBroadcastWorthiness(args: Readonly<{
       message: worthinessUserMessage({
         item: args.item,
         context: args.context,
+        ...(args.guidance ? { guidance: args.guidance } : {}),
       }),
     })
     return validateWorthinessOutput(raw)

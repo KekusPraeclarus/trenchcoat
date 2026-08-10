@@ -2,6 +2,8 @@
 # Gate a job behind a jittered inter-run delay.
 # launchd polls often; this script no-ops until the next due timestamp.
 # farcaster-scan: uniform [3h15m, 4h45m] after success.
+# Default installs omit the farcaster-scan schedule, so this wrapper only runs
+# after `ops/install-*.sh --with-farcaster`.
 # X list-scan is KeepAlive (`tc listen x-scan`) — not gated here.
 # Failure backoff: 1h. Lock contention uses run-with-lock-retry (30–180s).
 # Usage: run-job-jittered.sh <job-name>

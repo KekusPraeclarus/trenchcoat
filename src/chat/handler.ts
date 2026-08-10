@@ -55,6 +55,18 @@ export type RemediationCommandHooks = Readonly<{
   handle: (text: string, operatorId: string) => Promise<string | null>
 }>
 
+/**
+ * Operator detail about a disliked broadcast (ADR 043). Returns a reply line
+ * when the message binds to an open request, otherwise null so normal chat
+ * continues.
+ */
+export type BroadcastFeedbackHooks = Readonly<{
+  handle: (args: Readonly<{
+    text: string
+    replyToMessageId?: string
+  }>) => Promise<string | null>
+}>
+
 export async function handleChatUpdate(args: Readonly<{
   chatId: string
   userId: string
@@ -69,6 +81,9 @@ export async function handleChatUpdate(args: Readonly<{
   research?: ResearchConfirmHooks
   exoneration?: ExonerationCommandHooks
   remediation?: RemediationCommandHooks
+  broadcastFeedback?: BroadcastFeedbackHooks
+  /** Telegram message the operator replied to, when the update carries one */
+  replyToMessageId?: string
   /** When set, overlong replies persist under reports/chat/ */
   agentRoot?: string
   /** Host homes for `/status` health snapshot (same builder as `tc status`) */
@@ -143,6 +158,27 @@ export async function handleChatUpdate(args: Readonly<{
       await args.send(
         target,
         `remediation failed: ${error instanceof Error ? error.message : "unknown"}`,
+      )
+      return "replied"
+    }
+  }
+
+  // Broadcast feedback detail before general chat, so a plain reply about a
+  // disliked broadcast never becomes a model turn.
+  if (args.broadcastFeedback) {
+    try {
+      const reply = await args.broadcastFeedback.handle({
+        text: trimmed,
+        ...(args.replyToMessageId ? { replyToMessageId: args.replyToMessageId } : {}),
+      })
+      if (reply !== null) {
+        await args.send(target, reply)
+        return "replied"
+      }
+    } catch (error) {
+      await args.send(
+        target,
+        `feedback failed: ${error instanceof Error ? error.message : "unknown"}`,
       )
       return "replied"
     }

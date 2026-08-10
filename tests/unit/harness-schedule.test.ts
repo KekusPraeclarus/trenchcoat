@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -12,8 +12,13 @@ import {
 } from "../../src/orchestrator/scorecard.js"
 import { openHarnessPullRequest } from "../../src/harness/pr.js"
 import { runHarnessImprove } from "../../src/harness/schedule.js"
+import {
+  pickUnusedMetaEpochPair,
+  runHarnessMetaImprove,
+} from "../../src/harness/meta-schedule.js"
+import { harnessSkipReasonFromSlug } from "../../src/orchestrator/preconditions.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV22 } from "../../src/migrations/config.js"
+import { migrateConfigToV23 } from "../../src/migrations/config.js"
 
 const CONFIG_HASH = `sha256:${"d".repeat(64)}` as const
 
@@ -60,7 +65,7 @@ async function seal(archiveRoot: string, epochId: string): Promise<void> {
 
 function writeEnabledConfig(trenchcoatDir: string, scheduleEnabled = true): void {
   mkdirSync(trenchcoatDir, { recursive: true })
-  const raw = migrateConfigToV22({
+  const raw = migrateConfigToV23({
     schema: 4,
     telegram_channels: [],
     twitter: {
@@ -169,6 +174,7 @@ describe("scheduled harness-improve", () => {
       name: "trenchcoat",
       private: true,
     }, null, 2)}\n`)
+    mkdirSync(join(repoRoot, ".git"), { recursive: true })
 
     const report = await runHarnessImprove({
       archiveRoot,
@@ -182,6 +188,15 @@ describe("scheduled harness-improve", () => {
 
     expect(report.status).toBe("skipped")
     expect(report.reason).toMatch(/decision-time signals/u)
+    expect(report.reasonSlug).toBe("dev-signals")
+    expect(existsSync(join(root, "harness-improvements", "schedule-report.json")))
+      .toBe(true)
+    // No hypothesis created before readiness fails
+    const hypRoot = join(root, "harness-improvements")
+    const dirs = existsSync(hypRoot)
+      ? readdirSync(hypRoot, { withFileTypes: true }).filter((d) => d.isDirectory())
+      : []
+    expect(dirs.map((d) => d.name).filter((n) => n !== "meta")).toEqual([])
   })
 
   it("skips when schedule_enabled is false", async () => {
@@ -197,5 +212,72 @@ describe("scheduled harness-improve", () => {
     })
     expect(report.status).toBe("skipped")
     expect(report.reason).toMatch(/schedule_enabled/u)
+    expect(report.reasonSlug).toBe("schedule-enabled")
+  })
+
+  it("skips require_two_epochs without creating a hypothesis", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-two-"))
+    const archiveRoot = join(root, "archive")
+    const home = join(root, "home")
+    const trench = join(home, ".trenchcoat")
+    writeEnabledConfig(trench, true)
+    const cfgPath = join(trench, "config.json")
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"))
+    cfg.harness_improvement.require_two_epochs = true
+    cfg.harness_improvement.min_events = 1
+    cfg.harness_improvement.min_holdout_events = 1
+    writeFileSync(cfgPath, `${JSON.stringify(cfg, null, 2)}\n`)
+    process.env["HOME"] = home
+
+    await seal(archiveRoot, "audit-only")
+    const repoRoot = join(root, "repo")
+    mkdirSync(join(repoRoot, ".git"), { recursive: true })
+    writeFileSync(join(repoRoot, "package.json"), "{}\n")
+
+    const report = await runHarnessImprove({
+      archiveRoot,
+      repoRoot,
+      nowIso: "2026-07-16T12:00:00.000Z",
+      dryRun: true,
+      runTests: false,
+    })
+    expect(report.status).toBe("skipped")
+    expect(report.reasonSlug).toBe("distinct-epochs")
+    expect(report.nextAction).toMatch(/second distinct/u)
+  })
+})
+
+describe("scheduled harness-meta-improve", () => {
+  it("gives a typed skip slug when the meta lane is disabled", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-meta-off-"))
+    const home = join(root, "home")
+    const trench = join(home, ".trenchcoat")
+    writeEnabledConfig(trench, true)
+    const cfgPath = join(trench, "config.json")
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"))
+    cfg.harness_improvement.meta_enabled = false
+    writeFileSync(cfgPath, `${JSON.stringify(cfg, null, 2)}\n`)
+    process.env["HOME"] = home
+    const report = await runHarnessMetaImprove({
+      archiveRoot: join(root, "archive"),
+      repoRoot: process.cwd(),
+    })
+    expect(report.status).toBe("skipped")
+    expect(report.reasonSlug).toBe("enabled")
+    expect(harnessSkipReasonFromSlug(report.reasonSlug)).toBe("enabled")
+  })
+
+  it("gives a typed skip slug when no sealed epoch pair exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-meta-pair-"))
+    const pick = pickUnusedMetaEpochPair({ archiveRoot: join(root, "archive") })
+    expect(pick.ok).toBe(false)
+    if (pick.ok) return
+    expect(pick.reasonSlug).toBe("sealed-epochs")
+    expect(harnessSkipReasonFromSlug(pick.reasonSlug)).toBe("sealed-epochs")
+  })
+
+  it("maps an unknown meta slug to the generic harness skip", () => {
+    expect(harnessSkipReasonFromSlug("not-a-gate")).toBe("harness-skipped")
+    expect(harnessSkipReasonFromSlug(undefined)).toBe("harness-skipped")
   })
 })

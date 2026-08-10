@@ -213,6 +213,202 @@ describe("collectNarrativeScan market-blind", () => {
   })
 })
 
+describe("collectNarrativeScan evidence curation", () => {
+  const seedSealedListRun = async (
+    archiveRoot: string,
+    items: readonly Record<string, unknown>[],
+  ): Promise<void> => {
+    const { ensureArchive, writeJsonRecordFsync, runArchiveDir } = await import(
+      "../../src/lib/archive.js"
+    )
+    const layout = await ensureArchive(archiveRoot)
+    const sealedRunId = "list-scan-2026-07-18T10-00-00-000Z"
+    await writeJsonRecordFsync(join(layout.transactions, `${sealedRunId}.json`), {
+      schema: 1,
+      runId: sealedRunId,
+      phase: "complete",
+      status: "complete",
+      phaseHashes: {},
+      sideEffects: {},
+    } as never)
+    const sealedDir = runArchiveDir(layout, sealedRunId)
+    mkdirSync(join(sealedDir, "inbox"), { recursive: true })
+    await writeJsonRecordFsync(join(sealedDir, "manifest.json"), {
+      schema: 1,
+      runId: sealedRunId,
+      job: "list-scan",
+      createdAt: "2026-07-18T10:00:00.000Z",
+      inboxSnapshotNames: ["twitter-fyp"],
+    } as never)
+    await writeJsonRecordFsync(join(sealedDir, "inbox", "twitter-fyp.json"), {
+      source: "host.twitter.fyp",
+      fetchedAt: "2026-07-18T11:30:00.000Z",
+      trust: "untrusted-external",
+      items,
+    } as never)
+  }
+
+  const post = (author: string, text: string) => ({
+    provenance: `twitter:@${author}`,
+    text,
+    ts: "2026-07-18T11:30:00.000Z",
+    ageSec: 1800,
+    freshnessTier: "live",
+  })
+
+  const emptyMarket: FetchLike = async () => new Response(
+    JSON.stringify({ data: [] }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  )
+
+  const runScan = async (items: readonly Record<string, unknown>[]) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "tc-narr-curate-")))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    await seedSealedListRun(archiveRoot, items)
+    const runId = "narrative-scan-2026-07-18T12-00-00-000Z"
+    const result = await collectNarrativeScan({
+      runId,
+      writer: new SnapshotWriter(agentRoot),
+      fetchedAt: NOW,
+      archiveRoot,
+      fetcher: emptyMarket,
+    })
+    const readSnapshot = (name: string) => JSON.parse(readFileSync(
+      join(agentRoot, "inbox", runId, `${name}.json`),
+      "utf8",
+    )) as { items: { text: string }[] }
+    return { result, readSnapshot, archiveRoot }
+  }
+
+  it("grades clean multi-author evidence as strong", async () => {
+    const { result, readSnapshot } = await runScan([
+      post("alpha_caller", "base ai agents take share of daily active wallets"),
+      post("second_desk", "agent frameworks on base keep shipping, fees follow"),
+    ])
+    expect(result.evidenceQuality?.tier).toBe("strong")
+    expect(result.evidenceQuality?.independentAuthors).toBe(2)
+    expect(readSnapshot("narrative-social-list").items).toHaveLength(2)
+    const receipt = readSnapshot("narrative-evidence-quality").items
+      .map((item) => item.text)
+      .join("\n")
+    expect(receipt).toContain("tier=strong")
+  })
+
+  it("filters promotion out of the derived snapshot and grades limited", async () => {
+    const { result, readSnapshot, archiveRoot } = await runScan([
+      post("alpha_caller", "base ai agents take share of daily active wallets"),
+      post("shiller", "presale live now, don't miss the next 100x"),
+      post("shiller", "last chance whitelist, join our group"),
+    ])
+    expect(result.evidenceQuality?.tier).toBe("limited")
+    expect(result.evidenceQuality?.reasons).toContain("promotional-share-above-max")
+    expect(readSnapshot("narrative-social-list").items).toHaveLength(1)
+
+    // The raw sealed archive keeps every collected post
+    const raw = JSON.parse(readFileSync(
+      join(
+        archiveRoot,
+        "runs",
+        "list-scan-2026-07-18T10-00-00-000Z",
+        "inbox",
+        "twitter-fyp.json",
+      ),
+      "utf8",
+    )) as { items: unknown[] }
+    expect(raw.items).toHaveLength(3)
+  })
+})
+
+describe("collectNarrativeScan farcaster gate", () => {
+  const seedSealedFarcasterRun = async (archiveRoot: string): Promise<void> => {
+    const { ensureArchive, writeJsonRecordFsync, runArchiveDir } = await import(
+      "../../src/lib/archive.js"
+    )
+    const layout = await ensureArchive(archiveRoot)
+    const sealedRunId = "farcaster-scan-2026-07-18T10-00-00-000Z"
+    await writeJsonRecordFsync(join(layout.transactions, `${sealedRunId}.json`), {
+      schema: 1,
+      runId: sealedRunId,
+      phase: "complete",
+      status: "complete",
+      phaseHashes: {},
+      sideEffects: {},
+    } as never)
+    const sealedDir = runArchiveDir(layout, sealedRunId)
+    mkdirSync(join(sealedDir, "inbox"), { recursive: true })
+    await writeJsonRecordFsync(join(sealedDir, "manifest.json"), {
+      schema: 1,
+      runId: sealedRunId,
+      job: "farcaster-scan",
+      createdAt: "2026-07-18T10:00:00.000Z",
+      inboxSnapshotNames: ["farcaster-for-you"],
+    } as never)
+    await writeJsonRecordFsync(join(sealedDir, "inbox", "farcaster-for-you.json"), {
+      source: "host.farcaster.for-you",
+      fetchedAt: "2026-07-18T10:00:00.000Z",
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${sealedRunId}:cast:1`,
+        text: "base ai agents heating",
+        ts: "2026-07-18T10:00:00.000Z",
+        ageSec: 0,
+        freshnessTier: "live",
+      }],
+    } as never)
+  }
+
+  const emptyMarket: FetchLike = async () => new Response(
+    JSON.stringify({ data: [] }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  )
+
+  it("ignores sealed farcaster runs when the lane is off", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "tc-narr-fc-off-")))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    await seedSealedFarcasterRun(archiveRoot)
+
+    const result = await collectNarrativeScan({
+      runId: "narrative-scan-2026-07-18T12-00-00-000Z",
+      writer: new SnapshotWriter(agentRoot),
+      fetchedAt: NOW,
+      archiveRoot,
+      fetcher: emptyMarket,
+    })
+
+    expect(result.selectedRuns.farcasterScan).toBeUndefined()
+    expect(result.snapshotNames).not.toContain("narrative-social-farcaster")
+    const status = readFileSync(
+      join(agentRoot, "inbox", "narrative-scan-2026-07-18T12-00-00-000Z", "narrative-collection-status.json"),
+      "utf8",
+    )
+    expect(status).toContain("farcasterScan=disabled")
+  })
+
+  it("uses sealed farcaster runs on explicit opt-in", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "tc-narr-fc-on-")))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    await seedSealedFarcasterRun(archiveRoot)
+
+    const result = await collectNarrativeScan({
+      runId: "narrative-scan-2026-07-18T12-00-00-000Z",
+      writer: new SnapshotWriter(agentRoot),
+      fetchedAt: NOW,
+      archiveRoot,
+      fetcher: emptyMarket,
+      farcasterEnabled: true,
+    })
+
+    expect(result.selectedRuns.farcasterScan).toBe("farcaster-scan-2026-07-18T10-00-00-000Z")
+    expect(result.snapshotNames).toContain("narrative-social-farcaster")
+  })
+})
+
 describe("collectNarrativeScan status matrix", () => {
   beforeEach(() => {
     resetRateGatesForTests()

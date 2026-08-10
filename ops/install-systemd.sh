@@ -1,9 +1,11 @@
 #!/bin/sh
 # Linux counterpart to ops/install-launchd.sh — user systemd units + timers.
 # Cadences match ops/runbook.md. Requires: loginctl enable-linger $USER
-# Usage: ops/install-systemd.sh [--dry-run] [--without-harness] [--jobs-only]
+# Usage: ops/install-systemd.sh [--dry-run] [--without-harness] [--with-farcaster]
+#                               [--jobs-only]
 #                               [--no-load] [--sync-env] [--sync-skills] [--allow-dirty]
 #                               [--skip-agent-wait]
+# Farcaster jobs stay out of the schedule unless you pass --with-farcaster.
 set -eu
 
 REPO_ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
@@ -21,6 +23,7 @@ PAUSE_FILE="$HOME/.trenchcoat/deploy-pause.json"
 DEPLOY_LINK="$HOME/bin/trenchcoat-deploy"
 DRY_RUN=0
 WITH_HARNESS=1
+WITH_FARCASTER=0
 JOBS_ONLY=0
 NO_LOAD=0
 SYNC_ENV=0
@@ -44,6 +47,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --without-harness) WITH_HARNESS=0; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --with-harness) WITH_HARNESS=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
+    --with-farcaster) WITH_FARCASTER=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --jobs-only) JOBS_ONLY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --no-load) NO_LOAD=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --allow-dirty) ALLOW_DIRTY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
@@ -319,11 +323,15 @@ EOF
   cp "$REPO_ROOT/ops/run-precheck.sh" "$BIN_DIR/run-precheck"
   cp "$REPO_ROOT/ops/trenchcoat-deploy.sh" "$BIN_DIR/trenchcoat-deploy"
   chmod 755 "$BIN_DIR/run-job-jittered" "$BIN_DIR/run-with-lock-retry" "$BIN_DIR/run-precheck" "$BIN_DIR/trenchcoat-deploy"
-  cat >"$BIN_DIR/run-farcaster-scan" <<EOF
+  if [ "$WITH_FARCASTER" -eq 1 ]; then
+    cat >"$BIN_DIR/run-farcaster-scan" <<EOF
 #!/bin/sh
 exec "$BIN_DIR/run-job-jittered" farcaster-scan
 EOF
-  chmod 755 "$BIN_DIR/run-farcaster-scan"
+    chmod 755 "$BIN_DIR/run-farcaster-scan"
+  else
+    rm -f "$BIN_DIR/run-farcaster-scan" 2>/dev/null || true
+  fi
   rm -f "$BIN_DIR/run-list-scan" 2>/dev/null || true
 
   mkdir -p "$HOME/bin"
@@ -339,7 +347,12 @@ write_oneshot_service() {
   unit="$1"
   job_log="$2"
   cmd="$3"
+  post_cmd="${4:-}"
   out="$DEST/$unit.service"
+  post_line=""
+  if [ -n "$post_cmd" ]; then
+    post_line="ExecStartPost=/bin/sh -c '$post_cmd'"
+  fi
   body=$(cat <<EOF
 [Unit]
 Description=trenchcoat $unit
@@ -352,6 +365,7 @@ WorkingDirectory=$HOME
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:$BIN_DIR:/usr/local/bin:/usr/bin
 ExecStart=/bin/sh -c '$(env_prefix); exec $cmd'
+$post_line
 StandardOutput=append:/tmp/trenchcoat.$job_log.out.log
 StandardError=append:/tmp/trenchcoat.$job_log.err.log
 
@@ -361,6 +375,10 @@ EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would write $out"
+    if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '%s\n' "$body" >"$out"
+    fi
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -395,6 +413,10 @@ EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would write $out (every ${seconds}s)"
+    if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '%s\n' "$body" >"$out"
+    fi
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -555,15 +577,18 @@ job_to_unit() {
   esac
 }
 
+FARCASTER_UNITS="
+trenchcoat-job-farcaster-scan
+trenchcoat-job-fc-source-review
+"
+
 SCHEDULED_UNITS="
 trenchcoat-job-chart-sweep
 trenchcoat-job-watchlist-scan
-trenchcoat-job-farcaster-scan
 trenchcoat-job-narrative-scan
 trenchcoat-job-research
 trenchcoat-job-outcomes-settle
 trenchcoat-job-source-list-review
-trenchcoat-job-fc-source-review
 trenchcoat-job-review
 trenchcoat-job-audit
 trenchcoat-job-wallet-discovery
@@ -583,6 +608,31 @@ trenchcoat-job-discord-watchlist-scan
 trenchcoat-job-incident-remediate
 trenchcoat-job-incident-remediate-weekly
 "
+
+if [ "$WITH_FARCASTER" -eq 1 ]; then
+  SCHEDULED_UNITS="$SCHEDULED_UNITS$FARCASTER_UNITS"
+fi
+
+# Default installs drop every Farcaster unit, timer, and wrapper left by an
+# earlier install. The jobs stay available by hand behind the config gate.
+remove_farcaster_units() {
+  for unit in $FARCASTER_UNITS; do
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "would remove $unit (pass --with-farcaster to keep it)"
+      if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+        rm -f "$DEST/$unit.timer" "$DEST/$unit.service"
+      fi
+      continue
+    fi
+    if [ "$NO_LOAD" -eq 0 ]; then
+      systemctl --user disable --now "$unit.timer" 2>/dev/null || true
+      systemctl --user stop "$unit.service" 2>/dev/null || true
+    fi
+    rm -f "$DEST/$unit.timer" "$DEST/$unit.service"
+  done
+  rm -f "$BIN_DIR/run-farcaster-scan" 2>/dev/null || true
+  echo "farcaster schedules omitted (pass --with-farcaster to install them)"
+}
 
 begin_deploy_pause() {
   if [ "$DRY_RUN" -eq 1 ] || [ "$NO_LOAD" -eq 1 ]; then
@@ -737,15 +787,26 @@ fi
 # Cadences from ops/runbook.md (same as install-launchd.sh)
 write_interval_job chart-sweep 3600 1
 write_interval_job watchlist-scan 7200 1
-write_jittered_job farcaster-scan
 write_interval_job narrative-scan 21600
 write_interval_job research 3600 1
 write_interval_job outcomes-settle 21600 0 1
 write_interval_job source-list-review 86400 0 1
-write_interval_job fc-source-review 86400 0 1
+if [ "$WITH_FARCASTER" -eq 1 ]; then
+  write_jittered_job farcaster-scan
+  write_interval_job fc-source-review 86400 0 1
+else
+  remove_farcaster_units
+fi
 write_oneshot_service trenchcoat-job-review review "$BIN_DIR/run-precheck review"
 write_calendar_timer trenchcoat-job-review "*-*-* 07:00:00"
-write_oneshot_service trenchcoat-job-audit audit "$BIN_DIR/run-precheck audit"
+if [ "$WITH_HARNESS" -eq 1 ]; then
+  # Success-only, non-blocking kick of the independent harness service.
+  # Does not change audit computation/sealing; audit still releases agent/.lock first.
+  write_oneshot_service trenchcoat-job-audit audit "$BIN_DIR/run-precheck audit" \
+    "systemctl --user --no-block start trenchcoat-job-harness-improve.service"
+else
+  write_oneshot_service trenchcoat-job-audit audit "$BIN_DIR/run-precheck audit"
+fi
 write_calendar_timer trenchcoat-job-audit "Mon *-*-* 06:00:00"
 write_interval_job wallet-discovery 21600 1
 write_interval_job wallet-runner-discovery 1800 1

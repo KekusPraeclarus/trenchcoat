@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { migrateConfigToV22 } from "../../src/migrations/config.js"
+import { migrateConfigToV23 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { readFileSync } from "node:fs"
 
@@ -15,9 +15,9 @@ describe("config schema 19 via chain_integration migration", () => {
     const raw = { ...seed, schema: 11 }
     delete (raw as { chat?: { discord?: { chain_integration?: unknown } } })
       .chat?.discord?.chain_integration
-    const migrated = migrateConfigToV22(raw)
+    const migrated = migrateConfigToV23(raw)
     const parsed = ConfigSchema.parse(migrated)
-    expect(parsed.schema).toBe(22)
+    expect(parsed.schema).toBe(23)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.chat.discord.chain_integration.enabled).toBe(true)
     expect(parsed.chat.discord.chain_integration.max_attempts_per_utc_day).toBe(3)
@@ -36,7 +36,7 @@ describe("config schema 19 via chain_integration migration", () => {
         },
       },
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV22(raw))
+    const parsed = ConfigSchema.parse(migrateConfigToV23(raw))
     expect(parsed.chat.discord.chain_integration.enabled).toBe(false)
     expect(parsed.chat.discord.chain_integration.max_attempts_per_utc_day).toBe(1)
   })

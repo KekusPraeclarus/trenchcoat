@@ -58,13 +58,23 @@ Passive conversation-aware intake (`incident_remediation.discord_suggestions`):
 | `max_active_suggestion_incidents` | `1` | Concurrent suggestion-origin active cap |
 | `forming_ttl_days` | `7` | Idle expiry for incomplete ideas |
 | `max_forming_rounds` | `5` | Max re-form attempts before not-buildable |
-| `ambient_thread_gap_ms` | `900000` | Non-reply messages within this gap share a thread |
+| `ambient_thread_gap_ms` | `300000` | Non-reply messages within this gap share a thread |
 | `min_confidence` | `0.7` | Below → downgrade to `forming` |
 
 Unit of analysis is a **thread** (reply chain + ambient window), not a single
 message. Bot/webhook messages are context-only. Reply ancestors may extend
 context beyond the scan window. Early fingerprint dedupe runs before the model;
-extensions of previously **built** suggestions proceed as `extends:`. Ledger:
+extensions of previously **built** suggestions proceed as `extends:`.
+
+Admission needs **both** a request word and a product-surface word in human
+text (`hasSuggestionSignal`); a bare mention admits nothing. A formed
+suggestion must carry `symptom`, `intendedBehavior`, and one to five measurable
+`acceptanceCriteria` (`checkFormedContract`). A missing intended behavior
+downgrades to `forming`; a missing symptom, a bad criteria count, an
+unmeasurable criterion, or alternatives without a rationale becomes
+`classifier-failed`. The daily Telegram digest details `queued`,
+`queued-waiting`, and `built` only, and collapses forming threads into one
+count; a forming-only day sends no digest. Ledger:
 `~/.trenchcoat/remediations/suggestions.json`. CLI: `tc remediations suggestions`.
 Silent on Discord (no replies/reactions). Telegram digests / failure alerts /
 high-risk approval cards use host-composed plain-language copy (optionally

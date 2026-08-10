@@ -52,6 +52,26 @@ for (const file of files) {
     failures.push(`${rel}: raw fetch in discord conversation layer violates INV-R4`)
   }
 
+  // Harness reads one sealed numeric preference file, never the live store (INV-S24)
+  if (
+    rel.startsWith("src/harness/")
+    && /from "\.\.\/broadcast-feedback\//.test(text)
+  ) {
+    failures.push(`${rel}: harness must not import the live broadcast-feedback store`)
+  }
+
+  // The candidate apply allowlist must stay the two literal paths (ADR 043)
+  if (rel === "src/contracts/schemas.ts") {
+    for (const allowed of [
+      "agent/skills/decision-policy/policy.json",
+      "config/broadcast-output-tuning.json",
+    ]) {
+      if (!text.includes(`"${allowed}"`)) {
+        failures.push(`${rel}: feedback candidate allowlist misses ${allowed}`)
+      }
+    }
+  }
+
   if (
     rel.startsWith("src/collectors/")
     && /\bfetch\s*\(/.test(text)

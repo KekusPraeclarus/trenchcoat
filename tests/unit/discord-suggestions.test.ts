@@ -8,20 +8,27 @@ import {
   stageAPrefilter,
   threadContentFingerprint,
   hasSuggestionSignal,
+  checkFormedContract,
+  isMeasurableCriterion,
   validateClassifierBatch,
   incidentSuggestionFingerprint,
 } from "../../src/remediation/suggestions.js"
 import type { DiscordHistoryMessage } from "../../src/discord/bot-client.js"
 import {
   migrateConfigToV17,
-  migrateConfigToV22,
+  migrateConfigToV23,
   DISCORD_SUGGESTIONS_V17_DEFAULTS,
 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { createRemediationStore, emptySuggestionLedger } from "../../src/remediation/store.js"
 import { remediationLayout } from "../../src/remediation/paths.js"
-import type { SuggestionLedgerEntry } from "../../src/remediation/schemas.js"
+import type {
+  SuggestionClassifierThreadResult,
+  SuggestionLedgerEntry,
+} from "../../src/remediation/schemas.js"
 import { sanitizeSecretLike } from "../../src/remediation/sanitize.js"
+
+const NOW = "2026-07-22T10:00:00.000Z"
 
 function msg(partial: Partial<DiscordHistoryMessage> & Pick<DiscordHistoryMessage, "id" | "content" | "timestamp">): DiscordHistoryMessage {
   return {
@@ -47,7 +54,7 @@ describe("discord suggestions config", () => {
   })
 
   it("migrates schema 17 → 20 preserving discord_suggestions", () => {
-    const migrated = migrateConfigToV22({
+    const migrated = migrateConfigToV23({
       schema: 17,
       incident_remediation: {
         enabled: true,
@@ -60,7 +67,7 @@ describe("discord suggestions config", () => {
       },
       broadcast: { telegram_digest: { enabled: false } },
     }) as Record<string, unknown>
-    expect(migrated["schema"]).toBe(22)
+    expect(migrated["schema"]).toBe(23)
     const ir = migrated["incident_remediation"] as Record<string, unknown>
     const ds = ir["discord_suggestions"] as Record<string, unknown>
     expect(ds["enabled"]).toBe(true)
@@ -74,8 +81,8 @@ describe("discord suggestions config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV22(seed))
-    expect(parsed.schema).toBe(22)
+    const parsed = ConfigSchema.parse(migrateConfigToV23(seed))
+    expect(parsed.schema).toBe(23)
     expect(parsed.incident_remediation.discord_suggestions.enabled).toBe(false)
   })
 })
@@ -120,6 +127,93 @@ describe("thread grouping", () => {
     const fp = threadContentFingerprint(messages)
     expect(fp).toHaveLength(24)
     expect(hasSuggestionSignal(messages)).toBe(true)
+  })
+})
+
+describe("suggestion admission", () => {
+  it("needs both a request and a product surface", () => {
+    expect(hasSuggestionSignal([
+      msg({ id: "1", content: "the digest should skip forming lines", timestamp: NOW }),
+    ])).toBe(true)
+    // A request with no surface stays out
+    expect(hasSuggestionSignal([
+      msg({ id: "1", content: "please add more of that", timestamp: NOW }),
+    ])).toBe(false)
+    // A surface with no request stays out
+    expect(hasSuggestionSignal([
+      msg({ id: "1", content: "nice broadcast earlier", timestamp: NOW }),
+    ])).toBe(false)
+  })
+
+  it("no longer admits a bare mention", () => {
+    expect(hasSuggestionSignal([
+      msg({ id: "1", content: "<@2222222222222222222> lol", timestamp: NOW }),
+    ])).toBe(false)
+  })
+
+  it("ignores bot and webhook text when admitting", () => {
+    expect(hasSuggestionSignal([
+      msg({
+        id: "1",
+        content: "you should change the digest",
+        timestamp: NOW,
+        authorIsBot: true,
+      }),
+    ])).toBe(false)
+  })
+})
+
+describe("formed suggestion contract", () => {
+  const formed: SuggestionClassifierThreadResult = {
+    threadId: "th-1",
+    verdict: "suggestion-formed",
+    category: "small-feature",
+    summary: "collapse forming lines in the digest",
+    symptom: "the daily digest lists every forming thread",
+    intendedBehavior: "the digest reports forming threads as one count",
+    acceptanceCriteria: ["digest contains at most 1 forming line"],
+  }
+
+  it("accepts a complete decision", () => {
+    expect(checkFormedContract(formed)).toEqual({ ok: true })
+  })
+
+  it("downgrades to forming when the intended behavior is missing", () => {
+    const { intendedBehavior: _unused, ...rest } = formed
+    expect(checkFormedContract(rest)).toMatchObject({
+      ok: false,
+      downgrade: "forming",
+      reason: "missing-intended-behavior",
+    })
+  })
+
+  it("fails the classifier for missing or unmeasurable criteria", () => {
+    expect(checkFormedContract({ ...formed, acceptanceCriteria: [] })).toMatchObject({
+      downgrade: "classifier-failed",
+      reason: "acceptance-criteria-count",
+    })
+    expect(checkFormedContract({
+      ...formed,
+      acceptanceCriteria: ["make it nicer"],
+    })).toMatchObject({
+      downgrade: "classifier-failed",
+      reason: "acceptance-criteria-not-measurable",
+    })
+  })
+
+  it("requires a rationale when alternatives exist", () => {
+    expect(checkFormedContract({
+      ...formed,
+      alternativesConsidered: ["drop the digest entirely"],
+    })).toMatchObject({
+      downgrade: "classifier-failed",
+      reason: "missing-recommendation-rationale",
+    })
+  })
+
+  it("scores measurable criteria deterministically", () => {
+    expect(isMeasurableCriterion("digest shows at most 1 forming line")).toBe(true)
+    expect(isMeasurableCriterion("feels better")).toBe(false)
   })
 })
 

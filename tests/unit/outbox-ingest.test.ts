@@ -59,6 +59,60 @@ describe("outbox ingest", () => {
     expect(new Outbox(join(s.layout.routerOutbox, RUN_ID)).list()).toHaveLength(1)
   })
 
+  it("rejects a narrative claim when curated evidence is not strong", async () => {
+    const narrative = {
+      ...VALID_ITEM,
+      auditClaim: {
+        type: "narrative-emergence",
+        subject: "base ai agents",
+        direction: "up",
+        horizonHours: 72,
+        verificationRule: "narrative.emergence",
+      },
+    }
+    const s = await scaffold({ schema: 1, items: [narrative, VALID_ITEM] })
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      narrativeEvidenceQuality: {
+        schema: 1,
+        enabled: true,
+        tier: "limited",
+        reasons: ["authors-below-floor"],
+        freshPosts: 2,
+        independentAuthors: 1,
+        promotionalShare: 0,
+        primarySourceAuthors: [],
+        excludedCounts: {
+          "collector-status": 0,
+          duplicate: 0,
+          "repeated-promotion": 0,
+          "promotion-pattern": 0,
+          expired: 0,
+        },
+        thresholds: {
+          maxPromotionalShare: 0.5,
+          minIndependentAuthors: 2,
+          minFreshPosts: 2,
+        },
+      },
+    })
+    // The token claim keeps its own market gates and still stages
+    expect(report.staged).toBe(1)
+    expect(report.rejects.map((r) => r.reason)).toContain(
+      "narrative-evidence-quality:authors-below-floor",
+    )
+    const receipts = JSON.parse(readFileSync(
+      join(s.archiveRoot, "runs", RUN_ID, "broadcast-rejects.json"),
+      "utf8",
+    )) as { rejects: { reason: string }[] }
+    expect(receipts.rejects.map((r) => r.reason)).toContain(
+      "narrative-evidence-quality:authors-below-floor",
+    )
+  })
+
   it("accepts a bare array of items", async () => {
     const s = await scaffold([VALID_ITEM])
     const report = await ingestOutbox({

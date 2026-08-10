@@ -2,10 +2,11 @@
 description: Host-owned harness improvement — policy lane (ADR 005) and shadow improver-config meta lane (ADR 039), sealed-only inputs, mining/manifesto/keep/prior-attempts, operator promote.
 scope: module
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-10
 read_when:
   - Editing src/harness/**, decision proposals, or canary assignment.
   - Changing how sealed audits feed policy experiments or improver-config trials.
+  - Changing audit→harness scheduler chaining in ops/install-*.sh.
 ---
 
 # Harness improvement loop
@@ -74,6 +75,7 @@ Under `~/.trenchcoat/harness-improvements/` (sibling of `archive/`):
 | `<hypothesisId>/prior-attempts-summary.json` | policy | Compact negative-result digest for propose/plan |
 | `<hypothesisId>/manifesto-validation.json` | policy | Plan manifesto vs holdout metrics (unpredicted protected regression fails) |
 | `<hypothesisId>/…` | policy | hypothesis, plan, reviews, evaluation, journal, rejection |
+| `schedule-report.json` | policy | Latest schedule outcome (incl. typed preflight skips) |
 | `prior-attempts.jsonl` | shared | Rebuildable index from rejection/rollback receipts |
 | `meta/<candidateId>/` | meta | `candidate.json`, `candidate-config.json`, trial pairs, utility summary |
 | `meta/<candidateId>/operator-notify.json` | meta | One-shot Telegram ping receipt when `promotion_eligible` |
@@ -91,7 +93,22 @@ Propose / mining / keep / prior-attempts / meta trials may use:
 - decision metadata / enums, numeric archived `signals`, host gate flags
 - settled numeric decision outcomes (`outcomes/decision/<id>/<h>h.json`)
 
+- one sealed numeric operator preference set (see below)
+
 Never inbox, scraped card prose, or mutable workspace text (INV-S24).
+
+## Operator preference gate (ADR 043)
+
+Operator broadcast feedback reaches the harness through one file only:
+`~/.trenchcoat/broadcast-feedback/sealed/active-preference-set.json`. It holds
+numeric signal vectors per preferred/rejected pair — no message text, no tags,
+no ledger lines. `src/harness/operator-preference.ts` reads it and
+`evaluateHypothesis` rejects a candidate that lowers agreement, with reason
+`operator-preference-regression`.
+
+`src/harness/**` never imports `src/broadcast-feedback/**`; `scripts/lint-static.ts`
+fails the build if it does. The feedback lane itself proposes only its own
+bounded candidates and never edits harness code or gates (ADR 038).
 
 ## Scheduling
 
@@ -115,17 +132,55 @@ Never inbox, scraped card prose, or mutable workspace text (INV-S24).
 | `harness_improvement.meta_require_operator_promotion` | `true` | `tc harness meta promote` required |
 
 Cadence: weekly policy (`harness-improve`, installed by default; `--without-harness`
-to opt out) or `tc harness run`. Scheduled policy **never** activates the agent
-workspace and **never** starts a canary — that is `tc harness activate <id>` after
-drain. Meta (`harness-meta-improve` / `tc harness meta …`) may wake ~monthly or when
-a fresh epoch pair appears; duplicate wakeups are no-ops via lock + trial ids.
+to opt out) or `tc harness run`. **Additionally**, install scripts chain a
+success-only, non-blocking kick of the independent `harness-improve` service
+after the scheduled `audit` command exits zero (systemd `ExecStartPost
+--no-block`; launchd `launchctl kickstart … &`). That chaining lives only in
+`ops/install-systemd.sh` / `ops/install-launchd.sh` — it does **not** change
+audit computation, sealing, scorecards, or any `job.name === "audit"` code
+path. The weekly harness timer remains as a recovery fallback. Duplicate
+wakeups are typed no-ops via readiness, harness lock, and mid-flight gates.
+Scheduled policy **never** activates the agent workspace and **never** starts a
+canary — that is `tc harness activate <id>` after drain. Meta
+(`harness-meta-improve` / `tc harness meta …`) may wake ~monthly or when a
+fresh epoch pair appears; duplicate wakeups are no-ops via lock + trial ids.
+
+### Readiness (pre-proposal)
+
+`assessHarnessImproveReadiness` (`src/harness/readiness.ts`) is a read-only
+preflight used by `runHarnessImprove` before `proposeFromSealedEpoch`. It does
+not acquire locks, create hypotheses, replay/consume holdouts, or run agents.
+Gates (stable `reasonSlug` values) include: enabled / schedule-enabled, no
+active canary, no policy mid-flight, no meta trialing, sealed epochs, distinct
+epochs (`require_two_epochs`), decision-time signals, unused holdout,
+`min_events` (development scorecard `outcomeCoverage.denominator`), and
+`min_holdout_events` (eligible holdout subject count lower bound; replay remains
+authoritative). Failures return `{ status: "skipped", reasonSlug, nextAction }`
+and persist `~/.trenchcoat/harness-improvements/schedule-report.json`.
+
+Operator surfaces:
+
+- `tc harness status` → readiness + last schedule report + pending activation
+- `tc status` → `harness-improve` lastSkip (never lastSuccess for typed skips)
+- host chat recall for `harness-improve` includes harness status / nextAction
+
+Typed skips also append `archive/skips/harness-improve.jsonl` via `recordJobSkip`.
+Orchestrator exit code remains 0 for expected deferrals.
+
+The meta lane uses the same slug vocabulary. `runHarnessMetaImprove` returns a
+`reasonSlug` for each skip, and `runJob` records it under
+`archive/skips/harness-meta-improve.jsonl`. Health treats both lanes as expected
+recurring skips, so a deferral raises no warning. `harness-improve` carries a
+weekly advisory cadence (604800 s) for stale-job detection.
+`harness-meta-improve` carries no cadence because it has no timer.
 
 Scheduled runs resolve the checkout via `TRENCHCOAT_REPO_ROOT` (set in
-`~/.trenchcoat/env` by `install-launchd.sh`), then `process.cwd()`. Path must
-contain both `.git` and `package.json` (`~/.trenchcoat/runtime` is not valid).
-Sibling git worktrees used for candidates do **not** inherit the main
-checkout's `node_modules`; host installs with `pnpm install --frozen-lockfile`
-before any worktree `pnpm` test/gate script.
+`~/.trenchcoat/env` by `install-launchd.sh` / `install-systemd.sh`), then
+`process.cwd()`. Path must contain both `.git` and `package.json`
+(`~/.trenchcoat/runtime` is not valid). Sibling git worktrees used for
+candidates do **not** inherit the main checkout's `node_modules`; host installs
+with `pnpm install --frozen-lockfile` before any worktree `pnpm` test/gate
+script.
 
 `evaluateHypothesis` replays the holdout through the candidate worktree policy
 (with archived decision-time signals), compares the primary metric to the
@@ -216,8 +271,9 @@ state/inbox/outbox/reports/alpha-queue), then starts the bounded canary.
 
 ## Failure / resume
 
-- Typed skips (lock held, missing epochs/signals, active canary, mid-flight peer
-  lane, cadence) persist schedule reports and exit without mutating allowlists.
+- Typed skips (lock held, missing epochs/signals, consumed holdout, sample
+  floors, active canary, mid-flight peer lane, cadence) persist
+  `schedule-report.json` + skip ledger and exit 0 without mutating allowlists.
 - Policy journal advances through discrete phases; crash mid-pipeline leaves the
   hypothesis dir + rejection receipts for the next run / operator inspect —
   do not reuse a consumed holdout.
@@ -239,5 +295,6 @@ state/inbox/outbox/reports/alpha-queue), then starts the bounded canary.
 - Discord chain-registry automation is a **separate** lane (INV-S26 / ADR 016);
   it must not widen harness allowlists. Both lanes may host-push ff-only updates
   to `origin/main` under `repo-mutation.lock`.
+- Operator feedback lane: [broadcast-feedback.md](broadcast-feedback.md) (ADR 043, INV-B6)
 - Agent workspace sync boundary: [agent-workspace.md](agent-workspace.md)
 - Research alignment: [harness-self-improvement-patterns.md](../knowledge/harness-self-improvement-patterns.md)

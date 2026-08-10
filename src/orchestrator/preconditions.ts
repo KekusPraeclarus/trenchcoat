@@ -37,6 +37,21 @@ export type JobSkipReason =
   | "wallet-signals-disabled"
   | "wallet-signals-misconfigured"
   | "discord-token-missing"
+  | "farcaster-disabled"
+  | "enabled"
+  | "schedule-enabled"
+  | "harness-lock-held"
+  | "no-active-canary"
+  | "no-policy-midflight"
+  | "no-meta-trialing"
+  | "sealed-epochs"
+  | "distinct-epochs"
+  | "dev-signals"
+  | "holdout-signals"
+  | "holdout-unused"
+  | "dev-sample-floor"
+  | "holdout-sample-floor"
+  | "harness-skipped"
 
 export type JobPreconditionResult = Readonly<{
   skip: true
@@ -46,6 +61,30 @@ export type JobPreconditionResult = Readonly<{
 
 const SAFE_JOB = /^[a-z0-9-]{1,64}$/u
 const SAFE_REASON = /^[a-z0-9-]{1,64}$/u
+
+const HARNESS_SKIP_REASONS = new Set<JobSkipReason>([
+  "enabled",
+  "schedule-enabled",
+  "harness-lock-held",
+  "no-active-canary",
+  "no-policy-midflight",
+  "no-meta-trialing",
+  "sealed-epochs",
+  "distinct-epochs",
+  "dev-signals",
+  "holdout-signals",
+  "holdout-unused",
+  "dev-sample-floor",
+  "holdout-sample-floor",
+  "harness-skipped",
+])
+
+export function harnessSkipReasonFromSlug(slug: string | undefined): JobSkipReason {
+  if (slug && SAFE_REASON.test(slug) && HARNESS_SKIP_REASONS.has(slug as JobSkipReason)) {
+    return slug as JobSkipReason
+  }
+  return "harness-skipped"
+}
 
 const WALLET_EVIDENCE_JOBS = new Set<JobName>([
   "wallet-discovery",
@@ -66,6 +105,8 @@ const HOST_GATED_JOBS = new Set<JobName>([
   "discord-wallet-signal-scan",
   "delivery-retry",
   "telegram-digest",
+  "farcaster-scan",
+  "fc-source-review",
 ])
 
 export function isHostGatedJob(job: JobName): boolean {
@@ -263,6 +304,18 @@ export async function evaluateJobPreconditions(args: Readonly<{
     const pending = listIngressPending(layout, args.nowIso)
     if (pending.length === 0) {
       return { skip: true, reason: "no-pending-ingress", details: { pending: 0 } }
+    }
+  }
+
+  if (args.job === "farcaster-scan" || args.job === "fc-source-review") {
+    let enabled = false
+    try {
+      enabled = loadConfig().farcaster.enabled
+    } catch {
+      enabled = false
+    }
+    if (!enabled) {
+      return { skip: true, reason: "farcaster-disabled" }
     }
   }
 

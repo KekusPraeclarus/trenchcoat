@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
 import { splitTelegramText, telegramSendDailyDigestChunks, telegramSendFormattedChunks } from "../lib/telegram-bot.js"
+import { indexDiscordProviderMessages } from "./message-index.js"
 
 export type DestinationRow = Readonly<{
   id: string
@@ -224,6 +225,15 @@ export async function processDelivery(
       `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL,
        provider_message_ids = ?, updated_at = ? WHERE id = ?`,
     ).run(messageIds.length > 0 ? JSON.stringify(messageIds) : null, now, delivery.id)
+    if (dest.kind === "discord" && messageIds.length > 0) {
+      indexDiscordProviderMessages(db, {
+        deliveryId: delivery.id,
+        eventId: delivery.event_id,
+        destinationId: delivery.destination_id,
+        messageIds,
+        indexedAt: now,
+      })
+    }
     db.prepare(
       `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, ?)`,
     ).run(

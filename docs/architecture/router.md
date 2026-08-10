@@ -2,7 +2,7 @@
 description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-07-23
+last_verified: 2026-08-10
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -118,6 +118,12 @@ Discord mirrors Telegram leaders only (ADR 041).
   Successful deliveries persist provider message IDs on the delivery row
   (`provider_message_ids`) so single-claim `finding.correction` can reply on
   Discord when an ID exists; missing IDs fall back to standalone.
+  Each delivered Discord part also lands in `provider_message_index`
+  (`src/router/message-index.ts`), which maps a message id to its delivery,
+  event, and part. Operator broadcast feedback reads that table to resolve a
+  reaction back to one broadcast (ADR 043). The router backfills the index for
+  recent deliveries at startup, so messages sent before the table existed still
+  resolve.
 - Graceful shutdown drains in-flight leases, then exits
 
 ## Security surface

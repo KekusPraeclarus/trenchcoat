@@ -14,6 +14,8 @@ export function buildChatPrompt(operatorText: string): string {
     "Follow skills/chat/SKILL.md.",
     "You are the operator's dedicated chat session over this agent workspace.",
     "Read state/INDEX.md first. Prefer state/, reports/, and existing chat reports.",
+    "Chat reports carry an `activity` line. Read `movement` reports first, then `changed` ones.",
+    "Summarize `routine` reports as one count, for example \"6 routine runs, no change\" — never list them.",
     "Answer directly when the knowledge store suffices. Do not invent tokens, scores, or CAs.",
     "If the question needs fresh upstream data or a deep store walk, say so briefly — do not fetch.",
     "If they ask to research a token, reply in one short line that the host should prompt confirm/cancel — never invent queue status, collector gaps, or Agent mode.",

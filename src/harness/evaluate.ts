@@ -8,6 +8,7 @@ import {
   HarnessPlanSchema,
   PROTECTED_QUALITY_METRICS,
   type HarnessEvaluation,
+  type OperatorPreferenceSet,
   type Scorecard,
 } from "../contracts/schemas.js"
 import { loadHypothesis, saveHypothesis, hypothesisDir } from "./propose.js"
@@ -20,6 +21,10 @@ import { replayHoldoutThroughPolicy, type ReplaySubject } from "./replay.js"
 import { isHoldoutConsumed, recordHoldoutConsumption } from "./holdout-registry.js"
 import { loadHoldoutSubjectsWithSignalsOrThrow } from "./signals.js"
 import { protectedMetricsUnchangedOrImproved } from "./quality.js"
+import {
+  checkPreferenceRegression,
+  loadActivePreferenceSet,
+} from "./operator-preference.js"
 import { validateManifestoAgainstEvaluation } from "./manifesto-validate.js"
 import { ensureWorktreeDeps } from "../lib/worktree-deps.js"
 
@@ -145,6 +150,8 @@ export type EvaluateOptions = Readonly<{
     layout: ArchiveLayout,
     holdout: SealedEpoch,
   ) => readonly ReplaySubject[]
+  /** Sealed operator preferences; defaults to the active file, absent = no gate */
+  preferenceSet?: OperatorPreferenceSet
 }>
 
 export async function evaluateHypothesis(
@@ -242,6 +249,17 @@ export async function evaluateHypothesis(
     development.scorecard,
     candidateScorecard,
   )
+  // Later candidates must not undo operator preferences already sealed (ADR 043)
+  const baselinePolicyPath = join(opts.repoRoot, policyRelPath)
+  const preference = existsSync(baselinePolicyPath)
+    ? checkPreferenceRegression({
+      baselinePolicy: loadPolicy(baselinePolicyPath),
+      candidatePolicy: policy,
+      ...(opts.preferenceSet !== undefined
+        ? { set: opts.preferenceSet }
+        : { ...(loadActivePreferenceSet() ? { set: loadActivePreferenceSet()! } : {}) }),
+    })
+    : { ok: true, baseline: 1, candidate: 1 }
 
   if (holdoutN < hypothesis.sampleRequirements.minHoldoutEvents) {
     await recordHoldoutConsumption({
@@ -304,6 +322,7 @@ export async function evaluateHypothesis(
     && improved
     && safety.ok
     && protectedCheck.ok
+    && preference.ok
   let evaluation = HarnessEvaluationSchema.parse({
     schema: 1,
     hypothesisId: opts.hypothesisId,
@@ -332,6 +351,7 @@ export async function evaluateHypothesis(
         !protectedCheck.ok
           ? `protected:${protectedCheck.regressions.join(",")}`
           : "",
+        !preference.ok ? "operator-preference-regression" : "",
       ].filter(Boolean).join("; "),
     }),
   })

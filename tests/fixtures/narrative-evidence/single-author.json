@@ -1,0 +1,21 @@
+{
+  "source": "archive.list-scan:list-scan-2026-08-10T10-00-00-000Z",
+  "fetchedAt": "2026-08-10T12:00:00.000Z",
+  "trust": "untrusted-external",
+  "items": [
+    {
+      "provenance": "twitter:@solo_caller",
+      "text": "base ai agents are taking share of daily active wallets again",
+      "ts": "2026-08-10T11:00:00.000Z",
+      "ageSec": 3600,
+      "freshnessTier": "live"
+    },
+    {
+      "provenance": "twitter:@solo_caller",
+      "text": "agent frameworks on base keep shipping, fee revenue follows",
+      "ts": "2026-08-10T10:30:00.000Z",
+      "ageSec": 5400,
+      "freshnessTier": "live"
+    }
+  ]
+}

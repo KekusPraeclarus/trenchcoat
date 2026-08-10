@@ -1015,3 +1015,67 @@ export function migrateConfigToV22(raw: unknown): unknown {
     },
   }
 }
+
+/**
+ * Schema 23: narrative evidence quality gates (ADR 042) and operator broadcast
+ * feedback (ADR 043). Farcaster search stays off for new installations; an
+ * existing explicit value survives the upgrade.
+ */
+export function migrateConfigToV23(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 23) return raw
+
+  const v22 = (
+    record?.["schema"] === 22
+      ? record
+      : migrateConfigToV22(raw)
+  ) as Record<string, unknown>
+
+  const prevResearch = (v22["research"] ?? {}) as Record<string, unknown>
+  const prevFarcasterSearch = (
+    prevResearch["farcaster_search"] ?? {}
+  ) as Record<string, unknown>
+  const prevNarratives = (v22["narratives"] ?? {}) as Record<string, unknown>
+  const prevBroadcast = (v22["broadcast"] ?? {}) as Record<string, unknown>
+  const prevRemediation = (v22["incident_remediation"] ?? {}) as Record<string, unknown>
+  const prevSuggestions = (
+    prevRemediation["discord_suggestions"] ?? {}
+  ) as Record<string, unknown>
+
+  return {
+    ...v22,
+    schema: 23,
+    incident_remediation: {
+      ...prevRemediation,
+      discord_suggestions: {
+        ...prevSuggestions,
+        // The old 15 minute window merged unrelated chatter into one thread
+        ambient_thread_gap_ms: prevSuggestions["ambient_thread_gap_ms"] === 900_000
+          || prevSuggestions["ambient_thread_gap_ms"] === undefined
+          ? 300_000
+          : prevSuggestions["ambient_thread_gap_ms"],
+      },
+    },
+    research: {
+      ...prevResearch,
+      farcaster_search: {
+        ...prevFarcasterSearch,
+        enabled: typeof prevFarcasterSearch["enabled"] === "boolean"
+          ? prevFarcasterSearch["enabled"]
+          : false,
+      },
+    },
+    narratives: {
+      ...prevNarratives,
+      evidence_quality: {
+        ...((prevNarratives["evidence_quality"] ?? {}) as Record<string, unknown>),
+      },
+    },
+    broadcast: {
+      ...prevBroadcast,
+      feedback: {
+        ...((prevBroadcast["feedback"] ?? {}) as Record<string, unknown>),
+      },
+    },
+  }
+}

@@ -67,6 +67,10 @@ Commands:
   harness meta status
   harness meta promote <candidate-id>
   harness meta reject <candidate-id>
+  broadcast feedback status|ledger|seal|reconcile
+  broadcast feedback candidate [--dataset <id>]
+  broadcast feedback apply <candidate-id>
+  broadcast feedback dismiss <candidate-id>
   router serve
   listen [telegram|discord|channels|x-scan]
   discord watchlist scan
@@ -721,6 +725,7 @@ async function cmdListenTelegram(): Promise<void> {
           from?: { id: number }
           text?: string
           chat: { id: number; type?: string }
+          reply_to_message?: { message_id?: number }
         }
       }>
     }
@@ -770,6 +775,28 @@ async function cmdListenTelegram(): Promise<void> {
             onConfirmed: () => { void pumpResearch() },
           },
           exoneration: exonerationHooks,
+          ...(msg.reply_to_message?.message_id
+            ? { replyToMessageId: String(msg.reply_to_message.message_id) }
+            : {}),
+          broadcastFeedback: {
+            handle: async (feedback) => {
+              const { loadConfig } = await import("./lib/config.js")
+              const cfg = loadConfig()
+              if (!cfg.broadcast.feedback.enabled) return null
+              const { handleFeedbackReply } = await import("./broadcast-feedback/followup.js")
+              const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
+              const { systemClock } = await import("./lib/clock.js")
+              return handleFeedbackReply({
+                text: feedback.text,
+                ...(feedback.replyToMessageId
+                  ? { replyToMessageId: feedback.replyToMessageId }
+                  : {}),
+                repoRoot: resolveHarnessRepoRoot(),
+                model: cfg.broadcast.feedback.followup_model,
+                nowIso: systemClock.nowIso(),
+              })
+            },
+          },
           remediation: {
             handle: async (text, opId) => {
               const { handleRemediationChatCommand } = await import("./remediation/orchestrate.js")
@@ -1411,6 +1438,13 @@ async function main(): Promise<void> {
     case "harness":
       await cmdHarness(rest)
       break
+    case "broadcast":
+      if (rest[0] === "feedback") {
+        await cmdBroadcastFeedback(rest.slice(1))
+      } else {
+        usage()
+      }
+      break
     case "auth":
       if (rest[0] === "twitter") {
         if (rest.includes("--create-managed-list")) {
@@ -1440,6 +1474,81 @@ async function main(): Promise<void> {
     default:
       usage()
   }
+}
+
+/**
+ * Operator commands for broadcast feedback (ADR 043). Decision signals and
+ * verdicts come from archived decision bundles, so a sealed dataset carries
+ * only host-recorded numbers.
+ */
+async function cmdBroadcastFeedback(args: string[]): Promise<void> {
+  const sub = args[0]
+  if (!sub) usage()
+  const { archiveRoot } = resolveHomes()
+  const { systemClock } = await import("./lib/clock.js")
+  const { loadConfig } = await import("./lib/config.js")
+  const { resolveHarnessRepoRoot } = await import("./harness/pr.js")
+  const {
+    feedbackApply,
+    feedbackCandidate,
+    feedbackDismiss,
+    feedbackLedgerView,
+    feedbackReconcile,
+    feedbackSeal,
+    feedbackStatus,
+  } = await import("./broadcast-feedback/cli.js")
+  const { decisionBundleLookups } = await import("./broadcast-feedback/decision-lookup.js")
+
+  const cfg = loadConfig()
+  const lookups = decisionBundleLookups(archiveRoot)
+  const deps = {
+    repoRoot: resolveHarnessRepoRoot(),
+    nowIso: systemClock.nowIso(),
+    signals: lookups.signals,
+    verdicts: lookups.verdicts,
+    floors: {
+      minPolicyExamples: cfg.broadcast.feedback.candidate_min_policy_examples,
+      minCompletedDown: cfg.broadcast.feedback.candidate_min_completed_down,
+      minPreferencePairs: cfg.broadcast.feedback.candidate_min_preference_pairs,
+    },
+  }
+
+  if (sub === "status") {
+    console.log(JSON.stringify(feedbackStatus(deps), null, 2))
+    return
+  }
+  if (sub === "ledger") {
+    console.log(JSON.stringify(feedbackLedgerView(deps), null, 2))
+    return
+  }
+  if (sub === "seal") {
+    console.log(JSON.stringify(feedbackSeal(deps), null, 2))
+    return
+  }
+  if (sub === "candidate") {
+    const datasetIdx = args.indexOf("--dataset")
+    const datasetId = datasetIdx >= 0 ? args[datasetIdx + 1] : undefined
+    console.log(JSON.stringify(
+      feedbackCandidate({ ...deps, ...(datasetId ? { datasetId } : {}) }),
+      null,
+      2,
+    ))
+    return
+  }
+  if (sub === "apply" || sub === "dismiss") {
+    const candidateId = args[1]
+    if (!candidateId) usage()
+    const result = sub === "apply"
+      ? feedbackApply({ ...deps, candidateId: candidateId! })
+      : feedbackDismiss({ ...deps, candidateId: candidateId! })
+    console.log(JSON.stringify({ ok: true, [sub]: result }, null, 2))
+    return
+  }
+  if (sub === "reconcile") {
+    console.log(JSON.stringify({ expired: await feedbackReconcile(deps) }, null, 2))
+    return
+  }
+  usage()
 }
 
 async function cmdHarness(args: string[]): Promise<void> {
@@ -1734,8 +1843,26 @@ async function cmdHarness(args: string[]): Promise<void> {
   }
 
   if (sub === "status") {
-    const { canaryStatus } = await import("./harness/lifecycle.js")
-    console.log(JSON.stringify(canaryStatus(archiveRoot), null, 2))
+    const { harnessStatusSnapshot } = await import("./harness/readiness.js")
+    const config = cfg?.harness_improvement ?? {
+      enabled: true,
+      schedule_enabled: true,
+      require_two_epochs: true,
+      one_active_experiment: true,
+      min_events: 40,
+      min_holdout_events: 20,
+    }
+    console.log(JSON.stringify(harnessStatusSnapshot({
+      archiveRoot,
+      config: {
+        enabled: config.enabled,
+        schedule_enabled: config.schedule_enabled,
+        require_two_epochs: config.require_two_epochs,
+        one_active_experiment: config.one_active_experiment,
+        min_events: config.min_events,
+        min_holdout_events: config.min_holdout_events,
+      },
+    }), null, 2))
     return
   }
 

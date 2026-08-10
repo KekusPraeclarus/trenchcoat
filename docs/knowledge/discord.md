@@ -2,7 +2,7 @@
 description: Provider knowledge — Discord webhook fanout (router) and Gateway research bot (isolated).
 scope: project
 status: active
-last_verified: 2026-07-23
+last_verified: 2026-08-10
 ---
 
 # Discord
@@ -77,7 +77,16 @@ last_verified: 2026-07-23
   `cursor-grok-4.5-high`. See
   [discord-chain-integration.md](../architecture/discord-chain-integration.md),
   ADR 016, INV-D2/S26
+- **Broadcast feedback** (ADR 043, schema 23 `broadcast.feedback`, default off):
+  the same Gateway bot reads `👍`/`👎` on delivered broadcasts. Extra intent
+  `GuildMessageReactions` plus `Message` and `Reaction` partials, so reactions
+  on messages sent before startup still arrive. Channel permissions: View
+  Channel, Read Message History, Add Reactions. `DISCORD_OPERATOR_USER_ID`
+  names the only user whose reactions count, and `channel_id` must appear in
+  `chat.discord.channel_ids`. The bot posts no reply on this path; detail comes
+  over Telegram. See
+  [architecture/broadcast-feedback.md](../architecture/broadcast-feedback.md)
 - See [architecture/discord-research.md](../architecture/discord-research.md),
   [architecture/discord-tracking.md](../architecture/discord-tracking.md),
   [architecture/discord-conversation.md](../architecture/discord-conversation.md),
-  ADR 010, ADR 012, ADR 018, ADR 019, ADR 022
+  ADR 010, ADR 012, ADR 018, ADR 019, ADR 022, ADR 043

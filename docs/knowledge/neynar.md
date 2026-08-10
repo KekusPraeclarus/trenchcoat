@@ -46,4 +46,8 @@ last_verified: 2026-07-19
 - All snapshot items: `trust: untrusted-external`
 - Agent never receives the API key or signer (scrubbed child env)
 - Jobs: `farcaster-scan`, `fc-source-review`; watchlist-scan may use cast search
-  when `research.farcaster_search.enabled` (operator/queue research does not)
+  when **both** `farcaster.enabled` and `research.farcaster_search.enabled`
+  (operator/queue research does not)
+- Schedules are omitted by default. `ops/install-*.sh --with-farcaster` installs
+  them; a default install removes them. Both jobs skip with reason
+  `farcaster-disabled` while `farcaster.enabled` is false.

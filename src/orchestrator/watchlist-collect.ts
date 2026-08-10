@@ -75,7 +75,10 @@ export async function collectWatchlistScan(args: Readonly<{
   }
 
   const config = loadConfig()
-  const farcasterApiKey = config.research.farcaster_search.enabled
+  // Both flags must agree, so a disabled Farcaster lane makes no research calls
+  const farcasterSearchEnabled = config.farcaster.enabled
+    && config.research.farcaster_search.enabled
+  const farcasterApiKey = farcasterSearchEnabled
     ? loadEnvSecrets().neynarApiKey
     : undefined
   const snapshotNames: string[] = []
@@ -133,7 +136,7 @@ export async function collectWatchlistScan(args: Readonly<{
       }
     }
 
-    if (config.research.farcaster_search.enabled) {
+    if (farcasterSearchEnabled) {
       if (!farcasterApiKey) {
         statusLines.push(`subject=${subject} farcaster=unconfigured`)
         continue

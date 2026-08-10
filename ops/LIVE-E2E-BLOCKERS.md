@@ -73,12 +73,19 @@ reference/defense-in-depth only — not the production isolation boundary.
   `./ops/install-launchd.sh --sync-skills`, redeploy CLI for prompt/receipt
   changes, then wait for the next telegram-alpha/list-scan/review. Do **not**
   mass-delete the queue.
-## Farcaster — disabled pending feed tuning (2026-07-19)
+## Farcaster — off by default (2026-08-10)
 
 **Live config:** `farcaster.enabled=false` in `~/.trenchcoat/config.json`
-(backup beside it as `config.json.bak-fc-disable-*`). Jobs still fire on
-launchd but collect writes `status=disabled` and `skipAgent=true` — no Neynar
-reads, no engagement, no FC agent analysis. **X + Telegram carry social.**
+(backup beside it as `config.json.bak-fc-disable-*`). Schema 23 also sets
+`research.farcaster_search.enabled=false` for new installations.
+
+Since schema 23 the lane is **omitted, not merely disabled**. Installers write
+no `farcaster-scan` or `fc-source-review` schedule unless you pass
+`--with-farcaster`, and a default install removes earlier copies. If a job runs
+by hand it skips with reason `farcaster-disabled`. Health prints `fc: disabled`
+with no warning, and `narrative-scan` reports `farcasterScan=disabled`. The code
+and historical archives stay in place for a later opt-in.
+**X + Telegram carry social.**
 
 ### Why
 
@@ -107,7 +114,8 @@ fallback kept the agent on as analysis-only noise — not recovery.
    ```
 4. Re-enable: set `farcaster.enabled=true` in `~/.trenchcoat/config.json`,
    `tc config validate`, then `tc probe farcaster` — expect for-you `live>0`,
-   `engagementDisabled=false`. Optional: kick `com.trenchcoat.job.farcaster-scan`
+   `engagementDisabled=false`. To restore the schedule, re-run the installer
+   with `--with-farcaster`. Optional: kick `com.trenchcoat.job.farcaster-scan`
    or wait for jitter. If still junk hashes after app tuning, escalate to Neynar
    or run following + `operator_channel_ids` only (`scrape_for_you: false`).
 

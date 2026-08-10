@@ -54,10 +54,12 @@ describe("operator-notify", () => {
     expect(text).toContain("Discord suggestions 2026-07-22")
     expect(text).toContain("Queued for build")
     expect(text).toContain("Waiting (capacity")
-    expect(text).toContain("Still forming")
     expect(text).toContain("Treat documented RH token migrations")
     expect(text).toContain("rem-4b6d9126a855")
     expect(text).not.toMatch(/forming, queued-waiting/u)
+    // Forming entries collapse into one count and lose their notes
+    expect(text).toContain("Forming: 1 thread(s) still incomplete")
+    expect(text).not.toContain("KARMA vs WALLET comparison")
   })
 
   it("explains propose session failures with title and stage", () => {

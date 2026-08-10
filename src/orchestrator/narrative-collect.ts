@@ -11,6 +11,11 @@ import { RunManifestSchema } from "../contracts/schemas.js"
 import { fetchMarketAttentionForNarrative } from "../collectors/market/providers.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { loadJournalForScan } from "./journal-store.js"
+import { curateSocialEvidence } from "./social-evidence.js"
+import {
+  assessNarrativeEvidenceQuality,
+  type NarrativeEvidenceQuality,
+} from "./narrative-evidence-gate.js"
 
 const LIVE_SEC = 6 * 3_600
 const STALE_VISIBLE_SEC = 24 * 3_600
@@ -30,6 +35,25 @@ export type NarrativeCollectResult = Readonly<{
     farcasterScan?: string
     fomoNarrativeScan?: string
   }>
+  /** Curated social evidence grade for the narrative claim gate (ADR 042) */
+  evidenceQuality?: NarrativeEvidenceQuality
+}>
+
+/** Schema 23 defaults; the caller passes live config values */
+export const DEFAULT_EVIDENCE_QUALITY: NarrativeEvidenceConfig = Object.freeze({
+  enabled: true,
+  max_promotional_share: 0.5,
+  min_independent_authors: 2,
+  min_fresh_posts: 2,
+  primary_source_handles: [],
+})
+
+export type NarrativeEvidenceConfig = Readonly<{
+  enabled: boolean
+  max_promotional_share: number
+  min_independent_authors: number
+  min_fresh_posts: number
+  primary_source_handles: readonly string[]
 }>
 
 type SnapshotItem = SnapshotEnvelope["items"][number]
@@ -43,6 +67,44 @@ type SealedSocialSource = Readonly<{
 }>
 
 const HISTORICAL_PREFIX = "purpose=historical-source-evaluation"
+
+type SocialSource = Readonly<{
+  snapshotName: string
+  statusKey: "listScan" | "farcasterScan" | "fomoNarrativeScan"
+  source: string
+  runId: string
+  sealed: SealedSocialSource
+}>
+
+/** One receipt line per quality field, so the agent reads the same grade we gate on */
+function evidenceQualityItems(
+  runId: string,
+  fetchedAt: string,
+  quality: NarrativeEvidenceQuality,
+): SnapshotItem[] {
+  const lines = [
+    `tier=${quality.tier} enabled=${quality.enabled}`,
+    `freshPosts=${quality.freshPosts} independentAuthors=${quality.independentAuthors}`
+      + ` promotionalShare=${quality.promotionalShare}`,
+    `minFreshPosts=${quality.thresholds.minFreshPosts}`
+      + ` minIndependentAuthors=${quality.thresholds.minIndependentAuthors}`
+      + ` maxPromotionalShare=${quality.thresholds.maxPromotionalShare}`,
+    ...(quality.reasons.length > 0 ? [`reasons=${quality.reasons.join(",")}`] : []),
+    ...(quality.primarySourceAuthors.length > 0
+      ? [`primarySourceAuthors=${quality.primarySourceAuthors.join(",")}`]
+      : []),
+    ...Object.entries(quality.excludedCounts)
+      .filter(([, count]) => count > 0)
+      .map(([reason, count]) => `excluded=${reason} count=${count}`),
+  ]
+  return lines.map((text, i) => ({
+    provenance: `${runId}:narrative-evidence-quality:${i}`,
+    text,
+    ts: fetchedAt,
+    ageSec: 0,
+    freshnessTier: "live" as const,
+  }))
+}
 
 function freshnessForAge(ageSec: number): "live" | "stale" | "expired" {
   if (ageSec <= LIVE_SEC) return "live"
@@ -146,6 +208,10 @@ export async function collectNarrativeScan(args: Readonly<{
   fetchedAt: string
   archiveRoot: string
   fetcher?: FetchLike
+  /** Defaults to false, so a disabled Farcaster lane stays out of the scan */
+  farcasterEnabled?: boolean
+  /** Defaults to the schema 23 values when the caller has no config */
+  evidenceQuality?: NarrativeEvidenceConfig
 }>): Promise<NarrativeCollectResult> {
   const layout = await ensureArchive(args.archiveRoot)
   const nowMs = Date.parse(args.fetchedAt)
@@ -159,62 +225,102 @@ export async function collectNarrativeScan(args: Readonly<{
   let usableEvidence = false
 
   const listRun = await findNewestUsableSealedRun(layout, "list-scan", nowMs)
-  if (listRun) {
-    selectedRuns.listScan = listRun.runId
-    usableEvidence = true
-    await args.writer.writeInbox(args.runId, "narrative-social-list", {
-      source: `archive.list-scan:${listRun.runId}`,
-      fetchedAt: args.fetchedAt,
-      trust: "untrusted-external",
-      items: listRun.sealed.items,
-    })
-    names.push("narrative-social-list")
-    statusLines.push(
-      `listScan=${listRun.runId} ageSec=${listRun.sealed.ageSec}`
-        + ` tier=${freshnessForAge(listRun.sealed.ageSec)} items=${listRun.sealed.items.length}`,
-    )
-  } else {
-    statusLines.push("listScan=none")
-  }
-
-  const fcRun = await findNewestUsableSealedRun(layout, "farcaster-scan", nowMs)
-  if (fcRun) {
-    selectedRuns.farcasterScan = fcRun.runId
-    usableEvidence = true
-    await args.writer.writeInbox(args.runId, "narrative-social-farcaster", {
-      source: `archive.farcaster-scan:${fcRun.runId}`,
-      fetchedAt: args.fetchedAt,
-      trust: "untrusted-external",
-      items: fcRun.sealed.items,
-    })
-    names.push("narrative-social-farcaster")
-    statusLines.push(
-      `farcasterScan=${fcRun.runId} ageSec=${fcRun.sealed.ageSec}`
-        + ` tier=${freshnessForAge(fcRun.sealed.ageSec)} items=${fcRun.sealed.items.length}`,
-    )
-  } else {
-    statusLines.push("farcasterScan=none")
-  }
-
+  const fcRun = args.farcasterEnabled === true
+    ? await findNewestUsableSealedRun(layout, "farcaster-scan", nowMs)
+    : undefined
   const fomoRun = await findNewestUsableSealedRun(layout, "fomo-narrative-source-scan", nowMs, {
     excludeHistorical: true,
   })
+
+  const socialSources: SocialSource[] = []
+  if (listRun) {
+    socialSources.push({
+      snapshotName: "narrative-social-list",
+      statusKey: "listScan",
+      source: `archive.list-scan:${listRun.runId}`,
+      runId: listRun.runId,
+      sealed: listRun.sealed,
+    })
+  }
+  if (fcRun) {
+    socialSources.push({
+      snapshotName: "narrative-social-farcaster",
+      statusKey: "farcasterScan",
+      source: `archive.farcaster-scan:${fcRun.runId}`,
+      runId: fcRun.runId,
+      sealed: fcRun.sealed,
+    })
+  }
   if (fomoRun) {
-    selectedRuns.fomoNarrativeScan = fomoRun.runId
-    usableEvidence = true
-    await args.writer.writeInbox(args.runId, "narrative-social-fomo-x", {
+    socialSources.push({
+      snapshotName: "narrative-social-fomo-x",
+      statusKey: "fomoNarrativeScan",
       source: `archive.fomo-narrative-source-scan:${fomoRun.runId}`,
+      runId: fomoRun.runId,
+      sealed: fomoRun.sealed,
+    })
+  }
+
+  // Curate across all sources at once, so a cross-posted item counts once
+  const evidenceConfig = args.evidenceQuality ?? DEFAULT_EVIDENCE_QUALITY
+  const assessment = curateSocialEvidence({
+    items: socialSources.flatMap((entry) => entry.sealed.items),
+    primarySourceHandles: evidenceConfig.primary_source_handles,
+  })
+  const eligibleItems = new Set<SnapshotItem>(assessment.eligible)
+
+  if (listRun) selectedRuns.listScan = listRun.runId
+  if (fcRun) selectedRuns.farcasterScan = fcRun.runId
+  if (fomoRun) selectedRuns.fomoNarrativeScan = fomoRun.runId
+
+  for (const entry of socialSources) {
+    const items = entry.sealed.items.filter((item) => eligibleItems.has(item))
+    if (items.length > 0) usableEvidence = true
+    await args.writer.writeInbox(args.runId, entry.snapshotName, {
+      source: entry.source,
       fetchedAt: args.fetchedAt,
       trust: "untrusted-external",
-      items: fomoRun.sealed.items,
+      items,
     })
-    names.push("narrative-social-fomo-x")
+    names.push(entry.snapshotName)
     statusLines.push(
-      `fomoNarrativeScan=${fomoRun.runId} ageSec=${fomoRun.sealed.ageSec}`
-        + ` tier=${freshnessForAge(fomoRun.sealed.ageSec)} items=${fomoRun.sealed.items.length}`,
+      `${entry.statusKey}=${entry.runId} ageSec=${entry.sealed.ageSec}`
+        + ` tier=${freshnessForAge(entry.sealed.ageSec)}`
+        + ` items=${items.length} rawItems=${entry.sealed.items.length}`,
     )
-  } else {
-    statusLines.push("fomoNarrativeScan=none")
+  }
+  if (!listRun) statusLines.push("listScan=none")
+  if (args.farcasterEnabled !== true) statusLines.push("farcasterScan=disabled")
+  else if (!fcRun) statusLines.push("farcasterScan=none")
+  if (!fomoRun) statusLines.push("fomoNarrativeScan=none")
+
+  const evidenceQuality = assessNarrativeEvidenceQuality({
+    assessment,
+    enabled: evidenceConfig.enabled,
+    thresholds: {
+      maxPromotionalShare: evidenceConfig.max_promotional_share,
+      minIndependentAuthors: evidenceConfig.min_independent_authors,
+      minFreshPosts: evidenceConfig.min_fresh_posts,
+    },
+  })
+  await args.writer.writeInbox(args.runId, "narrative-evidence-quality", {
+    source: "host.collector",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: evidenceQualityItems(args.runId, args.fetchedAt, evidenceQuality),
+  })
+  names.push("narrative-evidence-quality")
+  statusLines.push(
+    `evidenceTier=${evidenceQuality.tier}`
+      + ` freshPosts=${evidenceQuality.freshPosts}`
+      + ` authors=${evidenceQuality.independentAuthors}`
+      + ` promotionalShare=${evidenceQuality.promotionalShare}`,
+  )
+  for (const reason of evidenceQuality.reasons) {
+    statusLines.push(`evidenceReason=${reason}`)
+  }
+  for (const [reason, count] of Object.entries(assessment.excludedCounts)) {
+    if (count > 0) statusLines.push(`evidenceExcluded=${reason} count=${count}`)
   }
 
   // Demo key only — do not pull full loadEnvSecrets (router/Telegram) just for trending
@@ -325,5 +431,6 @@ export async function collectNarrativeScan(args: Readonly<{
     marketBlind: attention.marketBlind,
     ...(attention.marketBlindReason ? { marketBlindReason: attention.marketBlindReason } : {}),
     selectedRuns,
+    evidenceQuality,
   }
 }

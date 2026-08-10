@@ -29,6 +29,7 @@ export const CHAT_SUMMARY_JOBS = new Set([
   "farcaster-scan",
   "review",
   "research",
+  "harness-improve",
 ])
 
 const MAX_CHAT_REPORT_BYTES = 64_000
@@ -43,9 +44,23 @@ export function chatReportPath(agentRoot: string, runId: string): string {
   return join(agentRoot, "reports", "chat", `${runId}.md`)
 }
 
+/**
+ * How much a run matters for operator recall.
+ * - `movement`: the run staged a broadcast, accepted a proposal, or moved the
+ *   narrative log.
+ * - `changed`: nothing moved, but something went differently — degraded
+ *   collection, rejects, a typed skip, or a failure.
+ * - `routine`: a successful run with no change worth reading.
+ */
+export type HostChatActivity = "movement" | "changed" | "routine"
+
 export type HostChatFacts = Readonly<{
   job: string
   runStatus: string
+  /** Host classification; absent facts default to `routine` at render */
+  activity?: HostChatActivity
+  /** Detail lines a routine report omits; full detail stays in the archive */
+  routineCount?: number
   collectionStatus?: string
   collectionKind?: string
   marketBlind?: boolean
@@ -78,6 +93,15 @@ export type HostChatFacts = Readonly<{
     verified?: number
     ambiguous?: number
     botHealthBlocked?: boolean
+  }>
+  harness?: Readonly<{
+    status: string
+    reason?: string
+    reasonSlug?: string
+    nextAction?: string
+    developmentEpochId?: string
+    holdoutEpochId?: string
+    hypothesisId?: string
   }>
   ingest?: Readonly<{
     staged: number
@@ -150,6 +174,72 @@ function resolveProposalItemIds(
   return { ok: true, ids: stagedIds }
 }
 
+/**
+ * Grade one set of host facts. Movement wins over change, and change wins over
+ * routine, so an operator never loses a real event to a quiet summary.
+ */
+export function classifyHostChatActivity(facts: HostChatFacts): HostChatActivity {
+  const narrativeMoved = (facts.narrative?.appended ?? 0) > 0
+    || (facts.narrative?.updated ?? 0) > 0
+  if (
+    (facts.ingest?.staged ?? 0) > 0
+    || (facts.proposals?.accepted ?? 0) > 0
+    || narrativeMoved
+    || (facts.engagement?.executed ?? 0) > 0
+    || facts.harness?.status === "activation_pending"
+  ) {
+    return "movement"
+  }
+  const harnessChanged = facts.harness !== undefined
+    && facts.harness.status !== "completed"
+  if (
+    facts.runStatus === "failed"
+    || (facts.collectionStatus !== undefined && facts.collectionStatus !== "completed")
+    || facts.marketBlind === true
+    || (facts.ingest?.rejected ?? 0) > 0
+    || (facts.proposals?.rejected ?? 0) > 0
+    || (facts.proposals?.blockedExternal ?? 0) > 0
+    || (facts.engagement?.rejected ?? 0) > 0
+    || harnessChanged
+  ) {
+    return "changed"
+  }
+  return "routine"
+}
+
+/** Detail lines a routine report leaves in the archive instead of the report */
+function routineOmittedCount(facts: HostChatFacts): number {
+  return (facts.snapshotNames?.length ?? 0)
+    + (facts.receiptPaths?.length ?? 0)
+    + (facts.platformNotes?.length ?? 0)
+    + (facts.broadcasts?.length ?? 0)
+}
+
+function renderRoutineChatFactsMarkdown(runId: string, facts: HostChatFacts): string {
+  const omitted = facts.routineCount ?? routineOmittedCount(facts)
+  const parts = [
+    `job=${facts.job}`,
+    `status=${facts.runStatus}`,
+    ...(facts.collectionStatus ? [`collection=${facts.collectionStatus}`] : []),
+    ...(facts.postCount !== undefined ? [`posts=${facts.postCount}`] : []),
+    `staged=${facts.ingest?.staged ?? 0}`,
+    `omittedDetail=${omitted}`,
+  ]
+  return [
+    "# Chat recall",
+    "",
+    `Run: \`${runId}\``,
+    "",
+    "## Host summary",
+    "",
+    `- job: ${facts.job}`,
+    `- status: ${facts.runStatus}`,
+    "- activity: routine",
+    `- summary: routine run, no movement (${parts.join(" ")})`,
+    "",
+  ].join("\n")
+}
+
 function countLine(label: string, value: number | string | undefined): string | undefined {
   if (value === undefined || value === "") return undefined
   return `- ${label}: ${value}`
@@ -160,6 +250,8 @@ export function renderHostChatFactsMarkdown(
   runId: string,
   facts: HostChatFacts,
 ): string {
+  const activity = facts.activity ?? classifyHostChatActivity(facts)
+  if (activity === "routine") return renderRoutineChatFactsMarkdown(runId, facts)
   const lines = [
     "# Chat recall",
     "",
@@ -169,6 +261,7 @@ export function renderHostChatFactsMarkdown(
     "",
     `- job: ${facts.job}`,
     `- status: ${facts.runStatus}`,
+    `- activity: ${activity}`,
   ]
   const optional = [
     countLine("collection", facts.collectionStatus),
@@ -232,6 +325,25 @@ export function renderHostChatFactsMarkdown(
     if (e.verified !== undefined) lines.push(`- verified: ${e.verified}`)
     if (e.ambiguous !== undefined) lines.push(`- ambiguous: ${e.ambiguous}`)
     if (e.botHealthBlocked) lines.push("- botHealthBlocked: true")
+  }
+
+  if (facts.harness) {
+    const h = facts.harness
+    lines.push("", "### Harness improvement", "")
+    lines.push(`- harnessStatus: ${h.status}`)
+    if (h.status === "skipped") {
+      lines.push("- outcome: deferred (typed readiness skip, not a successful proposal)")
+    } else if (h.status === "rejected" || h.status === "failed") {
+      lines.push(`- outcome: ${h.status}`)
+    } else if (h.status === "activation_pending") {
+      lines.push("- outcome: activation pending (agent sync + canary not started)")
+    }
+    if (h.reasonSlug) lines.push(`- reasonSlug: ${h.reasonSlug}`)
+    if (h.reason) lines.push(`- reason: ${h.reason.slice(0, 280)}`)
+    if (h.developmentEpochId) lines.push(`- developmentEpochId: \`${h.developmentEpochId}\``)
+    if (h.holdoutEpochId) lines.push(`- holdoutEpochId: \`${h.holdoutEpochId}\``)
+    if (h.hypothesisId) lines.push(`- hypothesisId: \`${h.hypothesisId}\``)
+    if (h.nextAction) lines.push(`- nextAction: ${h.nextAction.slice(0, 280)}`)
   }
 
   if (facts.ingest || (facts.broadcasts && facts.broadcasts.length > 0)) {
@@ -340,6 +452,7 @@ export function buildHostChatFacts(args: Readonly<{
   narrativeLogReport?: unknown
   engagementReport?: unknown
   fcEngagementReport?: unknown
+  harnessReport?: unknown
   ingest?: OutboxIngestReport
   platformNotes?: readonly string[]
   receiptPaths?: readonly string[]
@@ -365,10 +478,35 @@ export function buildHostChatFacts(args: Readonly<{
   const engagement = engagementFromUnknown(args.engagementReport, "x")
     ?? engagementFromUnknown(args.fcEngagementReport, "farcaster")
 
+  const harness = (() => {
+    if (!args.harnessReport || typeof args.harnessReport !== "object") return undefined
+    const h = args.harnessReport as Record<string, unknown>
+    if (typeof h["status"] !== "string") return undefined
+    return {
+      status: h["status"],
+      ...(typeof h["reason"] === "string" ? { reason: h["reason"].slice(0, 280) } : {}),
+      ...(typeof h["reasonSlug"] === "string"
+        ? { reasonSlug: h["reasonSlug"].slice(0, 64) }
+        : {}),
+      ...(typeof h["nextAction"] === "string"
+        ? { nextAction: h["nextAction"].slice(0, 280) }
+        : {}),
+      ...(typeof h["developmentEpochId"] === "string"
+        ? { developmentEpochId: h["developmentEpochId"].slice(0, 128) }
+        : {}),
+      ...(typeof h["holdoutEpochId"] === "string"
+        ? { holdoutEpochId: h["holdoutEpochId"].slice(0, 128) }
+        : {}),
+      ...(typeof h["hypothesisId"] === "string"
+        ? { hypothesisId: h["hypothesisId"].slice(0, 128) }
+        : {}),
+    }
+  })()
+
   const fypEligible = collection?.fypPosts?.length
     ?? collection?.fypCasts?.length
 
-  return {
+  const base: HostChatFacts = {
     job: args.job,
     runStatus: args.runStatus ?? "complete",
     ...(collection?.collectionStatus ? { collectionStatus: collection.collectionStatus } : {}),
@@ -397,6 +535,7 @@ export function buildHostChatFacts(args: Readonly<{
       }
       : {}),
     ...(engagement ? { engagement } : {}),
+    ...(harness ? { harness } : {}),
     ...(args.ingest
       ? {
         ingest: { staged: args.ingest.staged, rejected: args.ingest.rejected },
@@ -409,6 +548,12 @@ export function buildHostChatFacts(args: Readonly<{
     ...(args.receiptPaths && args.receiptPaths.length > 0
       ? { receiptPaths: args.receiptPaths }
       : {}),
+  }
+  const activity = classifyHostChatActivity(base)
+  return {
+    ...base,
+    activity,
+    ...(activity === "routine" ? { routineCount: routineOmittedCount(base) } : {}),
   }
 }
 
@@ -505,7 +650,7 @@ export async function validateAndPromoteChatReport(args: Readonly<{
     })
   }
 
-  const facts: HostChatFacts = {
+  const merged: HostChatFacts = {
     ...args.facts,
     ingest: { staged: args.ingest.staged, rejected: args.ingest.rejected },
     broadcasts: args.ingest.items.map((item) => ({
@@ -517,6 +662,13 @@ export async function validateAndPromoteChatReport(args: Readonly<{
       `archive/runs/${args.runId}/chat-summary-receipt.json`,
       reportRel,
     ].filter((v, i, arr) => arr.indexOf(v) === i),
+  }
+  // Reclassify: staged broadcasts arrive after buildHostChatFacts
+  const activity = classifyHostChatActivity(merged)
+  const facts: HostChatFacts = {
+    ...merged,
+    activity,
+    ...(activity === "routine" ? { routineCount: routineOmittedCount(merged) } : {}),
   }
 
   const hostMd = renderHostChatFactsMarkdown(args.runId, facts)
@@ -534,10 +686,13 @@ export async function validateAndPromoteChatReport(args: Readonly<{
 
   if (proposal.accepted) {
     // Strip status-quo heat restatements from rendered context; archive keeps the proposal
-    const filteredContext = filterStatusQuoContextBullets(
-      proposal.data.context,
-      args.unchangedStages ?? [],
-    )
+    // A routine run renders no agent context at all — the receipt keeps it
+    const filteredContext = activity === "routine"
+      ? []
+      : filterStatusQuoContextBullets(
+        proposal.data.context,
+        args.unchangedStages ?? [],
+      )
     const agentMd = filteredContext.length > 0
       ? renderAgentContextMarkdown(filteredContext, proposal.data.sources)
       : ""

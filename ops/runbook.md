@@ -35,9 +35,9 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `chart-sweep` | hourly |
 | `watchlist-scan` | every 2h |
 | `x-scan` (KeepAlive) | always — round-robin FYP → lists with cursor stop; random 5–30m between rounds (`tc listen x-scan`) |
-| `farcaster-scan` | ~every 4h (jittered 3h15m–4h45m; requires `farcaster.enabled` + Neynar auth) |
+| `farcaster-scan` | **not installed by default** — pass `--with-farcaster` to the installer. Then ~every 4h (jittered 3h15m–4h45m; requires `farcaster.enabled` + Neynar auth) |
 | `source-list-review` | daily (`RunAtLoad`) and after a sealed audit; writes lagged `sources.json` scores |
-| `fc-source-review` | daily (`RunAtLoad`; Farcaster follow-graph sync + lagged scores) |
+| `fc-source-review` | **not installed by default** — pass `--with-farcaster`. Then daily (`RunAtLoad`; Farcaster follow-graph sync + lagged scores) |
 | `outcomes-settle` | every 6h (`RunAtLoad`) and before audit |
 | `narrative-scan` | every 6h |
 | `research` | Immediate drain when social/narrative/fomo enqueue; hourly cron remains as backstop |
@@ -54,7 +54,7 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 [ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
-| `harness-improve` | weekly after audit (default on; `--without-harness` to opt out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary |
+| `harness-improve` | weekly recovery timer **and** success-only non-blocking kick after scheduled `audit` exits 0 (install scripts only; default on; `--without-harness` opts out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary. Typed readiness deferrals are skips, not successes (`tc harness status`, `tc status`) |
 | `incident-remediate` | hourly (default **off** until `incident_remediation.enabled` + `schedule_enabled`) — scan health findings/logs, passive Discord suggestions when `discord_suggestions.enabled`, triage, gated fix/publish; **skips agent workspace lock** so scans cannot starve it |
 | `incident-remediate-weekly` | Monday 08:00 local (default **off**) — one deferred remediation; never feeds the policy harness |
 | `router` (KeepAlive) | always — HMAC intake + Telegram/Discord fanout (`tc router serve`) |
@@ -70,6 +70,14 @@ Cadence lives in code/ops scripts, not `config.json`:
 | X `x-scan` | `src/orchestrator/x-scan-cursors.ts` delay bounds (5–30m); cursors in `~/.trenchcoat/x-scan/cursors.json` | Redeploy + `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.x-scan` |
 | Farcaster `farcaster-scan` | `ops/run-job-jittered.sh` — `farcaster-scan` branch (3h15m–4h45m) | Same; `~/.trenchcoat/var/farcaster-scan.next` |
 | TG alpha preview | `src/collectors/telegram/channels.ts` — default `pollIntervalMs` (60s) | Redeploy runtime + `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.channels` (not listener) |
+
+Farcaster is off by default. `ops/install-launchd.sh` and `ops/install-systemd.sh`
+write no Farcaster unit, timer, plist, or wrapper unless you pass
+`--with-farcaster`, and a default install removes any copy an earlier install
+left. The code stays in the tree, so `tc run farcaster-scan` still works by hand
+once `farcaster.enabled` is true. While `farcaster.enabled` is false both jobs
+skip with reason `farcaster-disabled`, health prints `fc: disabled` with no
+warning, and `narrative-scan` reports `farcasterScan=disabled`.
 
 Launchd polls jittered farcaster every 15m; `run-job-jittered.sh` no-ops until
 `~/.trenchcoat/var/farcaster-scan.next` (written after each **successful** run). Changing
@@ -112,6 +120,12 @@ fast-forwards local `main` and deploys host runtime. It stops at
 `activation_pending` — use `tc harness drain` / `tc harness activate <id>` after
 the all-work queue is clear (docs/architecture/harness-improvement.md). Canary
 starts only on activate.
+
+Readiness (`tc harness status`) reports why a run deferred (e.g. waiting for a
+second sealed epoch). Install scripts kick `harness-improve` after a successful
+scheduled `audit` exit without changing audit sealing; the weekly timer remains
+as fallback. Recovery: `tc harness status`, `tc status` (harness lastSkip), then
+`tc run harness-improve` once readiness is green.
 
 Install (preferred):
 
@@ -334,6 +348,27 @@ predeploy backup only when migration itself corrupted host state.
   `tc watchlist remove <chain:token> --subject <SYMBOL> --reason <text>`.  
   Host-only; refuses `tracking`/`watching` and open ledger positions; reconciles
   `state/INDEX.md`.
+- **Broadcast feedback (ADR 043)** — enable once, then use it from Discord:
+  1. Set `DISCORD_OPERATOR_USER_ID` in `~/.trenchcoat/env`, and set
+     `broadcast.feedback.enabled` plus `channel_id` in `~/.trenchcoat/config.json`.
+     The channel must appear in `chat.discord.channel_ids`.
+  2. Give the Gateway bot View Channel, Read Message History, and Add Reactions
+     in that channel. Restart the router first, then the Discord listener.
+  3. React `👍` or `👎` on any delivered broadcast. `👎` (or both marks) sends
+     one Telegram request. Answer in plain language; the host turns the reply
+     into bounded tags. A request expires after 72 hours.
+  4. Check the lane with `trenchcoat broadcast feedback status`. `trenchcoat status`
+     shows one `feedback:` line.
+  5. When status reports `candidate=ready`: `trenchcoat broadcast feedback seal`,
+     then `trenchcoat broadcast feedback candidate`. Read the printed rationale
+     and evaluation.
+  6. `trenchcoat broadcast feedback apply <id>` writes only
+     `agent/skills/decision-policy/policy.json` and
+     `config/broadcast-output-tuning.json` in a clean repo. It never commits or
+     deploys. Review the diff, commit it yourself, then deploy as usual.
+     `trenchcoat broadcast feedback dismiss <id>` drops a candidate.
+  7. After listener downtime, run `trenchcoat broadcast feedback reconcile` to
+     read reactions added while the bot was down.
 - **Farcaster enablement** — operator sequence (after `farcaster.enabled` + `NEYNAR_API_KEY`
   in env):
   1. `tc auth farcaster --fid <n> --username <name> --mnemonic-stdin` (or `--create`)

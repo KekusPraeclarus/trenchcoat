@@ -328,7 +328,9 @@ export async function scanRemediationIncidents(args: Readonly<{
         || e.outcome === "built"
         || e.outcome === "queued-waiting",
       )
-      if (noteworthy.length > 0) {
+      // Forming entries only add a count line, so they never wake a digest alone
+      const hasDecision = noteworthy.some((e) => e.outcome !== "forming")
+      if (hasDecision) {
         const { renderSuggestionDigest } = await import("./operator-notify.js")
         await notifyOperator(await renderSuggestionDigest({
           repoRoot: args.repoRoot,

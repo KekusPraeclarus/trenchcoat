@@ -2,10 +2,13 @@
 # Materialize ops/launchd templates into ~/Library/LaunchAgents and bootstrap them.
 # Deploys a runtime copy under ~/.trenchcoat/runtime so launchd is not blocked by
 # macOS TCC on ~/Documents.
-# Usage: ops/install-launchd.sh [--dry-run] [--without-harness] [--jobs-only]
+# Usage: ops/install-launchd.sh [--dry-run] [--without-harness] [--with-farcaster]
+#                               [--jobs-only]
 #                               [--no-load] [--sync-env] [--sync-skills] [--allow-dirty]
 #                               [--skip-agent-wait]
 #   --without-harness  skip installing the weekly harness-improve job (on by default)
+#   --with-farcaster   install the farcaster-scan and fc-source-review jobs.
+#               Default installs omit them and remove any earlier copies.
 #   --sync-env  atomically copy repo .env → ~/.trenchcoat/env (mode 600) after
 #               validating required key NAMES are present. If it is the only
 #               argument, sync and exit 0 without redeploying; otherwise sync
@@ -38,7 +41,9 @@ UID_NUM="$(id -u)"
 DOMAIN="gui/$UID_NUM"
 DRY_RUN=0
 WITH_HARNESS=1
+WITH_FARCASTER=0
 JOBS_ONLY=0
+FARCASTER_LABELS="com.trenchcoat.job.farcaster-scan com.trenchcoat.job.fc-source-review"
 NO_LOAD=0
 SYNC_ENV=0
 SYNC_SKILLS=0
@@ -60,6 +65,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --without-harness) WITH_HARNESS=0; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --with-harness) WITH_HARNESS=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
+    --with-farcaster) WITH_FARCASTER=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --jobs-only) JOBS_ONLY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --no-load) NO_LOAD=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
     --allow-dirty) ALLOW_DIRTY=1; INSTALL_ARGS=$((INSTALL_ARGS + 1)) ;;
@@ -348,15 +354,19 @@ EOF
   cp "$REPO_ROOT/ops/run-precheck.sh" "$BIN_DIR/run-precheck"
   chmod 755 "$BIN_DIR/run-job-jittered" "$BIN_DIR/run-with-lock-retry" "$BIN_DIR/run-precheck"
   # farcaster-scan remains jitter-gated; list-scan cron retired in favour of KeepAlive x-scan
-  cat >"$BIN_DIR/run-farcaster-scan" <<EOF
+  if [ "$WITH_FARCASTER" -eq 1 ]; then
+    cat >"$BIN_DIR/run-farcaster-scan" <<EOF
 #!/bin/sh
 exec "$BIN_DIR/run-job-jittered" farcaster-scan
 EOF
-  chmod 755 "$BIN_DIR/run-farcaster-scan"
+    chmod 755 "$BIN_DIR/run-farcaster-scan"
+    echo "jitter gate → $BIN_DIR/run-farcaster-scan"
+  else
+    rm -f "$BIN_DIR/run-farcaster-scan" 2>/dev/null || true
+  fi
   rm -f "$BIN_DIR/run-list-scan" 2>/dev/null || true
   echo "deployed runtime → $RUNTIME_ROOT"
   echo "wrapper → $TC"
-  echo "jitter gate → $BIN_DIR/run-farcaster-scan"
   echo "lock retry → $BIN_DIR/run-with-lock-retry"
   echo "precheck → $BIN_DIR/run-precheck"
 }
@@ -403,6 +413,10 @@ EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would write $out ($job every ${seconds}s${use_precheck:+, precheck}${run_at_load:+, RunAtLoad})"
+    if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '%s\n' "$body" >"$out"
+    fi
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -448,6 +462,10 @@ EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would write $out ($job jittered $jitter_desc, poll ${poll_seconds}s)"
+    if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '%s\n' "$body" >"$out"
+    fi
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -460,12 +478,19 @@ write_calendar_plist() {
   hour="$3"
   minute="$4"
   weekday="${5:-}"
+  # Optional 6th arg: shell snippet after successful job exit (non-blocking)
+  post_success="${6:-}"
   out="$DEST/$label.plist"
   weekday_xml=""
   if [ -n "$weekday" ]; then
     weekday_xml="
     <key>Weekday</key>
     <integer>$weekday</integer>"
+  fi
+  if [ -n "$post_success" ]; then
+    cmd_line="$WRAPPER_PREFIX; $BIN_DIR/run-precheck $job; st=\$?; if [ \"\$st\" -eq 0 ]; then $post_success; fi; exit \"\$st\""
+  else
+    cmd_line="$WRAPPER_PREFIX; exec $BIN_DIR/run-precheck $job"
   fi
   body=$(cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -478,7 +503,7 @@ write_calendar_plist() {
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>$WRAPPER_PREFIX; exec $BIN_DIR/run-precheck $job</string>
+    <string>$cmd_line</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>
@@ -499,6 +524,10 @@ EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would write $out ($job calendar)"
+    if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '%s\n' "$body" >"$out"
+    fi
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -614,6 +643,24 @@ EOF
   fi
   printf '%s\n' "$body" >"$out"
   echo "wrote $out"
+}
+
+# Default installs drop every Farcaster plist left by an earlier install.
+# The jobs stay available by hand behind the config gate.
+remove_farcaster_plists() {
+  for label in $FARCASTER_LABELS; do
+    out="$DEST/$label.plist"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "would bootout and remove $label (pass --with-farcaster to keep it)"
+      if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+        rm -f "$out"
+      fi
+      continue
+    fi
+    launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
+    rm -f "$out"
+  done
+  echo "farcaster schedules omitted (pass --with-farcaster to install them)"
 }
 
 retire_list_scan_cron_plist() {
@@ -1076,14 +1123,24 @@ fi
 write_interval_plist com.trenchcoat.job.chart-sweep chart-sweep 3600 1
 write_interval_plist com.trenchcoat.job.watchlist-scan watchlist-scan 7200 1
 # list-scan cron retired — KeepAlive com.trenchcoat.x-scan round-robins FYP+lists
-write_jittered_job_plist farcaster-scan
 write_interval_plist com.trenchcoat.job.narrative-scan narrative-scan 21600
 write_interval_plist com.trenchcoat.job.research research 3600 1
 write_interval_plist com.trenchcoat.job.outcomes-settle outcomes-settle 21600 0 1
 write_interval_plist com.trenchcoat.job.source-list-review source-list-review 86400 0 1
-write_interval_plist com.trenchcoat.job.fc-source-review fc-source-review 86400 0 1
+if [ "$WITH_FARCASTER" -eq 1 ]; then
+  write_jittered_job_plist farcaster-scan
+  write_interval_plist com.trenchcoat.job.fc-source-review fc-source-review 86400 0 1
+else
+  remove_farcaster_plists
+fi
 write_calendar_plist com.trenchcoat.job.review review 7 0
-write_calendar_plist com.trenchcoat.job.audit audit 6 0 1
+if [ "$WITH_HARNESS" -eq 1 ]; then
+  # Success-only, non-blocking kick of the independent harness job.
+  write_calendar_plist com.trenchcoat.job.audit audit 6 0 1 \
+    "launchctl kickstart \"$DOMAIN/com.trenchcoat.job.harness-improve\" >/dev/null 2>&1 &"
+else
+  write_calendar_plist com.trenchcoat.job.audit audit 6 0 1
+fi
 write_interval_plist com.trenchcoat.job.wallet-discovery wallet-discovery 21600 1
 write_interval_plist com.trenchcoat.job.wallet-runner-discovery wallet-runner-discovery 1800 1
 write_interval_plist com.trenchcoat.job.wallet-scan-solana wallet-scan-solana 300 1
@@ -1123,12 +1180,10 @@ wait_for_agent_idle
 for label in \
   com.trenchcoat.job.chart-sweep \
   com.trenchcoat.job.watchlist-scan \
-  com.trenchcoat.job.farcaster-scan \
   com.trenchcoat.job.narrative-scan \
   com.trenchcoat.job.research \
   com.trenchcoat.job.outcomes-settle \
   com.trenchcoat.job.source-list-review \
-  com.trenchcoat.job.fc-source-review \
   com.trenchcoat.job.review \
   com.trenchcoat.job.audit \
   com.trenchcoat.job.wallet-discovery \
@@ -1150,6 +1205,12 @@ for label in \
 do
   bootstrap_label "$label"
 done
+
+if [ "$WITH_FARCASTER" -eq 1 ]; then
+  for label in $FARCASTER_LABELS; do
+    bootstrap_label "$label"
+  done
+fi
 
 if [ "$JOBS_ONLY" -eq 0 ]; then
   bootstrap_label com.trenchcoat.listener

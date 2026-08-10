@@ -1,4 +1,3 @@
-import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { loadConfig } from "../lib/config.js"
 import { systemClock } from "../lib/clock.js"
@@ -8,7 +7,6 @@ import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { log } from "../lib/log.js"
 import { harnessRoot } from "./canary.js"
 import { canaryStatus } from "./lifecycle.js"
-import { listHypothesisIds, loadHypothesis } from "./propose.js"
 import {
   epochHasDecisionSignals,
 } from "./signals.js"
@@ -20,13 +18,19 @@ import {
 } from "./meta-propose.js"
 import {
   listMetaCandidateIds,
-  listTrials,
   loadMetaCandidate,
   metaRoot,
   recomputeAndSaveUtility,
   runMetaTrialPair,
 } from "./meta-trial.js"
 import { notifyMetaPromotionEligible } from "./meta-operator-notify.js"
+import {
+  activeTrialingMetaCandidate,
+  epochsUsedByMeta,
+  listSealedEpochIds,
+  policyHypothesisMidFlight,
+  type HarnessReadinessGateId,
+} from "./readiness.js"
 
 export type HarnessMetaImproveReport = Readonly<{
   status:
@@ -37,6 +41,8 @@ export type HarnessMetaImproveReport = Readonly<{
     | "rejected"
     | "failed"
   reason?: string
+  /** Stable slug from HARNESS_READINESS_GATE_IDS for skip ledger and health */
+  reasonSlug?: string
   candidateId?: string
   trialId?: string
   developmentEpochId?: string
@@ -44,66 +50,8 @@ export type HarnessMetaImproveReport = Readonly<{
   promotionEligible?: boolean
 }>
 
-const POLICY_MIDFLIGHT = new Set([
-  "plan_approved",
-  "prepared",
-  "built",
-  "static_validated",
-  "holdout_evaluated",
-  "implementation_approved",
-  "committed",
-  "integrated",
-  "runtime_deployed",
-  "activation_pending",
-  "evaluated",
-  "canary",
-])
-
 function harnessLockPath(archiveRoot: string): string {
   return join(harnessRoot(archiveRoot), ".lock")
-}
-
-function listSealedEpochIds(archiveRoot: string): string[] {
-  const epochsRoot = archiveLayout(archiveRoot).epochs
-  if (!existsSync(epochsRoot)) return []
-  return readdirSync(epochsRoot)
-    .filter((name) => existsSync(join(epochsRoot, name, "sealed", "status.json")))
-    .sort()
-}
-
-function policyHypothesisMidFlight(archiveRoot: string): string | undefined {
-  for (const id of listHypothesisIds(archiveRoot)) {
-    try {
-      const hyp = loadHypothesis(archiveRoot, id)
-      if (POLICY_MIDFLIGHT.has(hyp.status)) return id
-    } catch {
-      // skip non-hypothesis dirs / corrupt
-    }
-  }
-  return undefined
-}
-
-function activeTrialingMetaCandidate(archiveRoot: string): string | undefined {
-  for (const id of listMetaCandidateIds(archiveRoot)) {
-    try {
-      const c = loadMetaCandidate(archiveRoot, id)
-      if (c.status === "trialing") return id
-    } catch {
-      // skip
-    }
-  }
-  return undefined
-}
-
-function epochsUsedByMeta(archiveRoot: string): Set<string> {
-  const used = new Set<string>()
-  for (const id of listMetaCandidateIds(archiveRoot)) {
-    for (const trial of listTrials(archiveRoot, id)) {
-      used.add(trial.developmentEpochId)
-      used.add(trial.holdoutEpochId)
-    }
-  }
-  return used
 }
 
 export function pickUnusedMetaEpochPair(opts: Readonly<{
@@ -118,6 +66,7 @@ export function pickUnusedMetaEpochPair(opts: Readonly<{
 } | {
   ok: false
   reason: string
+  reasonSlug: HarnessReadinessGateId
 }> {
   const layout = archiveLayout(opts.archiveRoot)
   const used = epochsUsedByMeta(opts.archiveRoot)
@@ -133,7 +82,11 @@ export function pickUnusedMetaEpochPair(opts: Readonly<{
   const holdoutEpochId = opts.holdoutEpochId ?? sealed.at(-1)
 
   if (!developmentEpochId || !holdoutEpochId) {
-    return { ok: false, reason: "need at least one sealed epoch with unused signals" }
+    return {
+      ok: false,
+      reason: "need at least one sealed epoch with unused signals",
+      reasonSlug: "sealed-epochs",
+    }
   }
   if (
     (opts.requireTwoEpochs !== false)
@@ -142,21 +95,28 @@ export function pickUnusedMetaEpochPair(opts: Readonly<{
     return {
       ok: false,
       reason: "require_two_epochs: need distinct development and holdout sealed epochs",
+      reasonSlug: "distinct-epochs",
     }
   }
   if (isHoldoutConsumed(opts.archiveRoot, holdoutEpochId)) {
-    return { ok: false, reason: `holdout ${holdoutEpochId} already consumed` }
+    return {
+      ok: false,
+      reason: `holdout ${holdoutEpochId} already consumed`,
+      reasonSlug: "holdout-unused",
+    }
   }
   if (!epochHasDecisionSignals(layout, developmentEpochId)) {
     return {
       ok: false,
       reason: `development epoch ${developmentEpochId} lacks decision-time signals`,
+      reasonSlug: "dev-signals",
     }
   }
   if (!epochHasDecisionSignals(layout, holdoutEpochId)) {
     return {
       ok: false,
       reason: `holdout epoch ${holdoutEpochId} lacks decision-time signals`,
+      reasonSlug: "holdout-signals",
     }
   }
   return { ok: true, developmentEpochId, holdoutEpochId }
@@ -195,18 +155,27 @@ export async function runHarnessMetaImprove(
   const config = loadConfig()
   const hi = config.harness_improvement
   if (!hi.meta_enabled) {
-    return { status: "skipped", reason: "harness_improvement.meta_enabled is false" }
+    return {
+      status: "skipped",
+      reason: "harness_improvement.meta_enabled is false",
+      reasonSlug: "enabled",
+    }
   }
   if (!hi.meta_schedule_enabled) {
     return {
       status: "skipped",
       reason: "harness_improvement.meta_schedule_enabled is false",
+      reasonSlug: "schedule-enabled",
     }
   }
 
   const lock = new WorkspaceLock(harnessLockPath(opts.archiveRoot))
   if (!lock.tryAcquire()) {
-    return { status: "skipped", reason: "harness lock held" }
+    return {
+      status: "skipped",
+      reason: "harness lock held",
+      reasonSlug: "harness-lock-held",
+    }
   }
 
   try {
@@ -220,6 +189,7 @@ export async function runHarnessMetaImprove(
         const report: HarnessMetaImproveReport = {
           status: "skipped",
           reason: `active canary ${status.active.hypothesisId}`,
+          reasonSlug: "no-active-canary",
         }
         await persistMetaScheduleReport(opts.archiveRoot, report, nowIso)
         return report
@@ -229,6 +199,7 @@ export async function runHarnessMetaImprove(
         const report: HarnessMetaImproveReport = {
           status: "skipped",
           reason: `policy hypothesis mid-flight ${mid}`,
+          reasonSlug: "no-policy-midflight",
         }
         await persistMetaScheduleReport(opts.archiveRoot, report, nowIso)
         return report
@@ -238,6 +209,7 @@ export async function runHarnessMetaImprove(
         const report: HarnessMetaImproveReport = {
           status: "skipped",
           reason: `meta candidate already trialing ${trialing}`,
+          reasonSlug: "no-meta-trialing",
           candidateId: trialing,
         }
         await persistMetaScheduleReport(opts.archiveRoot, report, nowIso)
@@ -257,6 +229,7 @@ export async function runHarnessMetaImprove(
       const report: HarnessMetaImproveReport = {
         status: "skipped",
         reason: pairPick.reason,
+        reasonSlug: pairPick.reasonSlug,
       }
       await persistMetaScheduleReport(opts.archiveRoot, report, nowIso)
       return report

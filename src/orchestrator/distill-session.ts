@@ -22,6 +22,12 @@ import {
   TELEGRAM_TOPIC_PROMPT,
 } from "../prompts/host.js"
 import {
+  copyGuidanceBlock,
+  loadBroadcastOutputTuning,
+  resolveTuningRepoRoot,
+  withGuidance,
+} from "./broadcast-output-tuning.js"
+import {
   type StageKnown,
 } from "./narrative-stage-dedupe.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
@@ -533,7 +539,10 @@ export async function runTelegramTopicDistiller(
   const used = args.usedToday + 1
   try {
     const raw = await args.runSession({
-      prompt: TELEGRAM_TOPIC_PROMPT,
+      prompt: withGuidance(
+        TELEGRAM_TOPIC_PROMPT,
+        copyGuidanceBlock(loadBroadcastOutputTuning(resolveTuningRepoRoot())),
+      ),
       message: telegramTopicUserMessage(args.packet),
     })
     const checked = validateTelegramTopicOutput(

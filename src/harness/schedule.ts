@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { loadConfig } from "../lib/config.js"
@@ -22,7 +22,6 @@ import {
 } from "./prepare.js"
 import {
   advanceHarnessJournal,
-  canaryStatus,
   writeRejectionReceipt,
 } from "./lifecycle.js"
 import { harnessRoot } from "./canary.js"
@@ -33,7 +32,6 @@ import { runHarnessReview, validateReviewApproval } from "./review-agent.js"
 import { runHarnessBuilder } from "./build-agent.js"
 import { evaluateHypothesis } from "./evaluate.js"
 import {
-  epochHasDecisionSignals,
   loadHoldoutSubjectsWithSignalsOrThrow,
 } from "./signals.js"
 import { loadPolicy } from "./policy.js"
@@ -49,6 +47,12 @@ import {
   type HarnessWeaknessReport,
 } from "../contracts/schemas.js"
 import type { SessionOptions, SessionResult } from "../orchestrator/session.js"
+import {
+  assessHarnessImproveReadiness,
+  type HarnessReadinessGate,
+} from "./readiness.js"
+
+export { listSealedEpochIds } from "./readiness.js"
 
 export type HarnessImproveReport = Readonly<{
   status:
@@ -59,6 +63,8 @@ export type HarnessImproveReport = Readonly<{
     | "failed"
     | "integrated_deployed"
   reason?: string
+  reasonSlug?: string
+  nextAction?: string
   hypothesisId?: string
   developmentEpochId?: string
   holdoutEpochId?: string
@@ -67,17 +73,10 @@ export type HarnessImproveReport = Readonly<{
   testsOk?: boolean
   baseCommit?: string
   candidateCommit?: string
+  gates?: readonly HarnessReadinessGate[]
 }>
 
 export type HarnessSessionFn = (opts: SessionOptions) => Promise<SessionResult>
-
-export function listSealedEpochIds(archiveRoot: string): string[] {
-  const epochsRoot = archiveLayout(archiveRoot).epochs
-  if (!existsSync(epochsRoot)) return []
-  return readdirSync(epochsRoot)
-    .filter((name) => existsSync(join(epochsRoot, name, "sealed", "status.json")))
-    .sort()
-}
 
 function harnessLockPath(archiveRoot: string): string {
   return join(harnessRoot(archiveRoot), ".lock")
@@ -152,7 +151,7 @@ function hostValidatePlan(
   return { ok: true }
 }
 
-async function persistScheduleReport(
+async function persistHypothesisScheduleReport(
   archiveRoot: string,
   hypothesisId: string,
   report: HarnessImproveReport,
@@ -161,6 +160,41 @@ async function persistScheduleReport(
     join(hypothesisDir(archiveRoot, hypothesisId), "schedule-report.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   )
+}
+
+/** Global schedule report for every policy outcome, including preflight skips */
+export async function persistHarnessScheduleReport(
+  archiveRoot: string,
+  report: HarnessImproveReport,
+  nowIso: string,
+): Promise<void> {
+  await writeAtomicFile(
+    join(harnessRoot(archiveRoot), "schedule-report.json"),
+    `${JSON.stringify({
+      at: nowIso,
+      status: report.status,
+      ...(report.reason ? { reason: report.reason } : {}),
+      ...(report.reasonSlug ? { reasonSlug: report.reasonSlug } : {}),
+      ...(report.nextAction ? { nextAction: report.nextAction } : {}),
+      ...(report.hypothesisId ? { hypothesisId: report.hypothesisId } : {}),
+      ...(report.developmentEpochId
+        ? { developmentEpochId: report.developmentEpochId }
+        : {}),
+      ...(report.holdoutEpochId ? { holdoutEpochId: report.holdoutEpochId } : {}),
+      ...(report.gates ? { gates: report.gates } : {}),
+    }, null, 2)}\n`,
+  )
+}
+
+async function persistAllScheduleReports(
+  archiveRoot: string,
+  report: HarnessImproveReport,
+  nowIso: string,
+): Promise<void> {
+  await persistHarnessScheduleReport(archiveRoot, report, nowIso)
+  if (report.hypothesisId) {
+    await persistHypothesisScheduleReport(archiveRoot, report.hypothesisId, report)
+  }
 }
 
 export type RunHarnessImproveOptions = Readonly<{
@@ -187,69 +221,84 @@ export async function runHarnessImprove(
 ): Promise<HarnessImproveReport> {
   const config = loadConfig()
   const hi = config.harness_improvement
+  const nowIso = opts.nowIso ?? systemClock.nowIso()
+
   if (!hi.enabled) {
-    return { status: "skipped", reason: "harness_improvement.enabled is false" }
+    const report: HarnessImproveReport = {
+      status: "skipped",
+      reason: "harness_improvement.enabled is false",
+      reasonSlug: "enabled",
+      nextAction: "set harness_improvement.enabled=true",
+    }
+    await persistHarnessScheduleReport(opts.archiveRoot, report, nowIso)
+    return report
   }
   if (!hi.schedule_enabled) {
-    return { status: "skipped", reason: "harness_improvement.schedule_enabled is false" }
+    const report: HarnessImproveReport = {
+      status: "skipped",
+      reason: "harness_improvement.schedule_enabled is false",
+      reasonSlug: "schedule-enabled",
+      nextAction: "set harness_improvement.schedule_enabled=true",
+    }
+    await persistHarnessScheduleReport(opts.archiveRoot, report, nowIso)
+    return report
   }
 
   const lock = new WorkspaceLock(harnessLockPath(opts.archiveRoot))
   if (!lock.tryAcquire()) {
-    return { status: "skipped", reason: "harness lock held" }
+    const report: HarnessImproveReport = {
+      status: "skipped",
+      reason: "harness lock held",
+      reasonSlug: "harness-lock-held",
+      nextAction: "retry after current harness job finishes",
+    }
+    await persistHarnessScheduleReport(opts.archiveRoot, report, nowIso)
+    return report
   }
 
   try {
     await ensureArchive(opts.archiveRoot)
     assertRepoRoot(opts.repoRoot)
-    const nowIso = opts.nowIso ?? systemClock.nowIso()
     const exec = opts.exec ?? defaultExec
     const layout = archiveLayout(opts.archiveRoot)
     const runSession = opts.runSession as PlanSessionFn | undefined
 
-    if (hi.one_active_experiment) {
-      const status = canaryStatus(opts.archiveRoot)
-      if (status.active?.active) {
-        return {
-          status: "skipped",
-          reason: `active canary ${status.active.hypothesisId}`,
-        }
+    const readiness = assessHarnessImproveReadiness({
+      archiveRoot: opts.archiveRoot,
+      config: {
+        enabled: hi.enabled,
+        schedule_enabled: hi.schedule_enabled,
+        require_two_epochs: hi.require_two_epochs,
+        one_active_experiment: hi.one_active_experiment,
+        min_events: hi.min_events,
+        min_holdout_events: hi.min_holdout_events,
+      },
+      ...(opts.developmentEpochId
+        ? { developmentEpochId: opts.developmentEpochId }
+        : {}),
+      ...(opts.holdoutEpochId ? { holdoutEpochId: opts.holdoutEpochId } : {}),
+    })
+
+    if (!readiness.ready) {
+      const report: HarnessImproveReport = {
+        status: "skipped",
+        reason: readiness.reason ?? "not ready",
+        ...(readiness.reasonSlug ? { reasonSlug: readiness.reasonSlug } : {}),
+        ...(readiness.nextAction ? { nextAction: readiness.nextAction } : {}),
+        ...(readiness.developmentEpochId
+          ? { developmentEpochId: readiness.developmentEpochId }
+          : {}),
+        ...(readiness.holdoutEpochId
+          ? { holdoutEpochId: readiness.holdoutEpochId }
+          : {}),
+        gates: readiness.gates,
       }
+      await persistHarnessScheduleReport(opts.archiveRoot, report, nowIso)
+      return report
     }
 
-    const sealed = listSealedEpochIds(opts.archiveRoot)
-    const developmentEpochId = opts.developmentEpochId
-      ?? sealed.at(-2)
-      ?? sealed.at(-1)
-    const holdoutEpochId = opts.holdoutEpochId ?? sealed.at(-1)
-
-    if (!developmentEpochId || !holdoutEpochId) {
-      return { status: "skipped", reason: "need at least one sealed epoch" }
-    }
-    if (hi.require_two_epochs && developmentEpochId === holdoutEpochId) {
-      return {
-        status: "skipped",
-        reason: "require_two_epochs: need distinct development and holdout sealed epochs",
-        developmentEpochId,
-        holdoutEpochId,
-      }
-    }
-    if (!epochHasDecisionSignals(layout, developmentEpochId)) {
-      return {
-        status: "skipped",
-        reason: `development epoch ${developmentEpochId} lacks decision-time signals`,
-        developmentEpochId,
-        holdoutEpochId,
-      }
-    }
-    if (!epochHasDecisionSignals(layout, holdoutEpochId)) {
-      return {
-        status: "skipped",
-        reason: `holdout epoch ${holdoutEpochId} lacks decision-time signals`,
-        developmentEpochId,
-        holdoutEpochId,
-      }
-    }
+    const developmentEpochId = readiness.developmentEpochId!
+    const holdoutEpochId = readiness.holdoutEpochId!
 
     const hypothesis = await proposeFromSealedEpoch({
       archiveRoot: opts.archiveRoot,
@@ -289,7 +338,7 @@ export async function runHarnessImprove(
         holdoutEpochId,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await advanceHarnessJournal(
@@ -342,7 +391,7 @@ export async function runHarnessImprove(
         holdoutEpochId,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await saveHypothesis(opts.archiveRoot, {
@@ -386,7 +435,7 @@ export async function runHarnessImprove(
         holdoutEpochId,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     const planApproval = validateReviewApproval(planReview.review)
@@ -408,7 +457,7 @@ export async function runHarnessImprove(
         holdoutEpochId,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await saveHypothesis(opts.archiveRoot, {
@@ -461,7 +510,7 @@ export async function runHarnessImprove(
         branch: prepared.branch,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await advanceHarnessJournal(
@@ -494,7 +543,7 @@ export async function runHarnessImprove(
         confinementOk: false,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
 
@@ -520,7 +569,7 @@ export async function runHarnessImprove(
         confinementOk: true,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
 
@@ -547,7 +596,7 @@ export async function runHarnessImprove(
           testsOk: false,
           baseCommit,
         }
-        await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+        await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
         return report
       }
       const script = hi.test_command.trim() || "test:all"
@@ -573,7 +622,7 @@ export async function runHarnessImprove(
           testsOk: false,
           baseCommit,
         }
-        await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+        await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
         return report
       }
     }
@@ -616,7 +665,7 @@ export async function runHarnessImprove(
         baseCommit,
         candidateCommit: evaluation.candidateCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await advanceHarnessJournal(
@@ -668,7 +717,7 @@ export async function runHarnessImprove(
         baseCommit,
         candidateCommit: evaluation.candidateCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     const implApproval = validateReviewApproval(implReview.review)
@@ -692,7 +741,7 @@ export async function runHarnessImprove(
         baseCommit,
         candidateCommit: evaluation.candidateCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await saveHypothesis(opts.archiveRoot, {
@@ -719,7 +768,7 @@ export async function runHarnessImprove(
         baseCommit,
         candidateCommit: evaluation.candidateCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
 
@@ -741,7 +790,7 @@ export async function runHarnessImprove(
         branch: meta.branch,
         baseCommit,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await saveHypothesis(opts.archiveRoot, {
@@ -775,7 +824,7 @@ export async function runHarnessImprove(
         baseCommit,
         candidateCommit: candidateSha,
       }
-      await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+      await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
       return report
     }
     await saveHypothesis(opts.archiveRoot, {
@@ -812,7 +861,7 @@ export async function runHarnessImprove(
           baseCommit,
           candidateCommit: candidateSha,
         }
-        await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+        await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
         return report
       }
       await saveHypothesis(opts.archiveRoot, {
@@ -869,7 +918,7 @@ export async function runHarnessImprove(
       baseCommit,
       candidateCommit: candidateSha,
     }
-    await persistScheduleReport(opts.archiveRoot, hypothesis.hypothesisId, report)
+    await persistAllScheduleReports(opts.archiveRoot, report, nowIso)
     log.info("harness-improve complete", report as never)
     return report
   } finally {

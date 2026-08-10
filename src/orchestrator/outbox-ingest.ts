@@ -21,6 +21,10 @@ import {
 import type { NarrativeLogEntry } from "./narrative-log.js"
 import { assertNarrativeDevelopmentAllowed } from "./narrative-development.js"
 import {
+  assertNarrativeEvidenceQuality,
+  type NarrativeEvidenceQuality,
+} from "./narrative-evidence-gate.js"
+import {
   assertNarrativeBroadcastAllowed,
   restatesUnchangedNarrativeStage,
   statusQuoNarratives,
@@ -113,6 +117,8 @@ export async function ingestOutbox(args: Readonly<{
   marketBlind?: boolean
   /** Job name for integrity-hold gating */
   job?: string
+  /** Curated social evidence grade — narrative claims need tier `strong` */
+  narrativeEvidenceQuality?: NarrativeEvidenceQuality
   /** Pre-session narrative log — used to reject same-heat re-sightings */
   narrativeLogBefore?: readonly NarrativeLogEntry[]
   /** Post-merge narrative log — stage deltas unlock heat-change broadcasts */
@@ -122,6 +128,8 @@ export async function ingestOutbox(args: Readonly<{
     enabled: boolean
     runSession?: WorthinessSessionRunner
     context: WorthinessContext
+    /** Operator-approved worthiness guidance lines (ADR 043) */
+    guidance?: readonly string[]
   }>
 }>): Promise<OutboxIngestReport> {
   const proposed = readProposedItems(args.agentRoot, args.runId)
@@ -234,6 +242,17 @@ export async function ingestOutbox(args: Readonly<{
       }
     }
 
+    const evidenceGate = assertNarrativeEvidenceQuality({
+      item,
+      ...(args.narrativeEvidenceQuality
+        ? { quality: args.narrativeEvidenceQuality }
+        : {}),
+    })
+    if (!evidenceGate.ok) {
+      reject(evidenceGate.reason, rawHash)
+      continue
+    }
+
     const stageGate = assertNarrativeBroadcastAllowed({
       item,
       logBefore,
@@ -321,6 +340,9 @@ export async function ingestOutbox(args: Readonly<{
         const review = await runBroadcastWorthiness({
           item: capped,
           enabled: true,
+          ...(args.worthiness.guidance && args.worthiness.guidance.length > 0
+            ? { guidance: args.worthiness.guidance }
+            : {}),
           ...(args.worthiness.runSession
             ? { runSession: args.worthiness.runSession }
             : {}),

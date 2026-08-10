@@ -16,6 +16,8 @@ import { ingestOutbox } from "../../src/orchestrator/outbox-ingest.js"
 import {
   buildHostChatFacts,
   chatReportPath,
+  classifyHostChatActivity,
+  renderHostChatFactsMarkdown,
   stagedBroadcastEventIds,
   validateAndPromoteChatReport,
 } from "../../src/orchestrator/chat-report.js"
@@ -64,6 +66,72 @@ function scaffold(withOutbox = true) {
   }
   return { root, agentRoot, archiveRoot }
 }
+
+describe("classifyHostChatActivity", () => {
+  const base = { job: "narrative-scan", runStatus: "complete" } as const
+
+  it("calls a staged broadcast movement", () => {
+    expect(classifyHostChatActivity({ ...base, ingest: { staged: 1, rejected: 0 } }))
+      .toBe("movement")
+  })
+
+  it("calls an accepted proposal or narrative update movement", () => {
+    expect(classifyHostChatActivity({ ...base, proposals: { accepted: 1, rejected: 0 } }))
+      .toBe("movement")
+    expect(classifyHostChatActivity({ ...base, narrative: { appended: 1 } })).toBe("movement")
+  })
+
+  it("calls rejects, degraded collection, and typed skips changed", () => {
+    expect(classifyHostChatActivity({ ...base, ingest: { staged: 0, rejected: 2 } }))
+      .toBe("changed")
+    expect(classifyHostChatActivity({ ...base, collectionStatus: "degraded" })).toBe("changed")
+    expect(classifyHostChatActivity({ ...base, harness: { status: "skipped" } })).toBe("changed")
+    expect(classifyHostChatActivity({ ...base, runStatus: "failed" })).toBe("changed")
+  })
+
+  it("calls a clean no-change run routine", () => {
+    expect(classifyHostChatActivity({
+      ...base,
+      collectionStatus: "completed",
+      ingest: { staged: 0, rejected: 0 },
+      narrative: { appended: 0, updated: 0, purged: 3 },
+    })).toBe("routine")
+  })
+})
+
+describe("renderHostChatFactsMarkdown routine collapse", () => {
+  it("renders one summary line and omits snapshots, receipts, and detail", () => {
+    const md = renderHostChatFactsMarkdown(RUN_ID, {
+      job: "narrative-scan",
+      runStatus: "complete",
+      collectionStatus: "completed",
+      postCount: 4,
+      snapshotNames: ["narrative-trending", "narrative-social-list"],
+      receiptPaths: ["archive/runs/x/chat-summary-receipt.json"],
+      platformNotes: ["collectionStatus=completed"],
+      ingest: { staged: 0, rejected: 0 },
+    })
+    expect(md).toContain("- activity: routine")
+    expect(md).toContain("omittedDetail=4")
+    expect(md).not.toContain("narrative-trending")
+    expect(md).not.toContain("## Receipt paths")
+    expect(md).not.toContain("### Source freshness")
+  })
+
+  it("keeps full detail for a movement run", () => {
+    const md = renderHostChatFactsMarkdown(RUN_ID, {
+      job: "narrative-scan",
+      runStatus: "complete",
+      collectionStatus: "completed",
+      snapshotNames: ["narrative-trending"],
+      ingest: { staged: 1, rejected: 0 },
+      broadcasts: [{ severity: "watch", text: "base ai agents heating" }],
+    })
+    expect(md).toContain("- activity: movement")
+    expect(md).toContain("narrative-trending")
+    expect(md).toContain("base ai agents heating")
+  })
+})
 
 function writeProposal(agentRoot: string, body: unknown) {
   writeFileSync(
@@ -607,5 +675,45 @@ describe("chat report retention", () => {
     expect(existsSync(newPath)).toBe(true)
     expect(report.chatReportsRemoved.length).toBe(1)
     expect(report.chatReportsRemoved[0]).toContain("old-run.md")
+  })
+})
+
+describe("harness chat facts", () => {
+  it("renders deferred harness skips with nextAction and no untrusted prose", () => {
+    const facts = buildHostChatFacts({
+      job: "harness-improve",
+      runStatus: "complete",
+      harnessReport: {
+        status: "skipped",
+        reason: "require_two_epochs: need distinct development and holdout sealed epochs",
+        reasonSlug: "distinct-epochs",
+        nextAction: "wait for a second distinct sealed audit epoch",
+        developmentEpochId: "audit-a",
+        holdoutEpochId: "audit-a",
+      },
+      receiptPaths: ["archive/runs/r/host-reports/harness-improve.json"],
+    })
+    const md = renderHostChatFactsMarkdown("harness-improve-1", facts)
+    expect(md).toContain("### Harness improvement")
+    expect(md).toContain("deferred (typed readiness skip")
+    expect(md).toContain("reasonSlug: distinct-epochs")
+    expect(md).toContain("nextAction: wait for a second distinct sealed audit epoch")
+    expect(md).not.toContain("IGNORE")
+  })
+
+  it("renders activation_pending harness outcomes", () => {
+    const facts = buildHostChatFacts({
+      job: "harness-improve",
+      runStatus: "complete",
+      harnessReport: {
+        status: "activation_pending",
+        hypothesisId: "hyp-1",
+        nextAction: "tc harness activate hyp-1",
+      },
+    })
+    const md = renderHostChatFactsMarkdown("harness-improve-2", facts)
+    expect(md).toContain("activation pending")
+    expect(md).toContain("hypothesisId: `hyp-1`")
+    expect(md).toContain("tc harness activate hyp-1")
   })
 })

@@ -19,6 +19,12 @@ import {
 } from "./delivery.js"
 import type { JobName } from "./jobs.js"
 import { xBotHealthEscalation } from "./x-bot-health.js"
+import { buildPreferencePairs } from "../broadcast-feedback/aggregate.js"
+import { broadcastFeedbackLayout } from "../broadcast-feedback/paths.js"
+import {
+  currentFeedbackRecords,
+  readPendingFollowups,
+} from "../broadcast-feedback/store.js"
 
 export const HEALTH_SNAPSHOT_SCHEMA = 1 as const
 
@@ -26,6 +32,34 @@ export const HEALTH_SNAPSHOT_SCHEMA = 1 as const
 export const EXPECTED_RECURRING_SKIPS: ReadonlySet<string> = Object.freeze(new Set([
   "research/daily-cap",
   "delivery-retry/no-pending-ingress",
+  "harness-improve/distinct-epochs",
+  "harness-improve/sealed-epochs",
+  "harness-improve/dev-signals",
+  "harness-improve/holdout-signals",
+  "harness-improve/holdout-unused",
+  "harness-improve/dev-sample-floor",
+  "harness-improve/holdout-sample-floor",
+  "harness-improve/schedule-enabled",
+  "harness-improve/enabled",
+  "harness-improve/harness-lock-held",
+  "harness-improve/no-active-canary",
+  "harness-improve/no-policy-midflight",
+  "harness-improve/no-meta-trialing",
+  "harness-improve/harness-skipped",
+  "harness-meta-improve/distinct-epochs",
+  "harness-meta-improve/sealed-epochs",
+  "harness-meta-improve/dev-signals",
+  "harness-meta-improve/holdout-signals",
+  "harness-meta-improve/holdout-unused",
+  "harness-meta-improve/schedule-enabled",
+  "harness-meta-improve/enabled",
+  "harness-meta-improve/harness-lock-held",
+  "harness-meta-improve/no-active-canary",
+  "harness-meta-improve/no-policy-midflight",
+  "harness-meta-improve/no-meta-trialing",
+  "harness-meta-improve/harness-skipped",
+  "farcaster-scan/farcaster-disabled",
+  "fc-source-review/farcaster-disabled",
 ]))
 
 /** Jobs surfaced in status/review; cadence ages are advisory only.
@@ -50,6 +84,8 @@ export const KEY_HEALTH_JOBS: readonly JobName[] = Object.freeze([
   "outcomes-settle",
   "source-list-review",
   "fc-source-review",
+  "harness-improve",
+  "harness-meta-improve",
 ])
 
 const MAX_SKIP_LINES_PER_JOB = 500
@@ -112,6 +148,8 @@ export type HealthXState = Readonly<{
 }>
 
 export type HealthFarcasterState = Readonly<{
+  /** false when farcaster.enabled is off — the lane then reports nothing else */
+  enabled: boolean
   recentRuns: number
   staleStreak: number
   lastFallbackUsed?: boolean
@@ -144,6 +182,21 @@ export type HealthFomoState = Readonly<{
   }>
 }>
 
+export type HealthBroadcastFeedbackState = Readonly<{
+  /** false when broadcast.feedback is off — the lane then reports zero counts */
+  enabled: boolean
+  operatorSet: boolean
+  records: number
+  up: number
+  completedDown: number
+  pendingFollowups: number
+  staleFollowups: number
+  /** True when the ledger meets every seal floor for a first dataset */
+  candidateEligible: boolean
+  lastFeedbackAt?: string
+  latestDatasetId?: string
+}>
+
 export type HealthFinding = Readonly<{
   code: string
   severity: "warn" | "error"
@@ -167,6 +220,7 @@ export type HealthSnapshot = Readonly<{
   router: BroadcastPipelineSnapshot
   deployment: HealthDeploymentState
   fomo: HealthFomoState
+  broadcastFeedback: HealthBroadcastFeedbackState
   findings: readonly HealthFinding[]
   warnings: readonly string[]
 }>
@@ -209,8 +263,17 @@ function readLockState(agentRoot: string): HealthLockState {
 function newerOutcome(
   a: JobLastOutcome | undefined,
   b: JobLastOutcome,
-): JobLastOutcome {
+): JobLastOutcome
+function newerOutcome(
+  a: JobLastOutcome | undefined,
+  b: JobLastOutcome | undefined,
+): JobLastOutcome | undefined
+function newerOutcome(
+  a: JobLastOutcome | undefined,
+  b: JobLastOutcome | undefined,
+): JobLastOutcome | undefined {
   if (!a) return b
+  if (!b) return a
   return Date.parse(b.at) >= Date.parse(a.at) ? b : a
 }
 
@@ -268,6 +331,35 @@ function isCollectorSkip(agentRoot: string, runId: string): boolean {
   return existsSync(join(agentRoot, "reports", runId, "collector-skip.json"))
 }
 
+function readHarnessHostReportStatus(args: Readonly<{
+  layout: ArchiveLayout
+  runId: string
+  job: JobName
+}>): Readonly<{ status?: string, reason?: string, reasonSlug?: string, nextAction?: string }> | undefined {
+  if (args.job !== "harness-improve" && args.job !== "harness-meta-improve") return undefined
+  const file = args.job === "harness-improve"
+    ? "harness-improve.json"
+    : "harness-meta-improve.json"
+  const path = join(runArchiveDir(args.layout, args.runId), "host-reports", file)
+  if (!existsSync(path)) return undefined
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as {
+      status?: unknown
+      reason?: unknown
+      reasonSlug?: unknown
+      nextAction?: unknown
+    }
+    return {
+      ...(typeof raw.status === "string" ? { status: raw.status } : {}),
+      ...(typeof raw.reason === "string" ? { reason: raw.reason.slice(0, 200) } : {}),
+      ...(typeof raw.reasonSlug === "string" ? { reasonSlug: raw.reasonSlug.slice(0, 64) } : {}),
+      ...(typeof raw.nextAction === "string" ? { nextAction: raw.nextAction.slice(0, 200) } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
 async function scanJobOutcomes(args: Readonly<{
   layout: ArchiveLayout
   agentRoot: string
@@ -276,11 +368,13 @@ async function scanJobOutcomes(args: Readonly<{
   lastSuccess?: JobLastOutcome
   lastFailure?: JobLastOutcome
   lastCollectorSkip?: JobLastOutcome
+  lastSkip?: JobLastOutcome
 }>> {
   const byJob = new Map<JobName, {
     lastSuccess?: JobLastOutcome
     lastFailure?: JobLastOutcome
     lastCollectorSkip?: JobLastOutcome
+    lastSkip?: JobLastOutcome
   }>()
   if (!existsSync(args.layout.transactions)) return byJob
 
@@ -309,11 +403,35 @@ async function scanJobOutcomes(args: Readonly<{
       runId,
     }
     const slot = byJob.get(job) ?? {}
+    const harnessReport = readHarnessHostReportStatus({
+      layout: args.layout,
+      runId,
+      job,
+    })
     if (loaded.status === "failed") {
       slot.lastFailure = newerOutcome(slot.lastFailure, {
         kind: "failure",
         ...outcomeBase,
         ...(loaded.failure?.code ? { reason: loaded.failure.code } : {}),
+      })
+    } else if (harnessReport?.status === "skipped") {
+      slot.lastSkip = newerOutcome(slot.lastSkip, {
+        kind: "skip",
+        ...outcomeBase,
+        reason: harnessReport.reasonSlug
+          ?? harnessReport.reason?.slice(0, 64)
+          ?? "harness-skipped",
+      })
+    } else if (
+      harnessReport?.status === "rejected"
+      || harnessReport?.status === "failed"
+    ) {
+      slot.lastFailure = newerOutcome(slot.lastFailure, {
+        kind: "failure",
+        ...outcomeBase,
+        reason: harnessReport.reasonSlug
+          ?? harnessReport.reason?.slice(0, 64)
+          ?? harnessReport.status,
       })
     } else if (isCollectorSkip(args.agentRoot, runId)) {
       slot.lastCollectorSkip = newerOutcome(slot.lastCollectorSkip, {
@@ -324,6 +442,7 @@ async function scanJobOutcomes(args: Readonly<{
       slot.lastSuccess = newerOutcome(slot.lastSuccess, {
         kind: "success",
         ...outcomeBase,
+        ...(harnessReport?.status ? { reason: harnessReport.status } : {}),
       })
     }
     byJob.set(job, slot)
@@ -373,9 +492,13 @@ function parseFcReceiptText(text: string): {
 async function scanFarcasterHealth(args: Readonly<{
   layout: ArchiveLayout
   nowMs: number
+  enabled: boolean
 }>): Promise<HealthFarcasterState> {
+  if (!args.enabled) {
+    return { enabled: false, recentRuns: 0, staleStreak: 0 }
+  }
   if (!existsSync(args.layout.transactions)) {
-    return { recentRuns: 0, staleStreak: 0 }
+    return { enabled: true, recentRuns: 0, staleStreak: 0 }
   }
   const candidates: Array<{ runId: string, createdAt: string }> = []
   for (const name of readdirSync(args.layout.transactions)) {
@@ -424,6 +547,7 @@ async function scanFarcasterHealth(args: Readonly<{
   }
   const latest = summaries[0]
   return {
+    enabled: true,
     recentRuns: summaries.length,
     staleStreak,
     ...(latest
@@ -559,6 +683,78 @@ function fomoState(): HealthFomoState {
   }
 }
 
+/**
+ * Operator feedback lane state (ADR 043). Reads are best effort: a missing or
+ * broken ledger reports an empty lane and never breaks the health snapshot.
+ */
+function broadcastFeedbackState(
+  nowMs: number,
+  home?: string,
+): HealthBroadcastFeedbackState {
+  const off: HealthBroadcastFeedbackState = {
+    enabled: false,
+    operatorSet: false,
+    records: 0,
+    up: 0,
+    completedDown: 0,
+    pendingFollowups: 0,
+    staleFollowups: 0,
+    candidateEligible: false,
+  }
+  let feedback
+  try {
+    feedback = loadConfig().broadcast.feedback
+  } catch {
+    return off
+  }
+  const operatorSet = /^\d{17,20}$/u.test(
+    process.env["DISCORD_OPERATOR_USER_ID"]?.trim() ?? "",
+  )
+  try {
+    const layout = home ? broadcastFeedbackLayout(home) : broadcastFeedbackLayout()
+    const records = currentFeedbackRecords(layout)
+    const pending = readPendingFollowups(layout).pending
+    const completedDown = records.filter(
+      (record) => record.state === "down" && record.followupStatus === "completed",
+    ).length
+    const pairs = buildPreferencePairs(records).length
+    const lastFeedbackAt = records
+      .map((record) => record.lastReactionAt)
+      .sort()
+      .at(-1)
+    const datasets = existsSync(layout.sealed)
+      ? readdirSync(layout.sealed).filter((name) => name.startsWith("fbds-")).sort()
+      : []
+    const latestDatasetId = datasets.at(-1)?.replace(/\.json$/u, "")
+    return {
+      enabled: feedback.enabled,
+      operatorSet,
+      records: records.length,
+      up: records.filter((record) => record.state === "up").length,
+      completedDown,
+      pendingFollowups: pending.length,
+      staleFollowups: pending.filter(
+        (entry) => Date.parse(entry.expiresAt) <= nowMs,
+      ).length,
+      candidateEligible: completedDown >= feedback.candidate_min_completed_down
+        && pairs >= feedback.candidate_min_preference_pairs,
+      ...(lastFeedbackAt ? { lastFeedbackAt } : {}),
+      ...(latestDatasetId ? { latestDatasetId } : {}),
+    }
+  } catch {
+    return { ...off, enabled: feedback.enabled, operatorSet }
+  }
+}
+
+/** Fail closed: an unreadable config reports Farcaster as disabled */
+function farcasterEnabled(): boolean {
+  try {
+    return loadConfig().farcaster.enabled
+  } catch {
+    return false
+  }
+}
+
 /** Advisory cadence (seconds) for stale-job detection — 3× triggers a finding */
 export const JOB_CADENCE_SEC: Readonly<Partial<Record<JobName, number>>> = Object.freeze({
   "chart-sweep": 3_600,
@@ -577,6 +773,8 @@ export const JOB_CADENCE_SEC: Readonly<Partial<Record<JobName, number>>> = Objec
   "fc-source-review": 86_400,
   review: 86_400,
   audit: 604_800,
+  // harness-meta-improve has no timer, so it gets no cadence
+  "harness-improve": 604_800,
 })
 
 const LISTENER_HEARTBEAT_STALE_SEC = 15 * 60
@@ -651,12 +849,29 @@ function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">):
       component: "x",
     })
   }
-  if (snapshot.farcaster.staleStreak >= 3) {
+  if (snapshot.farcaster.enabled && snapshot.farcaster.staleStreak >= 3) {
     push({
       code: "fc-stale-streak",
       severity: "warn",
       summary: `fc stale streak=${snapshot.farcaster.staleStreak}`,
       component: "farcaster",
+    })
+  }
+  const feedback = snapshot.broadcastFeedback
+  if (feedback.enabled && feedback.staleFollowups > 0) {
+    push({
+      code: "feedback-followup-stale",
+      severity: "warn",
+      summary: `broadcast feedback follow-ups past the 72h limit=${feedback.staleFollowups}`,
+      component: "broadcast-feedback",
+    })
+  }
+  if (feedback.enabled && !feedback.operatorSet) {
+    push({
+      code: "feedback-operator-unset",
+      severity: "warn",
+      summary: "broadcast feedback is on but DISCORD_OPERATOR_USER_ID is unset",
+      component: "broadcast-feedback",
     })
   }
   if (snapshot.router.ingress.failed > 0) {
@@ -732,7 +947,11 @@ function buildWarnings(
   if (snapshot.x.pendingActions > 0 && !snapshot.x.blocked) {
     warnings.push(`x pending actions=${snapshot.x.pendingActions}`)
   }
-  if (snapshot.farcaster.staleStreak > 0 && snapshot.farcaster.staleStreak < 3) {
+  if (
+    snapshot.farcaster.enabled
+    && snapshot.farcaster.staleStreak > 0
+    && snapshot.farcaster.staleStreak < 3
+  ) {
     warnings.push(
       `fc stale streak=${snapshot.farcaster.staleStreak}`
         + (snapshot.farcaster.lastFallbackUsed ? " fallbackUsed" : ""),
@@ -779,7 +998,7 @@ export function healthCreatesReviewScope(snapshot: HealthSnapshot): boolean {
   if (Object.keys(snapshot.skipReasons).length > 0) return true
   if (snapshot.research.ambiguous > 0 || snapshot.research.actionable === 0) return true
   if (snapshot.wallets.silent) return true
-  if (snapshot.farcaster.staleStreak > 0) return true
+  if (snapshot.farcaster.enabled && snapshot.farcaster.staleStreak > 0) return true
   if (snapshot.router.ingress.ingressPending > 0 || snapshot.router.ingress.failed > 0) return true
   return false
 }
@@ -789,6 +1008,10 @@ export async function buildHealthSnapshot(args: Readonly<{
   archiveRoot: string
   nowIso?: string
   layout?: ArchiveLayout
+  /** Test override; production reads farcaster.enabled from the config */
+  farcasterEnabled?: boolean
+  /** Test override; production reads the feedback lane under the real home */
+  feedbackHome?: string
 }>): Promise<HealthSnapshot> {
   const capturedAt = args.nowIso ?? new Date().toISOString()
   const nowMs = Date.parse(capturedAt)
@@ -805,7 +1028,7 @@ export async function buildHealthSnapshot(args: Readonly<{
 
   const jobs: JobHealth[] = KEY_HEALTH_JOBS.map((job) => {
     const scanned = outcomes.get(job) ?? {}
-    const lastSkip = lastSkipByJob.get(job)
+    const lastSkip = newerOutcome(lastSkipByJob.get(job), scanned.lastSkip)
     return {
       job,
       ...(scanned.lastSuccess ? { lastSuccess: scanned.lastSuccess } : {}),
@@ -827,10 +1050,18 @@ export async function buildHealthSnapshot(args: Readonly<{
   const x = existsSync(join(args.agentRoot, "state"))
     ? xState(args.agentRoot, capturedAt)
     : { pendingActions: 0, consecutiveFailures: 0, blocked: false }
-  const farcaster = await scanFarcasterHealth({ layout, nowMs })
+  const farcaster = await scanFarcasterHealth({
+    layout,
+    nowMs,
+    enabled: args.farcasterEnabled ?? farcasterEnabled(),
+  })
   const router = snapshotBroadcastPipeline(layout, capturedAt)
   const deployment = deploymentState()
   const fomo = fomoState()
+  const broadcastFeedback = broadcastFeedbackState(
+    nowMs,
+    ...(args.feedbackHome ? [args.feedbackHome] as const : []),
+  )
 
   const base = {
     schema: HEALTH_SNAPSHOT_SCHEMA,
@@ -847,6 +1078,7 @@ export async function buildHealthSnapshot(args: Readonly<{
     router,
     deployment,
     fomo,
+    broadcastFeedback,
   }
   const findings = buildFindings(base)
   // Discord heartbeats (optional — fail soft if discord state missing)
@@ -960,12 +1192,14 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
       + (snapshot.x.blocked ? " BLOCKED" : ""),
   )
   lines.push(
-    `fc: staleStreak=${snapshot.farcaster.staleStreak}`
-      + ` recent=${snapshot.farcaster.recentRuns}`
-      + (snapshot.farcaster.lastFallbackUsed ? " fallback" : "")
-      + (snapshot.farcaster.lastRejectReason
-        ? ` reject=${snapshot.farcaster.lastRejectReason}`
-        : ""),
+    snapshot.farcaster.enabled
+      ? `fc: staleStreak=${snapshot.farcaster.staleStreak}`
+        + ` recent=${snapshot.farcaster.recentRuns}`
+        + (snapshot.farcaster.lastFallbackUsed ? " fallback" : "")
+        + (snapshot.farcaster.lastRejectReason
+          ? ` reject=${snapshot.farcaster.lastRejectReason}`
+          : "")
+      : "fc: disabled",
   )
   const ing = snapshot.router.ingress
   lines.push(
@@ -983,6 +1217,16 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
   )
   lines.push(
     `fomo: enabled=${snapshot.fomo.enabled} shadow=${snapshot.fomo.shadowMode} (parallel-only) fallback=st:${snapshot.fomo.solanaOhlcvFallback.solanaTracker} be:${snapshot.fomo.solanaOhlcvFallback.birdeye}`,
+  )
+  const fb = snapshot.broadcastFeedback
+  lines.push(
+    fb.enabled
+      ? `feedback: up=${fb.up} downDetail=${fb.completedDown}`
+        + ` pending=${fb.pendingFollowups}`
+        + (fb.staleFollowups > 0 ? ` stale=${fb.staleFollowups}` : "")
+        + ` candidate=${fb.candidateEligible ? "ready" : "not-ready"}`
+        + (fb.operatorSet ? "" : " OPERATOR-UNSET")
+      : "feedback: disabled",
   )
 
   let jobLines = 0
@@ -1061,6 +1305,7 @@ export function toHealthJsonPayload(snapshot: HealthSnapshot): Readonly<Record<s
         : snapshot.deployment.sourceHash,
     },
     fomo: snapshot.fomo,
+    broadcastFeedback: snapshot.broadcastFeedback,
     findings: snapshot.findings.slice(0, 64),
     warnings: snapshot.warnings.slice(0, 64),
   }
@@ -1081,7 +1326,9 @@ export function healthSnapshotLines(snapshot: HealthSnapshot): string[] {
     `watchlistActive=${snapshot.watchlist.active}`,
     `walletsSilent=${snapshot.wallets.silent} walletsTracking=${snapshot.wallets.tracking}`,
     `xPending=${snapshot.x.pendingActions} xBlocked=${snapshot.x.blocked}`,
-    `fcStaleStreak=${snapshot.farcaster.staleStreak} fcFallback=${snapshot.farcaster.lastFallbackUsed === true}`,
+    snapshot.farcaster.enabled
+      ? `fcStaleStreak=${snapshot.farcaster.staleStreak} fcFallback=${snapshot.farcaster.lastFallbackUsed === true}`
+      : "fcEnabled=false",
     `routerPending=${snapshot.router.ingress.ingressPending} routerFailed=${snapshot.router.ingress.failed}`,
     `deployManifest=${snapshot.deployment.manifestPresent} schemaMismatch=${snapshot.deployment.schemaMismatch}`
       + ` sourceDirty=${snapshot.deployment.sourceDirty === true}`,

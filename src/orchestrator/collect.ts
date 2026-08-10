@@ -101,6 +101,8 @@ export type CollectionSummary = Readonly<{
   agentAlphaPathCount?: number
   /** Host-written digest entries for no-thesis acks (merged before purge) */
   hostAlphaAckEntries?: readonly import("../contracts/schemas.js").AlphaDigestEntry[]
+  /** Curated social evidence grade — narrative-scan only (ADR 042) */
+  narrativeEvidenceQuality?: import("./narrative-evidence-gate.js").NarrativeEvidenceQuality
 }>
 
 const EMPTY_SUMMARY: CollectionSummary = {
@@ -159,6 +161,8 @@ export async function collectForJob(args: Readonly<{
         writer: args.writer,
         fetchedAt: args.fetchedAt,
         archiveRoot: args.archiveRoot,
+        farcasterEnabled: loadConfig().farcaster.enabled,
+        evidenceQuality: loadConfig().narratives.evidence_quality,
       }))
     case "research":
       return collectResearch(args)
@@ -393,6 +397,7 @@ function mapNarrative(result: Awaited<ReturnType<typeof collectNarrativeScan>>):
     collectionKind: "external",
     marketBlind: result.marketBlind,
     ...(result.marketBlindReason ? { marketBlindReason: result.marketBlindReason } : {}),
+    ...(result.evidenceQuality ? { narrativeEvidenceQuality: result.evidenceQuality } : {}),
   }
 }
 

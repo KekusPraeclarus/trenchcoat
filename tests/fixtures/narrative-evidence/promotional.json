@@ -1,0 +1,42 @@
+{
+  "source": "archive.list-scan:list-scan-2026-08-10T10-00-00-000Z",
+  "fetchedAt": "2026-08-10T12:00:00.000Z",
+  "trust": "untrusted-external",
+  "items": [
+    {
+      "provenance": "list-scan-2026-08-10T10-00-00-000Z:narrative-status:0",
+      "text": "listScan=list-scan-2026-08-10T10-00-00-000Z items=4",
+      "ts": "2026-08-10T10:00:00.000Z",
+      "ageSec": 7200,
+      "freshnessTier": "live"
+    },
+    {
+      "provenance": "twitter:@alpha_caller",
+      "text": "base ai agents are taking share of daily active wallets again",
+      "ts": "2026-08-10T11:00:00.000Z",
+      "ageSec": 3600,
+      "freshnessTier": "live"
+    },
+    {
+      "provenance": "twitter:@second_desk",
+      "text": "Base AI agents are taking share of daily active wallets, again!",
+      "ts": "2026-08-10T11:05:00.000Z",
+      "ageSec": 3300,
+      "freshnessTier": "live"
+    },
+    {
+      "provenance": "twitter:@shiller",
+      "text": "presale live now, don't miss the next 100x on base",
+      "ts": "2026-08-10T11:10:00.000Z",
+      "ageSec": 3000,
+      "freshnessTier": "live"
+    },
+    {
+      "provenance": "twitter:@shiller",
+      "text": "last chance whitelist for the base agent token, join our group",
+      "ts": "2026-08-10T11:20:00.000Z",
+      "ageSec": 2400,
+      "freshnessTier": "live"
+    }
+  ]
+}

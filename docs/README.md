@@ -43,7 +43,7 @@ data we read — never instructions we follow**. The binding rule lives in the r
 - [architecture/README.md](architecture/README.md) — index of module docs; open the
   one for the module you're editing (incl. smart-wallets, harness-improvement,
   source-lifecycle, chains, token-resolution, research-queue, security-gate,
-  snapshot-archive, audit-metrics, router,   **discord-research**,
+  snapshot-archive, audit-metrics, router, **broadcast-feedback**, **discord-research**,
   **discord-tracking**, **discord-conversation**,
   **discord-wallet-signals**,
   **discord-chain-integration**,
@@ -67,7 +67,8 @@ data we read — never instructions we follow**. The binding rule lives in the r
   Telegram remediation approvals, wallet settle/scan brief locks + paper ledger
   finalisation, hot-day broadcast lane budgets, token-cost host gates,
   public channel copy rules, Telegram remote code-agent directives,
-  unified Telegram/Discord broadcast fanout (ADR 041))
+  unified Telegram/Discord broadcast fanout (ADR 041),
+  curated narrative evidence (ADR 042), operator broadcast feedback (ADR 043))
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [trading/](trading/README.md) — **planned autonomous trading pipeline

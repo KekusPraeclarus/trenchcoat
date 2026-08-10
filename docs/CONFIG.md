@@ -23,6 +23,7 @@ read_when:
 | `TELEGRAM_ROUTER_BOT_TOKEN` / `TELEGRAM_ROUTER_CHAT_ID` | router fanout | dedicated broadcast bot + destination chat/channel id |
 | `DISCORD_WEBHOOK_URL` | router fanout | Discord webhook for broadcast/lifecycle fanout |
 | `DISCORD_RESEARCH_BOT_TOKEN` | discord listener | Gateway bot token for private-guild research (never logged or stored in config) |
+| `DISCORD_OPERATOR_USER_ID` | discord listener | sole user whose broadcast reactions count as feedback (ADR 043, INV-B6); needs View Channel, Read Message History, Add Reactions in the feedback channel |
 | `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` | collectors | security gate, EVM chains |
 | `COINGECKO_DEMO_KEY` | collectors | trending endpoint |
 | `HELIUS_API_KEY` | wallet jobs | Solana finalized wallet feeds |
@@ -44,7 +45,11 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **22** (unified Telegram/Discord broadcast fanout — ADR 041;
+Current schema is **23** (narrative evidence quality under
+`narratives.evidence_quality` — ADR 042, and operator broadcast feedback under
+`broadcast.feedback` — ADR 043; new installations get
+`research.farcaster_search.enabled=false`; prior schema **22** unified
+Telegram/Discord broadcast fanout — ADR 041;
 drops `broadcast.daily_budget`, `urgent_ceiling`, `discord_distiller`; prior
 schema **21** harness meta lane operator controls under
 `harness_improvement.meta_*` — ADR 039; prior schema **20** Discord
@@ -63,7 +68,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v21 shapes via `migrateConfigToV22`.
+`loadConfig` migrates v1–v22 shapes via `migrateConfigToV23`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -148,7 +153,18 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "telegram_overview": { "enabled": false, "daily_cap": 50, "llm_budget_fraction": 0.5, "hot_day_llm_budget_fraction": 0.25 },
     "telegram_digest": { "enabled": false },
     "hot_day_min_staged_events": 20,
-    "worthiness": { "enabled": true, "model": "composer-2.5-fast" }
+    "worthiness": { "enabled": true, "model": "composer-2.5-fast" },
+    "feedback": {
+      "enabled": false,
+      "channel_id": "1000000000000000003",
+      "followup_ttl_hours": 72,
+      "followup_model": "composer-2.5-fast",
+      "history_days": 30,
+      "reconcile_max_messages": 100,
+      "candidate_min_policy_examples": 5,
+      "candidate_min_completed_down": 3,
+      "candidate_min_preference_pairs": 2
+    }
   },
   // telegram_overview = intraday short topic paragraph LLM (config key preserved; ADR 026)
   //   daily_cap = LLM sessions only (hot-day ops: 50); message count uncapped after validation
@@ -157,7 +173,24 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
   // telegram_digest = host-only daily narrative map at 04:00 Europe/London (schema 18; ADR 041)
   // Discord receives the same rendered text as Telegram leaders (ADR 041)
   // worthiness = host approve/reject gate before stage (fail-closed; default composer-2.5-fast; ADR 014)
-  "narratives": { "retention_days": 14 },
+  // feedback = operator reactions on delivered Discord broadcasts (ADR 043, INV-B6)
+  //   channel_id must appear in chat.discord.channel_ids, and chat.discord.enabled must be true
+  //   DISCORD_OPERATOR_USER_ID names the sole user whose reactions count
+  //   followup_ttl_hours is fixed at 72; candidate_* set the sample floors for a tuning candidate
+  "narratives": {
+    "retention_days": 14,
+    "evidence_quality": {
+      "enabled": true,
+      "max_promotional_share": 0.5,
+      "min_independent_authors": 2,
+      "min_fresh_posts": 2,
+      "primary_source_handles": []
+    }
+  },
+  // evidence_quality = curation floors for the social posts behind a narrative claim (ADR 042)
+  //   a claim needs min_fresh_posts eligible posts, min_independent_authors authors,
+  //   and a promotional share at or below max_promotional_share
+  //   primary_source_handles adds a signal only; it never bypasses the author floor
   "source_safety": { "intent_classifier_daily_cap": 20 },
   "farcaster": {
     "enabled": false,
@@ -260,10 +293,10 @@ operator controls (ADR 039); meta-utility floors/weights stay code constants.
 | `defer_agent_activation` | `true` | Schedule writes pending agent deploy; no live swap |
 | `test_command` | `test:all` | `pnpm run <script>` inside the worktree |
 | `planner_model` / `reviewer_model` / `builder_model` | `composer-2.5` | Agent models |
-| `require_two_epochs` | `true` | Distinct sealed development + holdout epochs with signals |
+| `require_two_epochs` | `true` | Distinct sealed development + holdout epochs with signals (preflighted) |
 | `allocation_bps` | `1000` | Canary traffic share (10%) when activation starts canary |
-| `min_events` / `min_holdout_events` / `min_mature_paired` | `40` / `20` / `40` | Sample floors |
-| `one_active_experiment` | `true` | Skip schedule while a canary or mid-flight peer lane is active |
+| `min_events` / `min_holdout_events` / `min_mature_paired` | `40` / `20` / `40` | Sample floors (preflighted before propose; holdout replay remains authoritative) |
+| `one_active_experiment` | `true` | Skip schedule while a canary or mid-flight peer lane is active (preflighted) |
 | `auto_open_pr` | `false` | Deprecated; PR path removed from schedule |
 | `meta_enabled` | `true` | Master switch for improver-config meta lane |
 | `meta_schedule_enabled` | `true` | Allow `harness-meta-improve` job |
@@ -469,6 +502,9 @@ application is not wired yet — only wallets are applied today.
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
 | `tc status` | shared health snapshot (lock/runs/jobs/findings/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
 | `tc remediations scan\|run\|status\|suggestions\|approve\|…` | incident remediation lane (ADR 017/025) |
+| `tc broadcast feedback status\|ledger\|reconcile` | operator feedback counts, recent records, reaction re-read after listener downtime (ADR 043) |
+| `tc broadcast feedback seal` | seal one dataset from the ledger and write the active preference set |
+| `tc broadcast feedback candidate\|apply\|dismiss` | propose, write, or drop one bounded tuning candidate; apply needs a clean repo and never commits or deploys |
 
 ### `chat.discord` (schema 16+)
 
