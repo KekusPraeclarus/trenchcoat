@@ -2,7 +2,7 @@
 description: The runtime agent's workspace - instructions, skills, knowledge store (index, research, narratives, sources), alpha queue, outbox, sandbox config. Everything under agent/ is edited as artifact, read as data.
 scope: module
 status: draft
-last_verified: 2026-07-24
+last_verified: 2026-08-10
 read_when:
   - Authoring or editing anything under agent/ (bot instructions, skills, knowledge store schema, sandbox.json).
 do_not_read_when:
@@ -55,9 +55,10 @@ agent/
 │   ├── wallets.json       # smart-wallet tracking state (host-only; operator-seeded)
 │   ├── research-queue.json # candidate buffer (deterministic, orchestrator-kept)
 │   ├── research/<token>.md
+│   ├── alpha-acks/<channel>-<msgid>.md # no-thesis alpha tombstones (host-swept after purge; ADR 044)
 │   ├── narratives/
 │   │   ├── log.jsonl      # rolling narrative log (host-owned/integrity-protected; agent proposes, host merges + prunes >14d)
-│   │   └── <slug>.md      # optional per-narrative notes
+│   │   └── <slug>.md      # per-narrative dossier (agent-curated; survives log prune; ADR 045)
 │   ├── decisions.md       # append-only action + reasoning log, sources cited
 │   └── scorecard.json     # rolling performance metrics (audit job)
 ├── inbox/<run-id>/        # written by collectors; host prunes by retention.inbox_archive_days
@@ -81,8 +82,12 @@ bypass files are removed.
 
 **Workspace retention** — each completed run calls `retainWorkspaceArtifacts`
 (`src/orchestrator/retention.ts`): age-prunes `agent/inbox/<run-id>/` and
-`agent/reports/chat/*` using `config.retention`. Never touches the host
-`archive/` tree (content-addressed journal). Report written to
+`agent/reports/chat/*`, deletes alpha-ack tombstones older than
+`retention.alpha_ack_days` whose queue message is already purged (both
+`state/alpha-acks/` and the legacy `state/research/alpha-ack-*` pattern;
+INV-Q2, ADR 044), and deletes narrative dossiers untouched past
+`retention.narrative_dossier_days` whose slug left the log (ADR 045). Never
+touches the host `archive/` tree (content-addressed journal). Report written to
 `reports/<run-id>/workspace-retention.json`.
 
 ## Sandbox config
@@ -159,9 +164,19 @@ structured state, markdown for prose knowledge, one index for retrieval.
   stale lane-“rotation” wording against a matured subject
   (`stale-narrative-framing`; `narrative-stage-dedupe.ts`,
   `narrative-development.ts`; ADR 036).
-- **`narratives/<slug>.md`** — optional richer notes for a narrative the bot
-  wants to keep prose on (stage/sentiment/prevailing frontmatter). Not
-  required for the rolling log or broadcast path.
+- **`narratives/<slug>.md`** — the per-narrative dossier: agent-curated prose
+  memory that survives the log's 14-day prune (ADR 045). narrative-scan creates
+  or updates it only on broadcast triggers (new slug with substance, stage
+  change, notable development, founder catalyst) — never on re-sightings.
+  Frontmatter carries `title`, `stage`, `framing`, `status: active|dormant`,
+  `last_verified`; the body holds compressed notes with provenance ids under a
+  ~2k-token budget (review distils oversized files). When the host prunes a
+  slug from the log, `pruneNarrativeLog` sets the dossier's
+  `status: dormant` (`markNarrativeDossierDormant`); a returning narrative
+  reads its dormant dossier for context and flips it back to `active`.
+  Retention deletes dossiers untouched past `retention.narrative_dossier_days`
+  whose slug is absent from the log. `log.jsonl` stays authoritative for stage
+  and freshness; INDEX narrative lines point at the dossier when it exists.
 - **`sources.json`** — every source we read, keyed by provenance id
   (`twitter:@handle`, `telegram:<channel>`): rolling quality score over direct,
   host-extracted bullish call events, effective sample size, hits/misses,

@@ -2052,7 +2052,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
 
     if (journal.phase === "events-staged") {
-    // Workspace retention — agent inbox + chat reports only; never archive/
+    // Workspace retention — agent inbox, chat reports, purged alpha-acks, and
+    // dormant narrative dossiers; never archive/. Runs after alpha purge, so an
+    // ack swept here always has its archived digest receipt (INV-Q2).
     // Improvement lanes never hold the agent lock, so they must not prune agent trees.
     const retentionReport = mirrorJournalToAgent
       ? retainWorkspaceArtifacts({
@@ -2071,10 +2073,26 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             return 30
           }
         })(),
+        alphaAckMaxAgeDays: (() => {
+          try {
+            return loadConfig().retention.alpha_ack_days
+          } catch {
+            return 30
+          }
+        })(),
+        narrativeDossierMaxAgeDays: (() => {
+          try {
+            return loadConfig().retention.narrative_dossier_days
+          } catch {
+            return 120
+          }
+        })(),
       })
       : {
         inboxRemoved: [] as string[],
         chatReportsRemoved: [] as string[],
+        alphaAcksRemoved: [] as string[],
+        narrativeDossiersRemoved: [] as string[],
       }
     if (mirrorJournalToAgent) {
       const reportDir = join(opts.paths.agentRoot, "reports", runId)
@@ -2098,6 +2116,8 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       retention: {
         inboxRemoved: retentionReport.inboxRemoved.length,
         chatReportsRemoved: retentionReport.chatReportsRemoved.length,
+        alphaAcksRemoved: retentionReport.alphaAcksRemoved.length,
+        narrativeDossiersRemoved: retentionReport.narrativeDossiersRemoved.length,
       },
     }, mirrorJournalToAgent)
     await persistJournal(store, opts.paths.agentRoot, journal, mirrorJournalToAgent)

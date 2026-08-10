@@ -68,11 +68,18 @@ was retained.
 4. `state/research/<token>.md` — durable distillations (frontmatter +
    compressed notes). Update existing files in place; create new files only for
    tokens with explicit evidence. Prune stale detail from the live file; history
-   stays in git/archive, not bloated prose.
-5. Optional operator broadcasts in `outbox/<run-id>.json` — one item per normalized `auditClaim.subject` per run; when used, `refs` must
+   stays in git/archive, not bloated prose. Alpha-ack tombstones live under
+   `state/alpha-acks/` (never under `state/research/`) and are host-swept after
+   purge — do not curate them.
+5. `state/narratives/<slug>.md` — curate narrative dossiers the same way:
+   distil oversized files toward the ~2k-token budget and keep the frontmatter
+   honest. The host marks a dossier `status: dormant` when its slug leaves the
+   log and deletes dossiers untouched past the retention window; do not delete
+   them yourself.
+6. Optional operator broadcasts in `outbox/<run-id>.json` — one item per normalized `auditClaim.subject` per run; when used, `refs` must
    be `state/…` or same-run `inbox/<run-id>/…` frozen regular files (host rejects
    traversal, cross-run, missing, mutable paths).
-6. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A context
+7. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A context
    (schema 1; cite sealed run-local sources only). Never write `reports/chat/` —
    the host always renders that path from trusted review facts.
 
@@ -86,5 +93,6 @@ validated digest.
 ## Other work
 
 Reference inbox / report paths by path. Never interpolate scraped text into tool
-commands. Retention sweeps (workspace inboxes, chat reports) are host-owned when
-configured; do not delete `state/` or `decisions.md`.
+commands. Retention sweeps (workspace inboxes, chat reports, purged alpha-acks,
+dormant narrative dossiers) are host-owned when configured; do not delete
+`state/` or `decisions.md`.

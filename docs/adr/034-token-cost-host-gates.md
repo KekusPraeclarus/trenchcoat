@@ -23,7 +23,8 @@ acks, duplicate broadcasts, report bullets) does not need a model.
 2. **list-scan `skipAgent`:** when `postCount === 0` and host-acked alpha leaves
    zero `needs-agent` paths (`collectionStatus: no-signal`).
 3. **Host alpha ack:** `classifyAlphaMessage` + tombstones under
-   `state/research/alpha-ack-*`; merge into digest before
+   `state/alpha-acks/` (originally `state/research/alpha-ack-*`; relocated with
+   a retention sweep by ADR 044); merge into digest before
    `validateAndPurgeAlphaDigest` (INV-Q1/Q2). telegram-alpha may skip agent when
    the agent-facing manifest is empty (`host-alpha-ack-only`).
 4. **Worthiness:** mechanical pre-gate; claim+refs+history only (no `agent.md`,

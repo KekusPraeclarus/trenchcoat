@@ -10,6 +10,7 @@ import { fetchChannelWindow } from "../discord/history.js"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
 import { loadConfig } from "../lib/config.js"
 import { systemClock } from "../lib/clock.js"
+import { log } from "../lib/log.js"
 import { ACTIVE_REMEDIATION_PHASES } from "./schemas.js"
 import type {
   RemediationCursorsFile,
@@ -40,6 +41,9 @@ export const MAX_NEW_SUGGESTION_INCIDENTS_PER_SCAN = 3
 export const MAX_ACTIVE_SUGGESTION_INCIDENTS = 1
 export const DUPLICATE_WINDOW_MS = 30 * 86_400_000
 export const MAX_CLASSIFIER_FAILURES = 3
+export const MAX_FOLLOWUP_QUESTION_CHARS = 280
+export const SUGGESTION_FOLLOWUP_PREFIX = "I logged this as a suggestion but need more detail."
+export const SUGGESTION_FOLLOWUP_FALLBACK = "What should happen instead?"
 
 /**
  * A thread must ask for something AND name a product surface. A bare mention no
@@ -111,6 +115,84 @@ function mentionStripped(content: string): string {
 
 export function sanitizeMessageContent(content: string): string {
   return sanitizeSecretLike(mentionStripped(content), 2_000)
+}
+
+/**
+ * Builds the one clarifying question the bot posts for a forming suggestion.
+ * The classifier text is untrusted, so the host strips links and mentions,
+ * keeps the question on one line, and falls back to a fixed question.
+ */
+export function renderSuggestionFollowup(question?: string): string {
+  const cleaned = sanitizeSecretLike(
+    (question ?? "")
+      .replace(/https?:\/\/\S+/giu, " ")
+      .replace(/www\.\S+/giu, " ")
+      .replace(/<[@#][!&]?\d+>/gu, " ")
+      .replace(/@(?:everyone|here)\b/giu, " ")
+      .replace(/@/gu, " ")
+      .replace(/[`*_~|<>]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim(),
+    MAX_FOLLOWUP_QUESTION_CHARS,
+  ).trim()
+  // Only a real question earns a reply, so hostile fragments get the fallback
+  const usable = cleaned.length >= 8 && cleaned.includes("?")
+  return `${SUGGESTION_FOLLOWUP_PREFIX} ${usable ? cleaned : SUGGESTION_FOLLOWUP_FALLBACK}`
+}
+
+/** Last human message in the scan window — the thread turn the bot answers. */
+export function followupReplyTargetId(
+  thread: ConversationThread,
+): string | undefined {
+  const human = thread.messages.filter((m) =>
+    m.inWindow && !m.authorIsBot && !m.authorIsWebhook,
+  )
+  return human.at(-1)?.id
+}
+
+/**
+ * Asks at most one question per suggestion entry, on the first forming round.
+ * A send failure leaves the ledger fields unset so the next scan can retry.
+ */
+export async function maybePostSuggestionFollowup(args: Readonly<{
+  client: DiscordRestClient
+  ledger: SuggestionLedgerFile
+  entryId: string
+  channelId: string
+  replyToMessageId: string
+  question?: string
+  enabled: boolean
+  nowIso: string
+}>): Promise<{ ledger: SuggestionLedgerFile; posted: boolean }> {
+  if (!args.enabled) return { ledger: args.ledger, posted: false }
+  const entry = args.ledger.entries.find((e) => e.entryId === args.entryId)
+  if (!entry) return { ledger: args.ledger, posted: false }
+  if (entry.outcome !== "forming") return { ledger: args.ledger, posted: false }
+  if (entry.followupMessageId) return { ledger: args.ledger, posted: false }
+  if (entry.formingRounds !== 1) return { ledger: args.ledger, posted: false }
+
+  try {
+    const sent = await args.client.sendReply({
+      channelId: args.channelId,
+      content: renderSuggestionFollowup(args.question),
+      replyToMessageId: args.replyToMessageId,
+    })
+    return {
+      ledger: upsertLedgerEntry(args.ledger, {
+        ...entry,
+        followupMessageId: sent.messageId,
+        followupAskedAt: args.nowIso,
+        updatedAt: args.nowIso,
+      }),
+      posted: true,
+    }
+  } catch (error) {
+    log.warn("suggestion followup send failed", {
+      entryId: args.entryId,
+      detail: error instanceof Error ? error.message : "unknown",
+    })
+    return { ledger: args.ledger, posted: false }
+  }
 }
 
 /**
@@ -895,6 +977,26 @@ export async function scanDiscordSuggestions(args: Readonly<{
     newThisScan = applied.newThisScan
     incidentsCreated += applied.incidentsCreated
     bump(applied.outcome)
+
+    if (applied.outcome !== "forming") continue
+    const replyToMessageId = followupReplyTargetId(pending.thread)
+    if (!replyToMessageId) continue
+    const followup = await maybePostSuggestionFollowup({
+      client,
+      ledger,
+      entryId: suggestionEntryId(pending.thread, pending.priorForming),
+      channelId: pending.thread.channelId,
+      replyToMessageId,
+      ...(result?.followupQuestion ? { question: result.followupQuestion } : {}),
+      enabled: ds.followup_enabled,
+      nowIso,
+    })
+    ledger = followup.ledger
+    if (followup.posted) {
+      // Persist at once so a crash cannot make the bot ask the same question twice
+      await args.store.saveSuggestions(ledger)
+      bump("followup-asked")
+    }
   }
 
   await args.store.saveSuggestions(ledger)
@@ -905,6 +1007,13 @@ export async function scanDiscordSuggestions(args: Readonly<{
   })
 
   return { threadsSeen, outcomes, incidentsCreated, classifierFailed: false }
+}
+
+function suggestionEntryId(
+  thread: ConversationThread,
+  priorForming?: SuggestionLedgerEntry,
+): string {
+  return priorForming?.entryId ?? `sug-${thread.contentFingerprint.slice(0, 12)}`
 }
 
 function applyClassifierResult(args: Readonly<{
@@ -934,8 +1043,7 @@ function applyClassifierResult(args: Readonly<{
 } {
   const { pending, result, nowIso, ds } = args
   let { ledger, incidentsFile, newThisScan } = args
-  const entryId = pending.priorForming?.entryId
-    ?? `sug-${pending.thread.contentFingerprint.slice(0, 12)}`
+  const entryId = suggestionEntryId(pending.thread, pending.priorForming)
   const baseEntry: SuggestionLedgerEntry = {
     schema: 1,
     entryId,

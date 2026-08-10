@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { existsSync, mkdtempSync, mkdirSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -12,6 +12,18 @@ import { runJob } from "../../src/orchestrator/run.js"
 import { collectForJob } from "../../src/orchestrator/collect.js"
 
 const NOW = "2026-07-18T12:00:00.000Z"
+
+// Ambient operator keys (.env) enable the OHLCV fallback chain, whose real
+// retry backoff makes failure-path tests slow and timing-dependent.
+const savedEnv = { ...process.env }
+beforeEach(() => {
+  process.env = { ...savedEnv }
+  delete process.env["SOLANATRACKER_API_KEY"]
+  delete process.env["BIRDEYE_API_KEY"]
+})
+afterAll(() => {
+  process.env = savedEnv
+})
 
 describe("empty collector prerequisites", () => {
   it("chart-sweep skips with no active subjects and zero network", async () => {
@@ -146,7 +158,7 @@ describe("empty collector prerequisites", () => {
     expect(result.skipAgent).toBe(true)
     expect(result.snapshotNames).toContain("chart-collection-status")
     expect(existsSync(join(root, "reports", "chart-sweep-degraded-1", "chart-sweep-host.json"))).toBe(true)
-  })
+  }, 20_000)
 
   it("wallet discovery reports no-active-watchlist-subjects", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-wd-"))

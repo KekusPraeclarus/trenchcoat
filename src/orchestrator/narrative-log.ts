@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { z } from "zod"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
@@ -147,11 +147,16 @@ export type NarrativeLogPruneReport = Readonly<{
   kept: number
   purged: number
   malformed: number
+  dossiersMarkedDormant: number
   path: string
 }>
 
 export function narrativeLogPath(agentRoot: string): string {
   return join(agentRoot, "state", "narratives", "log.jsonl")
+}
+
+export function narrativeDossierPath(agentRoot: string, slug: string): string {
+  return join(agentRoot, "state", "narratives", `${slug}.md`)
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
@@ -213,6 +218,8 @@ export function pruneNarrativeLogInMemory(
   kept: number
   purged: number
   malformed: number
+  /** Slugs age-pruned with no surviving line — their dossier goes dormant */
+  purgedSlugs: string[]
 }> {
   const nowMs = Date.parse(nowIso)
   if (!Number.isFinite(nowMs)) {
@@ -224,6 +231,7 @@ export function pruneNarrativeLogInMemory(
 
   let malformed = 0
   let purged = 0
+  const agePrunedSlugs = new Set<string>()
   const bySlug = new Map<string, NarrativeLogEntry>()
 
   for (const line of raw.split("\n")) {
@@ -248,6 +256,7 @@ export function pruneNarrativeLogInMemory(
     }
     if (!isWithinRetention(entry.lastSeen, nowMs, retentionDays)) {
       purged += 1
+      agePrunedSlugs.add(entry.slug)
       continue
     }
     const prior = bySlug.get(entry.slug)
@@ -293,7 +302,8 @@ export function pruneNarrativeLogInMemory(
   }
 
   const entries = [...bySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug))
-  return { entries, kept: entries.length, purged, malformed }
+  const purgedSlugs = [...agePrunedSlugs].filter((slug) => !bySlug.has(slug)).sort()
+  return { entries, kept: entries.length, purged, malformed, purgedSlugs }
 }
 
 function serializeLog(entries: readonly NarrativeLogEntry[]): string {
@@ -431,10 +441,49 @@ export async function mergeNarrativeProposals(args: Readonly<{
   }
 }
 
+const DOSSIER_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
+const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---(\n|$)/u
+const STATUS_LINE_RE = /^status:.*$/mu
+
+/**
+ * Set `status: dormant` in a narrative dossier's frontmatter when the host
+ * prunes its slug from the log (ADR 045). Keeps the body byte-for-byte;
+ * inserts a frontmatter block when the dossier has none. Returns false when
+ * the dossier is missing or already dormant.
+ */
+export async function markNarrativeDossierDormant(
+  agentRoot: string,
+  slug: string,
+): Promise<boolean> {
+  if (!DOSSIER_SLUG_RE.test(slug)) return false
+  const path = narrativeDossierPath(agentRoot, slug)
+  const st = statSync(path, { throwIfNoEntry: false })
+  if (!st?.isFile()) return false
+  const raw = readFileSync(path, "utf8")
+
+  let next: string
+  const frontmatter = FRONTMATTER_RE.exec(raw)
+  if (frontmatter) {
+    const block = frontmatter[1]!
+    if (STATUS_LINE_RE.test(block)) {
+      const updated = block.replace(STATUS_LINE_RE, "status: dormant")
+      if (updated === block) return false
+      next = raw.replace(frontmatter[0], `---\n${updated}\n---${frontmatter[2]}`)
+    } else {
+      next = raw.replace(frontmatter[0], `---\n${block}\nstatus: dormant\n---${frontmatter[2]}`)
+    }
+  } else {
+    next = `---\nstatus: dormant\n---\n\n${raw}`
+  }
+  if (next === raw) return false
+  await writeAtomicFileFsync(path, next)
+  return true
+}
+
 /**
  * Host prune of the narrative log. Creates an empty file when missing so the next
- * agent session has a stable path. Archives a receipt under the run directory when
- * layout is provided.
+ * agent session has a stable path. Marks the dossier of every fully purged slug
+ * dormant. Archives a receipt under the run directory when layout is provided.
  */
 export async function pruneNarrativeLog(args: Readonly<{
   agentRoot: string
@@ -445,12 +494,19 @@ export async function pruneNarrativeLog(args: Readonly<{
 }>): Promise<NarrativeLogPruneReport> {
   const path = narrativeLogPath(args.agentRoot)
   const raw = existsSync(path) ? readFileSync(path, "utf8") : ""
-  const { entries, kept, purged, malformed } = pruneNarrativeLogInMemory(
+  const { entries, kept, purged, malformed, purgedSlugs } = pruneNarrativeLogInMemory(
     raw,
     args.nowIso,
     args.retentionDays,
   )
   await writeAtomicFileFsync(path, serializeLog(entries))
+
+  let dossiersMarkedDormant = 0
+  for (const slug of purgedSlugs) {
+    if (await markNarrativeDossierDormant(args.agentRoot, slug)) {
+      dossiersMarkedDormant += 1
+    }
+  }
 
   const report: NarrativeLogPruneReport = {
     schema: 1,
@@ -460,6 +516,7 @@ export async function pruneNarrativeLog(args: Readonly<{
     kept,
     purged,
     malformed,
+    dossiersMarkedDormant,
     path: "state/narratives/log.jsonl",
   }
 

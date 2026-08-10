@@ -8,7 +8,9 @@ narratives and broadcast only when something genuinely new appears.
 - Inbox snapshots under `inbox/<run-id>/` (untrusted evidence — path-reference only)
 - `state/narratives/log.jsonl` — rolling log, **read-only** (host prunes entries
   older than 14 days). You read it to decide new vs update; you never write it.
-- Optional per-narrative notes under `state/narratives/<slug>.md` if present
+- `state/narratives/<slug>.md` — your dossier for a narrative (see Narrative
+  dossiers below). Read it before you propose or broadcast on that slug; it
+  records what the system already knows and already said.
 - Do not read or write host-only state (`sources.json`, lifecycle, engagement, ledger, wallets, research-queue)
 
 ## Rolling log (`state/narratives/log.jsonl`) — read-only
@@ -69,10 +71,41 @@ schema above. The host validates every line and merges accepted proposals into
    duplicates the slug.
 3. If the slug is absent from the log: emit a proposal line with
    `firstSeen` = `lastSeen` = now. The host appends it.
+4. Before you append a new slug, check `state/narratives/` for an existing
+   dossier with that slug (or a close prior name — honour prior tickers and
+   rebrands). An existing dossier means a returning narrative: read it, reuse
+   the stable slug, and respect its matured framing history.
 
 Only include slugs that actually changed or are new this run — do not re-emit
 untouched entries. The host prunes any line whose `lastSeen` is older than 14 days.
 Do not invent historical entries to backfill the log.
+
+## Narrative dossiers (`state/narratives/<slug>.md`)
+
+Your durable prose memory per narrative. The log carries stage and evidence
+pointers; the dossier carries what the narrative **is** and what already
+happened. It survives the log's 14-day prune, so a returning narrative starts
+with context instead of amnesia.
+
+Create or update a dossier only on the broadcast triggers below (new slug with
+substance, stage change, notable concrete development, founder primary-source
+catalyst). Pure re-sightings never touch the dossier.
+
+Format:
+
+1. Frontmatter: `title`, `stage`, `framing` (when mature), `status: active`,
+   `last_verified` (this run's date). The host sets `status: dormant` when it
+   prunes the slug from the log; set it back to `active` when the narrative
+   returns.
+2. Body: compressed notes — what the narrative is, key developments with dates,
+   linked tickers, what was already broadcast. Cite provenance ids; never paste
+   scraped text.
+3. Budget: keep each dossier under ~2k tokens (~150 lines). Prune stale detail
+   before you add new detail; full history stays in git and the archive, not in
+   the live file.
+
+`log.jsonl` stays authoritative for stage and freshness — a dossier never
+substitutes for a proposal line.
 
 ## Broadcast
 
@@ -132,9 +165,11 @@ If nothing new appeared, write an empty items list or omit the outbox file.
 2. `reports/<run-id>/narrative-proposals.jsonl` — proposed log changes (new or
    updated slugs only); host validates and merges into `state/narratives/log.jsonl`.
    Never write the log directly.
-3. `outbox/<run-id>.json` — when a new slug, stage change, notable development,
+3. `state/narratives/<slug>.md` — created or updated for every slug that hit a
+   broadcast trigger this run (see Narrative dossiers)
+4. `outbox/<run-id>.json` — when a new slug, stage change, notable development,
    or founder primary-source catalyst was proposed
-4. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A
+5. Optionally write `reports/<run-id>/chat-summary.json` for operator Q&A
    context. Never write `reports/chat/` directly — the host always renders it.
    Context bullets must not restate unchanged narrative stages.
 

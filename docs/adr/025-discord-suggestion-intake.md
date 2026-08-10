@@ -21,11 +21,12 @@ Extend **incident remediation** (not the policy harness) with passive, conversat
 5. A path-only batch classifier returns `suggestion-formed` | `forming` | `not-buildable`. Disagreement yields the classifier's best recommendation plus alternatives/rationale — never a skip. When alternatives exist, `recommendationRationale` is required.
 6. A formed suggestion must carry a testable decision: `symptom`, `intendedBehavior`, and one to five measurable `acceptanceCriteria`. A missing intended behavior downgrades to `forming`; any other gap is a classifier fault (`classifier-failed`).
 7. Incomplete ideas persist as `forming` digests (7-day idle expiry, max 5 rounds) and merge across scans. The daily operator digest shows full detail for `queued`, `queued-waiting`, and `built` only, and reports forming threads as one count. A forming-only day sends no digest.
+7a. On the **first** forming round the bot posts one clarifying question in the Discord thread, as a reply to the last human message (`incident_remediation.discord_suggestions.followup_enabled`, default on). A clear complaint with no stated fix used to wait silently until it expired, so a question now asks for the missing behavior. The host renders the text: a fixed prefix plus the classifier question with links, mentions, markdown, and secrets stripped, capped at 280 characters. Text that is not a question gets a fixed fallback question. The ledger stores `followupMessageId` and `followupAskedAt`, so each suggestion gets at most one question. A send failure changes no ledger field and the next scan retries.
 8. Extensions of previously **built** suggestions are exempt from skip-dedupe and carry `extends:` lineage into diagnose.
 9. Host worth-building gates (scope, deny-surface, capacity, incident dedupe) fail closed. Capacity overflow becomes `queued-waiting`.
 10. Queued items become `discord-suggestion` incidents and follow the existing remediation pipeline, including low-risk auto-build and high-risk Telegram approval. Diagnose/propose may return typed `not-viable`.
 
-Raw Discord text never enters prompts, diffs, commit messages, or logs — only sanitized evidence paths and host-validated summaries.
+Raw Discord text never enters prompts, diffs, commit messages, or logs — only sanitized evidence paths and host-validated summaries. The clarifying question is the only Discord write in this lane.
 
 ## Consequences
 

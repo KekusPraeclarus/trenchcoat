@@ -1149,7 +1149,7 @@ write_interval_plist com.trenchcoat.job.wallet-review wallet-review 86400
 write_interval_plist com.trenchcoat.job.fomo-trader-sync fomo-trader-sync 21600 1
 write_interval_plist com.trenchcoat.job.fomo-signal-scan fomo-signal-scan 1200 1
 write_interval_plist com.trenchcoat.job.discord-wallet-signal-scan discord-wallet-signal-scan 300 1
-write_interval_plist com.trenchcoat.job.fomo-x-source-review fomo-x-source-review 21600 1
+write_interval_plist com.trenchcoat.job.fomo-x-source-review fomo-x-source-review 7200 1
 write_interval_plist com.trenchcoat.job.fomo-narrative-source-scan fomo-narrative-source-scan 21600 1
 write_interval_plist com.trenchcoat.job.narrative-source-review narrative-source-review 86400 1
 write_interval_plist com.trenchcoat.job.delivery-retry delivery-retry 900 1

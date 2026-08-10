@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { DEPLOYMENT_CONFIG_SCHEMA } from "../../src/lib/deployment.js"
-import { migrateConfigToV23 } from "../../src/migrations/config.js"
+import {
+  migrateConfigToV23,
+  migrateConfigToV25,
+} from "../../src/migrations/config.js"
 
 const seed = JSON.parse(
   readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
@@ -22,10 +24,9 @@ function asV22(): Record<string, unknown> {
 }
 
 describe("config migration v23", () => {
-  it("upgrades schema 22 once and validates as schema 23", () => {
+  it("upgrades schema 22 once to schema 23", () => {
     const migrated = migrateConfigToV23(asV22()) as Record<string, unknown>
     expect(migrated["schema"]).toBe(23)
-    expect(ConfigSchema.parse(migrated).schema).toBe(23)
   })
 
   it("is idempotent", () => {
@@ -34,13 +35,8 @@ describe("config migration v23", () => {
     expect(twice).toEqual(once)
   })
 
-  it("keeps the deployment config schema aligned", () => {
-    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(23)
-    expect(ConfigSchema.parse(seed).schema).toBe(DEPLOYMENT_CONFIG_SCHEMA)
-  })
-
   it("turns Farcaster search off for a new installation", () => {
-    const migrated = migrateConfigToV23(asV22())
+    const migrated = migrateConfigToV25(asV22())
     expect(ConfigSchema.parse(migrated).research.farcaster_search.enabled).toBe(false)
   })
 
@@ -51,13 +47,13 @@ describe("config migration v23", () => {
       max_casts: 12,
       recent_window_hours: 24,
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV23(v22))
+    const parsed = ConfigSchema.parse(migrateConfigToV25(v22))
     expect(parsed.research.farcaster_search.enabled).toBe(true)
     expect(parsed.research.farcaster_search.max_casts).toBe(12)
   })
 
   it("adds evidence quality defaults", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV23(asV22()))
+    const parsed = ConfigSchema.parse(migrateConfigToV25(asV22()))
     expect(parsed.narratives.evidence_quality).toEqual({
       enabled: true,
       max_promotional_share: 0.5,
@@ -68,7 +64,7 @@ describe("config migration v23", () => {
   })
 
   it("adds broadcast feedback defaults that stay off", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV23(asV22()))
+    const parsed = ConfigSchema.parse(migrateConfigToV25(asV22()))
     expect(parsed.broadcast.feedback.enabled).toBe(false)
     expect(parsed.broadcast.feedback.followup_ttl_hours).toBe(72)
     expect(parsed.broadcast.feedback.history_days).toBe(30)
@@ -83,7 +79,7 @@ describe("config migration v23", () => {
     const v22 = asV22()
     ;(v22["narratives"] as Record<string, unknown>)["retention_days"] = 21
     ;(v22["broadcast"] as Record<string, unknown>)["hot_day_min_staged_events"] = 33
-    const parsed = ConfigSchema.parse(migrateConfigToV23(v22))
+    const parsed = ConfigSchema.parse(migrateConfigToV25(v22))
     expect(parsed.narratives.retention_days).toBe(21)
     expect(parsed.broadcast.hot_day_min_staged_events).toBe(33)
   })

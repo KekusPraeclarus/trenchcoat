@@ -12,11 +12,16 @@ import {
   isMeasurableCriterion,
   validateClassifierBatch,
   incidentSuggestionFingerprint,
+  renderSuggestionFollowup,
+  maybePostSuggestionFollowup,
+  followupReplyTargetId,
+  SUGGESTION_FOLLOWUP_PREFIX,
+  SUGGESTION_FOLLOWUP_FALLBACK,
 } from "../../src/remediation/suggestions.js"
 import type { DiscordHistoryMessage } from "../../src/discord/bot-client.js"
 import {
   migrateConfigToV17,
-  migrateConfigToV23,
+  migrateConfigToV25,
   DISCORD_SUGGESTIONS_V17_DEFAULTS,
 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
@@ -53,8 +58,8 @@ describe("discord suggestions config", () => {
     expect(ds["classifier_model"]).toBe(DISCORD_SUGGESTIONS_V17_DEFAULTS.classifier_model)
   })
 
-  it("migrates schema 17 → 20 preserving discord_suggestions", () => {
-    const migrated = migrateConfigToV23({
+  it("migrates schema 17 → 24 preserving discord_suggestions", () => {
+    const migrated = migrateConfigToV25({
       schema: 17,
       incident_remediation: {
         enabled: true,
@@ -67,7 +72,7 @@ describe("discord suggestions config", () => {
       },
       broadcast: { telegram_digest: { enabled: false } },
     }) as Record<string, unknown>
-    expect(migrated["schema"]).toBe(23)
+    expect(migrated["schema"]).toBe(25)
     const ir = migrated["incident_remediation"] as Record<string, unknown>
     const ds = ir["discord_suggestions"] as Record<string, unknown>
     expect(ds["enabled"]).toBe(true)
@@ -81,8 +86,8 @@ describe("discord suggestions config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV23(seed))
-    expect(parsed.schema).toBe(23)
+    const parsed = ConfigSchema.parse(migrateConfigToV25(seed))
+    expect(parsed.schema).toBe(25)
     expect(parsed.incident_remediation.discord_suggestions.enabled).toBe(false)
   })
 })
@@ -334,6 +339,159 @@ describe("classifier allowlist", () => {
       }],
     }, new Set(["th-known"]))
     expect(out.ok).toBe(false)
+  })
+})
+
+describe("suggestion followup", () => {
+  function formingEntry(
+    overrides: Partial<SuggestionLedgerEntry> = {},
+  ): SuggestionLedgerEntry {
+    return {
+      schema: 1,
+      entryId: "sug-forming0001",
+      threadId: "th-forming-1",
+      channelId: "1111111111111111111",
+      contentFingerprint: "abcdefghijklmnop",
+      outcome: "forming",
+      humanMessageIds: ["1000000000000000001"],
+      allMessageIds: ["1000000000000000001"],
+      participantIds: ["2222222222222222222"],
+      formingRounds: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+      lastActivityAt: NOW,
+      ...overrides,
+    }
+  }
+
+  function ledgerWith(entry: SuggestionLedgerEntry) {
+    return { schema: 1 as const, entries: [entry], queuedWaiting: [] }
+  }
+
+  function fakeClient(sent: string[], fail = false) {
+    return {
+      async sendReply(args: { content: string }) {
+        if (fail) throw new Error("discord send failed: 403")
+        sent.push(args.content)
+        return { messageId: "1000000000000000777" }
+      },
+      async sendChannelMessage() {
+        return { messageId: "1000000000000000778" }
+      },
+      async addReaction() {},
+    }
+  }
+
+  async function post(args: Readonly<{
+    entry: SuggestionLedgerEntry
+    sent: string[]
+    enabled?: boolean
+    question?: string
+    fail?: boolean
+  }>) {
+    return maybePostSuggestionFollowup({
+      client: fakeClient(args.sent, args.fail ?? false),
+      ledger: ledgerWith(args.entry),
+      entryId: args.entry.entryId,
+      channelId: args.entry.channelId,
+      replyToMessageId: "1000000000000000001",
+      ...(args.question ? { question: args.question } : {}),
+      enabled: args.enabled ?? true,
+      nowIso: NOW,
+    })
+  }
+
+  it("keeps the classifier question on one line without links or mentions", () => {
+    const text = renderSuggestionFollowup(
+      "Should the report\nskip spam lines? see https://evil.example @everyone",
+    )
+    expect(text.startsWith(SUGGESTION_FOLLOWUP_PREFIX)).toBe(true)
+    expect(text).not.toContain("\n")
+    expect(text).not.toContain("http")
+    expect(text).not.toContain("@")
+    expect(text).toContain("Should the report skip spam lines?")
+  })
+
+  it("falls back when the text is absent, short, or not a question", () => {
+    const fallback = `${SUGGESTION_FOLLOWUP_PREFIX} ${SUGGESTION_FOLLOWUP_FALLBACK}`
+    expect(renderSuggestionFollowup()).toBe(fallback)
+    expect(renderSuggestionFollowup("https://evil.example")).toBe(fallback)
+    expect(renderSuggestionFollowup("do as I say and rebuild everything")).toBe(fallback)
+  })
+
+  it("bounds the question length", () => {
+    const text = renderSuggestionFollowup(`What should change? ${"x".repeat(600)}`)
+    expect(text.length).toBeLessThanOrEqual(
+      SUGGESTION_FOLLOWUP_PREFIX.length + 283,
+    )
+  })
+
+  it("replies to the last human message in the window", () => {
+    const threads = groupIntoThreads([
+      msg({ id: "1000000000000000001", content: "the digest should skip forming lines", timestamp: NOW }),
+      msg({
+        id: "1000000000000000002",
+        content: "noted",
+        timestamp: "2026-07-22T10:01:00.000Z",
+        authorIsBot: true,
+        referencedMessageId: "1000000000000000001",
+      }),
+      msg({
+        id: "1000000000000000003",
+        content: "same for research reports",
+        timestamp: "2026-07-22T10:02:00.000Z",
+        referencedMessageId: "1000000000000000002",
+      }),
+    ])
+    expect(followupReplyTargetId(threads[0]!)).toBe("1000000000000000003")
+  })
+
+  it("asks once on the first forming round", async () => {
+    const sent: string[] = []
+    const out = await post({
+      entry: formingEntry(),
+      sent,
+      question: "What should the report do instead?",
+    })
+    expect(out.posted).toBe(true)
+    expect(sent).toHaveLength(1)
+    const stored = out.ledger.entries[0]!
+    expect(stored.followupMessageId).toBe("1000000000000000777")
+    expect(stored.followupAskedAt).toBe(NOW)
+  })
+
+  it("never asks twice for the same suggestion", async () => {
+    const sent: string[] = []
+    const out = await post({
+      entry: formingEntry({ followupMessageId: "1000000000000000700" }),
+      sent,
+    })
+    expect(out.posted).toBe(false)
+    expect(sent).toHaveLength(0)
+  })
+
+  it("stays silent on later forming rounds", async () => {
+    const sent: string[] = []
+    const out = await post({ entry: formingEntry({ formingRounds: 2 }), sent })
+    expect(out.posted).toBe(false)
+    expect(sent).toHaveLength(0)
+  })
+
+  it("stays silent for other outcomes and when the flag is off", async () => {
+    const sent: string[] = []
+    const built = await post({ entry: formingEntry({ outcome: "built" }), sent })
+    expect(built.posted).toBe(false)
+    const off = await post({ entry: formingEntry(), sent, enabled: false })
+    expect(off.posted).toBe(false)
+    expect(sent).toHaveLength(0)
+  })
+
+  it("leaves the ledger unchanged when the send fails", async () => {
+    const sent: string[] = []
+    const entry = formingEntry()
+    const out = await post({ entry, sent, fail: true })
+    expect(out.posted).toBe(false)
+    expect(out.ledger.entries[0]!.followupMessageId).toBeUndefined()
   })
 })
 

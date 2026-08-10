@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-08-06
+last_verified: 2026-08-10
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -258,13 +258,19 @@ The telegram listener appends continuously; digestion is immediate + batch:
    `path=… contentHash=sha256:…` so digests can reuse host hashes
 2. The agent **must** write `reports/<run-id>/alpha-digest.json` as
    `{schema,runId,proposedAt,entries}` for every cited queue message — either a
-   real `state/research/…` note or a minimal `state/research/alpha-ack-<channel>-<id>.md`
-   tombstone. Wrong shape → receipt `invalidReason` and **no** purge. Skipping
+   real `state/research/…` note or a minimal `state/alpha-acks/<channel>-<id>.md`
+   tombstone (never under `state/research/`; ADR 044). Wrong shape → receipt
+   `invalidReason` and **no** purge. Skipping
    digest leaves ticker/noise stuck after host research
 3. `list-scan` / `review` may still include backlog manifests (≤500) for drain
 4. After the state/report commit is durable, the orchestrator purges exactly
    those ids before the completed marker (INV-Q1) — a retry sees the keyed purge
    as already satisfied; knowledge survives in state and raw messages don't linger
+5. Workspace retention later sweeps ack tombstones older than
+   `retention.alpha_ack_days` whose queue message is already purged (both
+   `state/alpha-acks/` and the legacy `state/research/alpha-ack-*` pattern);
+   the archived `alpha-digest-receipt.json` stays the durable record (INV-Q2,
+   ADR 044)
 
 **Operator backlog drain** — when agent digests use the wrong shape and the queue
 stalls, `scripts/alpha-queue-drain.ts` writes a host-valid `entries` digest plus a

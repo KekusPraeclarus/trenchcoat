@@ -7,7 +7,7 @@ import {
   type SourceLifecycleThresholds,
 } from "../../src/sources/lifecycle.js"
 import { computeMembershipDiff } from "../../src/collectors/twitter/managed-list.js"
-import { migrateConfigToV23 } from "../../src/migrations/config.js"
+import { migrateConfigToV25 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { sha256Json } from "../../src/lib/canonical-json.js"
 import type { SourceLifecycleFile, SourcePerformance } from "../../src/contracts/schemas.js"
@@ -142,7 +142,7 @@ describe("prop membership diff commutative", () => {
 
 describe("config migration v5", () => {
   it("lifts single curated list into two operator slots with harness defaults", () => {
-    const v5 = migrateConfigToV23({
+    const v5 = migrateConfigToV25({
       schema: 2,
       twitter: {
         curated_list_url: "https://x.com/i/lists/111",
@@ -167,7 +167,7 @@ describe("config migration v5", () => {
       router: {},
     })
     const parsed = ConfigSchema.parse(v5)
-    expect(parsed.schema).toBe(23)
+    expect(parsed.schema).toBe(25)
     expect(parsed.twitter.operator_list_urls[0]).toBe("https://x.com/i/lists/111")
     expect(parsed.twitter.engagement.enabled).toBe(true)
     expect(parsed.harness_improvement.enabled).toBe(false)

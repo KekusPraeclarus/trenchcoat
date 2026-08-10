@@ -55,6 +55,12 @@ Skip empty sections. Add Market / Security / Risk only when material and not
 already in TL;DR. Extra short sections OK if genuinely useful. No run-id meta,
 "(untrusted)" labels, tables, or mermaid.
 
+**Spam significance rule:** phishing links and botted shill posts are baseline
+on memecoin launches, not a finding. Report scam, phishing, or bot activity on X
+only when it dominates the sample (a clear majority of posts) or when it changes
+the read. Otherwise omit it, or keep it to one short clause. Never open TL;DR or
+the X section with spam.
+
 ### Market broadcast
 
 Every completed, resolved dossier with a clear trade, watch, or avoid takeaway

@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-10
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -45,7 +45,12 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **23** (narrative evidence quality under
+Current schema is **25** (retention sweeps for purged alpha-ack tombstones and
+dormant narrative dossiers under `retention.alpha_ack_days` /
+`retention.narrative_dossier_days` — ADR 044, ADR 045; prior schema **24** one
+clarifying Discord reply per forming suggestion
+under `incident_remediation.discord_suggestions.followup_enabled` — ADR 025;
+prior schema **23** narrative evidence quality under
 `narratives.evidence_quality` — ADR 042, and operator broadcast feedback under
 `broadcast.feedback` — ADR 043; new installations get
 `research.farcaster_search.enabled=false`; prior schema **22** unified
@@ -68,7 +73,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v22 shapes via `migrateConfigToV23`.
+`loadConfig` migrates v1–v24 shapes via `migrateConfigToV25`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -237,7 +242,10 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
       "confidence_level": 0.95
     }
   },
-  "retention": { "inbox_archive_days": 30, "run_archive_days": 90, "chat_reports_days": 30 },
+  "retention": {
+    "inbox_archive_days": 30, "run_archive_days": 90, "chat_reports_days": 30,
+    "alpha_ack_days": 30, "narrative_dossier_days": 120
+  },
   "chat": { "idle_timeout_minutes": 30, "research_confirm_ttl_minutes": 15 },
   "wallets": {
     "deterministic_weight": 0.8,
@@ -334,7 +342,10 @@ scan of configured Discord channels for buildable suggestions. Defaults
 `discord_suggestions.enabled=false`. When enabled, requires parent
 `incident_remediation.enabled` and `DISCORD_RESEARCH_BOT_TOKEN`. Empty
 `channel_ids` uses `chat.discord.channel_ids`. CLI: `tc remediations suggestions`.
-(INV-S28 post-fix claim audit).
+(INV-S28 post-fix claim audit). Schema **24** adds
+`discord_suggestions.followup_enabled` (default `true`): the scan posts one
+host-rendered clarifying question in the thread on the first `forming` round.
+Set it to `false` to keep the lane silent on Discord.
 
 | Field | Default | Role |
 |---|---|---|
@@ -404,7 +415,7 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `narrative_source_probation.min_accepted_contributions` / `min_distinct_narratives` | `3` / `2` | Follow eligibility floors |
 | `narrative_source_probation.demotion_idle_days` | `28` | Idle unfollow trigger |
 
-### `retention`
+### `retention` (schema 25)
 
 Agent-workspace pruning on every completed run (`retainWorkspaceArtifacts`).
 Never deletes under the host `archive/` tree.
@@ -413,6 +424,8 @@ Never deletes under the host `archive/` tree.
 |---|---|---|
 | `inbox_archive_days` | `30` | Age-prune `agent/inbox/<run-id>/` dirs |
 | `chat_reports_days` | `30` | Age-prune `agent/reports/chat/*` |
+| `alpha_ack_days` | `30` | Delete alpha-ack tombstones (`state/alpha-acks/` + legacy `state/research/alpha-ack-*`) older than this **and** already purged from `alpha-queue/`; the archived digest receipt stays the durable record (INV-Q2, ADR 044) |
+| `narrative_dossier_days` | `120` | Delete `state/narratives/<slug>.md` dossiers untouched this long whose slug left `log.jsonl` (ADR 045) |
 | `run_archive_days` | `90` | Reserved for archive run GC (not applied by workspace retention; see snapshot-archive.md) |
 
 Threshold semantics live in the doc owning each subsystem (security-gate.md,

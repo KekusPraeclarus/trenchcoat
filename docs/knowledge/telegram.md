@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-10
 ---
 
 # Telegram
@@ -73,7 +73,8 @@ seals each cited alpha-queue message body into
 sealed CAs or cashtags+chain hints ([ADR 015](../adr/015-telegram-alpha-research.md),
 ≤3/run) and drains the research queue. The agent must still emit
 `alpha-digest.json` with `entries[]` for every cited message — real research note
-**or** `state/research/alpha-ack-<channel>-<id>.md` tombstone — so INV-Q1 can
+**or** `state/alpha-acks/<channel>-<id>.md` tombstone ([ADR 044](../adr/044-alpha-ack-relocation-and-retention.md);
+retention sweeps purged tombstones after `retention.alpha_ack_days`) — so INV-Q1 can
 purge (host research alone does not clear the queue). Prefer empty telegram-alpha
 outbox — research proposes market broadcasts when the dossier is solid; those go
 through worthiness ([ADR 014](../adr/014-broadcast-worthiness.md)) then Discord

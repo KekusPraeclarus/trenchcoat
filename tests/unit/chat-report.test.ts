@@ -670,6 +670,8 @@ describe("chat report retention", () => {
       agentRoot: root,
       inboxMaxAgeDays: 30,
       chatReportsMaxAgeDays: 30,
+      alphaAckMaxAgeDays: 30,
+      narrativeDossierMaxAgeDays: 120,
     })
     expect(existsSync(oldPath)).toBe(false)
     expect(existsSync(newPath)).toBe(true)

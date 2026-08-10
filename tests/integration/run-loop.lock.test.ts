@@ -9,7 +9,7 @@ import {
 } from "../../src/lib/lock.js"
 import { runJob } from "../../src/orchestrator/run.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV23 } from "../../src/migrations/config.js"
+import { migrateConfigToV25 } from "../../src/migrations/config.js"
 import { runArchiveDir, ensureArchive } from "../../src/lib/archive.js"
 
 describe("run loop locking", () => {
@@ -45,7 +45,7 @@ describe("run loop locking", () => {
     const home = join(root, "home")
     const trench = join(home, ".trenchcoat")
     mkdirSync(trench, { recursive: true })
-    const raw = migrateConfigToV23({
+    const raw = migrateConfigToV25({
       schema: 4,
       telegram_channels: [],
       twitter: {

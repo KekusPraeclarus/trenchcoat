@@ -67,6 +67,12 @@ Add Market / Security / Risk only when they are material and not already
 covered in TL;DR. Skip empty sections. You may add a short extra section if
 genuinely useful — do not pad.
 
+**Spam significance rule:** phishing links and botted shill posts are baseline
+on memecoin launches, not a finding. Report scam, phishing, or bot activity on X
+only when it dominates the sample (a clear majority of posts) or when it changes
+the read. Otherwise omit it, or keep it to one short clause. Never open TL;DR or
+the X section with spam.
+
 Title `<TICKER> research` only (no " — chat summary"); no run-id / date meta;
 no "Agent context" or "(untrusted)" labels.
 
@@ -74,6 +80,8 @@ no "Agent context" or "(untrusted)" labels.
 - Tone and themes only — no @handles, post lists, engagement tables, or
   sample-size / "bounded host search" disclaimers
 - If X is missing/unavailable, one short sentence is enough
+- Follow the spam significance rule above — routine phishing or bot posts stay
+  out of the section
 
 **Web:** overview prose only — never enumerate search hits or URLs.
 

@@ -1079,3 +1079,68 @@ export function migrateConfigToV23(raw: unknown): unknown {
     },
   }
 }
+
+/**
+ * Schema 24: the suggestion scanner asks one clarifying question in the Discord
+ * thread when a suggestion stays in the forming state (ADR 025).
+ */
+export function migrateConfigToV24(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 24) return raw
+
+  const v23 = (
+    record?.["schema"] === 23
+      ? record
+      : migrateConfigToV23(raw)
+  ) as Record<string, unknown>
+
+  const prevRemediation = (v23["incident_remediation"] ?? {}) as Record<string, unknown>
+  const prevSuggestions = (
+    prevRemediation["discord_suggestions"] ?? {}
+  ) as Record<string, unknown>
+
+  return {
+    ...v23,
+    schema: 24,
+    incident_remediation: {
+      ...prevRemediation,
+      discord_suggestions: {
+        ...prevSuggestions,
+        followup_enabled: typeof prevSuggestions["followup_enabled"] === "boolean"
+          ? prevSuggestions["followup_enabled"]
+          : true,
+      },
+    },
+  }
+}
+
+/**
+ * Schema 25: workspace retention sweeps purged alpha-ack tombstones and
+ * long-dormant narrative dossiers (ADR 044, ADR 045).
+ */
+export function migrateConfigToV25(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 25) return raw
+
+  const v24 = (
+    record?.["schema"] === 24
+      ? record
+      : migrateConfigToV24(raw)
+  ) as Record<string, unknown>
+
+  const prevRetention = (v24["retention"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v24,
+    schema: 25,
+    retention: {
+      ...prevRetention,
+      alpha_ack_days: typeof prevRetention["alpha_ack_days"] === "number"
+        ? prevRetention["alpha_ack_days"]
+        : 30,
+      narrative_dossier_days: typeof prevRetention["narrative_dossier_days"] === "number"
+        ? prevRetention["narrative_dossier_days"]
+        : 120,
+    },
+  }
+}

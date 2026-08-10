@@ -816,7 +816,7 @@ write_interval_job wallet-review 86400
 write_interval_job fomo-trader-sync 21600 1
 write_interval_job fomo-signal-scan 1200 1
 write_interval_job discord-wallet-signal-scan 300 1
-write_interval_job fomo-x-source-review 21600 1
+write_interval_job fomo-x-source-review 7200 1
 write_interval_job fomo-narrative-source-scan 21600 1
 write_interval_job narrative-source-review 86400 1
 write_interval_job delivery-retry 900 1

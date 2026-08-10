@@ -41,9 +41,10 @@ Workflow per message in the manifest:
 1. Prefer a real `state/research/<token>.md` when there is durable thesis /
    CA / narrative worth keeping.
 2. Otherwise write a minimal ack file:
-   `state/research/alpha-ack-<channel>-<messageId>.md` with a one-line note
+   `state/alpha-acks/<channel>-<messageId>.md` with a one-line note
    that the message was seen (ticker-only, macro, or noise). Host research
-   may still enqueue from sealed bodies independently.
+   may still enqueue from sealed bodies independently. Never put ack files
+   under `state/research/` — that directory is for token dossiers only.
 3. Hash **exact file bytes** of the queue message and each record
    (`sha256:` + hex of the bytes on disk, including trailing newline). Prefer
    the manifest `contentHash=` value for the queue file when present.

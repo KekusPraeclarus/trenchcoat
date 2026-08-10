@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,6 +7,18 @@ import { StateStore } from "../../src/lib/state.js"
 import { collectChartSweep } from "../../src/orchestrator/chart-collect.js"
 
 const NOW = "2026-07-18T12:00:00.000Z"
+
+// Ambient operator keys (.env) enable the OHLCV fallback chain, whose real
+// retry backoff makes failure-path tests slow and timing-dependent.
+const savedEnv = { ...process.env }
+beforeEach(() => {
+  process.env = { ...savedEnv }
+  delete process.env["SOLANATRACKER_API_KEY"]
+  delete process.env["BIRDEYE_API_KEY"]
+})
+afterAll(() => {
+  process.env = savedEnv
+})
 
 function geckoPayload(candles: unknown[]) {
   return JSON.stringify({
@@ -150,5 +162,5 @@ describe("collectChartSweep 15m fallback and pacing", () => {
     expect(existsSync(statusPath)).toBe(true)
     const status = readFileSync(statusPath, "utf8")
     expect(status).toMatch(/provider-error/u)
-  })
+  }, 20_000)
 })

@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV23 } from "../migrations/config.js"
+import { migrateConfigToV25 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 
 const ChannelSchema = z.object({
@@ -12,7 +12,7 @@ const ChannelSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  schema: z.literal(23),
+  schema: z.literal(25),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -343,6 +343,8 @@ export const ConfigSchema = z.object({
       max_forming_rounds: z.number().int().min(1).max(20).default(5),
       ambient_thread_gap_ms: z.number().int().min(60_000).max(3_600_000).default(300_000),
       min_confidence: z.number().min(0).max(1).default(0.7),
+      /** One clarifying reply per forming suggestion (ADR 025) */
+      followup_enabled: z.boolean().default(true),
     }).default({
       enabled: false,
       channel_ids: [],
@@ -353,6 +355,7 @@ export const ConfigSchema = z.object({
       max_forming_rounds: 5,
       ambient_thread_gap_ms: 300_000,
       min_confidence: 0.7,
+      followup_enabled: true,
     }),
   }).default({
     enabled: false,
@@ -524,6 +527,10 @@ export const ConfigSchema = z.object({
     inbox_archive_days: z.number().int().default(30),
     run_archive_days: z.number().int().default(90),
     chat_reports_days: z.number().int().default(30),
+    /** Sweep purged alpha-ack tombstones (state/alpha-acks/ + legacy research/ acks) */
+    alpha_ack_days: z.number().int().min(1).max(365).default(30),
+    /** Delete narrative dossiers untouched this long whose slug left the log */
+    narrative_dossier_days: z.number().int().min(30).max(730).default(120),
   }),
   chat: z.object({
     idle_timeout_minutes: z.number().int().default(30),
@@ -824,7 +831,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV23(raw))
+  return ConfigSchema.parse(migrateConfigToV25(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

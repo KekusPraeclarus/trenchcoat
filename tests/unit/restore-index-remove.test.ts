@@ -90,6 +90,35 @@ describe("reconcileIndex", () => {
     expect(body).not.toContain("(none yet)")
   })
 
+  it("points narrative lines at the dossier when one exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-index-dossier-"))
+    mkdirSync(join(root, "state", "narratives"), { recursive: true })
+    const state = new StateStore(join(root, "state"))
+    await state.saveWatchlist({ schema: 1, entries: [] })
+    const line = (slug: string, title: string) => JSON.stringify({
+      slug,
+      title,
+      firstSeen: NOW,
+      lastSeen: NOW,
+      evidence: ["twitter:@x"],
+      stage: "emerging",
+    })
+    writeFileSync(
+      join(root, "state", "narratives", "log.jsonl"),
+      `${line("with-dossier", "Dossier meta")}\n${line("without-dossier", "Log-only meta")}\n`,
+    )
+    writeFileSync(
+      join(root, "state", "narratives", "with-dossier.md"),
+      "---\nstatus: active\n---\n\nnotes\n",
+    )
+    await reconcileIndex({ agentRoot: root, state, nowIso: NOW })
+    const body = readFileSync(join(root, "state", "INDEX.md"), "utf8")
+    expect(body).toContain("with-dossier — emerging, Dossier meta")
+    expect(body).toContain("state/narratives/with-dossier.md")
+    expect(body).toContain("without-dossier — emerging, Log-only meta")
+    expect(body).toContain("state/narratives/log.jsonl")
+  })
+
   it("parses decision rows and narrative tickers", () => {
     const rows = parseDecisionRows([
       "## dec-1 — operator-remove base:0xabc",

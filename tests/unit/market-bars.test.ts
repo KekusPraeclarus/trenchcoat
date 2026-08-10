@@ -44,19 +44,24 @@ describe("live market bar providers", () => {
   beforeEach(() => {
     clearMarketBarPoolCache()
     process.env = { ...env }
+    // Ambient operator keys (.env) enable the OHLCV fallback chain, whose real
+    // retry backoff makes failure-path tests slow and timing-dependent.
+    delete process.env["SOLANATRACKER_API_KEY"]
+    delete process.env["BIRDEYE_API_KEY"]
   })
 
   afterEach(() => {
     process.env = { ...env }
   })
 
+  // Real retry backoff sleeps make provider failure-path tests slow
   it("returns empty bars when upstream fails (never invents prices)", async () => {
     const fetcher = async () => new Response("nope", { status: 500 })
     const sourceBars = createLiveSourceBarProvider(fetcher, () => "2026-07-20T00:00:00.000Z")
     const walletBars = createLiveWalletBarProvider(fetcher, () => "2026-07-20T00:00:00.000Z")
     expect(await sourceBars(sourceEvent(), 72)).toEqual([])
     expect(await walletBars(walletBuy(), 72)).toEqual([])
-  })
+  }, 20_000)
 
   it("maps closed gecko candles into finalized price bars", async () => {
     const asOf = Math.floor(Date.parse("2026-07-20T00:00:00.000Z") / 1000)
@@ -136,5 +141,5 @@ describe("live market bar providers", () => {
     const bars = await walletBars(walletBuy(), 72)
     expect(bars?.length).toBeGreaterThan(0)
     expect(bars!.every((b) => b.finalized && b.open > 0)).toBe(true)
-  })
+  }, 20_000)
 })

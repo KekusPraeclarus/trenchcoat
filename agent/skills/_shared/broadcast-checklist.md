@@ -56,6 +56,9 @@ fine only for ordinary noise, never for a founder primary-source catalyst.
 Read `state/narratives/log.jsonl` first: do **not** restate a narrative's known
 stage (e.g. omit "RH still peaking" when it is already peaking). Mention heat
 only when it drops or increases; host rejects status-quo stage restatements.
+When `state/narratives/<slug>.md` exists for the subject, read it too — it
+records what was already said about the narrative; do not repeat it. Dossiers
+are valid `refs` entries.
 
 Read `framing` from the log. If `ecosystem` or `regime`, do **not** call the lane
 a "rotation" in `text`. Prefer the log `title` in operator-facing language; never

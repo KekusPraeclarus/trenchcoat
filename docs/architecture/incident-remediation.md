@@ -60,6 +60,7 @@ Passive conversation-aware intake (`incident_remediation.discord_suggestions`):
 | `max_forming_rounds` | `5` | Max re-form attempts before not-buildable |
 | `ambient_thread_gap_ms` | `300000` | Non-reply messages within this gap share a thread |
 | `min_confidence` | `0.7` | Below → downgrade to `forming` |
+| `followup_enabled` | `true` | One clarifying question per forming suggestion (schema 24) |
 
 Unit of analysis is a **thread** (reply chain + ambient window), not a single
 message. Bot/webhook messages are context-only. Reply ancestors may extend
@@ -76,7 +77,17 @@ unmeasurable criterion, or alternatives without a rationale becomes
 `queued-waiting`, and `built` only, and collapses forming threads into one
 count; a forming-only day sends no digest. Ledger:
 `~/.trenchcoat/remediations/suggestions.json`. CLI: `tc remediations suggestions`.
-Silent on Discord (no replies/reactions). Telegram digests / failure alerts /
+
+On the first `forming` round the scan posts **one** clarifying question in the
+thread, as a reply to the last human message in the window
+(`maybePostSuggestionFollowup`). This stops a clear complaint with a vague fix
+from expiring in silence. `renderSuggestionFollowup` owns the text: a fixed
+prefix plus the classifier `followupQuestion` with links, mentions, markdown,
+and secrets stripped, capped at 280 characters. Text without a question mark
+gets a fixed fallback question. `followupMessageId` / `followupAskedAt` in the
+ledger keep it to one question per entry, and a send failure writes no field, so
+the next scan retries. Set `followup_enabled: false` to stay silent on Discord.
+Telegram digests / failure alerts /
 high-risk approval cards use host-composed plain-language copy (optionally
 polished by `composer-2.5` in an assistant voice); approval cards always end
 with exact `approve|defer|reject remediation rem-…` lines. Host normalizes

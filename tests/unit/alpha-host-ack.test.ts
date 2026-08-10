@@ -61,7 +61,8 @@ describe("hostAckNoThesisAlphaMessages", () => {
     expect(ack.needsAgentPaths).toEqual([])
     expect(ack.hostEntries).toHaveLength(1)
     expect(ack.hostEntries[0]!.contentHash).toBe(contentHash)
-    expect(existsSync(join(agentRoot, "state/research/alpha-ack-Chan-1.md"))).toBe(true)
+    expect(existsSync(join(agentRoot, "state/alpha-acks/Chan-1.md"))).toBe(true)
+    expect(existsSync(join(agentRoot, "state/research/alpha-ack-Chan-1.md"))).toBe(false)
 
     await writeMergedAlphaDigest({
       agentRoot,
@@ -88,7 +89,7 @@ describe("hostAckNoThesisAlphaMessages", () => {
         channel: "Chan",
         messageId: "1",
         contentHash: "sha256:aa",
-        records: [{ path: "state/research/alpha-ack-Chan-1.md", contentHash: "sha256:bb" }],
+        records: [{ path: "state/alpha-acks/Chan-1.md", contentHash: "sha256:bb" }],
       }],
       [{
         provenance: "telegram:Chan",

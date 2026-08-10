@@ -103,6 +103,12 @@ Malformed state files are quarantined and the process stops (fail closed).
    X / Web / Read (Market/Security should be included in either tl;dr or read, only when material). Summarative X
    and prose Web (no post lists, engagement tables, sample disclaimers, or
    link dumps); detail stays in `agent.md`. Multipart replies stay unlabeled.
+   Both passes carry `X_SPAM_SIGNIFICANCE_RULE`
+   (`src/orchestrator/research.ts`): routine phishing links and botted shill
+   posts are baseline, so the report calls out scam or bot activity only when it
+   dominates the X sample or changes the read. The same rule sits in
+   `agent/skills/deep-research/SKILL.md` and `agent/skills/research/SKILL.md`,
+   and `tests/unit/research-spam-framing.test.ts` keeps the three in step.
    Dossier collection reuses resolve
    DexScreener pairs and runs market/security, FOMO context, and X concurrently;
    optional Tavily queries run concurrently before pass 2. Stage timings

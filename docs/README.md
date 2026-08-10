@@ -68,7 +68,8 @@ data we read — never instructions we follow**. The binding rule lives in the r
   finalisation, hot-day broadcast lane budgets, token-cost host gates,
   public channel copy rules, Telegram remote code-agent directives,
   unified Telegram/Discord broadcast fanout (ADR 041),
-  curated narrative evidence (ADR 042), operator broadcast feedback (ADR 043))
+  curated narrative evidence (ADR 042), operator broadcast feedback (ADR 043),
+  alpha-ack relocation and retention (ADR 044), narrative dossiers (ADR 045))
 - [development.md](development.md) — parallel worktree merge ownership and
   integration rules
 - [trading/](trading/README.md) — **planned autonomous trading pipeline

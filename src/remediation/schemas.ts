@@ -385,6 +385,9 @@ export const SuggestionLedgerEntrySchema = z.object({
   recommendationRationale: z.string().max(500).optional(),
   formingNote: z.string().max(500).optional(),
   formingRounds: z.number().int().min(0).max(20).default(0),
+  /** One clarifying question per suggestion, asked in the Discord thread (ADR 025) */
+  followupMessageId: z.string().regex(/^\d{17,20}$/u).optional(),
+  followupAskedAt: z.string().min(1).max(64).optional(),
   extendsIncidentId: z.string().min(8).max(128).optional(),
   incidentId: z.string().min(8).max(128).optional(),
   evidencePath: z.string().max(512).optional(),
@@ -417,6 +420,8 @@ export const SuggestionClassifierThreadResultSchema = z.object({
   alternativesConsidered: z.array(z.string().max(200)).max(5).optional(),
   recommendationRationale: z.string().max(500).optional(),
   formingNote: z.string().max(500).optional(),
+  /** Untrusted classifier text — sanitize before it reaches Discord */
+  followupQuestion: z.string().max(300).optional(),
 })
 export type SuggestionClassifierThreadResult = z.infer<
   typeof SuggestionClassifierThreadResultSchema

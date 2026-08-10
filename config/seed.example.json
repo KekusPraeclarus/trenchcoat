@@ -1,5 +1,5 @@
 {
-  "schema": 23,
+  "schema": 25,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -471,13 +471,16 @@
       "forming_ttl_days": 7,
       "max_forming_rounds": 5,
       "ambient_thread_gap_ms": 300000,
-      "min_confidence": 0.7
+      "min_confidence": 0.7,
+      "followup_enabled": true
     }
   },
   "retention": {
     "inbox_archive_days": 30,
     "run_archive_days": 90,
-    "chat_reports_days": 30
+    "chat_reports_days": 30,
+    "alpha_ack_days": 30,
+    "narrative_dossier_days": 120
   },
   "chat": {
     "idle_timeout_minutes": 30,

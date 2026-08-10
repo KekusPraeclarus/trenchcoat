@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { ensureArchive } from "../../src/lib/archive.js"
 import {
   effectiveFraming,
+  markNarrativeDossierDormant,
   mergeNarrativeProposals,
   pruneNarrativeLog,
   pruneNarrativeLogInMemory,
@@ -96,7 +97,30 @@ describe("pruneNarrativeLogInMemory", () => {
 
   it("treats empty input as an empty log", () => {
     const result = pruneNarrativeLogInMemory("", NOW, 14)
-    expect(result).toEqual({ entries: [], kept: 0, purged: 0, malformed: 0 })
+    expect(result).toEqual({
+      entries: [],
+      kept: 0,
+      purged: 0,
+      malformed: 0,
+      purgedSlugs: [],
+    })
+  })
+
+  it("reports fully purged slugs but not slugs with a surviving line", () => {
+    const staleOnly = entry({
+      slug: "stale-only",
+      firstSeen: "2026-06-01T12:00:00.000Z",
+      lastSeen: "2026-07-02T12:00:00.000Z",
+    })
+    const staleDup = entry({
+      slug: "base-ai",
+      firstSeen: "2026-06-01T12:00:00.000Z",
+      lastSeen: "2026-07-02T12:00:00.000Z",
+    })
+    const raw = [staleOnly, staleDup, entry()].map((e) => JSON.stringify(e)).join("\n")
+    const result = pruneNarrativeLogInMemory(raw, NOW, 14)
+    expect(result.purged).toBe(2)
+    expect(result.purgedSlugs).toEqual(["stale-only"])
   })
 
   it("is idempotent for a already-pruned log", () => {
@@ -161,6 +185,78 @@ describe("pruneNarrativeLog", () => {
     })
     expect(report.kept).toBe(0)
     expect(readFileSync(join(agentRoot, "state", "narratives", "log.jsonl"), "utf8")).toBe("")
+  })
+
+  it("marks the dossier of a purged slug dormant and keeps its body", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-narrative-dormant-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "state", "narratives"), { recursive: true })
+    writeFileSync(
+      join(agentRoot, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify(entry({
+        slug: "old-one",
+        firstSeen: "2026-06-01T00:00:00.000Z",
+        lastSeen: "2026-07-01T00:00:00.000Z",
+      }))}\n`,
+    )
+    const dossier = join(agentRoot, "state", "narratives", "old-one.md")
+    writeFileSync(
+      dossier,
+      "---\ntitle: Old one\nstatus: active\n---\n\n## Notes\n\nkept body\n",
+    )
+
+    const report = await pruneNarrativeLog({
+      agentRoot,
+      runId: RUN_ID,
+      nowIso: NOW,
+      retentionDays: 14,
+    })
+    expect(report.purged).toBe(1)
+    expect(report.dossiersMarkedDormant).toBe(1)
+    const rewritten = readFileSync(dossier, "utf8")
+    expect(rewritten).toContain("status: dormant")
+    expect(rewritten).toContain("title: Old one")
+    expect(rewritten).toContain("kept body")
+  })
+})
+
+describe("markNarrativeDossierDormant", () => {
+  function scaffold(): string {
+    const root = mkdtempSync(join(tmpdir(), "tc-dossier-dormant-"))
+    mkdirSync(join(root, "state", "narratives"), { recursive: true })
+    return root
+  }
+
+  it("inserts a status line into frontmatter without one", async () => {
+    const root = scaffold()
+    const path = join(root, "state", "narratives", "base-ai.md")
+    writeFileSync(path, "---\ntitle: Base AI\n---\n\nbody\n")
+    expect(await markNarrativeDossierDormant(root, "base-ai")).toBe(true)
+    expect(readFileSync(path, "utf8"))
+      .toBe("---\ntitle: Base AI\nstatus: dormant\n---\n\nbody\n")
+  })
+
+  it("prepends frontmatter when the dossier has none", async () => {
+    const root = scaffold()
+    const path = join(root, "state", "narratives", "base-ai.md")
+    writeFileSync(path, "## Notes\n\nbody\n")
+    expect(await markNarrativeDossierDormant(root, "base-ai")).toBe(true)
+    expect(readFileSync(path, "utf8"))
+      .toBe("---\nstatus: dormant\n---\n\n## Notes\n\nbody\n")
+  })
+
+  it("is a no-op for an already dormant dossier", async () => {
+    const root = scaffold()
+    const path = join(root, "state", "narratives", "base-ai.md")
+    writeFileSync(path, "---\nstatus: dormant\n---\n\nbody\n")
+    expect(await markNarrativeDossierDormant(root, "base-ai")).toBe(false)
+  })
+
+  it("returns false for a missing dossier or an invalid slug", async () => {
+    const root = scaffold()
+    expect(await markNarrativeDossierDormant(root, "absent")).toBe(false)
+    expect(await markNarrativeDossierDormant(root, "../escape")).toBe(false)
+    expect(await markNarrativeDossierDormant(root, "Bad_Slug")).toBe(false)
   })
 })
 

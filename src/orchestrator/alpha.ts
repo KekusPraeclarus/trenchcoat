@@ -23,8 +23,12 @@ function alphaMessagePath(agentRoot: string, channel: string, messageId: string)
   return join(agentRoot, "alpha-queue", channel, `${messageId}.json`)
 }
 
+/**
+ * Ack tombstones live outside state/research/ so token dossiers stay grep-clean.
+ * Retention sweeps this directory after queue purge (INV-Q2; ADR 044).
+ */
 export function alphaAckRelPath(channel: string, messageId: string): string {
-  return `state/research/alpha-ack-${channel}-${messageId}.md`
+  return `state/alpha-acks/${channel}-${messageId}.md`
 }
 
 const FOUNDER_RE =
