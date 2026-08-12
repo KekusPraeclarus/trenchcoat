@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
+import { log } from "../lib/log.js"
 import type { DiscordLayout } from "./paths.js"
 import {
   DiscordDeliveriesFileSchema,
@@ -23,7 +24,10 @@ import {
   type DiscordWatchlistFile,
 } from "./schemas.js"
 
-const MAX_FILE_BYTES = 4_000_000
+/** Warn when a state file is large; still load so prune can shrink it. */
+export const DISCORD_STATE_SOFT_MAX_BYTES = 4_000_000
+/** Quarantine only above this hard ceiling (parse failure still quarantines). */
+export const DISCORD_STATE_HARD_MAX_BYTES = 16_000_000
 
 function utcDayKey(iso: string): string {
   return iso.slice(0, 10)
@@ -36,7 +40,7 @@ function ensureRoot(layout: DiscordLayout): void {
 function readBounded(path: string): unknown {
   if (!existsSync(path)) return undefined
   const raw = readFileSync(path, "utf8")
-  if (raw.length > MAX_FILE_BYTES) {
+  if (raw.length > DISCORD_STATE_HARD_MAX_BYTES) {
     throw new Error(`discord state file too large: ${path}`)
   }
   return JSON.parse(raw)
@@ -62,7 +66,16 @@ function loadFile<T>(
   let raw = ""
   try {
     raw = readFileSync(path, "utf8")
-    if (raw.length > MAX_FILE_BYTES) throw new Error("too large")
+    if (raw.length > DISCORD_STATE_HARD_MAX_BYTES) {
+      throw new Error("too large")
+    }
+    if (raw.length > DISCORD_STATE_SOFT_MAX_BYTES) {
+      log.warn("discord state file over soft size; loading for prune", {
+        name,
+        bytes: raw.length,
+        softMax: DISCORD_STATE_SOFT_MAX_BYTES,
+      })
+    }
     const parsed = schema.parse(JSON.parse(raw))
     return parsed
   } catch (error) {

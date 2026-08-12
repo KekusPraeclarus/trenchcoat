@@ -2,7 +2,7 @@
 description: Provider knowledge — Discord webhook fanout (router) and Gateway research bot (isolated).
 scope: project
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-12
 ---
 
 # Discord
@@ -43,7 +43,9 @@ last_verified: 2026-08-10
   through to conversation, tracking `failed` does not; research JSON block
   host-validated, one synthesis hop; `max_research_per_turn` is an injection
   bound. Enabling conversation means channel members can query main knowledge
-- State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research)
+- State under `~/.trenchcoat/discord/`; `.lock` (brief store) + `.worker.lock` (research).
+  `tracking.json` soft-warns above 4 MiB, hard-quarantines above 16 MiB; prune caps
+  terminal match batches at 400 so intake cannot pin over the soft limit
 - Does not use main `agent/.lock` for Discord research (conversation report-copy
   is the bounded host writer exception)
 - Config: schema 16+ `chat.discord.*` (disabled by default); schema 12 adds

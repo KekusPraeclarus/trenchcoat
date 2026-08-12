@@ -17,6 +17,7 @@ import { createDiscordStore, type DiscordStore } from "./store.js"
 import {
   DiscordChainSchema,
   TrackingIdSchema,
+  type DiscordTrackingFile,
   type TrackingRequestRecord,
 } from "./schemas.js"
 import {
@@ -179,15 +180,24 @@ export async function handleTrackingMessage(args: Readonly<{
   const cfg = trackingConfigSlice()
   const agentRoot = ensureDiscordAgentWorkspace(args.repoRoot, layout)
 
-  const locked = await withStoreLockRetry(layout.lock, async () => {
-    let file = pruneTrackingFile({
-      file: store.loadTracking(),
-      nowIso,
-      config: cfg,
+  let locked: { ok: true; value: DiscordTrackingFile } | { ok: false }
+  try {
+    locked = await withStoreLockRetry(layout.lock, async () => {
+      const file = pruneTrackingFile({
+        file: store.loadTracking(),
+        nowIso,
+        config: cfg,
+      })
+      await store.saveTracking(file)
+      return file
     })
-    await store.saveTracking(file)
-    return file
-  })
+  } catch (error) {
+    // Store unreadable (hard size / corrupt) must not block conversation fallthrough.
+    log.warn("discord tracking store unavailable; skipping tracking", {
+      error: error instanceof Error ? error.message : "unknown",
+    })
+    return "ignored"
+  }
   if (!locked.ok) return "failed"
   let file = locked.value
 

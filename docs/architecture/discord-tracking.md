@@ -2,7 +2,7 @@
 description: Discord idea-tracking requests — NL intake, silent research-first qualification, INV-D3–D8.
 scope: module
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-08-12
 read_when:
   - Editing src/discord/tracking-*.ts or chat.discord.tracking config.
   - Changing Discord NL intake, match hooks, expiry, or tracking delivery.
@@ -39,6 +39,7 @@ and `runWatchExpirySweep` / `watch_expiry_reply_window_days`.
 | `expiry_reply_window_days` | 7 | Reply window after notice |
 | `match_max_attempts` | 5 | Durable batch retries |
 | `retention_days` | 35 | Terminal batch/request prune |
+| *(host)* `MAX_TERMINAL_MATCH_BATCHES` | 400 | After retention, keep newest completed/failed batches; pending/running always stay |
 | `mention_review_blacklist_days` | 7 | Blacklist after rejected review |
 
 ## Intake priority
@@ -64,6 +65,12 @@ message within 24h activates.
 
 Mutations are pure transitions in `tracking-state.ts`, persisted under
 `layout.lock` via `createDiscordStore().saveTracking` only.
+
+`tracking.json` load uses a soft size warn (4 MiB) and a hard quarantine
+ceiling (16 MiB). Soft oversize still loads so prune can shrink the file.
+Parse failure still quarantines. Every intake prune also caps terminal
+`matchBatches` at `MAX_TERMINAL_MATCH_BATCHES` so scan volume cannot pin the
+file over the soft limit.
 
 ## Matching and qualification
 

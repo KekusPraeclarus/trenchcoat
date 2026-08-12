@@ -2,7 +2,7 @@
 description: Discord conversational agent — addressing gate, ask-mode session over main workspace, agent-triggered research with synthesis.
 scope: module
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-12
 read_when:
   - Editing src/discord/conversation*.ts or skills/discord-chat.
   - Changing Discord channel message routing after research/tracking.
@@ -29,7 +29,7 @@ chat remains separate ([chat-agent.md](chat-agent.md)).
 1. Passive renew / keep watching (reply to research anchor)
 2. Reply to watch-expiry notice (deterministic yes/no)
 3. Research / chain-integration regex
-4. @mention or reply-to-bot → tracking classifier; `none` falls through to conversation; `failed` stops
+4. @mention or reply-to-bot → tracking classifier; `none` falls through to conversation; tracking store unreadable also falls through as `ignored`; classifier/`failed` stops
 5. Addressing gate (pre-filters + fail-closed classifier) → conversation turn
 
 ## Addressing gate

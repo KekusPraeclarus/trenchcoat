@@ -39,6 +39,12 @@ export type TrackingConfigSlice = Readonly<{
   retention_days: number
 }>
 
+/**
+ * Cap terminal match batches after retention. Pending/running always stay.
+ * Stops tracking.json from growing past the store soft size under heavy scan volume.
+ */
+export const MAX_TERMINAL_MATCH_BATCHES = 400
+
 export function countActiveForUser(
   file: DiscordTrackingFile,
   guildId: string,
@@ -607,11 +613,20 @@ export function pruneTrackingFile(args: Readonly<{
     return now - Date.parse(r.updatedAt) <= retentionMs
   })
 
-  const matchBatches = args.file.matchBatches.filter((b) => (
+  const retainedBatches = args.file.matchBatches.filter((b) => (
     now - Date.parse(b.updatedAt) <= retentionMs
     || b.status === "pending"
     || b.status === "running"
   ))
+  const liveBatches = retainedBatches.filter((b) => (
+    b.status === "pending" || b.status === "running"
+  ))
+  const terminalBatches = retainedBatches
+    .filter((b) => b.status === "completed" || b.status === "failed")
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, MAX_TERMINAL_MATCH_BATCHES)
+  const matchBatches = [...liveBatches, ...terminalBatches]
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
 
   const trackingDeliveries = args.file.trackingDeliveries.filter((d) => {
     if (liveRequestIds.has(d.trackingId)) return true

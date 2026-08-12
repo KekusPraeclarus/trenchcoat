@@ -40,7 +40,8 @@ Constraints that shaped the design:
 
 3. **Addressing gate (INV-D9).** After renew / watch-expiry / research regex /
    tracking: always-addressed on @mention or reply-to-bot (tracking `none`
-   falls through; tracking `failed` does not). Deterministic silence for
+   falls through; tracking store unreadable also falls through as `ignored`;
+   tracking `failed` does not). Deterministic silence for
    reply-to-other-member and non-alphanumeric content. Else fail-closed
    classifier (`CONVERSATION_GATE_PROMPT`, path-only snapshot). Parse/session
    error → silent.

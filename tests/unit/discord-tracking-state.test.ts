@@ -14,8 +14,10 @@ import {
   pruneTrackingFile,
   activeMatchableRequests,
   trackingChainAllows,
+  MAX_TERMINAL_MATCH_BATCHES,
   type TrackingConfigSlice,
 } from "../../src/discord/tracking-state.js"
+import type { TrackingMatchBatch } from "../../src/discord/schemas.js"
 import { emptyTrackingFile } from "../../src/discord/store.js"
 import { addDaysIso, addHoursIso, isWithinHours, isExpiredAt } from "../../src/discord/tracking-ids.js"
 import {
@@ -423,6 +425,56 @@ describe("tracking expiry", () => {
       config: CFG,
     })
     expect(pruned.requests[0]!.status).toBe("dropped")
+  })
+
+  it("caps terminal match batches and keeps pending/running", () => {
+    const batches: TrackingMatchBatch[] = []
+    for (let i = 0; i < MAX_TERMINAL_MATCH_BATCHES + 50; i++) {
+      const ts = addHoursIso(NOW, -i)
+      batches.push({
+        batchId: `batch-${String(i).padStart(8, "0")}`,
+        sourceKind: "research",
+        runId: `run-${i}`,
+        snapshotHash: `hash-${String(i).padStart(8, "0")}`,
+        status: "completed",
+        attemptCount: 1,
+        createdAt: ts,
+        updatedAt: ts,
+        candidateDigest: `digest-${i}`,
+      })
+    }
+    batches.push({
+      batchId: "batch-pending1",
+      sourceKind: "research",
+      runId: "run-pending",
+      snapshotHash: "hash-pending01",
+      status: "pending",
+      attemptCount: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      candidateDigest: "digest-pending",
+    })
+    batches.push({
+      batchId: "batch-running1",
+      sourceKind: "research",
+      runId: "run-running",
+      snapshotHash: "hash-running01",
+      status: "running",
+      attemptCount: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+      candidateDigest: "digest-running",
+    })
+    const pruned = pruneTrackingFile({
+      file: { schema: 1, requests: [], matchBatches: batches, trackingDeliveries: [] },
+      nowIso: NOW,
+      config: CFG,
+    })
+    expect(pruned.matchBatches.filter((b) => b.status === "pending")).toHaveLength(1)
+    expect(pruned.matchBatches.filter((b) => b.status === "running")).toHaveLength(1)
+    expect(
+      pruned.matchBatches.filter((b) => b.status === "completed" || b.status === "failed"),
+    ).toHaveLength(MAX_TERMINAL_MATCH_BATCHES)
   })
 })
 
