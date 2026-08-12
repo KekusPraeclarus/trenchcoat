@@ -74,6 +74,7 @@ describe("operator-notify", () => {
       severity: "warn",
       attemptCount: 0,
       originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
       evidencePaths: [],
       origin: "discord-suggestion",
     }
@@ -100,6 +101,7 @@ describe("operator-notify", () => {
       severity: "info",
       attemptCount: 0,
       originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
       evidencePaths: [],
       origin: "discord-suggestion",
       riskLevel: "high",

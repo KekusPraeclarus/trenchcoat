@@ -39,6 +39,7 @@ function baseIncident(overrides?: Partial<RemediationIncident>): RemediationInci
     severity: "warn",
     attemptCount: 1,
     originMoveRebuilds: 0,
+    preReviewReviseCount: 0,
     evidencePaths: [],
     proposedPaths: ["src/collectors/twitter/scrape.ts"],
     affectedSources: [SOURCE_KIND_X_HOME_FYP],

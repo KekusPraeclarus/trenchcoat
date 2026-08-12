@@ -236,6 +236,7 @@ describe("approval", () => {
       approvalExpiresAt: approvalExpiryIso("2026-07-21T00:00:00.000Z", 24),
       attemptCount: 0,
       originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
       evidencePaths: [],
     }
     const ok = applyApprovalCommand({
@@ -272,6 +273,7 @@ describe("approval", () => {
       approvalExpiresAt: "2026-07-21T00:00:00.000Z",
       attemptCount: 0,
       originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
       evidencePaths: [],
     }
     expect(isApprovalExpired(incident, "2026-07-21T01:00:00.000Z")).toBe(true)

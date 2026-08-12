@@ -106,6 +106,7 @@ async function setupFixture(args?: Readonly<{ incidentId?: string }>) {
     severity: "warn",
     attemptCount: 1,
     originMoveRebuilds: 0,
+    preReviewReviseCount: 0,
     evidencePaths: [],
     proposedPaths: ["src/collectors/twitter/scrape.ts"],
     affectedSources: [SOURCE_KIND_X_HOME_FYP],

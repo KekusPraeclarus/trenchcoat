@@ -45,6 +45,7 @@ describe("remediation approval integration", () => {
       approvalExpiresAt: "2099-01-01T00:00:00.000Z",
       attemptCount: 0,
       originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
       evidencePaths: [],
       riskLevel: "high",
     }
