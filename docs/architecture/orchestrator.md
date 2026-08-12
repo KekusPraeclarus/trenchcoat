@@ -489,8 +489,9 @@ staged router events.
   Telegram when a leader payload exists (`forwarded` receipt). All public channel
   distillers share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`) and fail closed on
   `internal-jargon` (`tape`, `operator`, `lane noise`, CG category list-position /
-  `cat` shorthand) in post-check validators (ADR 037). Outbox mechanical gate
-  also rejects `cg-category-list-churn` before worthiness. Bare intake hosts
+  `cat` shorthand) and `stock-watch-phrase` (`worth watching`) in post-check
+  validators (ADR 037). Outbox mechanical gate also rejects
+  `cg-category-list-churn` before worthiness. Bare intake hosts
   default to `/v1/events`; loopback HTTP is allowed.
   Severity `lifecycle` (wallet add/drop) skips channel render and is never distilled
 - Host-only `telegram-digest` (04:00 Europe/London, VPS systemd) emits one

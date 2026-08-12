@@ -81,6 +81,12 @@ describe("validateTelegramTopicOutput", () => {
       .toEqual({ ok: false, reason: "internal-jargon" })
   })
 
+  it("rejects the stock closer worth watching", () => {
+    expect(validateTelegramTopicOutput(
+      "RH leaders still firm — worth watching if volume holds",
+    )).toEqual({ ok: false, reason: "stock-watch-phrase" })
+  })
+
   it("rejects section headers and bullet briefings", () => {
     expect(validateTelegramTopicOutput([
       "**What changed**",
@@ -159,6 +165,15 @@ describe("validateTelegramDailyDigestOutput", () => {
       JSON.stringify({ sections: [{ slug: "rh-chain-meme-rotation", body: "**bold**" }] }),
       ["rh-chain-meme-rotation"],
     )).toMatchObject({ ok: false, reason: "markdown-in-body" })
+    expect(validateTelegramDailyDigestOutput(
+      JSON.stringify({
+        sections: [{
+          slug: "rh-chain-meme-rotation",
+          body: "Leaders firm and worth watching if volume holds.",
+        }],
+      }),
+      ["rh-chain-meme-rotation"],
+    )).toMatchObject({ ok: false, reason: "stock-watch-phrase" })
   })
 })
 

@@ -3,7 +3,7 @@ description: ADR — Public Discord/Telegram copy bans internal jargon, CG categ
 scope: project
 status: accepted
 date: 2026-07-24
-last_verified: 2026-08-04
+last_verified: 2026-08-12
 related: [013, 012, 026, 036]
 ---
 
@@ -42,16 +42,19 @@ caused the bad output.
    - Never tell readers what to "ignore" — omit noise instead
    - Time phrasing is forward-looking only and appears at most once; never frame
      the update as "this week's news". Weekly timeframes are banned entirely —
-     week-scale watch language uses a condition instead ("worth watching if
-     volume holds"); daily/monthly phrasing stays allowed.
+     week-scale watch language uses a condition instead ("watch if volume
+     holds"); daily/monthly phrasing stays allowed. The stock closer
+     "worth watching" is banned — vary watch language or omit time phrasing
+     when the takeaway already stands.
    - Describe market/price/volume/attention in plain trader language
 
-2. **Mechanical post-check (`INTERNAL_JARGON` in `src/orchestrator/distill-session.ts`).**
-   Fail-closed distill validation rejects Discord bottom-lines, Telegram topic
-   paragraphs, and daily digest section bodies that match `\btape\b`,
-   `\boperator…\b`, `\blane noise\b`, or CG category list-position / `cat`
-   shorthand patterns. Reason: `internal-jargon`. Prompt-only fixes are
-   insufficient when models drift.
+2. **Mechanical post-check (`INTERNAL_JARGON` / `STOCK_WATCH_PHRASE` in
+   `src/orchestrator/distill-session.ts`).**
+   Fail-closed distill validation rejects Telegram topic paragraphs and daily
+   digest section bodies that match `\btape\b`, `\boperator…\b`,
+   `\blane noise\b`, CG category list-position / `cat` shorthand patterns
+   (reason: `internal-jargon`), or `\bworth watching\b` (reason:
+   `stock-watch-phrase`). Prompt-only fixes are insufficient when models drift.
 
 3. **Outbox mechanical gate (`cg-category-list-churn`).**
    `evaluateMechanicalBroadcastGate` rejects proposal `text` that is CoinGecko
@@ -103,5 +106,5 @@ caused the bad output.
 
 - Optional: extend `INTERNAL_JARGON` if new leak patterns appear in production
   (e.g. "spam stack", "call rail") after prompt soak time.
-- Optional: add the same check to watch-update validation if Discord research
+- Optional: add the same checks to watch-update validation if Discord research
   updates show the same drift.

@@ -29,10 +29,10 @@ clock. Weekly timeframes were later banned from watch copy entirely (see below).
 - Inject `watchWindow=…` into distill claim lines (omit prose-facing
   `horizonHours=N`). Prompts require that scale or a synonym; never paste `Nh`.
 - Weekly timeframes never reach watch copy: week-scale buckets derive the
-  conditional `if it holds` (prompts turn it into e.g. "worth watching if volume
-  holds"), and the outbound scrub rewrites weekly phrases (`this week`, `over the
-  coming weeks`, `next week`) to the same conditional. Day and month windows are
-  unchanged.
+  conditional `if it holds` (prompts turn it into e.g. "watch if volume holds"),
+  and the outbound scrub rewrites weekly phrases (`this week`, `over the coming
+  weeks`, `next week`) to the same conditional. Day and month windows are
+  unchanged. Distill rejects the stock closer "worth watching" (ADR 037).
 - Outbound / post-check scrub is thin: replace leaked `24h|72h|168h` (and common
   wrappers) plus the weekly-timeframe rewrite; leave other natural phrases alone.
 - Separately (same session, delivery path): router Telegram fanout uses the same

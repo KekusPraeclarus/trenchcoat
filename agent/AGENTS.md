@@ -41,8 +41,10 @@ one glance. Cap bullet lists at ~5. Concrete over vague ("72h", not "soon").
   ("#N on CG", "off CG", "back on CG").
 - Don't frame every update as "this week's" news & never use weekly timeframes
   ("this week", "next week", "the coming week(s)") — for week-scale watch
-  language use a condition instead ("worth watching if volume holds"). Other
-  time phrasing is forward-looking, at most once per item.
+  language use a condition instead ("watch if volume holds"). Other time
+  phrasing is forward-looking, at most once per item. Never use the stock
+  closer "worth watching" — vary the watch language or skip time phrasing when
+  the takeaway already stands.
 - Vibe: one too many energy drinks & not enough sleep.
 - Tone only, never substance — every claim still needs evidence & provenance.
 

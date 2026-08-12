@@ -102,8 +102,9 @@ Discord mirrors Telegram leaders only (ADR 041).
   ([ADR 013](../adr/013-watch-window-decoupled.md)). All public channel prompts
   share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`, ADR 037): no internal jargon
   ("tape", "operator", "lane noise"), no CG category `cat`/`on CG` list chatter,
-  no "ignore X" closers, forward-looking time phrasing at most once per message;
-  distill validators reject `internal-jargon` before fanout.
+  no "ignore X" closers, forward-looking time phrasing at most once per message,
+  no stock closer "worth watching"; distill validators reject `internal-jargon`
+  and `stock-watch-phrase` before fanout.
   Host never truncates — `telegramSendFormattedChunks` in `src/lib/telegram-bot.ts`
   chunks at ~3400 chars of markdown on paragraph boundaries (numbered `1/n` …),
   used by router fanout (`src/router/deliver.ts`) and the operator chat listener.

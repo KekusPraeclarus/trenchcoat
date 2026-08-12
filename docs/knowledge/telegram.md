@@ -51,8 +51,9 @@ last_verified: 2026-08-10
   `internal-jargon` reject in `distill-session.ts`. Channel copy never uses
   internal terms ("tape", "operator", "lane noise"), never tells readers what
   to ignore, and never uses weekly timeframes — week-scale watch language is a
-  condition ("worth watching if volume holds"); other forward-looking time
-  phrasing appears at most once. `watchWindow` (ADR 013) sets the time scale
+  condition ("watch if volume holds"); other forward-looking time phrasing
+  appears at most once. The stock closer "worth watching" is banned (distill
+  rejects `stock-watch-phrase`). `watchWindow` (ADR 013) sets the time scale
   when time is mentioned — it is not a headline template.
 
 ## Alpha ingestion vs operator chat

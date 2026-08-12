@@ -48,6 +48,8 @@ const BARE_AT_HANDLE = /(?<![a-z:])@[\w.-]+/iu
 /** Banned public copy: pipeline jargon + "cat(s)" as CoinGecko category shorthand. */
 const INTERNAL_JARGON =
   /\btape\b|\boperator(?:s|-list|-facing)?\b|\blane noise\b|\b(?:CG|CoinGecko)\s+cats?\b|\bcats?\s+#\d+\b|\bcat\s+(?:back\s+on|gone\s+from)\b|\b(?:on|off|from)\s+(?:CG|CoinGecko)\b/iu
+/** Stock watch closer — prompts ban it; reject so distill retries with varied phrasing. */
+const STOCK_WATCH_PHRASE = /\bworth watching\b/iu
 const MARKDOWN_BODY_MARKERS = /(?:^|\n)\s*#{1,6}\s|(?:\*\*|__|`)/u
 
 export type DistillSessionRunner = (
@@ -272,6 +274,7 @@ export function validateTelegramTopicOutput(
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
   if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
+  if (STOCK_WATCH_PHRASE.test(text)) return { ok: false, reason: "stock-watch-phrase" }
   if (TOPIC_SECTION_HEADER.test(text)) return { ok: false, reason: "section-header" }
   if (TOPIC_BULLET_LINE.test(text)) return { ok: false, reason: "bullet-list" }
   if (mentionsOtherNarrative(text, otherNarratives)) {
@@ -304,6 +307,7 @@ function validatePlainDigestBody(body: string): { ok: true; text: string } | { o
   if (BARE_AT_HANDLE.test(text)) return { ok: false, reason: "bare-at-handle" }
   if (hasLocalWorkspaceRefs(text)) return { ok: false, reason: "workspace-path" }
   if (INTERNAL_JARGON.test(text)) return { ok: false, reason: "internal-jargon" }
+  if (STOCK_WATCH_PHRASE.test(text)) return { ok: false, reason: "stock-watch-phrase" }
   if (MARKDOWN_BODY_MARKERS.test(text)) return { ok: false, reason: "markdown-in-body" }
   return { ok: true, text: scrubWatchProse(text) }
 }
