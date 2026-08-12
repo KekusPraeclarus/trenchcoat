@@ -311,6 +311,8 @@ export const ConfigSchema = z.object({
     max_active: z.number().int().min(1).max(1).default(1),
     max_immediate_builds_per_utc_day: z.number().int().min(0).max(10).default(2),
     max_origin_move_rebuilds: z.number().int().min(0).max(3).default(1),
+    /** Auto re-propose after pre-review revise before operator failure notify */
+    max_pre_review_revises: z.number().int().min(0).max(10).default(5),
     max_weekly_deferred: z.number().int().min(0).max(5).default(1),
     approval_ttl_hours: z.number().int().min(1).max(168).default(24),
     max_evidence_bytes: z.number().int().min(1_000).max(2_000_000).default(100_000),
@@ -369,6 +371,7 @@ export const ConfigSchema = z.object({
     max_active: 1,
     max_immediate_builds_per_utc_day: 2,
     max_origin_move_rebuilds: 1,
+    max_pre_review_revises: 5,
     max_weekly_deferred: 1,
     approval_ttl_hours: 24,
     max_evidence_bytes: 100_000,

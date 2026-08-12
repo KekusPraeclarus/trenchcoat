@@ -440,6 +440,7 @@ async function cmdRemediations(rest: string[]): Promise<void> {
       ...incident,
       phase: "triaged",
       terminalError: undefined,
+      preReviewReviseCount: 0,
       updatedAt: systemClock.nowIso(),
     })
     file = { ...file, activeIncidentId: id }

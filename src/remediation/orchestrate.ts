@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 import { writeAtomicFileFsync } from "../lib/fs-atomic.js"
@@ -25,6 +25,7 @@ import {
 } from "./approval.js"
 import { evaluateProposedPaths, evaluateWorktreeConfinement, pathsMateriallyExpanded } from "./confinement.js"
 import { runRemediationGates, runSmokeChecks, selectSmokeChecks } from "./gates.js"
+import { decidePreReviewLoop } from "./pre-review-loop.js"
 import {
   candidateToIncident,
   collectRemediationIntake,
@@ -540,92 +541,130 @@ async function runRemediationPhases(args: Readonly<{
     await setPhase("diagnosed")
   }
 
-  // Propose
-  if (record.phase === "diagnosed" || record.phase === "proposing") {
-    await setPhase("proposing")
-    const priorReviewPath = join(artDir, "pre-review.json")
-    const prop = await runProposeAgent({
-      repoRoot: args.repoRoot,
-      diagnosisPath,
-      model: ir.propose_model,
-      ...(existsSync(priorReviewPath) ? { priorReviewPath } : {}),
-    })
-    if (!prop.ok) throw new Error(`propose:${prop.reason}`)
-    if (prop.proposal.viable === false) {
-      const reason = (prop.proposal.notViableReason ?? "not-viable").slice(0, 500)
+  // Propose ↔ pre-review loop (auto-revise up to max_pre_review_revises)
+  const maxPreReviewRevises = ir.max_pre_review_revises
+  while (
+    record.phase === "diagnosed"
+    || record.phase === "proposing"
+    || record.phase === "proposed"
+    || record.phase === "pre-reviewing"
+  ) {
+    if (record.phase === "diagnosed" || record.phase === "proposing") {
+      await setPhase("proposing")
+      const priorReviewPath = join(artDir, "pre-review.json")
+      const prop = await runProposeAgent({
+        repoRoot: args.repoRoot,
+        diagnosisPath,
+        model: ir.propose_model,
+        ...(existsSync(priorReviewPath) ? { priorReviewPath } : {}),
+      })
+      if (!prop.ok) throw new Error(`propose:${prop.reason}`)
+      if (prop.proposal.viable === false) {
+        const reason = (prop.proposal.notViableReason ?? "not-viable").slice(0, 500)
+        await writeAtomicFileFsync(
+          proposalPath,
+          `${JSON.stringify(prop.proposal, null, 2)}\n`,
+          0o600,
+        )
+        await setPhase("ignored", {
+          terminalError: `not-viable:${reason}`,
+        })
+        if (record.origin === "discord-suggestion") {
+          const { markSuggestionNotViable } = await import("./suggestions.js")
+          const ledger = markSuggestionNotViable(
+            store.loadSuggestions(),
+            record.incidentId,
+            reason,
+            systemClock.nowIso(),
+          )
+          await store.saveSuggestions(ledger)
+        }
+        return
+      }
+      if (prop.proposal.paths.length === 0) {
+        throw new Error("propose:viable-without-paths")
+      }
+      const confinement = evaluateProposedPaths({
+        paths: prop.proposal.paths,
+        ...(prop.proposal.typedMigration
+          ? { typedMigration: prop.proposal.typedMigration }
+          : {}),
+      })
+      if (!confinement.ok || confinement.riskLevel === "deny") {
+        throw new Error(`proposal-deny:${confinement.violations.join(",")}`)
+      }
+      const risk = classifyRemediationRisk({
+        paths: prop.proposal.paths,
+        ...(prop.proposal.typedMigration
+          ? { typedMigration: prop.proposal.typedMigration }
+          : {}),
+      })
+      const hash = proposalContentHash(prop.proposal)
       await writeAtomicFileFsync(
         proposalPath,
         `${JSON.stringify(prop.proposal, null, 2)}\n`,
         0o600,
       )
-      await setPhase("ignored", {
-        terminalError: `not-viable:${reason}`,
+      await setPhase("proposed", {
+        riskLevel: risk.level,
+        riskReasons: [...risk.reasons],
+        proposalHash: hash,
+        proposedPaths: [...prop.proposal.paths],
+        smokeChecks: selectSmokeChecks(record.component, prop.proposal.smokeChecks),
       })
-      if (record.origin === "discord-suggestion") {
-        const { markSuggestionNotViable } = await import("./suggestions.js")
-        const ledger = markSuggestionNotViable(
-          store.loadSuggestions(),
-          record.incidentId,
-          reason,
-          systemClock.nowIso(),
-        )
-        await store.saveSuggestions(ledger)
-      }
-      return
     }
-    if (prop.proposal.paths.length === 0) {
-      throw new Error("propose:viable-without-paths")
-    }
-    const confinement = evaluateProposedPaths({
-      paths: prop.proposal.paths,
-      ...(prop.proposal.typedMigration
-        ? { typedMigration: prop.proposal.typedMigration }
-        : {}),
-    })
-    if (!confinement.ok || confinement.riskLevel === "deny") {
-      throw new Error(`proposal-deny:${confinement.violations.join(",")}`)
-    }
-    const risk = classifyRemediationRisk({
-      paths: prop.proposal.paths,
-      ...(prop.proposal.typedMigration
-        ? { typedMigration: prop.proposal.typedMigration }
-        : {}),
-    })
-    const hash = proposalContentHash(prop.proposal)
-    await writeAtomicFileFsync(
-      proposalPath,
-      `${JSON.stringify(prop.proposal, null, 2)}\n`,
-      0o600,
-    )
-    await setPhase("proposed", {
-      riskLevel: risk.level,
-      riskReasons: [...risk.reasons],
-      proposalHash: hash,
-      proposedPaths: [...prop.proposal.paths],
-      smokeChecks: selectSmokeChecks(record.component, prop.proposal.smokeChecks),
-    })
-  }
 
-  // Pre-build review
-  if (record.phase === "proposed" || record.phase === "pre-reviewing") {
-    await setPhase("pre-reviewing")
-    const review = await runReviewAgent({
-      repoRoot: args.repoRoot,
-      diagnosisPath,
-      proposalPath,
-      model: ir.review_model,
-    })
-    if (!review.ok) throw new Error(`pre-review:${review.reason}`)
-    const validated = hostValidateReview(review.review)
-    await writeAtomicFileFsync(
-      join(artDir, "pre-review.json"),
-      `${JSON.stringify(validated, null, 2)}\n`,
-      0o600,
-    )
-    if (validated.decision !== "approve") {
-      throw new Error(`pre-review-${validated.decision}`)
+    if (record.phase === "proposed" || record.phase === "pre-reviewing") {
+      await setPhase("pre-reviewing")
+      const review = await runReviewAgent({
+        repoRoot: args.repoRoot,
+        diagnosisPath,
+        proposalPath,
+        model: ir.review_model,
+      })
+      if (!review.ok) throw new Error(`pre-review:${review.reason}`)
+      const validated = hostValidateReview(review.review)
+      const preReviewPath = join(artDir, "pre-review.json")
+      await writeAtomicFileFsync(
+        preReviewPath,
+        `${JSON.stringify(validated, null, 2)}\n`,
+        0o600,
+      )
+      const loop = decidePreReviewLoop({
+        decision: validated.decision,
+        reviseCount: record.preReviewReviseCount ?? 0,
+        maxRevises: maxPreReviewRevises,
+      })
+      if (loop.kind === "approve") {
+        await setPhase("pre-reviewed")
+        break
+      }
+      if (loop.kind === "fail") {
+        throw new Error(loop.reason)
+      }
+      // Archive this revise round, then re-enter propose with priorPreReviewPath
+      if (existsSync(proposalPath)) {
+        await writeAtomicFileFsync(
+          join(artDir, `proposal.revise-${loop.nextCount}.json`),
+          readFileSync(proposalPath, "utf8"),
+          0o600,
+        )
+      }
+      await writeAtomicFileFsync(
+        join(artDir, `pre-review.revise-${loop.nextCount}.json`),
+        `${JSON.stringify(validated, null, 2)}\n`,
+        0o600,
+      )
+      await appendRemediationJournal(layout, record.incidentId, {
+        event: "pre-review-revise",
+        round: loop.nextCount,
+        max: maxPreReviewRevises,
+      })
+      await setPhase("diagnosed", {
+        preReviewReviseCount: loop.nextCount,
+        terminalError: undefined,
+      })
     }
-    await setPhase("pre-reviewed")
   }
 
   // Risk / approval gate

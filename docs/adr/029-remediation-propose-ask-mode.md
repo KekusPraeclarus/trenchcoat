@@ -51,3 +51,6 @@ in an isolated worktree under the repo mutation lock.
   `priorPreReviewPath` (existing `pre-review.json`) and must address every
   concern or set `viable=false` — blind retries without that feedback loop
   reproduced the same reject.
+- Host auto-loops `revise` → propose up to `max_pre_review_revises` (default 5)
+  inside one worker run. `reject` and revise-exhausted still fail closed for the
+  operator.

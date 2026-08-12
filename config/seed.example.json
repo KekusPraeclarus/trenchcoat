@@ -448,6 +448,7 @@
     "max_active": 1,
     "max_immediate_builds_per_utc_day": 2,
     "max_origin_move_rebuilds": 1,
+    "max_pre_review_revises": 5,
     "max_weekly_deferred": 1,
     "approval_ttl_hours": 24,
     "max_evidence_bytes": 100000,

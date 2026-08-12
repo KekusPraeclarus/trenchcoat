@@ -38,6 +38,7 @@ import {
 import { remediationLayout } from "../../src/remediation/paths.js"
 import type { PatchProposal, RemediationIncident } from "../../src/remediation/schemas.js"
 import { PatchProposalSchema } from "../../src/remediation/schemas.js"
+import { decidePreReviewLoop } from "../../src/remediation/pre-review-loop.js"
 
 describe("incident remediation config", () => {
   it("migrates schema 12 → 13 with disabled defaults", () => {
@@ -77,6 +78,7 @@ describe("incident remediation config", () => {
     expect(parsed.incident_remediation.schedule_enabled).toBe(false)
     expect(parsed.incident_remediation.revalidation.enabled).toBe(true)
     expect(parsed.incident_remediation.discord_suggestions.enabled).toBe(false)
+    expect(parsed.incident_remediation.max_pre_review_revises).toBe(5)
   })
 
   it("preserves explicit enabled true only when set", () => {
@@ -87,6 +89,39 @@ describe("incident remediation config", () => {
     const ir = migrated["incident_remediation"] as Record<string, unknown>
     expect(ir["enabled"]).toBe(true)
     expect(ir["schedule_enabled"]).toBe(true)
+  })
+})
+
+describe("pre-review revise loop", () => {
+  it("approves and rejects without looping", () => {
+    expect(decidePreReviewLoop({
+      decision: "approve",
+      reviseCount: 2,
+      maxRevises: 5,
+    })).toEqual({ kind: "approve" })
+    expect(decidePreReviewLoop({
+      decision: "reject",
+      reviseCount: 0,
+      maxRevises: 5,
+    })).toEqual({ kind: "fail", reason: "pre-review-reject" })
+  })
+
+  it("allows up to max revises then exhausts", () => {
+    expect(decidePreReviewLoop({
+      decision: "revise",
+      reviseCount: 0,
+      maxRevises: 5,
+    })).toEqual({ kind: "revise", nextCount: 1 })
+    expect(decidePreReviewLoop({
+      decision: "revise",
+      reviseCount: 4,
+      maxRevises: 5,
+    })).toEqual({ kind: "revise", nextCount: 5 })
+    expect(decidePreReviewLoop({
+      decision: "revise",
+      reviseCount: 5,
+      maxRevises: 5,
+    })).toEqual({ kind: "fail", reason: "pre-review-revise-exhausted:5" })
   })
 })
 

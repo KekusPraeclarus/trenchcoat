@@ -140,6 +140,8 @@ export const RemediationIncidentSchema = z.object({
   worktreePath: z.string().min(1).max(512).optional(),
   attemptCount: z.number().int().min(0).max(20).default(0),
   originMoveRebuilds: z.number().int().min(0).max(5).default(0),
+  /** Completed pre-review revise → re-propose cycles (caps at config max) */
+  preReviewReviseCount: z.number().int().min(0).max(20).default(0),
   deferredAt: z.string().min(1).max(64).optional(),
   deferredReason: z.string().max(500).optional(),
   terminalError: z.string().max(500).optional(),

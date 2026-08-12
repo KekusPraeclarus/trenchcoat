@@ -357,6 +357,7 @@ Set it to `false` to keep the lane silent on Discord.
 | `max_active` | `1` | One active remediation |
 | `max_immediate_builds_per_utc_day` | `2` | Daily build cap |
 | `max_origin_move_rebuilds` | `1` | Rebuilds when origin moves |
+| `max_pre_review_revises` | `5` | Auto re-propose after pre-review `revise` before operator failure notify |
 | `max_weekly_deferred` | `1` | Weekly deferred items per run |
 | `approval_ttl_hours` | `24` | High-risk Telegram approval TTL |
 | `max_evidence_bytes` / `max_diff_lines` | `100000` / `400` | Evidence and diff bounds |

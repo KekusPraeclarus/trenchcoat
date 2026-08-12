@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-07-27
+last_verified: 2026-08-12
 ---
 
 # Incident remediation
@@ -35,8 +35,10 @@ claim-index writes take a brief agent lock only for that mutation.
    survive the 1k truncation.
    diagnose/propose may return typed `not-viable` (host closes the incident).
    Distinguish `propose:session failed` (infra) from `pre-review-reject` (product).
-   Retries after pre-review reject/revise pass `priorPreReviewPath` into propose
-   so the next proposal must address host-stored concerns (or mark not-viable).
+   On pre-review `revise`, the host re-enters propose with `priorPreReviewPath` up
+   to `max_pre_review_revises` (default 5) before `pre-review-revise-exhausted`
+   fails the incident for operator attention. `reject` fails on the first decision.
+   Each revise round archives `proposal.revise-N.json` and `pre-review.revise-N.json`.
    Verbose `invariants`/`smokeChecks` labels are host-truncated to 64 chars.
 5. **Weekly** — Monday 08:00 local; revalidate deferred queue; at most one item.
 6. **Post-fix claim audit (INV-S28)** — after deploy health/smoke, set an
