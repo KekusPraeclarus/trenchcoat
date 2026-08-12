@@ -93,26 +93,6 @@ export function allValidCasFrom(text: string): string[] {
   return out
 }
 
-/** Same embed scan as research-candidates CHAIN_CA_IN_TEXT — shared so live-tape stays aligned */
-const CHAIN_CA_IN_TEXT = /\b([a-z][a-z0-9-]{1,31}):([A-Za-z0-9]{32,128})\b/giu
-
-export type ChainCaTokenHit = Readonly<{ chainRaw: string; token: string }>
-
-export function chainCaTokensInText(text: string): ChainCaTokenHit[] {
-  const out: ChainCaTokenHit[] = []
-  const seen = new Set<string>()
-  for (const match of text.matchAll(CHAIN_CA_IN_TEXT)) {
-    const chainRaw = match[1]?.toLowerCase()
-    const token = match[2]
-    if (!chainRaw || !token) continue
-    const key = `${chainRaw}:${token}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ chainRaw, token })
-  }
-  return out
-}
-
 export function stripDiscordFormatting(text: string): string {
   return text
     .replace(/<@!?&?\d+>/gu, " ")

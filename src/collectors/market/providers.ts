@@ -29,7 +29,6 @@ export type MarketPair = Readonly<{
   liquidityUsd?: number
   volume24hUsd?: number
   fdv?: number
-  priceChangeH24?: number
   buys24h: number
   sells24h: number
   url: string
@@ -77,16 +76,12 @@ function parseDexScreenerPair(raw: unknown): MarketPair | undefined {
   try {
     const liquidity = Reflect.get(raw, "liquidity")
     const volume = Reflect.get(raw, "volume")
-    const priceChange = Reflect.get(raw, "priceChange")
     const txns = Reflect.get(raw, "txns")
     const txns24h = txns !== null && typeof txns === "object" ? Reflect.get(txns, "h24") : undefined
     const buys = txns24h !== null && typeof txns24h === "object" ? numberOrUndefined(Reflect.get(txns24h, "buys")) : undefined
     const sells = txns24h !== null && typeof txns24h === "object" ? numberOrUndefined(Reflect.get(txns24h, "sells")) : undefined
     const volume24h = volume !== null && typeof volume === "object"
       ? numberOrUndefined(Reflect.get(volume, "h24"))
-      : undefined
-    const priceChangeH24 = priceChange !== null && typeof priceChange === "object"
-      ? numberOrUndefined(Reflect.get(priceChange, "h24"))
       : undefined
     return {
       chainId: stringValue(Reflect.get(raw, "chainId"), "chainId"),
@@ -105,7 +100,6 @@ function parseDexScreenerPair(raw: unknown): MarketPair | undefined {
       ...(liquidity !== null && typeof liquidity === "object" && numberOrUndefined(Reflect.get(liquidity, "usd")) !== undefined ? { liquidityUsd: numberOrUndefined(Reflect.get(liquidity, "usd"))! } : {}),
       ...(volume24h !== undefined ? { volume24hUsd: volume24h } : {}),
       ...(numberOrUndefined(Reflect.get(raw, "fdv")) === undefined ? {} : { fdv: numberOrUndefined(Reflect.get(raw, "fdv"))! }),
-      ...(priceChangeH24 === undefined ? {} : { priceChangeH24 }),
       buys24h: buys ?? 0,
       sells24h: sells ?? 0,
       url: stringValue(Reflect.get(raw, "url"), "url"),

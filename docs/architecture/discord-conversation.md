@@ -4,7 +4,7 @@ scope: module
 status: active
 last_verified: 2026-08-12
 read_when:
-  - Editing src/discord/conversation*.ts, src/discord/live-tape.ts, or skills/discord-chat.
+  - Editing src/discord/conversation*.ts or skills/discord-chat.
   - Changing Discord channel message routing after research/tracking.
 ---
 
@@ -50,19 +50,6 @@ chat remains separate ([chat-agent.md](chat-agent.md)).
 - Replies never narrate host mechanics (skills, INDEX, paths); conversational
   acknowledgments/corrections are allowed. Path-scrubbed, empty allowed-mentions,
   chunked via `splitDiscordText`
-
-## Live market tape (CA turns)
-
-- One validated CA per turn via shared extraction (`chainCaTokensInText` /
-  `parseChainCa` / bare CA + chain hint) and `validateConversationResearchSubject`
-- Host DexScreener prefetch before the ask-mode runner (INV-R1 gated fetch)
-- Pair selection matches collect-observation (chain id + base token address find;
-  never liquidity rank)
-- Trusted metric lines inject into `buildDiscordConversationPrompt`
-- Fetch error fails closed: soft note only; no invented numbers
-- When tape status is ok, the host prompt overrides the discord-chat skill
-  knowledge-store-only rule for current market numbers
-- Synthesis path does not prefetch; it stays report-path synthesis only
 
 ## Research hand-off
 
