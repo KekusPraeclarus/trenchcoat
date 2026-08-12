@@ -1341,6 +1341,7 @@ function applyClassifierResult(args: Readonly<{
     triageReason: "discord-suggestion-formed",
     attemptCount: 0,
     originMoveRebuilds: 0,
+    preReviewReviseCount: 0,
     evidencePaths: [pending.evidencePath],
     ...(pending.extendsIncidentId
       ? { extendsIncidentId: pending.extendsIncidentId }
@@ -1410,6 +1411,7 @@ async function createSuggestionIncident(args: Readonly<{
     triageReason: "discord-suggestion-formed",
     attemptCount: 0,
     originMoveRebuilds: 0,
+    preReviewReviseCount: 0,
     evidencePaths: args.entry.evidencePath ? [args.entry.evidencePath] : [],
     ...(args.entry.extendsIncidentId
       ? { extendsIncidentId: args.entry.extendsIncidentId }

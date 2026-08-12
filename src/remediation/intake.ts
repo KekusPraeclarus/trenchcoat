@@ -477,6 +477,7 @@ export function candidateToIncident(
     severity: candidate.severity,
     attemptCount: 0,
     originMoveRebuilds: 0,
+    preReviewReviseCount: 0,
     evidencePaths: candidate.evidence
       .map((e) => e.path)
       .filter((p): p is string => Boolean(p)),
