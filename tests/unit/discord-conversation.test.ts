@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  buildDiscordConversationPrompt,
   extractResearchBlock,
   sanitizeConversationReply,
   validateConversationResearchSubject,
@@ -18,6 +19,8 @@ vi.mock("../../src/lib/config.js", () => ({
     },
   }),
 }))
+
+const RH_CA = "0xF8BC08092C06dB6148114DCf82AF881F1085f92b"
 
 describe("discord conversation", () => {
   it("extracts final research fence and strips it from visible text", () => {
@@ -77,6 +80,57 @@ describe("discord conversation", () => {
     expect(cleaned).not.toMatch(/state index/i)
     expect(cleaned).not.toMatch(/pull context/i)
     expect(cleaned.startsWith("**$KARMA")).toBe(true)
+  })
+
+  it("strips DexScreener prefetch live-tape preamble leaks", () => {
+    const cleaned = sanitizeConversationReply([
+      "I'll prefetch the host-fetched live tape from DexScreener first.",
+      "FDV is $12k with thin liquidity after the dump.",
+    ].join("\n"))
+    expect(cleaned).not.toMatch(/dexscreener/i)
+    expect(cleaned).not.toMatch(/prefetch/i)
+    expect(cleaned).not.toMatch(/live tape/i)
+    expect(cleaned).not.toMatch(/host-fetched/i)
+    expect(cleaned.startsWith("FDV is")).toBe(true)
+  })
+
+  it("buildDiscordConversationPrompt injects ok live tape metrics and override", () => {
+    const prompt = buildDiscordConversationPrompt(
+      `thoughts on robinhood:${RH_CA}?`,
+      "user-1",
+      {
+        status: "ok",
+        chain: "robinhood",
+        tokenAddress: RH_CA,
+        symbol: "NUKED",
+        fdvUsd: 12_000,
+        liquidityUsd: 500,
+        priceChangeH24: -92.5,
+        fetchedAt: "2026-08-12T10:00:00.000Z",
+      },
+    )
+    expect(prompt).toContain("fdvUsd=12000")
+    expect(prompt).toContain("liquidityUsd=500")
+    expect(prompt).toContain("priceChangeH24=-92.5")
+    expect(prompt).toMatch(/overrides the discord-chat skill knowledge-store-only rule/i)
+    expect(prompt).toMatch(/Open the reply with FDV\/mcap/i)
+  })
+
+  it("buildDiscordConversationPrompt notes failed tape without numbers", () => {
+    const prompt = buildDiscordConversationPrompt(
+      `thoughts on robinhood:${RH_CA}?`,
+      "user-1",
+      {
+        status: "failed",
+        chain: "robinhood",
+        tokenAddress: RH_CA,
+        fetchedAt: "2026-08-12T10:00:00.000Z",
+      },
+    )
+    expect(prompt).toMatch(/live market fetch failed/i)
+    expect(prompt).toMatch(/Do not invent numbers/i)
+    expect(prompt).not.toContain("fdvUsd=")
+    expect(prompt).not.toContain("liquidityUsd=")
   })
 
   it("keeps conversational acknowledgments and corrections", () => {

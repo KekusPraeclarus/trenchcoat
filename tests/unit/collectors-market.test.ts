@@ -23,6 +23,14 @@ describe("market collectors", () => {
     expect(pair.buys24h + pair.sells24h).toBe(200)
   })
 
+  it("reads priceChange.h24 into priceChangeH24 when present", () => {
+    const base = (fixture("dex-pair.json") as { pairs: object[] }).pairs[0]!
+    const pair = parseDexScreenerPairs({
+      pairs: [{ ...base, priceChange: { h24: -42.5, h6: -10 } }],
+    })[0]!
+    expect(pair.priceChangeH24).toBe(-42.5)
+  })
+
   it("skips DexScreener pairs with overlong or missing token fields", () => {
     const good = (fixture("dex-pair.json") as { pairs: unknown[] }).pairs[0]!
     const pairs = parseDexScreenerPairs({
