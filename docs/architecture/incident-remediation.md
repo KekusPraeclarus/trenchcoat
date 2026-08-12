@@ -29,7 +29,8 @@ claim-index writes take a brief agent lock only for that mutation.
    isolated worktree → post-diff review → **`pnpm install --frozen-lockfile`**
    (sibling worktrees do not inherit `node_modules`) → gates (`typecheck` /
    `lint` / `test:all`) → ff-only push →
-   deploy → smoke → revert+`runtime.prev` on failure. Diagnose/propose/review
+   deploy via `install-systemd.sh` on Linux or `install-launchd.sh` on macOS →
+   smoke → revert+`runtime.prev` on failure. Diagnose/propose/review
    Cursor sessions use **ask** mode ([ADR 029](../adr/029-remediation-propose-ask-mode.md));
    gate command `detail` keeps the **tail** of output so vitest failure summaries
    survive the 1k truncation.

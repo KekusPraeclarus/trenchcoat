@@ -64,8 +64,16 @@ export async function writeDeploymentReceipt(
   )
 }
 
+/** Host installer for the current OS (systemd on Linux, launchd on macOS). */
+export function resolveHostInstallScript(repoRoot: string): string {
+  const name = process.platform === "linux"
+    ? "install-systemd.sh"
+    : "install-launchd.sh"
+  return join(repoRoot, "ops", name)
+}
+
 /**
- * Deploy host runtime from a clean local repo via ops/install-launchd.sh.
+ * Deploy host runtime from a clean local repo via the OS install script.
  * Never passes --allow-dirty. On failure, attempts runtime.prev rollback.
  */
 export async function deployRuntimeFromRepo(opts: Readonly<{
@@ -76,13 +84,13 @@ export async function deployRuntimeFromRepo(opts: Readonly<{
   nowIso?: string
   withHarness?: boolean
 }>): Promise<DeployResult> {
-  const script = join(opts.repoRoot, "ops", "install-launchd.sh")
+  const script = resolveHostInstallScript(opts.repoRoot)
   if (!existsSync(script)) {
     const result: DeployResult = {
       ok: false,
       exitCode: 127,
       stdout: "",
-      stderr: "install-launchd.sh missing",
+      stderr: `${script} missing`,
       rolledBack: false,
     }
     await writeDeploymentReceipt(opts.archiveRoot, {

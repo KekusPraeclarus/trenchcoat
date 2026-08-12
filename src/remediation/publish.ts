@@ -3,7 +3,11 @@ import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { WorkspaceLock } from "../lib/lock.js"
-import { deployRuntimeFromRepo, rollbackRuntimePrev } from "../harness/deploy.js"
+import {
+  deployRuntimeFromRepo,
+  resolveHostInstallScript,
+  rollbackRuntimePrev,
+} from "../harness/deploy.js"
 import { systemClock } from "../lib/clock.js"
 import {
   remediationBranchName,
@@ -224,7 +228,7 @@ export function revertAndRedeploy(args: Readonly<{
       return { ok: false, detail: push.stderr || "revert push failed" }
     }
     rollbackRuntimePrev()
-    const script = join(args.repoRoot, "ops", "install-launchd.sh")
+    const script = resolveHostInstallScript(args.repoRoot)
     const deploy = spawnSync(script, [], {
       cwd: args.repoRoot,
       encoding: "utf8",
@@ -233,7 +237,7 @@ export function revertAndRedeploy(args: Readonly<{
     if ((deploy.status ?? 1) !== 0) {
       return {
         ok: false,
-        detail: `revert local but install failed: ${(deploy.stderr || "").slice(0, 300)}`,
+        detail: `revert local but install failed: ${(deploy.stderr || deploy.stdout || "").slice(0, 300)}`,
       }
     }
     return { ok: true }
