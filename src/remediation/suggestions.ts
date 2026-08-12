@@ -196,6 +196,40 @@ export async function maybePostSuggestionFollowup(args: Readonly<{
 }
 
 /**
+ * Posts follow-ups for forming entries that missed the ask on an earlier scan
+ * (for example when the feature shipped after the entry was already forming).
+ */
+export async function backfillPendingSuggestionFollowups(args: Readonly<{
+  client: DiscordRestClient
+  ledger: SuggestionLedgerFile
+  enabled: boolean
+  nowIso: string
+}>): Promise<{ ledger: SuggestionLedgerFile; posted: number }> {
+  if (!args.enabled) return { ledger: args.ledger, posted: 0 }
+  let ledger = args.ledger
+  let posted = 0
+  for (const entry of ledger.entries) {
+    if (entry.outcome !== "forming") continue
+    if (entry.followupMessageId) continue
+    if (entry.formingRounds !== 1) continue
+    const replyToMessageId = entry.humanMessageIds.at(-1)
+    if (!replyToMessageId) continue
+    const result = await maybePostSuggestionFollowup({
+      client: args.client,
+      ledger,
+      entryId: entry.entryId,
+      channelId: entry.channelId,
+      replyToMessageId,
+      enabled: true,
+      nowIso: args.nowIso,
+    })
+    ledger = result.ledger
+    if (result.posted) posted += 1
+  }
+  return { ledger, posted }
+}
+
+/**
  * Admit a thread only when the operator asks for something about a product
  * surface. Both signals may come from different messages in the same thread.
  */
@@ -688,6 +722,19 @@ export async function scanDiscordSuggestions(args: Readonly<{
   let newThisScan = 0
   let threadsSeen = 0
 
+  const applyFollowupBackfill = async (ledgerIn: SuggestionLedgerFile) => {
+    const backfill = await backfillPendingSuggestionFollowups({
+      client,
+      ledger: ledgerIn,
+      enabled: ds.followup_enabled,
+      nowIso,
+    })
+    if (backfill.posted > 0) {
+      outcomes["followup-asked"] = (outcomes["followup-asked"] ?? 0) + backfill.posted
+    }
+    return backfill.ledger
+  }
+
   // Admit queued-waiting first (oldest first)
   const waiting = [...ledger.queuedWaiting].sort(
     (a, b) => Date.parse(a.enqueuedAt) - Date.parse(b.enqueuedAt),
@@ -850,6 +897,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
   }
 
   if (pendingThreads.length === 0) {
+    ledger = await applyFollowupBackfill(ledger)
     await args.store.saveSuggestions(ledger)
     await args.store.save(incidentsFile)
     await args.store.saveCursors({
@@ -911,6 +959,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
       })
       bump(outcome)
     }
+    ledger = await applyFollowupBackfill(ledger)
     await args.store.saveSuggestions(ledger)
     await args.store.save(incidentsFile)
     await args.store.saveCursors({
@@ -948,6 +997,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
       })
       bump(outcome)
     }
+    ledger = await applyFollowupBackfill(ledger)
     await args.store.saveSuggestions(ledger)
     await args.store.save(incidentsFile)
     await args.store.saveCursors({
@@ -999,6 +1049,7 @@ export async function scanDiscordSuggestions(args: Readonly<{
     }
   }
 
+  ledger = await applyFollowupBackfill(ledger)
   await args.store.saveSuggestions(ledger)
   await args.store.save(incidentsFile)
   await args.store.saveCursors({

@@ -14,6 +14,7 @@ import {
   incidentSuggestionFingerprint,
   renderSuggestionFollowup,
   maybePostSuggestionFollowup,
+  backfillPendingSuggestionFollowups,
   followupReplyTargetId,
   SUGGESTION_FOLLOWUP_PREFIX,
   SUGGESTION_FOLLOWUP_FALLBACK,
@@ -492,6 +493,20 @@ describe("suggestion followup", () => {
     const out = await post({ entry, sent, fail: true })
     expect(out.posted).toBe(false)
     expect(out.ledger.entries[0]!.followupMessageId).toBeUndefined()
+  })
+
+  it("backfills a missed follow-up for an older forming entry", async () => {
+    const sent: string[] = []
+    const entry = formingEntry()
+    const out = await backfillPendingSuggestionFollowups({
+      client: fakeClient(sent),
+      ledger: ledgerWith(entry),
+      enabled: true,
+      nowIso: NOW,
+    })
+    expect(out.posted).toBe(1)
+    expect(sent).toHaveLength(1)
+    expect(out.ledger.entries[0]!.followupMessageId).toBe("1000000000000000777")
   })
 })
 
