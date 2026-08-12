@@ -2,7 +2,7 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-12
 ---
 
 # Module docs
@@ -32,7 +32,7 @@ last_verified: 2026-07-24
 | [source-lifecycle.md](source-lifecycle.md) | FYP candidacy, lagged promote/demote, managed private X list (ADR 004) + Farcaster follow-graph (ADR 007) | `src/sources/`, `src/sources/fc-lifecycle.ts`, `src/collectors/twitter/managed-list.ts`, `src/collectors/farcaster/`, `source-list` / `fc-source` CLI |
 | [harness-improvement.md](harness-improvement.md) | Policy lane (ADR 005) + shadow improver-config meta lane (ADR 039); mining/manifesto/keep/prior-attempts; sealed-only inputs; operator meta promote; improver must not edit own code/gates (ADR 038) | `src/harness/`, `tc harness`, `config/harness-improver.json` |
 
-ADRs live under [`docs/adr/`](../adr/) (incl. 038/039). Provider knowledge under
+ADRs live under [`docs/adr/`](../adr/) (incl. 038/039/046). Provider knowledge under
 [`docs/knowledge/`](../knowledge/) (incl. [harness-self-improvement-patterns.md](../knowledge/harness-self-improvement-patterns.md)).
 Parallel-worktree merge rules: [`../development.md`](../development.md).
 

@@ -34,8 +34,11 @@ Disposable deep research sub-session for operator chat / on-demand research.
    matching the host-supplied chain, address, and symbol.
    Mintable / mint-authority scanner flags are cautions — judge emissions,
    reward mechanics, and controls; host still blocks track for mintable
-   memecoins or missing classification. Never invent shapes like
-   `{ action, subject, rationale }`.
+   memecoins or missing classification. When inbox `market-quality` is
+   `status=fail` and the scanner passes, propose `verdict: track` with
+   `watchlistStatus: watching`. The host may downgrade tracking→watching on
+   market-quality fail. Do not expect broadcast for watching thin tokens.
+   Never invent shapes like `{ action, subject, rationale }`.
 
 ## agent.md (dossier)
 

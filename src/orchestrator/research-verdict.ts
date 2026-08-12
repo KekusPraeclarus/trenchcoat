@@ -52,12 +52,16 @@ export function evaluateResearchSubscribe(args: Readonly<{
   runId: string
   identity: CanonicalIdentity
   security: SecuritySnapshot
+  marketQuality?: { status: "pass" | "fail" }
 }>): ResearchSubscribeDecision {
   if (args.security.hardFail || args.security.status === "hard-fail") {
     return { subscribe: false, reason: "security-hard-fail" }
   }
   if (args.security.status === "pending" || args.security.status === "unsupported-chain") {
     return { subscribe: false, reason: `security-${args.security.status}` }
+  }
+  if (args.marketQuality?.status === "fail") {
+    return { subscribe: false, reason: "market-quality-fail" }
   }
 
   const file = loadDecisionProposals(args.agentRoot, args.runId)
@@ -78,6 +82,15 @@ export function evaluateResearchSubscribe(args: Readonly<{
       verdict: first.card.verdict,
       reason: `verdict-${first.card.verdict}`,
       proposal: first,
+    }
+  }
+
+  if (track.watchlistStatus === "watching") {
+    return {
+      subscribe: false,
+      verdict: "track",
+      reason: "watchlist-status-watching",
+      proposal: track,
     }
   }
 

@@ -32,9 +32,10 @@ Scan FYP + operator discovery lists and curate the feed with likes/follows.
    research nominations when a canonical `chain` + `tokenAddress` appears verbatim
    in sealed same-run inbox evidence and ≥2 independent authors/clusters support it.
    Prefer confirming hosts listed in `research-candidates-hint.json` when present.
-   Never invent contract addresses. Ticker-only nominations are rejected. The host
-   may enqueue research queue entries only — never watchlist, decisions, ledger, or
-   wallets.
+   Never invent contract addresses. Ticker-only nominations are rejected — the host
+   owns persistent cashtag clusters and the GeckoTerminal new-pools feed. Stay
+   CA-only here. The host may enqueue research queue entries only — never
+   watchlist, decisions, ledger, or wallets.
 5. Optionally write `reports/<run-id>/chat-summary.json` so the host can append
    operator Q&A context to the host-rendered recall report. Never write
    `reports/chat/` directly — the host always writes that path after the run.

@@ -146,7 +146,11 @@ export function dequeueDue(
   nowIso: string,
   limit: number,
   dailyCap: number,
-): { next: ResearchQueueFile; due: ResearchQueueEntry[] } {
+): {
+  next: ResearchQueueFile
+  due: ResearchQueueEntry[]
+  rejected: ResearchQueueEntry[]
+} {
   const now = Date.parse(nowIso)
   const day = nowIso.slice(0, 10)
   const rolled = rolloverCompletedToday(file, day)
@@ -155,6 +159,7 @@ export function dequeueDue(
   const take = Math.min(limit, remainingCap)
 
   const due: ResearchQueueEntry[] = []
+  const rejected: ResearchQueueEntry[] = []
   const remain: ResearchQueueEntry[] = []
   const sorted = sortResearchQueue(rolled.entries)
 
@@ -181,7 +186,9 @@ export function dequeueDue(
       continue
     }
     if (entry.security.status === "fail") {
-      remain.push({ ...entry, status: "rejected" })
+      const nextEntry = { ...entry, status: "rejected" as const }
+      rejected.push(nextEntry)
+      remain.push(nextEntry)
       continue
     }
     if (due.length < take && (entry.status === "pending" || entry.trigger === "operator")) {
@@ -207,6 +214,7 @@ export function dequeueDue(
       completedToday: rolled.completedToday ?? { day, count: 0 },
     },
     due,
+    rejected,
   }
 }
 

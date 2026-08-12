@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-07-27
+last_verified: 2026-08-12
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -105,7 +105,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–045
+│   ├── adr/                  # binding decisions 001–046
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
@@ -186,5 +186,6 @@ Detailed per-module docs live in [architecture/](architecture/README.md):
   [research-queue.md](architecture/research-queue.md), [security-gate.md](architecture/security-gate.md),
   [snapshot-archive.md](architecture/snapshot-archive.md), [audit-metrics.md](architecture/audit-metrics.md)
   — cross-cutting contracts: chain support, candidate identity, the
-  discovery→research funnel, gate semantics, the leakage firewall, and the
+  discovery→research funnel (CA nominations, persistent cashtag bridge, live
+  new-pools feed — ADR 046), gate semantics, the leakage firewall, and the
   scorecard maths

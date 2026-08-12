@@ -6,6 +6,7 @@ import {
   RunManifestSchema,
   SnapshotEnvelopeSchema,
   type GateReceipt,
+  type MarketQualityReceipt,
   type PostRunVerifierReport,
   type ValidationReceipt,
 } from "../contracts/schemas.js"
@@ -106,8 +107,10 @@ function checkS6(runDir: string, receipts: readonly ValidationReceipt[]): Check 
 function checkS9(
   receipts: readonly ValidationReceipt[],
   gateReceipts: readonly GateReceipt[],
+  marketQualityReceipts: readonly MarketQualityReceipt[],
 ): Check {
   const gateById = new Map(gateReceipts.map((g) => [g.receiptId, g] as const))
+  const mqById = new Map(marketQualityReceipts.map((m) => [m.receiptId, m] as const))
   for (const receipt of receipts) {
     if (!receipt.accepted || receipt.gateReceiptId === undefined) continue
     const gate = gateById.get(receipt.gateReceiptId)
@@ -116,6 +119,47 @@ function checkS9(
     }
     if (gate.status !== "pass") {
       return fail("S9", `Gate ${gate.receiptId} for tracking is ${gate.status}, not pass`)
+    }
+
+    const applied = receipt.appliedWatchlistStatus
+    // Legacy: gate present, no appliedWatchlistStatus → gate pass only
+    if (applied === undefined) {
+      if (receipt.marketQualityReceiptId !== undefined) {
+        const mq = mqById.get(receipt.marketQualityReceiptId)
+        if (mq === undefined) {
+          return fail(
+            "S9",
+            `Accepted receipt ${receipt.receiptId} references missing market-quality receipt`,
+          )
+        }
+      }
+      continue
+    }
+
+    if (receipt.marketQualityReceiptId === undefined) {
+      return fail(
+        "S9",
+        `Accepted receipt ${receipt.receiptId} with ${applied} lacks market-quality receipt`,
+      )
+    }
+    const mq = mqById.get(receipt.marketQualityReceiptId)
+    if (mq === undefined) {
+      return fail(
+        "S9",
+        `Accepted receipt ${receipt.receiptId} references missing market-quality receipt`,
+      )
+    }
+    if (applied === "tracking" && mq.status !== "pass") {
+      return fail(
+        "S9",
+        `Market quality ${mq.receiptId} for tracking is ${mq.status}, not pass`,
+      )
+    }
+    if (applied === "watching" && mq.status !== "fail") {
+      return fail(
+        "S9",
+        `Market quality ${mq.receiptId} for watching is ${mq.status}, not fail`,
+      )
     }
   }
   return pass("S9")
@@ -141,7 +185,7 @@ export const runPostRunVerifier: PostRunVerifier = async (input) => {
     checkS3(runDir, input.runId),
     checkS5(runDir),
     checkS6(runDir, input.receipts),
-    checkS9(input.receipts, input.gateReceipts),
+    checkS9(input.receipts, input.gateReceipts, input.marketQualityReceipts),
     checkS23(input),
   ]
   const report: PostRunVerifierReport = {

@@ -130,7 +130,24 @@ automatic correction. Historical manual FYP corrections are not backfilled.
   also accepts `Rem <hex>` typos), `/remediations`, `remediation <id>`
 - CLI: `tc remediations scan|run|status|approve|defer|reject|retry|fail`
 - Config: `incident_remediation.enabled` + `schedule_enabled` (both default false);
-  post-fix audit via nested `revalidation` (schema 14, INV-S28)
+  post-fix audit via nested `revalidation` (schema 14, INV-S28);
+  `max_pre_review_revises` (default 5)
+
+### Repo root and deploy (VPS)
+
+- `tc remediations *` picks `repoRoot` as `cwd` when `ops/install-launchd.sh`
+  exists there, else `TRENCHCOAT_REPO_ROOT`. On the VPS always run from the
+  main checkout (`~/src/trenchcoat`) or set `TRENCHCOAT_REPO_ROOT` to that path.
+  A rem worktree also contains `ops/install-launchd.sh`. If cwd is the worktree,
+  publish calls `assertCleanMain` there and fails with `wrong-branch`.
+- Deploy and rollback install use `resolveHostInstallScript`
+  (`src/harness/deploy.ts`): `ops/install-systemd.sh` on Linux,
+  `ops/install-launchd.sh` on macOS. Do not call launchd install on the VPS.
+- Patches under `src/collectors/market/**` mark DexScreener/CoinGecko impact.
+  After deploy the incident stays `awaiting-recovery-data` until
+  `required_healthy_observations` post-deploy healthy source proofs exist
+  (or `max_wait_hours` / attention). That holds `activeIncidentId` and blocks
+  other remediations (`max_active=1`).
 
 ## Serialization
 

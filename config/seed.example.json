@@ -1,5 +1,5 @@
 {
-  "schema": 25,
+  "schema": 26,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -197,7 +197,26 @@
       "enabled": false,
       "max_casts": 40,
       "recent_window_hours": 48
+    },
+    "social_cashtag_bridge": {
+      "enabled": true,
+      "min_authors": 2,
+      "window_days": 7,
+      "max_enqueues_per_run": 3,
+      "max_clusters": 500,
+      "skip_promotional": true
     }
+  },
+  "new_pools_feed": {
+    "enabled": true,
+    "shadow_mode": false,
+    "chains": ["solana", "ethereum", "base", "robinhood"],
+    "gecko_page": 1,
+    "max_candidates_per_run": 40,
+    "max_enqueues_per_run": 3,
+    "max_enqueues_per_day": 5,
+    "min_pool_age_minutes": 15,
+    "max_pool_age_hours": 24
   },
   "broadcast": {
     "telegram_overview": {

@@ -6,6 +6,7 @@ import {
   ResearchQueueFileSchema,
   SourcesFileSchema,
   SourceLifecycleFileSchema,
+  SocialCashtagClusterFileSchema,
   WatchlistFileSchema,
   WalletsFileSchema,
   WalletRunnersFileSchema,
@@ -19,6 +20,7 @@ import {
   type ResearchQueueFile,
   type SourcesFile,
   type SourceLifecycleFile,
+  type SocialCashtagClusterFile,
   type WatchlistFile,
   type WalletsFile,
   type WalletRunnersFile,
@@ -58,6 +60,7 @@ export class StateStore {
   fcEngagementPath(): string { return join(this.stateDir, "fc-engagement.json") }
   ledgerPath(): string { return join(this.stateDir, "ledger.json") }
   researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
+  socialCashtagClustersPath(): string { return join(this.stateDir, "social-cashtag-clusters.json") }
   walletsPath(): string { return join(this.stateDir, "wallets.json") }
   walletRunnersPath(): string { return join(this.stateDir, "wallet-runners.json") }
   xSourceNominationsPath(): string { return join(this.stateDir, "x-source-nominations.json") }
@@ -224,6 +227,21 @@ export class StateStore {
     await writeAtomicFile(
       this.researchQueuePath(),
       `${JSON.stringify(ResearchQueueFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadSocialCashtagClusters(): SocialCashtagClusterFile {
+    return readOrDefault(
+      this.socialCashtagClustersPath(),
+      (v) => SocialCashtagClusterFileSchema.parse(v),
+      { schema: 1, clusters: [] },
+    )
+  }
+
+  async saveSocialCashtagClusters(file: SocialCashtagClusterFile): Promise<void> {
+    await writeAtomicFile(
+      this.socialCashtagClustersPath(),
+      `${JSON.stringify(SocialCashtagClusterFileSchema.parse(file), null, 2)}\n`,
     )
   }
 

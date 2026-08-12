@@ -26,7 +26,11 @@ import { desiredFollowFids } from "../sources/fc-lifecycle.js"
 import { getChain } from "../lib/chains.js"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
-import { SNAPSHOT_MAX_ITEMS, type CanonicalIdentity } from "../contracts/schemas.js"
+import {
+  SNAPSHOT_MAX_ITEMS,
+  type CanonicalIdentity,
+  type NewPoolsFeedItem,
+} from "../contracts/schemas.js"
 import {
   collectResearchDossier,
   resolveResearchSubject,
@@ -50,6 +54,8 @@ import {
   hostAckNoThesisAlphaMessages,
   type HostAlphaAckResult,
 } from "./alpha.js"
+import { collectNewPoolsFeed } from "./new-pools-feed.js"
+import type { FetchLike } from "../collectors/market/geckoterminal.js"
 
 export type DiscoverySighting = Readonly<{
   handle: string
@@ -91,6 +97,7 @@ export type CollectionSummary = Readonly<{
   researchIdentity?: CanonicalIdentity
   researchResolution?: string
   researchSecurityHardFail?: boolean
+  researchMarketQuality?: { status: "pass" | "fail" }
   /** Alpha-queue depth at list-scan collect time (path count before manifest cap) */
   alphaPendingCount?: number
   /** Paths omitted from the capped manifest (`truncated=N`); 0 when none */
@@ -103,6 +110,8 @@ export type CollectionSummary = Readonly<{
   hostAlphaAckEntries?: readonly import("../contracts/schemas.js").AlphaDigestEntry[]
   /** Curated social evidence grade — narrative-scan only (ADR 042) */
   narrativeEvidenceQuality?: import("./narrative-evidence-gate.js").NarrativeEvidenceQuality
+  /** GeckoTerminal new-pools survivors for host enqueue (list-scan) */
+  newPoolsSurvivors?: readonly NewPoolsFeedItem[]
 }>
 
 const EMPTY_SUMMARY: CollectionSummary = {
@@ -601,6 +610,9 @@ async function collectResearch(args: Readonly<{
     researchIdentity: resolved.identity,
     researchResolution: "resolved",
     researchSecurityHardFail: dossier.security.hardFail || dossier.security.status === "hard-fail",
+    ...(dossier.marketQuality
+      ? { researchMarketQuality: { status: dossier.marketQuality.status } }
+      : {}),
   }
 }
 
@@ -694,6 +706,8 @@ async function collectListScan(args: Readonly<{
   writer: SnapshotWriter
   fetchedAt: string
   agentRoot: string
+  archiveRoot: string
+  fetcher?: FetchLike
   listScanOverride?: Readonly<{
     bundles: readonly TwitterScrapeBundle[]
     includeAlphaManifest?: boolean
@@ -763,6 +777,17 @@ async function collectListScan(args: Readonly<{
     })
   }
 
+  // Run on every list-scan, including empty social / skipAgent paths
+  const newPools = await collectNewPoolsFeed({
+    runId: args.runId,
+    writer: args.writer,
+    fetchedAt: args.fetchedAt,
+    agentRoot: args.agentRoot,
+    archiveRoot: args.archiveRoot,
+    ...(args.fetcher ? { fetcher: args.fetcher } : {}),
+  })
+  if (newPools.snapshotName) names.push(newPools.snapshotName)
+
   let alphaPendingCount = 0
   let alphaManifestTruncated = 0
   let agentAlphaPathCount = 0
@@ -797,6 +822,7 @@ async function collectListScan(args: Readonly<{
         `alphaPending=${alphaPendingCount}`,
         `agentAlpha=${agentAlphaPathCount}`,
         `skipAgent=${skipAgent}`,
+        ...newPools.statusLines,
       ].join(" "),
       ts: args.fetchedAt,
       ageSec: 0,
@@ -822,6 +848,9 @@ async function collectListScan(args: Readonly<{
   if (args.listScanOverride) {
     statusParts.push(`streaming-target:${bundles.map((b) => b.target.label).join(",")}`)
   }
+  for (const line of newPools.statusLines) {
+    statusParts.push(line)
+  }
   if (skipAgent) {
     statusParts.push("no-signal")
   }
@@ -839,7 +868,9 @@ async function collectListScan(args: Readonly<{
     fypCasts: [],
     postCount,
     collectionKind: "external",
-    ...(skipAgent ? { skipAgent: true, collectionStatus: "no-signal" } : {}),
+    newPoolsSurvivors: newPools.survivors,
+    ...(skipAgent ? { skipAgent: true } : {}),
+    ...(statusParts.length > 0 ? { collectionStatus: statusParts.join(";") } : {}),
     ...(shouldWriteAlpha
       ? {
         alphaPendingCount,
@@ -851,11 +882,6 @@ async function collectListScan(args: Readonly<{
       }
       : {}),
     ...(snapshotItemsTruncated > 0 ? { snapshotItemsTruncated } : {}),
-    ...(!skipAgent && statusParts.length > 0
-      ? { collectionStatus: statusParts.join(";") }
-      : skipAgent
-        ? { collectionStatus: "no-signal" }
-        : {}),
   }
 }
 

@@ -93,6 +93,17 @@ describe("isFounderPrimaryPassThrough", () => {
 })
 
 describe("evaluateMechanicalBroadcastGate", () => {
+  it("rejects thin-watch research subjects", () => {
+    const gate = evaluateMechanicalBroadcastGate(
+      item({ auditClaim: { subject: "solana:token" } }),
+      {
+        ...ctx(),
+        blockThinResearchBroadcastSubjects: new Set(["solana:token"]),
+      },
+    )
+    expect(gate).toEqual({ ok: false, reason: "market-quality-watching" })
+  })
+
   it("rejects duplicate subject in run", () => {
     const gate = evaluateMechanicalBroadcastGate(
       item({ auditClaim: { subject: "Alpha" } }),

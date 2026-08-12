@@ -16,10 +16,11 @@ import { enqueueResearch, dedupeKeyFor } from "../lib/research-queue.js"
 import type { SnapshotWriter } from "../lib/snapshot.js"
 import { StateStore } from "../lib/state.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
+import { independentSocialAuthorKey } from "./social-author.js"
 import {
   extractAddressesFromText,
   extractChainHint,
-} from "./telegram-alpha-research.js"
+} from "./token-disambiguation.js"
 
 export const MAX_RESEARCH_CANDIDATES_PER_RUN = 3
 
@@ -32,16 +33,6 @@ function resolveUnder(root: string, rel: string): string | undefined {
   const full = resolve(base, rel)
   if (full !== base && !full.startsWith(base + sep)) return undefined
   return full
-}
-
-function independentAuthorKey(item: Readonly<{ provenance: string; clusterId?: string | undefined }>): string {
-  if (item.clusterId && item.clusterId.trim()) return `cluster:${item.clusterId.trim().toLowerCase()}`
-  const provenance = item.provenance.trim()
-  const social = /^(twitter|farcaster|telegram):(@?[A-Za-z0-9_.-]+)/iu.exec(provenance)
-  if (social?.[1] && social[2]) {
-    return `${social[1].toLowerCase()}:${social[2].toLowerCase()}`
-  }
-  return `prov:${provenance.toLowerCase().slice(0, 120)}`
 }
 
 export type SocialResearchHint = Readonly<{
@@ -112,7 +103,7 @@ export function detectSocialResearchCandidates(args: Readonly<{
     const evidenceRef = `inbox/${args.runId}/${fileName}`
     for (const item of envelope.data.items) {
       if (item.freshnessTier === "expired") continue
-      const author = independentAuthorKey(item)
+      const author = independentSocialAuthorKey(item)
       const addresses = extractAddressesFromText(item.text)
       for (const address of addresses) {
         const chain = resolveHintChain(item.text, address)
@@ -270,7 +261,7 @@ function scanSealedEvidence(args: Readonly<{
       if (item.freshnessTier === "expired") continue
       expiredOnly = false
       liveOrStale = true
-      authors.add(independentAuthorKey(item))
+      authors.add(independentSocialAuthorKey(item))
     }
   }
 

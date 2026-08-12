@@ -152,4 +152,66 @@ describe("evaluateResearchSubscribe", () => {
       security: { status: "hard-fail", hardFail: true, flags: ["honeypot"] },
     })).toMatchObject({ subscribe: false, reason: "security-hard-fail" })
   })
+
+  it("blocks subscribe on market-quality fail", () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-verdict-"))
+    const agentRoot = join(root, "agent")
+    writeProposal(agentRoot, "run-1", { projectClassification: "utility" })
+    expect(evaluateResearchSubscribe({
+      agentRoot,
+      runId: "run-1",
+      identity,
+      security: { status: "pass", hardFail: false, flags: [] },
+      marketQuality: { status: "fail" },
+    })).toMatchObject({ subscribe: false, reason: "market-quality-fail" })
+  })
+
+  it("blocks subscribe when watchlistStatus is watching", () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-verdict-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(join(agentRoot, "reports", "run-1"), { recursive: true })
+    const file: DecisionProposalFile = {
+      schema: 1,
+      runId: "run-1",
+      proposedAt: "2026-07-19T12:00:00.000Z",
+      proposals: [{
+        schema: 1,
+        proposalId: "p1",
+        runId: "run-1",
+        proposedAt: "2026-07-19T12:00:00.000Z",
+        card: {
+          decisionId: "d1",
+          runId: "run-1",
+          decisionTs: "2026-07-19T12:00:00.000Z",
+          verdict: "track",
+          identity,
+          thesis: "thin watch",
+          horizonHours: 72,
+          invalidation: "x",
+          drivers: ["product"],
+          confidence: 60,
+          signalUse: {},
+          sources: ["web:docs"],
+          clusters: 1,
+          countercase: "n/a",
+          gate: "pass",
+          projectClassification: "utility",
+        },
+        provenanceIds: ["web:docs"],
+        watchlistStatus: "watching",
+        externalEffects: [],
+      }],
+    }
+    writeFileSync(
+      join(agentRoot, "reports", "run-1", "decision-proposals.json"),
+      `${JSON.stringify(file, null, 2)}\n`,
+    )
+    expect(evaluateResearchSubscribe({
+      agentRoot,
+      runId: "run-1",
+      identity,
+      security: { status: "pass", hardFail: false, flags: [] },
+      marketQuality: { status: "pass" },
+    })).toMatchObject({ subscribe: false, reason: "watchlist-status-watching" })
+  })
 })

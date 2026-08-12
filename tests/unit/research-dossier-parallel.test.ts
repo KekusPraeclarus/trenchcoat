@@ -137,6 +137,7 @@ describe("research dossier parallel collection", () => {
         "meta",
         "market-dex",
         "security-gate",
+        "market-quality",
         "twitter-token-search",
         "twitter-popularity",
       ])
@@ -260,7 +261,7 @@ describe("research dossier parallel collection", () => {
 
       expect(dexCalls).toBe(0)
       expect(securityCalls).toBeGreaterThan(0)
-      expect(result.names).toEqual(["market-dex", "security-gate"])
+      expect(result.names).toEqual(["market-dex", "security-gate", "market-quality"])
       expect(result.marketPairCount).toBe(1)
       expect(result.market?.priceUsd).toBe(150)
     } finally {

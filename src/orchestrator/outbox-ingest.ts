@@ -123,6 +123,8 @@ export async function ingestOutbox(args: Readonly<{
   narrativeLogBefore?: readonly NarrativeLogEntry[]
   /** Post-merge narrative log — stage deltas unlock heat-change broadcasts */
   narrativeLogAfter?: readonly NarrativeLogEntry[]
+  /** Thin-watch research subjects blocked from broadcast (normalized lowercase). */
+  blockThinResearchBroadcastSubjects?: ReadonlySet<string>
   /** Host worthiness gate — omitted/disabled skips the LLM review */
   worthiness?: Readonly<{
     enabled: boolean
@@ -306,6 +308,9 @@ export async function ingestOutbox(args: Readonly<{
       proposedClaimHashes,
       recentAcceptedClaims,
       nowIso: args.nowIso,
+      ...(args.blockThinResearchBroadcastSubjects
+        ? { blockThinResearchBroadcastSubjects: args.blockThinResearchBroadcastSubjects }
+        : {}),
     })
     if (!mechanical.ok) {
       reject(mechanical.reason, rawHash)

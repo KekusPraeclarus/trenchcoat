@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-12
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -45,12 +45,13 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **25** (retention sweeps for purged alpha-ack tombstones and
-dormant narrative dossiers under `retention.alpha_ack_days` /
-`retention.narrative_dossier_days` — ADR 044, ADR 045; prior schema **24** one
-clarifying Discord reply per forming suggestion
-under `incident_remediation.discord_suggestions.followup_enabled` — ADR 025;
-prior schema **23** narrative evidence quality under
+Current schema is **26** (earlier discovery: `research.social_cashtag_bridge`
+and `new_pools_feed` — ADR 046; prior schema **25** retention sweeps for
+purged alpha-ack tombstones and dormant narrative dossiers under
+`retention.alpha_ack_days` / `retention.narrative_dossier_days` — ADR 044,
+ADR 045; prior schema **24** one clarifying Discord reply per forming
+suggestion under `incident_remediation.discord_suggestions.followup_enabled`
+— ADR 025; prior schema **23** narrative evidence quality under
 `narratives.evidence_quality` — ADR 042, and operator broadcast feedback under
 `broadcast.feedback` — ADR 043; new installations get
 `research.farcaster_search.enabled=false`; prior schema **22** unified
@@ -73,7 +74,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v24 shapes via `migrateConfigToV25`.
+`loadConfig` migrates v1–v25 shapes via `migrateConfigToV26`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -151,8 +152,27 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
       "enabled": false,
       "max_casts": 40,
       "recent_window_hours": 48
-    }
+    },
     // farcaster_search: watchlist-scan only; operator/queue research dossiers skip FC
+    "social_cashtag_bridge": {
+      "enabled": true,
+      "min_authors": 2,
+      "window_days": 7,
+      "max_enqueues_per_run": 3,
+      "max_clusters": 500,
+      "skip_promotional": true
+    }
+  },
+  "new_pools_feed": {
+    "enabled": true,
+    "shadow_mode": false,
+    "chains": ["solana", "ethereum", "base", "robinhood"],
+    "gecko_page": 1,
+    "max_candidates_per_run": 40,
+    "max_enqueues_per_run": 3,
+    "max_enqueues_per_day": 5,
+    "min_pool_age_minutes": 15,
+    "max_pool_age_hours": 24
   },
   "broadcast": {
     "telegram_overview": { "enabled": false, "daily_cap": 50, "llm_budget_fraction": 0.5, "hot_day_llm_budget_fraction": 0.25 },
@@ -415,6 +435,43 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `narrative_source_probation.probation_days` | `14` | Utility measurement window |
 | `narrative_source_probation.min_accepted_contributions` / `min_distinct_narratives` | `3` / `2` | Follow eligibility floors |
 | `narrative_source_probation.demotion_idle_days` | `28` | Idle unfollow trigger |
+
+### `research.social_cashtag_bridge` (schema 26)
+
+Host bridge after `list-scan` / `farcaster-scan`. Merges cashtag authors across
+runs and enqueues research when the author floor holds. See
+[ADR 046](adr/046-earlier-token-discovery.md) and
+[research-queue.md](architecture/research-queue.md).
+
+| Field | Default | Role |
+|---|---|---|
+| `enabled` | `true` | Master switch for the persistent cashtag bridge |
+| `min_authors` | `2` | Independent authors required before resolve/enqueue |
+| `window_days` | `7` | Author-merge window |
+| `max_enqueues_per_run` | `3` | Cap on bridge enqueues per scan run |
+| `max_clusters` | `500` | Cap on stored clusters in `social-cashtag-clusters.json` |
+| `skip_promotional` | `true` | Drop promotional-shaped cashtag text before merge |
+
+Shared model disambiguation uses `research.disambiguation_daily_cap`.
+
+### `new_pools_feed` (schema 26)
+
+Live GeckoTerminal new-pools path on `list-scan`. Security-pass survivors enqueue
+even when market-quality fails (watching-only outcome). See
+[ADR 046](adr/046-earlier-token-discovery.md) and
+[collectors.md](architecture/collectors.md).
+
+| Field | Default | Role |
+|---|---|---|
+| `enabled` | `true` | Master switch for the feed |
+| `shadow_mode` | `false` | When true, write receipts/logs only (no queue mutate) |
+| `chains` | `solana`, `ethereum`, `base`, `robinhood` | Registry chains with Gecko network mapping + research capability |
+| `gecko_page` | `1` | GeckoTerminal new-pools page |
+| `max_candidates_per_run` | `40` | Survivors kept after filter/sort |
+| `max_enqueues_per_run` | `3` | Queue writes per list-scan |
+| `max_enqueues_per_day` | `5` | Queue writes per UTC day |
+| `min_pool_age_minutes` | `15` | Reject pools younger than this |
+| `max_pool_age_hours` | `24` | Reject pools older than this |
 
 ### `retention` (schema 25)
 

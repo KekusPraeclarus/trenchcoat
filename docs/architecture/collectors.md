@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-07-22
+last_verified: 2026-08-12
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -322,14 +322,23 @@ Exhaustive switch in `src/orchestrator/collect.ts`:
 
 ### New-pool feed (discovery ahead of social)
 
-GeckoTerminal new-pools / DexScreener new pairs, fetched on the list-scan cycle.
-This stream is overwhelmingly garbage, so it is filtered hard before the agent
-ever sees it: security gate first (GoPlus/RugCheck), then a liquidity floor and
-minimum-age/txn sanity checks. Survivors enter the snapshot as candidates with
-`provenance: "feed:new-pools"` — attention-independent discovery, often earlier
-than any tweet. Filtered-out candidates are appended to the host-side discovery
-log so the audit can price what the filters rejected (filter recall loss,
-audit-metrics.md) — thresholds get tuned by evidence, not vibes.
+Shipped host path on `list-scan` (`src/orchestrator/new-pools-feed.ts`,
+ADR 046). Config: `new_pools_feed` (schema 26).
+
+1. Fetch GeckoTerminal new pools for each configured chain.
+2. Resolve DexScreener pair identity. Drop native/wrap mints, duplicates,
+   and pools outside `min_pool_age_minutes` / `max_pool_age_hours`.
+3. Run the security gate. Hard-fail / pending / unsupported reject.
+4. Run market-quality preflight. **MQ fail does not reject** — survivors keep
+   `marketQualityStatus: fail` and still enqueue (watching-only outcome after
+   research).
+5. Sort (MQ pass first), cap with `max_candidates_per_run`, write inbox
+   snapshot when survivors exist, then `new-pools-enqueue` writes the queue
+   (run/day caps; `shadow_mode` skips mutate).
+
+Every accept and reject appends `archive/discovery-log.jsonl` so later audit
+work can price filter recall (audit-metrics.md). The audit reader may still be
+deferred.
 
 ### Mention preprocessing (dedupe + independence clusters)
 

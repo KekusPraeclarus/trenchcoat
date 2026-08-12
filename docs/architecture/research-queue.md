@@ -2,9 +2,9 @@
 description: Research queue lifecycle - how candidates from scans, narrative transitions, new-pool feed, alpha digestion, and chat become bounded research runs. Schema, dedupe, priority, revisit handling, expiry.
 scope: module
 status: active
-last_verified: 2026-07-22
+last_verified: 2026-08-12
 read_when:
-  - Editing candidate enqueueing, the research job trigger, narrative bridge, or revisit/expiry handling.
+  - Editing candidate enqueueing, the research job trigger, narrative bridge, social cashtag bridge, new-pools enqueue, or revisit/expiry handling.
 ---
 
 # Research queue
@@ -20,8 +20,9 @@ path into a `research` run (plus operator `tc research` / Telegram confirm).
 
 `agent/state/research-queue.json` — array of entries, **written only by
 deterministic orchestrator code** (enqueue from scan outputs or operator
-confirm, narrative bridge, dequeue on cron/`runOperatorResearchNow`, expiry sweep). Agent sessions
-read the queue, never write it (INV-S10).
+confirm, narrative bridge, social-cashtag bridge, new-pools enqueue, dequeue on
+cron/`runOperatorResearchNow`, expiry sweep). Agent sessions read the queue,
+never write it (INV-S10).
 
 Telegram confirmation state is **not** stored here — it lives in
 `~/.trenchcoat/pending-research.json` until confirm, then the host enqueues.
@@ -99,11 +100,12 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `run.ts` **defers** `preArchiveRun` until after `runResearchPasses` for cron
   research so those files are frozen before proposals/verifier (operator
   research archives after passes the same way)
-- **Immediate drain** — when social nominations, narrative bridge, fomo-signal,
-  or discord-wallet buy-convergence enqueue at least one entry,
-  `scheduleResearchDrain` kicks a host pump after the
-  parent run releases the workspace lock (does not nest under the same lock).
-  Hourly launchd `research` remains a backstop for anything left pending
+- **Immediate drain** — when social nominations, social-cashtag bridge,
+  new-pools bridge, narrative bridge, fomo-signal, or discord-wallet
+  buy-convergence enqueue at least one entry, `scheduleResearchDrain` kicks a
+  host pump after the parent run releases the workspace lock (does not nest
+  under the same lock). Hourly launchd `research` remains a backstop for
+  anything left pending
 - **Narrative bridge** — after `narrative-scan` integrity succeeds,
   `bridgeNarrativeTickers` deterministically extracts bounded ticker candidates
   from explicit `tickers` fields and cashtags (`$TICKER`) only — never bare
@@ -122,6 +124,21 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `trigger: "social"` entries. Ticker-only, invented, malformed, expired,
   duplicated, or over-cap nominations are receipted and rejected. Nominations may
   consume research budget but never write watchlist, decisions, ledger, or wallets
+- **Social cashtag bridge** — after `list-scan` / `farcaster-scan` integrity,
+  `bridgeReadySocialCashtags` scans sealed social inbox for `$TICKER` (skips
+  promotional text when configured). It merges independent authors into
+  `state/social-cashtag-clusters.json` across runs. When a cluster reaches
+  `research.social_cashtag_bridge.min_authors` (default 2) inside
+  `window_days`, the host resolves and enqueues `trigger: "social"` (cap
+  `max_enqueues_per_run`). Ambiguous shortlists may call shared
+  `disambiguateShortlist` under `research.disambiguation_daily_cap`. Generic
+  chain symbols stay rejected. The CA fast lane above stays unchanged
+  (ADR 046)
+- **New-pools bridge** — after `list-scan` collect, `enqueueNewPoolsResearch`
+  takes security-pass survivors from the GeckoTerminal feed (including MQ-fail
+  items) and enqueues `trigger: "new-pools"` under run/day caps. `shadow_mode`
+  writes receipts only. Rejects and accepts append discovery-log rows
+  (ADR 046, collectors.md)
 - **Telegram alpha bridge** — `telegram-alpha` seals message bodies into inbox,
   then the host (`telegram-alpha-research.ts`) enqueues from a **single**
   allowlisted-channel message: verbatim CA, or cashtag + chain-hint resolution

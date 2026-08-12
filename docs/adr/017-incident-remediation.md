@@ -2,7 +2,7 @@
 description: ADR — Host-owned hourly incident remediation with Telegram high-risk approval and a separate weekly deferred pass; weekly decision-policy harness unchanged.
 scope: project
 status: accepted
-last_verified: 2026-07-21
+last_verified: 2026-08-12
 ---
 
 # ADR 017 — Hourly incident remediation lane
@@ -51,10 +51,16 @@ ops repair.
 ## Consequences
 
 - New INV-S27 and INV-S28. Operators must enable flags deliberately after dry canary.
-- Schema 14 must stay aligned across ConfigSchema, DEPLOYMENT_CONFIG_SCHEMA,
-  and `install-launchd.sh`.
+- Schema bumps must stay aligned across ConfigSchema, DEPLOYMENT_CONFIG_SCHEMA,
+  and the host install script `configSchema` field (`install-systemd.sh` on
+  Linux, `install-launchd.sh` on macOS).
+- Rem deploy/rollback must call `resolveHostInstallScript` — a launchd-only
+  path fails on the Linux VPS (`launchctl: not found`) and can halt automation.
+- Pre-review `revise` auto-loops up to `max_pre_review_revises` (see ADR 029
+  follow-ups and [incident-remediation.md](../architecture/incident-remediation.md)).
 
 ## References
 
 - [architecture/incident-remediation.md](../architecture/incident-remediation.md)
 - INV-S24 / INV-S26 / INV-S27 / INV-S28 in [INVARIANTS.md](../INVARIANTS.md)
+- `resolveHostInstallScript` in `src/harness/deploy.ts`

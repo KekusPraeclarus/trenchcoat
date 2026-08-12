@@ -2,9 +2,9 @@
 description: Token security gate - exact GoPlus/RugCheck field-to-flag mapping per chain family, hard-fail vs caution semantics, the market-quality preflight, and fail-closed behaviour for scanner outages and unsupported chains.
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-08-12
 read_when:
-  - Editing src/collectors/market/security.ts, src/orchestrator/gate-evidence.ts, or market-quality checks, or changing what blocks a track verdict.
+  - Editing src/collectors/market/security.ts, src/orchestrator/gate-evidence.ts, market-quality-evidence, or market-quality checks, or changing what blocks a track verdict.
 ---
 
 # Security gate
@@ -101,10 +101,13 @@ Same run, after the scanner passes — pure functions over DexScreener pair data
 | FDV / liquidity ratio | ≤ 100 |
 | Liquidity delta since last snapshot | > −30% |
 
-Failing the preflight marks the entry `market_quality: fail` — treated like a
-soft gate: no `track` allowed this run (post-run check enforces), but the
-candidate may re-enter via revisit rather than terminal rejection, since thin
-early pools can mature.
+Failing the preflight marks the entry `market_quality: fail`. Host proposal
+apply auto-downgrades proposed `tracking` to `watching` (INV-S9): security must
+still pass, no ledger position opens, and research broadcasts for that subject
+fail with `market-quality-watching`. Missing market-quality evidence blocks
+both `tracking` and `watching`. New-pools enqueue still accepts MQ-fail
+survivors so research can run; the watching-only outcome holds after verdict
+(ADR 046). Thin early pools may later pass MQ on revisit.
 
 ## Where it runs
 
@@ -117,8 +120,9 @@ early pools can mature.
   report; the report must surface the typed flags. Researching a risky token is
   not permission to track it. Active mint without memecoin classification may
   still track when the model justifies it
-- **New-pool feed (list-scan)** — scanner + liquidity floor as the stream
-  filter (collectors.md); survivors carry their gate result into the snapshot
+- **New-pool feed (list-scan)** — scanner hard-fail rejects; MQ runs and is
+  recorded on survivors, but MQ fail does not drop the candidate
+  (collectors.md, ADR 046)
 - **Watchlist-scan** — liquidity-delta re-check on tracked tokens; a tracked
   token that newly hard-fails raises an urgent-eligible flag in the snapshot
   *(collection currently unavailable — see collectors.md routing)*
@@ -126,8 +130,12 @@ early pools can mature.
   archived security dossier; if absent and not dry-collect, allowlisted live
   GoPlus/RugCheck refetch writes a gate receipt under
   `archive/runs/<run-id>/gate-receipts/` (failures stay pending — never invent
-  a pass). After a scanner `pass`, `applyDecisionProposals` applies
+  a pass). Market-quality uses archive-only
+  `resolveMarketQualityFromArchive` (inbox `market-quality` dossier; no live
+  MQ refetch) and writes a market-quality receipt. After a scanner `pass`,
+  `applyDecisionProposals` downgrades MQ-fail tracks to `watching` and applies
   `mintTrackBlockReason` for active mint + memecoin / missing classification
+  on final `tracking` only
 - **Discord member-watch** — `evaluateDiscordWatchSubscribe` (hard-fail only);
   main-agent promote still uses `evaluateResearchSubscribe` + mint rule
   (discord-research.md)

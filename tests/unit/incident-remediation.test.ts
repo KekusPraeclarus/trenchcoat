@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   migrateConfigToV13,
-  migrateConfigToV25,
+  migrateConfigToV26,
   INCIDENT_REMEDIATION_V13_DEFAULTS,
   INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,
 } from "../../src/migrations/config.js"
@@ -51,11 +51,11 @@ describe("incident remediation config", () => {
   })
 
   it("migrates schema 13 → 19 with revalidation and suggestions defaults", () => {
-    const migrated = migrateConfigToV25({
+    const migrated = migrateConfigToV26({
       schema: 13,
       incident_remediation: { ...INCIDENT_REMEDIATION_V13_DEFAULTS },
     }) as Record<string, unknown>
-    expect(migrated["schema"]).toBe(25)
+    expect(migrated["schema"]).toBe(26)
     const ir = migrated["incident_remediation"] as Record<string, unknown>
     const rev = ir["revalidation"] as Record<string, unknown>
     expect(rev["enabled"]).toBe(INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS.enabled)
@@ -72,8 +72,8 @@ describe("incident remediation config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV25(seed))
-    expect(parsed.schema).toBe(25)
+    const parsed = ConfigSchema.parse(migrateConfigToV26(seed))
+    expect(parsed.schema).toBe(26)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.incident_remediation.schedule_enabled).toBe(false)
     expect(parsed.incident_remediation.revalidation.enabled).toBe(true)

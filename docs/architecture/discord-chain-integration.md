@@ -2,7 +2,7 @@
 description: Discord chain-integration lane — durable intake, multi-model build, clean gates, fast-forward publish, deploy, announce, research handoff.
 scope: module
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-12
 read_when:
   - Editing src/chain-integration/ or chat.discord.chain_integration config.
   - Debugging Discord unknown-chain automation, deploy self-survival, or recovery CLI.
@@ -64,7 +64,8 @@ tracking.
 2. Clean `main == origin/main` base; worktree rebuild once if base moves
 3. Worktree `pnpm install --frozen-lockfile` (sibling worktrees lack `node_modules`) then typecheck/lint/unit/build gates
 4. Fast-forward push candidate SHA to `origin/main`
-5. `deployRuntimeFromRepo` → `ops/install-launchd.sh`
+5. `deployRuntimeFromRepo` → `resolveHostInstallScript` (`install-systemd.sh` on
+   Linux, `install-launchd.sh` on macOS)
 6. Health: `deployment.json.sourceCommit`, config schema, listener heartbeat
 7. On deploy failure: normal revert commit + `runtime.prev` restore
 

@@ -9,11 +9,12 @@ import {
   expireQueue,
   todayCompletedCount,
 } from "../lib/research-queue.js"
+import { archiveLayout, ensureArchive } from "../lib/archive.js"
+import { appendQueueSweepDiscoveryLogs } from "./discovery-log.js"
 import { evaluateReviewPrerequisites } from "./review-collect.js"
 import { getJob, type JobName } from "./jobs.js"
 import { log } from "../lib/log.js"
 import { systemClock } from "../lib/clock.js"
-import { ensureArchive } from "../lib/archive.js"
 import { providerGateAllowsSchedule } from "../collectors/fomo/gates.js"
 import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
 
@@ -160,14 +161,25 @@ function evaluateWalletPreconditions(
   }
 }
 
-function evaluateResearchPreconditions(args: Readonly<{
+async function evaluateResearchPreconditions(args: Readonly<{
   agentRoot: string
+  archiveRoot: string
   nowIso: string
-}>): JobPreconditionResult | undefined {
+}>): Promise<JobPreconditionResult | undefined> {
   const config = loadConfig()
   const state = new StateStore(join(args.agentRoot, "state"))
-  let queue = expireQueue(state.loadResearchQueue(), args.nowIso).next
-  // Peek only — do not mutate queue here; runJob dequeues under lock when proceeding
+  const expired = expireQueue(state.loadResearchQueue(), args.nowIso)
+  const queue = expired.next
+  // Persist expiry + discovery log; peek dequeue only (runJob claims under lock)
+  if (expired.expired.length > 0) {
+    await state.saveResearchQueue(queue)
+    await appendQueueSweepDiscoveryLogs(
+      archiveLayout(args.archiveRoot),
+      expired.expired,
+      "expired",
+      args.nowIso,
+    )
+  }
   const dequeued = dequeueDue(queue, args.nowIso, 1, config.research.daily_cap)
   if (dequeued.due[0]) return undefined
   const completed = todayCompletedCount(queue, args.nowIso.slice(0, 10))
@@ -200,6 +212,7 @@ export async function evaluateJobPreconditions(args: Readonly<{
   if (args.job === "research") {
     return evaluateResearchPreconditions({
       agentRoot: args.agentRoot,
+      archiveRoot: args.archiveRoot,
       nowIso: args.nowIso,
     })
   }

@@ -2,7 +2,7 @@
 description: Audit metric definitions - hit events, horizons, benchmark excess returns, calibration binning, paper-ledger conventions, broadcast precision, discovery-funnel counterfactuals. The formulas that make the scorecard mean something.
 scope: module
 status: draft
-last_verified: 2026-07-24
+last_verified: 2026-08-12
 read_when:
   - Editing src/orchestrator/audit.ts or interpreting scorecard numbers.
   - Extending harness mining / keep summaries that consume settled decision outcomes.
@@ -260,13 +260,16 @@ diagnostic:
 
 ## Discovery-funnel counterfactuals
 
-The host-side discovery log (`~/.trenchcoat/archive/discovery-log.jsonl`,
-appended by the research-queue expiry/rejection sweep) records every candidate
-that was surfaced but never researched. The audit prices all eligible records
-when possible. If the rate budget requires sampling, selection is deterministic
-and stratified by rejection reason, chain, trigger, and time bucket; the epoch
-stores inclusion probability and sampling seed so weighted estimates are
-reproducible:
+The host-side discovery log (`~/.trenchcoat/archive/discovery-log.jsonl`) is
+**written** by new-pools feed/enqueue and by research-queue expiry/rejection
+sweeps (`src/orchestrator/discovery-log.ts`, ADR 046). It records candidates
+that were surfaced, filtered, or never researched. The audit **reader** that
+prices those rows for `filter_recall_loss` remains deferred; the formulas
+below are the target contract. When that reader lands, it prices all eligible
+records when possible. If the rate budget requires sampling, selection is
+deterministic and stratified by rejection reason, chain, trigger, and time
+bucket; the epoch stores inclusion probability and sampling seed so weighted
+estimates are reproducible:
 
 - **Filter recall loss** = counterfactual hits among priceable non-security
   rejects/expiries / all priceable non-security rejects/expiries

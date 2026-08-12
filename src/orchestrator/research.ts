@@ -27,13 +27,23 @@ import {
 import { runOneShotSession } from "./session.js"
 import { applyDecisionProposals } from "./proposals.js"
 import { loadActiveCanaryAssignment } from "../harness/canary.js"
-import { ensureArchive, writeJsonRecordFsync, runArchiveDir } from "../lib/archive.js"
+import {
+  archiveLayout,
+  ensureArchive,
+  writeJsonRecordFsync,
+  runArchiveDir,
+} from "../lib/archive.js"
+import { appendQueueSweepDiscoveryLogs } from "./discovery-log.js"
 import { preArchiveRun } from "./pre-archive.js"
 import {
   archivedProvenanceAllowlist,
   resolveGateArchiveThenLive,
 } from "./gate-evidence.js"
-import type { GateReceipt } from "../contracts/schemas.js"
+import {
+  resolveMarketQualityFromArchive,
+  writeMarketQualityReceipt,
+} from "./market-quality-evidence.js"
+import type { GateReceipt, MarketQualityReceipt } from "../contracts/schemas.js"
 import { reconcileIndex } from "./index-reconcile.js"
 import {
   captureIntegritySnapshot,
@@ -133,6 +143,14 @@ export async function enqueueOperatorResearch(args: Readonly<{
     let queue = state.loadResearchQueue()
     const expired = expireQueue(queue, nowIso)
     queue = expired.next
+    if (expired.expired.length > 0) {
+      await appendQueueSweepDiscoveryLogs(
+        archiveLayout(args.paths.archiveRoot),
+        expired.expired,
+        "expired",
+        nowIso,
+      )
+    }
 
     const hints = parseSubjectHints(args.input)
     const entry: ResearchQueueEntry = {
@@ -469,6 +487,7 @@ export async function runOperatorResearchNow(args: Readonly<{
       })
       const allowedProvenanceIds = archivedProvenanceAllowlist(archive, runId)
       const gateReceipts: GateReceipt[] = []
+      const marketQualityReceipts: MarketQualityReceipt[] = []
       const runDir = runArchiveDir(archive, runId)
       const beforeWatchlistHash = sha256Json(state.loadWatchlist() as never)
       const resolveGate = async (
@@ -494,6 +513,23 @@ export async function runOperatorResearchNow(args: Readonly<{
           flags: resolved.receipt.flags,
         }
       }
+      const resolveMarketQuality = async (
+        proposal: Parameters<NonNullable<
+          Parameters<typeof applyDecisionProposals>[0]["resolveMarketQuality"]
+        >>[0],
+      ) => {
+        // Archive dossier only — no live market-quality refetch
+        const resolved = resolveMarketQualityFromArchive(
+          archive,
+          runId,
+          proposal,
+          systemClock.nowIso(),
+        )
+        if (!resolved) return undefined
+        marketQualityReceipts.push(resolved.receipt)
+        await writeMarketQualityReceipt(archive, runId, resolved.receipt)
+        return resolved
+      }
       const planned = await applyDecisionProposals({
         agentRoot: args.paths.agentRoot,
         runId,
@@ -505,6 +541,7 @@ export async function runOperatorResearchNow(args: Readonly<{
         archiveRoot: args.paths.archiveRoot,
         allowedProvenanceIds,
         resolveGate,
+        resolveMarketQuality,
         commit: false,
       })
       const verifierReport = await runPostRunVerifier({
@@ -515,6 +552,7 @@ export async function runOperatorResearchNow(args: Readonly<{
         afterWatchlistHash: planned.plannedWatchlistHash,
         receipts: planned.receipts,
         gateReceipts,
+        marketQualityReceipts,
         nowIso: systemClock.nowIso(),
       })
       if (!verifierReport.passed) {
@@ -536,6 +574,7 @@ export async function runOperatorResearchNow(args: Readonly<{
           archiveRoot: args.paths.archiveRoot,
           allowedProvenanceIds,
           resolveGate,
+          resolveMarketQuality,
           commit: true,
         })
         await reconcileIndex({

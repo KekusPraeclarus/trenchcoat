@@ -62,6 +62,8 @@ import {
   releaseResearchClaim,
   todayCompletedCount,
 } from "../lib/research-queue.js"
+import { enqueueNewPoolsResearch } from "./new-pools-enqueue.js"
+import { appendQueueSweepDiscoveryLogs } from "./discovery-log.js"
 import { createJournalStore } from "./journal-store.js"
 import type { JournalStore } from "../contracts/interfaces.js"
 import { preArchiveRun } from "./pre-archive.js"
@@ -104,6 +106,7 @@ import { bridgeNarrativeTickers } from "./narrative-bridge.js"
 import { statusQuoNarratives } from "./narrative-stage-dedupe.js"
 import { extractBroadcastClaimsFromArchive } from "./market-claims.js"
 import { validateAndEnqueueResearchCandidates, detectSocialResearchCandidates, writeResearchCandidatesHint } from "./research-candidates.js"
+import { bridgeReadySocialCashtags } from "./social-cashtag-bridge.js"
 import {
   DEFAULT_TELEGRAM_ALPHA_DISAMBIG_MODEL,
   enqueueTelegramAlphaResearch,
@@ -128,6 +131,10 @@ import {
   resolveGateArchiveThenLive,
 } from "./gate-evidence.js"
 import {
+  resolveMarketQualityFromArchive,
+  writeMarketQualityReceipt,
+} from "./market-quality-evidence.js"
+import {
   createLiveSourceBarProvider,
   createLiveWalletBarProvider,
   createLiveIdentityBarProvider,
@@ -136,6 +143,7 @@ import {
   ChatSummaryReceiptSchema,
   type DeliveryReceipt,
   type GateReceipt,
+  type MarketQualityReceipt,
   type RunIncident,
 } from "../contracts/schemas.js"
 import {
@@ -417,10 +425,28 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     if (job.name === "research" && !opts.dryCollect && !opts.resumeRunId) {
       const config = loadConfig()
       const nowIso = systemClock.nowIso()
-      let queue = expireQueue(state.loadResearchQueue(), nowIso).next
+      const earlyLayout = archiveLayout(opts.paths.archiveRoot)
+      const expired = expireQueue(state.loadResearchQueue(), nowIso)
+      let queue = expired.next
+      if (expired.expired.length > 0) {
+        await appendQueueSweepDiscoveryLogs(
+          earlyLayout,
+          expired.expired,
+          "expired",
+          nowIso,
+        )
+      }
       queue = recoverStaleResearchClaims(queue, nowIso).next
       const dequeued = dequeueDue(queue, nowIso, 1, config.research.daily_cap)
       queue = dequeued.next
+      if (dequeued.rejected.length > 0) {
+        await appendQueueSweepDiscoveryLogs(
+          earlyLayout,
+          dequeued.rejected,
+          "security-fail",
+          nowIso,
+        )
+      }
       const due = dequeued.due[0]
       await state.saveResearchQueue(queue)
       if (!due) {
@@ -530,6 +556,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     // Hoisted for post-seal ingest/chat/discord status-quo dedupe
     let narrativeLogBefore: NarrativeLogEntry[] = []
     let narrativeLogAfter: NarrativeLogEntry[] | undefined
+    let blockThinResearchBroadcastSubjects: ReadonlySet<string> | undefined
 
     if (!resumingPostSeal) {
     const collectPayload = {
@@ -550,6 +577,23 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         ...(opts.listScanOverride ? { listScanOverride: opts.listScanOverride } : {}),
         ...(opts.telegramAlphaPaths ? { telegramAlphaPaths: opts.telegramAlphaPaths } : {}),
       })
+      // Host enqueue before skipAgent short-circuit so empty social scans still queue
+      if (job.name === "list-scan" && collection.newPoolsSurvivors !== undefined) {
+        const feedCfg = loadConfig().new_pools_feed
+        const enqueueResult = await enqueueNewPoolsResearch({
+          agentRoot: opts.paths.agentRoot,
+          layout,
+          runId,
+          nowIso: systemClock.nowIso(),
+          survivors: collection.newPoolsSurvivors,
+        })
+        if (
+          enqueueResult.accepted > 0
+          && !feedCfg.shadow_mode
+        ) {
+          drainResearchAfter = true
+        }
+      }
       if (
         job.name === "fomo-signal-scan"
         && collection.collectionStatus
@@ -802,6 +846,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     const beforeWatchlistHash = sha256Json(state.loadWatchlist() as never)
     const allowedProvenanceIds = archivedProvenanceAllowlist(layout, runId)
     const gateReceipts: GateReceipt[] = []
+    const marketQualityReceipts: MarketQualityReceipt[] = []
     const resolveGate = async (proposal: Parameters<NonNullable<
       Parameters<typeof applyDecisionProposals>[0]["resolveGate"]
     >>[0]) => {
@@ -825,6 +870,21 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         flags: resolved.receipt.flags,
       }
     }
+    const resolveMarketQuality = async (proposal: Parameters<NonNullable<
+      Parameters<typeof applyDecisionProposals>[0]["resolveMarketQuality"]
+    >>[0]) => {
+      // Archive dossier only — no live market-quality refetch
+      const resolved = resolveMarketQualityFromArchive(
+        layout,
+        runId,
+        proposal,
+        systemClock.nowIso(),
+      )
+      if (!resolved) return undefined
+      marketQualityReceipts.push(resolved.receipt)
+      await writeMarketQualityReceipt(layout, runId, resolved.receipt)
+      return resolved
+    }
     let proposalReport = WALLET_EVIDENCE_JOBS.has(job.name)
       ? {
         receipts: [] as const,
@@ -836,6 +896,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         plannedDecisions: state.readDecisions(),
         plannedWatchlistHash: beforeWatchlistHash,
         committed: false,
+        watchingMarketQualityFail: [] as const,
       }
       : await applyDecisionProposals({
         agentRoot: opts.paths.agentRoot,
@@ -848,6 +909,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         archiveRoot: opts.paths.archiveRoot,
         allowedProvenanceIds,
         resolveGate,
+        resolveMarketQuality,
         commit: false,
       })
     // Planned hash for verifier — state is unchanged until commit after verify
@@ -1085,6 +1147,22 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         })
       }
     }
+    const disambiguationRunSession = async (
+      sessionArgs: Readonly<{ prompt: string; message: string }>,
+    ) => {
+      const session = await runOneShotSession({
+        prompt: `${sessionArgs.prompt}\n\n${sessionArgs.message}`,
+        cwd: opts.paths.agentRoot,
+        model: DEFAULT_TELEGRAM_ALPHA_DISAMBIG_MODEL,
+        mode: "ask",
+        sandbox: true,
+        timeoutMs: WORTHINESS_TIMEOUT_MS,
+      })
+      if (session.status !== "finished" || !session.text) {
+        throw new Error(session.error ?? "token disambiguation failed")
+      }
+      return session.text
+    }
     let researchCandidatesReport: unknown
     if (
       (job.name === "list-scan" || job.name === "farcaster-scan")
@@ -1109,25 +1187,24 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       ) {
         drainResearchAfter = true
       }
+      // Host-only cluster state: mutate after integrity snapshot comparison
+      const cashtagBridge = await bridgeReadySocialCashtags({
+        agentRoot: opts.paths.agentRoot,
+        layout,
+        runId,
+        nowIso: systemClock.nowIso(),
+        runDisambiguation: disambiguationRunSession,
+      })
+      writeFileSync(
+        join(reportDir, "social-cashtag-bridge-host.json"),
+        `${JSON.stringify(cashtagBridge.receipt, null, 2)}\n`,
+      )
+      if (cashtagBridge.accepted.length > 0) {
+        drainResearchAfter = true
+      }
     }
     let telegramAlphaResearchReport: unknown
     if (job.name === "telegram-alpha" && !opts.dryCollect) {
-      const disambiguationRunSession = async (
-        sessionArgs: Readonly<{ prompt: string; message: string }>,
-      ) => {
-        const session = await runOneShotSession({
-          prompt: `${sessionArgs.prompt}\n\n${sessionArgs.message}`,
-          cwd: opts.paths.agentRoot,
-          model: DEFAULT_TELEGRAM_ALPHA_DISAMBIG_MODEL,
-          mode: "ask",
-          sandbox: true,
-          timeoutMs: WORTHINESS_TIMEOUT_MS,
-        })
-        if (session.status !== "finished" || !session.text) {
-          throw new Error(session.error ?? "telegram-alpha disambiguation failed")
-        }
-        return session.text
-      }
       telegramAlphaResearchReport = await enqueueTelegramAlphaResearch({
         agentRoot: opts.paths.agentRoot,
         layout,
@@ -1665,6 +1742,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       afterWatchlistHash: plannedAfterWatchlistHash,
       receipts: proposalReport.receipts,
       gateReceipts,
+      marketQualityReceipts,
       nowIso: systemClock.nowIso(),
     })
     await writeJsonRecordFsync(
@@ -1701,6 +1779,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         archiveRoot: opts.paths.archiveRoot,
         allowedProvenanceIds,
         resolveGate,
+        resolveMarketQuality,
         commit: true,
       })
       if (
@@ -1747,6 +1826,27 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         archiveRoot: opts.paths.archiveRoot,
         reportDir,
       })
+    }
+
+    if (job.name === "research") {
+      const mqById = new Map(marketQualityReceipts.map((m) => [m.receiptId, m] as const))
+      const subjects = new Set<string>()
+      for (const identity of proposalReport.watchingMarketQualityFail) {
+        subjects.add(`${identity.chain}:${identity.tokenAddress}`.toLowerCase())
+        if (identity.symbolDisplay) {
+          subjects.add(`$${identity.symbolDisplay}`.toLowerCase())
+          subjects.add(identity.symbolDisplay.toLowerCase())
+        }
+      }
+      for (const receipt of proposalReport.receipts) {
+        if (!receipt.accepted) continue
+        if (receipt.appliedWatchlistStatus !== "watching") continue
+        if (!receipt.marketQualityReceiptId) continue
+        const mq = mqById.get(receipt.marketQualityReceiptId)
+        if (!mq || mq.status !== "fail") continue
+        subjects.add(`${mq.chain}:${mq.tokenAddress}`.toLowerCase())
+      }
+      if (subjects.size > 0) blockThinResearchBroadcastSubjects = subjects
     }
     } // end !resumingPostSeal
 
@@ -1868,6 +1968,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           : {}),
         ...(narrativeLogBefore.length > 0 ? { narrativeLogBefore } : {}),
         ...(narrativeLogAfter ? { narrativeLogAfter } : {}),
+        ...(blockThinResearchBroadcastSubjects
+          ? { blockThinResearchBroadcastSubjects }
+          : {}),
         worthiness: {
           enabled: worthinessCfg.enabled,
           ...(worthinessRunSession ? { runSession: worthinessRunSession } : {}),
@@ -2150,6 +2253,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
                 hardFail: Boolean(collection.researchSecurityHardFail),
                 flags: [],
               },
+              ...(collection.researchMarketQuality
+                ? { marketQuality: collection.researchMarketQuality }
+                : {}),
             })
             mainTrackEligible = decision.subscribe
           } catch {

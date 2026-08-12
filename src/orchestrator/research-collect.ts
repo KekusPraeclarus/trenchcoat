@@ -3,7 +3,11 @@ import { log } from "../lib/log.js"
 import type { SnapshotWriter } from "../lib/snapshot.js"
 import { resolveFromCandidates, type ResolveCandidate } from "../lib/resolve.js"
 import { searchDexScreener, type MarketPair } from "../collectors/market/providers.js"
-import { fetchSecurityGate } from "../collectors/market/security.js"
+import { fetchSecurityGate, preflightMarketQuality } from "../collectors/market/security.js"
+import {
+  buildMarketQualityEvidence,
+  formatMarketQualitySnapshotText,
+} from "./market-quality-evidence.js"
 import { scrapeResearchTokenTwitter } from "../collectors/twitter/scrape.js"
 import type { TwitterPopularitySummary } from "../collectors/twitter/popularity.js"
 import type { TwitterPost } from "../collectors/twitter/session.js"
@@ -241,6 +245,7 @@ export type ResearchDossierTwitter = Readonly<{
 export type ResearchDossierResult = Readonly<{
   snapshotNames: readonly string[]
   security: { status: string; hardFail: boolean; flags: readonly string[] }
+  marketQuality?: { status: "pass" | "fail"; reasons: readonly string[] }
   twitterPopularity?: TwitterPopularitySummary
   market?: ResearchDossierMarket
   twitter?: ResearchDossierTwitter
@@ -364,18 +369,22 @@ export async function writeMarketSnapshots(args: Readonly<{
   fetchedAt: string
   fetcher?: typeof fetch
   snapshotSuffix?: string
+  /** Prior liquidity for delta check; omit on first snapshot. */
+  previousLiquidityUsd?: number
   /** When set, skip a second DexScreener search */
   pairs?: readonly MarketPair[]
 }>): Promise<{
   names: string[]
   marketPairCount: number
   security: { status: string; hardFail: boolean; flags: readonly string[] }
+  marketQuality?: { status: "pass" | "fail"; reasons: readonly string[] }
   market?: ResearchDossierMarket
 }> {
   const fetcher = args.fetcher ?? fetch
   const names: string[] = []
   const marketName = snapshotName("market-dex", args.snapshotSuffix)
   const securityName = snapshotName("security-gate", args.snapshotSuffix)
+  const marketQualityName = snapshotName("market-quality", args.snapshotSuffix)
   const thresholds = securityThresholdsFromConfig(loadConfig())
 
   const [pairs, security] = await Promise.all([
@@ -396,6 +405,9 @@ export async function writeMarketSnapshots(args: Readonly<{
   ])
 
   const matched = matchPairsForIdentity(pairs, args.identity)
+  const primaryPair = matched.find((pair) => (
+    pair.pairAddress.toLowerCase() === args.identity.pairAddress.toLowerCase()
+  )) ?? matched[0]
 
   await args.writer.writeInbox(args.runId, marketName, {
     source: "dexscreener.search",
@@ -445,11 +457,48 @@ export async function writeMarketSnapshots(args: Readonly<{
     }],
   })
   names.push(securityName)
+
+  let marketQuality: { status: "pass" | "fail"; reasons: readonly string[] } | undefined
+  if (primaryPair) {
+    // previousLiquidityUsd undefined skips liquidity-delta inside preflight
+    const quality = preflightMarketQuality(
+      primaryPair,
+      args.previousLiquidityUsd,
+      thresholds,
+    )
+    const evidence = buildMarketQualityEvidence({
+      identity: args.identity,
+      pair: primaryPair,
+      evaluatedAt: args.fetchedAt,
+      source: "live-collect",
+      thresholds,
+      ...(args.previousLiquidityUsd !== undefined
+        ? { previousLiquidityUsd: args.previousLiquidityUsd }
+        : {}),
+    })
+    await args.writer.writeInbox(args.runId, marketQualityName, {
+      source: "host.market-quality",
+      fetchedAt: args.fetchedAt,
+      trust: "untrusted-external",
+      items: [{
+        provenance: `${args.runId}:market-quality:${args.identity.chain}:${args.identity.tokenAddress}`,
+        text: formatMarketQualitySnapshotText(evidence),
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live",
+        dedupeKey: `${args.identity.chain}:${args.identity.tokenAddress}`,
+      }],
+    })
+    names.push(marketQualityName)
+    marketQuality = { status: quality.status, reasons: quality.reasons }
+  }
+
   const market = marketSummaryFromPairs(matched)
   return {
     names,
     marketPairCount: matched.length,
     security,
+    ...(marketQuality ? { marketQuality } : {}),
     ...(market ? { market } : {}),
   }
 }
@@ -792,6 +841,7 @@ export async function collectResearchDossier(args: Readonly<{
   return {
     snapshotNames,
     security: market.security,
+    ...(market.marketQuality ? { marketQuality: market.marketQuality } : {}),
     ...(twitterBranch.popularity ? { twitterPopularity: twitterBranch.popularity } : {}),
     ...(market.market ? { market: market.market } : {}),
     ...(twitterBranch.twitter ? { twitter: twitterBranch.twitter } : {}),

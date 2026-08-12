@@ -3,16 +3,19 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV25 } from "../migrations/config.js"
+import { migrateConfigToV26 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
+import { getChain } from "./chains.js"
 
 const ChannelSchema = z.object({
   channel: z.string().min(1).max(128),
   mode: z.enum(["preview", "gramjs"])
 })
 
+const NewPoolsChainSchema = z.enum(["solana", "ethereum", "base", "robinhood"])
+
 export const ConfigSchema = z.object({
-  schema: z.literal(25),
+  schema: z.literal(26),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -153,7 +156,31 @@ export const ConfigSchema = z.object({
       max_casts: z.number().int().min(1).max(100).default(40),
       recent_window_hours: z.number().int().min(1).max(168).default(48),
     }).default({}),
+    social_cashtag_bridge: z.object({
+      enabled: z.boolean().default(true),
+      min_authors: z.number().int().min(2).max(20).default(2),
+      window_days: z.number().int().min(1).max(30).default(7),
+      max_enqueues_per_run: z.number().int().min(1).max(10).default(3),
+      max_clusters: z.number().int().min(10).max(2_000).default(500),
+      skip_promotional: z.boolean().default(true),
+    }).default({}),
   }),
+  new_pools_feed: z.object({
+    enabled: z.boolean().default(true),
+    shadow_mode: z.boolean().default(false),
+    chains: z.array(NewPoolsChainSchema).min(1).max(8).default([
+      "solana",
+      "ethereum",
+      "base",
+      "robinhood",
+    ]),
+    gecko_page: z.number().int().min(1).max(10).default(1),
+    max_candidates_per_run: z.number().int().min(1).max(100).default(40),
+    max_enqueues_per_run: z.number().int().min(1).max(10).default(3),
+    max_enqueues_per_day: z.number().int().min(1).max(50).default(5),
+    min_pool_age_minutes: z.number().int().min(0).max(1_440).default(15),
+    max_pool_age_hours: z.number().int().min(1).max(168).default(24),
+  }).default({}),
   broadcast: z.object({
     // Telegram topic deep-dive LLM
     telegram_overview: z.object({
@@ -624,6 +651,38 @@ export const ConfigSchema = z.object({
       path: ["twitter", "operator_list_urls"],
     })
   }
+  for (const [index, slug] of cfg.new_pools_feed.chains.entries()) {
+    const chain = getChain(slug)
+    if (!chain) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `new_pools_feed.chains[${index}] is not in the chain registry`,
+        path: ["new_pools_feed", "chains", index],
+      })
+      continue
+    }
+    if (!chain.capabilities.research) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `new_pools_feed.chains[${index}] lacks research capability`,
+        path: ["new_pools_feed", "chains", index],
+      })
+    }
+    if (!chain.geckoterminalNetwork) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `new_pools_feed.chains[${index}] lacks a GeckoTerminal network mapping`,
+        path: ["new_pools_feed", "chains", index],
+      })
+    }
+  }
+  if (cfg.new_pools_feed.min_pool_age_minutes >= cfg.new_pools_feed.max_pool_age_hours * 60) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "new_pools_feed.min_pool_age_minutes must be below max_pool_age_hours",
+      path: ["new_pools_feed", "min_pool_age_minutes"],
+    })
+  }
   if (
     cfg.farcaster.operator_channel_ids
     && cfg.farcaster.operator_channel_ids[0] === cfg.farcaster.operator_channel_ids[1]
@@ -834,7 +893,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV25(raw))
+  return ConfigSchema.parse(migrateConfigToV26(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

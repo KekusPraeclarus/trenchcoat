@@ -18,6 +18,8 @@ export type MechanicalBroadcastGateContext = Readonly<{
   proposedClaimHashes: Set<string>
   recentAcceptedClaims: readonly MarketClaimRecord[]
   nowIso: string
+  /** Research thin-watch subjects — block broadcast when subject matches. */
+  blockThinResearchBroadcastSubjects?: ReadonlySet<string>
 }>
 
 /**
@@ -84,6 +86,10 @@ export function evaluateMechanicalBroadcastGate(
   // Always — CG category list churn is never a public broadcast (incl. founder-urgent).
   if (isCgCategoryListChurn(item.text)) {
     return { ok: false, reason: "cg-category-list-churn" }
+  }
+
+  if (ctx.blockThinResearchBroadcastSubjects?.has(subject)) {
+    return { ok: false, reason: "market-quality-watching" }
   }
 
   if (isFounderPrimaryPassThrough(item)) {

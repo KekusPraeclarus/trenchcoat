@@ -133,6 +133,8 @@ export const ValidationReceiptSchema = z.object({
   blockedExternalEffects: z.array(z.string()).max(8).default([]),
   provenanceIds: z.array(z.string().min(1).max(256)).max(64).default([]),
   gateReceiptId: Sha256Schema.optional(),
+  marketQualityReceiptId: Sha256Schema.optional(),
+  appliedWatchlistStatus: WatchlistStatusSchema.optional(),
   resolutionReceiptId: Sha256Schema.optional(),
   decidedAt: IsoTimestampSchema,
   policyVersion: SafeIdSchema,
@@ -1441,6 +1443,173 @@ export const GateReceiptSchema = z.object({
   evaluatedAt: IsoTimestampSchema,
 })
 export type GateReceipt = z.infer<typeof GateReceiptSchema>
+
+export const MarketQualityReasonSchema = z.enum([
+  "liquidity",
+  "transactions",
+  "one-sided-flow",
+  "fdv-liquidity",
+  "liquidity-delta",
+])
+export type MarketQualityReason = z.infer<typeof MarketQualityReasonSchema>
+
+export const MarketQualityEvidenceSchema = z.object({
+  schema: z.literal(1),
+  chain: ChainSlugSchema,
+  tokenAddress: AddressSchema,
+  pairAddress: AddressSchema,
+  status: z.enum(["pass", "fail"]),
+  reasons: z.array(MarketQualityReasonSchema).max(8).default([]),
+  evaluatedAt: IsoTimestampSchema,
+  source: z.enum(["archived-dossier", "live-collect"]),
+  liquidityUsd: z.number().nonnegative().optional(),
+  previousLiquidityUsd: z.number().nonnegative().optional(),
+})
+export type MarketQualityEvidence = z.infer<typeof MarketQualityEvidenceSchema>
+
+export const MarketQualityReceiptSchema = z.object({
+  schema: z.literal(1),
+  receiptId: Sha256Schema,
+  decisionId: SafeIdSchema,
+  chain: ChainSlugSchema,
+  tokenAddress: AddressSchema,
+  pairAddress: AddressSchema,
+  status: z.enum(["pass", "fail"]),
+  reasons: z.array(MarketQualityReasonSchema).max(8).default([]),
+  source: z.enum(["archived-dossier", "live-collect"]),
+  evaluatedAt: IsoTimestampSchema,
+})
+export type MarketQualityReceipt = z.infer<typeof MarketQualityReceiptSchema>
+
+export const SocialCashtagClusterStatusSchema = z.enum([
+  "accumulating",
+  "ready",
+  "enqueued",
+  "rejected",
+  "expired",
+])
+export type SocialCashtagClusterStatus = z.infer<typeof SocialCashtagClusterStatusSchema>
+
+export const SocialCashtagClusterSchema = z.object({
+  clusterKey: SafeIdSchema,
+  symbol: z.string().min(1).max(32),
+  chainHint: ChainSlugSchema.optional(),
+  authors: z.array(z.string().min(1).max(128)).max(64).default([]),
+  evidenceRefs: z.array(z.string().min(1).max(256)).max(32).default([]),
+  firstSeen: IsoTimestampSchema,
+  lastSeen: IsoTimestampSchema,
+  status: SocialCashtagClusterStatusSchema,
+  resolved: z.object({
+    chain: ChainSlugSchema,
+    tokenAddress: AddressSchema,
+    pairAddress: AddressSchema.optional(),
+    symbolDisplay: z.string().min(1).max(32).optional(),
+    resolution: z.enum(["resolved", "model-confirmed"]),
+  }).optional(),
+  rejectReason: z.string().max(280).optional(),
+  queueId: SafeIdSchema.optional(),
+})
+export type SocialCashtagCluster = z.infer<typeof SocialCashtagClusterSchema>
+
+export const SocialCashtagClusterFileSchema = z.object({
+  schema: z.literal(1),
+  clusters: z.array(SocialCashtagClusterSchema).max(500).default([]),
+  disambiguationsToday: z.object({
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    count: z.number().int().nonnegative(),
+  }).optional(),
+})
+export type SocialCashtagClusterFile = z.infer<typeof SocialCashtagClusterFileSchema>
+
+export const SocialCashtagBridgeReceiptSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  bridgedAt: IsoTimestampSchema,
+  scannedItems: z.number().int().nonnegative(),
+  mergedClusters: z.number().int().nonnegative(),
+  accepted: z.array(z.object({
+    clusterKey: SafeIdSchema,
+    queueId: SafeIdSchema,
+    chain: ChainSlugSchema,
+    tokenAddress: AddressSchema,
+    authorCount: z.number().int().nonnegative(),
+    path: z.enum(["ticker-resolved", "ticker-model"]),
+  })).max(8).default([]),
+  rejected: z.array(z.object({
+    clusterKey: SafeIdSchema.optional(),
+    reason: z.string().min(1).max(120),
+  })).max(200).default([]),
+  parked: z.array(z.object({
+    clusterKey: SafeIdSchema,
+    subject: z.string().min(1).max(256),
+  })).max(32).default([]),
+})
+export type SocialCashtagBridgeReceipt = z.infer<typeof SocialCashtagBridgeReceiptSchema>
+
+export const NewPoolsFeedItemSchema = z.object({
+  chain: ChainSlugSchema,
+  tokenAddress: AddressSchema,
+  pairAddress: AddressSchema,
+  symbolDisplay: z.string().min(1).max(32).optional(),
+  poolCreatedAt: IsoTimestampSchema.optional(),
+  poolAgeMinutes: z.number().nonnegative().optional(),
+  liquidityUsd: z.number().nonnegative().optional(),
+  securityStatus: z.enum(["pass", "fail", "pending"]),
+  securityFlags: z.array(z.string().min(1).max(64)).max(32).default([]),
+  marketQualityStatus: z.enum(["pass", "fail"]),
+  marketQualityReasons: z.array(MarketQualityReasonSchema).max(8).default([]),
+  provenance: z.string().min(1).max(256),
+})
+export type NewPoolsFeedItem = z.infer<typeof NewPoolsFeedItemSchema>
+
+export const NewPoolsEnqueueReceiptSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  enqueuedAt: IsoTimestampSchema,
+  accepted: z.array(z.object({
+    queueId: SafeIdSchema,
+    chain: ChainSlugSchema,
+    tokenAddress: AddressSchema,
+    marketQualityStatus: z.enum(["pass", "fail"]),
+  })).max(8).default([]),
+  rejected: z.array(z.object({
+    chain: ChainSlugSchema.optional(),
+    tokenAddress: AddressSchema.optional(),
+    reason: z.string().min(1).max(120),
+  })).max(200).default([]),
+})
+export type NewPoolsEnqueueReceipt = z.infer<typeof NewPoolsEnqueueReceiptSchema>
+
+export const DiscoveryLogEntrySchema = z.object({
+  schema: z.literal(1),
+  recordId: SafeIdSchema,
+  recordedAt: IsoTimestampSchema,
+  runId: SafeIdSchema.optional(),
+  trigger: z.enum([
+    "new-pools",
+    "social",
+    "narrative",
+    "revisit",
+    "operator",
+    "wallet-convergence",
+    "feed-filter",
+  ]),
+  chain: ChainSlugSchema.optional(),
+  tokenAddress: AddressSchema.optional(),
+  pairAddress: AddressSchema.optional(),
+  subject: z.string().max(256).optional(),
+  reason: z.string().min(1).max(120),
+  source: z.enum([
+    "gecko-new-pools",
+    "queue-expiry",
+    "queue-reject",
+    "enqueue",
+  ]).optional(),
+  securityStatus: z.enum(["pass", "fail", "pending"]).optional(),
+  marketQualityReasons: z.array(z.string().min(1).max(64)).max(8).optional(),
+  surfacedAt: IsoTimestampSchema,
+})
+export type DiscoveryLogEntry = z.infer<typeof DiscoveryLogEntrySchema>
 
 export const ResolutionReceiptSchema = z.object({
   schema: z.literal(1),

@@ -2,7 +2,7 @@
 description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
-last_verified: 2026-07-22
+last_verified: 2026-08-12
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
   - You are about to add a dependency, data source, or change the harness/model routing.
@@ -369,13 +369,16 @@ Accepted quality improvements beyond the base flow, in adoption order. Items
     marked by the audit job. Headline action P&L is reported realised + MTM,
     gross + cost-adjusted, raw + benchmark-hedged, beside fixed-horizon cohort
     return; hindsight peak exits are diagnostics only.
-11. **New-pool feeds (v1.5)** — GeckoTerminal new-pools / DexScreener new pairs as
-    a discovery source *ahead* of social attention; strict security-gate + liquidity
-    floor since this stream is 99% garbage.
-12. **Discovery-funnel counterfactuals (v1.5)** — everything rejected or
-    expired before research lands in a host-side discovery log and gets priced
-    at the same horizons: filter recall loss and gate catch rate are what tune
-    every threshold (audit-metrics.md).
+11. **Earlier discovery (shipped, ADR 046)** — (a) GeckoTerminal new-pools on
+    `list-scan` with age + security filters; MQ-fail survivors still enqueue
+    (watching-only outcome; `new_pools_feed`, schema 26). (b) Persistent
+    cashtag social bridge merges authors across `list-scan` /
+    `farcaster-scan` into `state/social-cashtag-clusters.json` and enqueues
+    when ≥2 authors hold; agent `research-candidates` stay CA-only.
+12. **Discovery-funnel counterfactuals (PARTIAL)** — host writes
+    `archive/discovery-log.jsonl` for new-pools rejects/accepts and queue
+    expiry/reject sweeps. Audit `filter_recall` pricing over that log remains
+    deferred; the writer path is live (audit-metrics.md).
 13. **Narrative lifecycle stages** — `emerging → peaking → fading` on each
     `log.jsonl` entry (optional richer notes in `narratives/<slug>.md`);
     broadcast fires on **new slug append**, **stage change** (heat up/down), a

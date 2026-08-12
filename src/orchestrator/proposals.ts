@@ -7,6 +7,7 @@ import {
   DecisionProposalFileSchema,
   ValidationReceiptSchema,
   WatchlistFileSchema,
+  type CanonicalIdentity,
   type DecisionProposal,
   type DecisionProposalFile,
   type ValidationReceipt,
@@ -18,6 +19,7 @@ import {
 import { openEntryPending, markExitPending, cancelEntryPending, upsertPosition } from "./ledger.js"
 import { mintTrackBlockReason } from "../collectors/market/security.js"
 import { archiveAcceptedDecisionBundle } from "./decision-bundle.js"
+import type { MarketQualityResolveResult } from "./market-quality-evidence.js"
 
 const TRACK_STATUSES = new Set<WatchlistStatus>(["tracking", "watching"])
 
@@ -26,6 +28,8 @@ export type GateResolveResult = Readonly<{
   status: "pass" | "hard-fail" | "pending" | "unsupported-chain"
   flags?: readonly string[]
 }>
+
+export type { MarketQualityResolveResult }
 
 export type ApplyProposalsOptions = Readonly<{
   agentRoot: string
@@ -46,6 +50,13 @@ export type ApplyProposalsOptions = Readonly<{
    * Omitting it rejects the proposal (INV-S9 fail-closed).
    */
   resolveGate?: (proposal: DecisionProposal) => Promise<GateResolveResult | undefined>
+  /**
+   * Host market-quality resolver — required for tracking/watching when identity
+   * is present. Omitting it rejects the proposal (fail-closed).
+   */
+  resolveMarketQuality?: (
+    proposal: DecisionProposal,
+  ) => Promise<MarketQualityResolveResult | undefined>
   /** Archive root for authoritative validation receipts */
   archiveRoot?: string
   /**
@@ -65,6 +76,8 @@ export type ApplyProposalsResult = Readonly<{
   plannedDecisions: string
   plannedWatchlistHash: `sha256:${string}`
   committed: boolean
+  /** Tokens left on watching after market-quality fail (block research broadcast). */
+  watchingMarketQualityFail: readonly CanonicalIdentity[]
 }>
 
 export function proposalsPath(agentRoot: string, runId: string): string {
@@ -164,6 +177,8 @@ function accept(
   blocked: readonly string[],
   extras?: Readonly<{
     gateReceiptId?: `sha256:${string}`
+    marketQualityReceiptId?: `sha256:${string}`
+    appliedWatchlistStatus?: WatchlistStatus
     resolutionReceiptId?: `sha256:${string}`
   }>,
 ): ValidationReceipt {
@@ -181,6 +196,12 @@ function accept(
     blockedExternalEffects: [...blocked],
     provenanceIds: [...proposal.provenanceIds],
     ...(extras?.gateReceiptId ? { gateReceiptId: extras.gateReceiptId } : {}),
+    ...(extras?.marketQualityReceiptId
+      ? { marketQualityReceiptId: extras.marketQualityReceiptId }
+      : {}),
+    ...(extras?.appliedWatchlistStatus
+      ? { appliedWatchlistStatus: extras.appliedWatchlistStatus }
+      : {}),
     ...(extras?.resolutionReceiptId
       ? { resolutionReceiptId: extras.resolutionReceiptId }
       : {}),
@@ -218,6 +239,7 @@ function emptyResult(
     plannedDecisions: decisions,
     plannedWatchlistHash: sha256Json(watchlist as never),
     committed,
+    watchingMarketQualityFail: [],
   }
 }
 
@@ -243,6 +265,7 @@ export async function applyDecisionProposals(
   let accepted = 0
   let rejected = 0
   let blockedExternal = 0
+  const watchingMarketQualityFail: CanonicalIdentity[] = []
   const previousDecisions = opts.state.readDecisions()
   const decisionChunks: string[] = []
   const acceptedForArchive: Array<Readonly<{
@@ -302,6 +325,9 @@ export async function applyDecisionProposals(
     }
 
     let gateReceiptId: `sha256:${string}` | undefined
+    let marketQualityReceiptId: `sha256:${string}` | undefined
+    let finalStatus = status
+    let marketQualityStatus: "pass" | "fail" | undefined
     if (needsIdentity && proposal.card.identity) {
       if (!opts.resolveGate) {
         receipts.push(reject(proposal, opts, "gate resolver required", blocked))
@@ -320,7 +346,26 @@ export async function applyDecisionProposals(
         continue
       }
       gateReceiptId = gate.receiptId
-      if (proposal.card.verdict === "track") {
+
+      if (!opts.resolveMarketQuality) {
+        receipts.push(reject(proposal, opts, "market-quality-evidence-missing", blocked))
+        rejected += 1
+        continue
+      }
+      const marketQuality = await opts.resolveMarketQuality(proposal)
+      if (!marketQuality) {
+        receipts.push(reject(proposal, opts, "market-quality-evidence-missing", blocked))
+        rejected += 1
+        continue
+      }
+      marketQualityReceiptId = marketQuality.receiptId
+      marketQualityStatus = marketQuality.status
+      if (finalStatus === "tracking" && marketQuality.status === "fail") {
+        finalStatus = "watching"
+      }
+
+      // Mint blocks track only; watching thin tokens may stay on watchlist
+      if (finalStatus === "tracking") {
         const mintBlock = mintTrackBlockReason(
           gate.flags ?? [],
           proposal.card.projectClassification,
@@ -333,10 +378,23 @@ export async function applyDecisionProposals(
       }
     }
 
+    const acceptExtras = {
+      ...(gateReceiptId ? { gateReceiptId } : {}),
+      ...(marketQualityReceiptId ? { marketQualityReceiptId } : {}),
+      ...(finalStatus ? { appliedWatchlistStatus: finalStatus } : {}),
+    }
+
     // Shadow assignments never mutate production state
     if (opts.assignment === "shadow") {
-      receipts.push(accept(proposal, opts, blocked, gateReceiptId ? { gateReceiptId } : undefined))
+      receipts.push(accept(proposal, opts, blocked, acceptExtras))
       accepted += 1
+      if (
+        finalStatus === "watching"
+        && marketQualityStatus === "fail"
+        && proposal.card.identity
+      ) {
+        watchingMarketQualityFail.push(proposal.card.identity)
+      }
       continue
     }
 
@@ -349,7 +407,7 @@ export async function applyDecisionProposals(
       },
     }))
 
-    if (status && proposal.card.identity) {
+    if (finalStatus && proposal.card.identity) {
       const existing = watchlist.entries.find((entry) => (
         entry.identity.chain === proposal.card.identity!.chain
         && entry.identity.tokenAddress === proposal.card.identity!.tokenAddress
@@ -357,14 +415,14 @@ export async function applyDecisionProposals(
       watchlist = upsertWatchlist(watchlist, {
         schema: 1,
         identity: proposal.card.identity,
-        status,
+        status: finalStatus,
         addedAt: existing?.addedAt ?? opts.nowIso,
         updatedAt: opts.nowIso,
         lastDecisionId: proposal.card.decisionId,
       })
     }
 
-    if (proposal.card.verdict === "track" && proposal.card.identity) {
+    if (finalStatus === "tracking" && proposal.card.identity) {
       const positionId = `pos-${proposal.card.decisionId}`
       if (!ledger.positions.some((p) => p.decisionId === proposal.card.decisionId)) {
         ledger = upsertPosition(ledger, openEntryPending({
@@ -400,8 +458,15 @@ export async function applyDecisionProposals(
       }
     }
 
-    receipts.push(accept(proposal, opts, blocked, gateReceiptId ? { gateReceiptId } : undefined))
+    receipts.push(accept(proposal, opts, blocked, acceptExtras))
     accepted += 1
+    if (
+      finalStatus === "watching"
+      && marketQualityStatus === "fail"
+      && proposal.card.identity
+    ) {
+      watchingMarketQualityFail.push(proposal.card.identity)
+    }
     acceptedForArchive.push({
       proposal: {
         ...proposal,
@@ -506,5 +571,6 @@ export async function applyDecisionProposals(
     plannedDecisions,
     plannedWatchlistHash: sha256Json(watchlist as never),
     committed: commit && opts.assignment !== "shadow",
+    watchingMarketQualityFail,
   }
 }

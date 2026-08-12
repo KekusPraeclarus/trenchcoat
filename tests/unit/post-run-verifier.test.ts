@@ -6,6 +6,7 @@ import { ensureArchive, runArchiveDir, type ArchiveLayout } from "../../src/lib/
 import { runPostRunVerifier } from "../../src/orchestrator/verify.js"
 import type {
   GateReceipt,
+  MarketQualityReceipt,
   RunManifest,
   SnapshotEnvelope,
   ValidationReceipt,
@@ -15,7 +16,9 @@ import type { PostRunVerifierInput } from "../../src/contracts/interfaces.js"
 const RUN_ID = "list-scan-2026-07-17T00-00-00-000Z"
 const NOW = "2026-07-17T00:00:00.000Z"
 const TOKEN = "So11111111111111111111111111111111111111112"
+const PAIR = "pair1111111111111111111111111111111111111111"
 const GATE_ID = `sha256:${"b".repeat(64)}` as const
+const MQ_ID = `sha256:${"c".repeat(64)}` as const
 const RECEIPT_ID = `sha256:${"a".repeat(64)}` as const
 const HASH_A = `sha256:${"1".repeat(64)}` as const
 const HASH_B = `sha256:${"2".repeat(64)}` as const
@@ -77,6 +80,22 @@ function passGate(overrides: Partial<GateReceipt> = {}): GateReceipt {
   }
 }
 
+function mqReceipt(overrides: Partial<MarketQualityReceipt> = {}): MarketQualityReceipt {
+  return {
+    schema: 1,
+    receiptId: MQ_ID,
+    decisionId: "dec-1",
+    chain: "solana",
+    tokenAddress: TOKEN,
+    pairAddress: PAIR,
+    status: "pass",
+    reasons: [],
+    source: "archived-dossier",
+    evaluatedAt: NOW,
+    ...overrides,
+  }
+}
+
 function baseInput(layout: ArchiveLayout, overrides: Partial<PostRunVerifierInput> = {}): PostRunVerifierInput {
   return {
     layout,
@@ -86,6 +105,7 @@ function baseInput(layout: ArchiveLayout, overrides: Partial<PostRunVerifierInpu
     afterWatchlistHash: HASH_B,
     receipts: [acceptedReceipt()],
     gateReceipts: [passGate()],
+    marketQualityReceipts: [],
     nowIso: NOW,
     ...overrides,
   }
@@ -155,6 +175,43 @@ describe("post-run verifier", () => {
       gateReceipts: [passGate({ status: "hard-fail" })],
     }))
     expect(report.checks.find((c) => c.id === "S9")?.passed).toBe(false)
+  })
+
+  it("S9 requires market-quality pass for applied tracking", async () => {
+    const layout = await setup()
+    seedInbox(layout)
+    seedManifest(layout)
+    const report = await runPostRunVerifier(baseInput(layout, {
+      receipts: [acceptedReceipt({
+        appliedWatchlistStatus: "tracking",
+        marketQualityReceiptId: MQ_ID,
+      })],
+      marketQualityReceipts: [mqReceipt({ status: "fail", reasons: ["liquidity"] })],
+    }))
+    expect(report.checks.find((c) => c.id === "S9")?.passed).toBe(false)
+  })
+
+  it("S9 requires market-quality fail for applied watching", async () => {
+    const layout = await setup()
+    seedInbox(layout)
+    seedManifest(layout)
+    const passReport = await runPostRunVerifier(baseInput(layout, {
+      receipts: [acceptedReceipt({
+        appliedWatchlistStatus: "watching",
+        marketQualityReceiptId: MQ_ID,
+      })],
+      marketQualityReceipts: [mqReceipt({ status: "fail", reasons: ["liquidity"] })],
+    }))
+    expect(passReport.checks.find((c) => c.id === "S9")?.passed).toBe(true)
+
+    const failReport = await runPostRunVerifier(baseInput(layout, {
+      receipts: [acceptedReceipt({
+        appliedWatchlistStatus: "watching",
+        marketQualityReceiptId: MQ_ID,
+      })],
+      marketQualityReceipts: [mqReceipt({ status: "pass" })],
+    }))
+    expect(failReport.checks.find((c) => c.id === "S9")?.passed).toBe(false)
   })
 
   it("S23 fails when a delta is not backed by an applied receipt", async () => {

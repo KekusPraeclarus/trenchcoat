@@ -22,7 +22,7 @@ import {
 import type { DiscordHistoryMessage } from "../../src/discord/bot-client.js"
 import {
   migrateConfigToV17,
-  migrateConfigToV25,
+  migrateConfigToV26,
   DISCORD_SUGGESTIONS_V17_DEFAULTS,
 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
@@ -60,7 +60,7 @@ describe("discord suggestions config", () => {
   })
 
   it("migrates schema 17 → 24 preserving discord_suggestions", () => {
-    const migrated = migrateConfigToV25({
+    const migrated = migrateConfigToV26({
       schema: 17,
       incident_remediation: {
         enabled: true,
@@ -73,7 +73,7 @@ describe("discord suggestions config", () => {
       },
       broadcast: { telegram_digest: { enabled: false } },
     }) as Record<string, unknown>
-    expect(migrated["schema"]).toBe(25)
+    expect(migrated["schema"]).toBe(26)
     const ir = migrated["incident_remediation"] as Record<string, unknown>
     const ds = ir["discord_suggestions"] as Record<string, unknown>
     expect(ds["enabled"]).toBe(true)
@@ -87,8 +87,8 @@ describe("discord suggestions config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV25(seed))
-    expect(parsed.schema).toBe(25)
+    const parsed = ConfigSchema.parse(migrateConfigToV26(seed))
+    expect(parsed.schema).toBe(26)
     expect(parsed.incident_remediation.discord_suggestions.enabled).toBe(false)
   })
 })

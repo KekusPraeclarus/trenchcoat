@@ -12,26 +12,43 @@ import {
   type CanonicalIdentity,
   type ResearchQueueEntry,
 } from "../contracts/schemas.js"
-import { isValidEvmAddress, isValidSolanaAddress, normalizeEvmAddress } from "../lib/address.js"
 import { runArchiveDir, writeJsonRecordFsync, type ArchiveLayout } from "../lib/archive.js"
-import { CHAIN_REGISTRY, getChain, type ChainEntry } from "../lib/chains.js"
+import { getChain } from "../lib/chains.js"
 import { loadConfig } from "../lib/config.js"
 import { enqueueResearch, dedupeKeyFor } from "../lib/research-queue.js"
-import { validateModelPick } from "../lib/resolve.js"
 import { StateStore } from "../lib/state.js"
-import { fetchSecurityGate } from "../collectors/market/security.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
-import { DISAMBIGUATION_PROMPT } from "../prompts/host.js"
 import { resolveResearchSubject } from "./research-collect.js"
+import {
+  DISAMBIG_CONFIDENCE_MIN,
+  SHORTLIST_MAX,
+  canSpendDisambiguation,
+  disambiguateShortlist,
+  disambiguationUserMessage,
+  extractAddressesFromText,
+  extractCashtags,
+  extractChainHint,
+  filterShortlistForDisambiguation,
+  parseDisambiguationPick,
+  type DisambiguationSessionRunner,
+} from "./token-disambiguation.js"
 
 export const TELEGRAM_ALPHA_RESEARCH_MAX_ENQUEUE = 3
-export const TELEGRAM_ALPHA_DISAMBIG_CONFIDENCE_MIN = 60
-export const TELEGRAM_ALPHA_SHORTLIST_MAX = 5
+export const TELEGRAM_ALPHA_DISAMBIG_CONFIDENCE_MIN = DISAMBIG_CONFIDENCE_MIN
+export const TELEGRAM_ALPHA_SHORTLIST_MAX = SHORTLIST_MAX
 export const DEFAULT_TELEGRAM_ALPHA_DISAMBIG_MODEL = "composer-2.5-fast"
 
-export type DisambiguationSessionRunner = (
-  args: Readonly<{ prompt: string; message: string }>,
-) => Promise<string>
+export type { DisambiguationSessionRunner }
+export {
+  extractAddressesFromText,
+  extractCashtags,
+  extractChainHint,
+  filterShortlistForDisambiguation,
+  parseDisambiguationPick,
+  disambiguationUserMessage,
+  canSpendDisambiguation,
+  disambiguateShortlist,
+}
 
 export type TelegramAlphaResearchReceipt = Readonly<{
   schema: 1
@@ -57,75 +74,6 @@ type SealedTelegramItem = Readonly<{
   provenance: string
   text: string
 }>
-
-const EVM_RE = /\b(0x[a-fA-F0-9]{40})\b/gu
-const CASHTAG_RE = /\$([A-Za-z][A-Za-z0-9]{1,15})\b/gu
-/** Solana base58 — length-bounded to avoid matching ordinary words */
-const SOL_RE = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/gu
-
-export function extractAddressesFromText(text: string): readonly string[] {
-  const out: string[] = []
-  const seen = new Set<string>()
-  for (const match of text.matchAll(EVM_RE)) {
-    const raw = match[1]!
-    if (!isValidEvmAddress(raw)) continue
-    const normalized = normalizeEvmAddress(raw)
-    const key = normalized.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(normalized)
-  }
-  for (const match of text.matchAll(SOL_RE)) {
-    const raw = match[1]!
-    if (!isValidSolanaAddress(raw)) continue
-    if (seen.has(raw)) continue
-    seen.add(raw)
-    out.push(raw)
-  }
-  return out
-}
-
-export function extractCashtags(text: string): readonly string[] {
-  const out: string[] = []
-  const seen = new Set<string>()
-  for (const match of text.matchAll(CASHTAG_RE)) {
-    const ticker = match[1]!.toUpperCase()
-    if (seen.has(ticker)) continue
-    seen.add(ticker)
-    out.push(ticker)
-  }
-  return out
-}
-
-/** Deterministic chain hint from shill text against CHAIN_REGISTRY. */
-export function extractChainHint(text: string): CanonicalIdentity["chain"] | undefined {
-  const lower = text.toLowerCase()
-  const hits: ChainEntry[] = []
-  for (const chain of CHAIN_REGISTRY) {
-    const needles = [
-      chain.slug,
-      chain.display.toLowerCase(),
-      `${chain.slug} chain`,
-      `${chain.display.toLowerCase()} chain`,
-    ]
-    // Common shorthand
-    if (chain.slug === "robinhood") {
-      needles.push("rh chain", "rh eco", "robinhood eco")
-    }
-    if (chain.slug === "bsc") {
-      needles.push("bnb chain", "binance smart chain")
-    }
-    if (chain.slug === "hyperliquid") {
-      needles.push("hyperevm", "hl chain", "hyperliquid chain", "hyper evm")
-    }
-    if (chain.slug === "plasma") {
-      needles.push("plasma chain", "xpl chain")
-    }
-    if (needles.some((n) => lower.includes(n))) hits.push(chain)
-  }
-  if (hits.length === 1) return hits[0]!.slug as CanonicalIdentity["chain"]
-  return undefined
-}
 
 function expiryIso(nowIso: string, days: number): string {
   return new Date(Date.parse(nowIso) + days * 86_400_000).toISOString()
@@ -162,86 +110,27 @@ function loadSealedTelegramItems(
   return out
 }
 
-function stripFence(raw: string): string {
-  let text = raw.trim()
-  if (text.startsWith("```") && text.endsWith("```")) {
-    text = text.replace(/^```(?:\w+)?\n?/u, "").replace(/\n?```$/u, "").trim()
-  }
-  return text
+function utcDay(nowIso: string): string {
+  return nowIso.slice(0, 10)
 }
 
-export function parseDisambiguationPick(
-  raw: string,
-): { ok: true; pick: string | null; confidence: number } | { ok: false; reason: string } {
-  const text = stripFence(raw)
-  if (text.length < 1) return { ok: false, reason: "empty" }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return { ok: false, reason: "invalid-json" }
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { ok: false, reason: "not-object" }
-  }
-  const record = parsed as Record<string, unknown>
-  const pick = record["pick"]
-  if (pick !== null && typeof pick !== "string") {
-    return { ok: false, reason: "pick-invalid" }
-  }
-  if (typeof record["confidence"] !== "number" || !Number.isFinite(record["confidence"])) {
-    return { ok: false, reason: "confidence-invalid" }
-  }
-  const confidence = Math.max(0, Math.min(100, Math.floor(record["confidence"])))
-  return { ok: true, pick: pick === null ? null : pick, confidence }
+function loadDisambiguationDayCount(state: StateStore, nowIso: string): number {
+  const file = state.loadSocialCashtagClusters()
+  const today = utcDay(nowIso)
+  if (!file.disambiguationsToday || file.disambiguationsToday.day !== today) return 0
+  return file.disambiguationsToday.count
 }
 
-export function filterShortlistForDisambiguation(args: Readonly<{
-  shortlist: readonly CanonicalIdentity[]
-  chainHint?: CanonicalIdentity["chain"]
-  securityById: ReadonlyMap<string, { hardFail: boolean; status: string; flags: readonly string[] }>
-}>): CanonicalIdentity[] {
-  return args.shortlist
-    .filter((id) => {
-      if (args.chainHint && id.chain !== args.chainHint) return false
-      const sec = args.securityById.get(`${id.chain}:${id.tokenAddress}`)
-      if (sec?.hardFail) return false
-      return true
-    })
-    .slice(0, TELEGRAM_ALPHA_SHORTLIST_MAX)
-}
-
-export function disambiguationUserMessage(args: Readonly<{
-  shillText: string
-  ticker: string
-  chainHint?: CanonicalIdentity["chain"]
-  candidates: readonly Readonly<{
-    id: string
-    chain: string
-    tokenAddress: string
-    symbolDisplay: string
-    liquidityUsd?: number
-    volume24hUsd?: number
-    fdvUsd?: number | null
-    securityStatus: string
-    securityFlags: readonly string[]
-  }>[]
-}>): string {
-  const lines = args.candidates.map((c) => (
-    `- id=${c.id} chain=${c.chain} ca=${c.tokenAddress} symbol=${c.symbolDisplay}`
-      + ` liqUsd=${c.liquidityUsd ?? "n/a"} vol24hUsd=${c.volume24hUsd ?? "n/a"}`
-      + ` fdvUsd=${c.fdvUsd ?? "n/a"} security=${c.securityStatus}`
-      + ` flags=${c.securityFlags.join(",") || "none"}`
-  ))
-  return [
-    `Pick the best match for ticker $${args.ticker} given the untrusted shill text.`,
-    `chainHint: ${args.chainHint ?? "(none)"}`,
-    "Candidates (host-filtered):",
-    ...lines,
-    "<untrusted-shill>",
-    args.shillText.slice(0, 4_000),
-    "</untrusted-shill>",
-  ].join("\n")
+async function saveDisambiguationDayCount(
+  state: StateStore,
+  nowIso: string,
+  count: number,
+): Promise<void> {
+  const file = state.loadSocialCashtagClusters()
+  await state.saveSocialCashtagClusters({
+    ...file,
+    disambiguationsToday: { day: utcDay(nowIso), count },
+  })
 }
 
 /**
@@ -288,6 +177,9 @@ export async function enqueueTelegramAlphaResearch(args: Readonly<{
     watchlist.entries.map((e) => `${e.identity.chain}:${e.identity.tokenAddress}`.toLowerCase()),
   )
   const queueKeys = new Set(queue.entries.map((e) => dedupeKeyFor(e)))
+  let disambiguationDayCount = loadDisambiguationDayCount(state, args.nowIso)
+  const disambiguationCap = config.research.disambiguation_daily_cap
+  let disambiguationDirty = false
 
   const tryEnqueue = async (opts: Readonly<{
     identity: CanonicalIdentity
@@ -352,6 +244,31 @@ export async function enqueueTelegramAlphaResearch(args: Readonly<{
     return true
   }
 
+  const runPick = async (opts: Readonly<{
+    shortlist: readonly CanonicalIdentity[]
+    shillText: string
+    ticker: string
+    chainHint?: CanonicalIdentity["chain"]
+  }>) => {
+    const picked = await disambiguateShortlist({
+      shortlist: opts.shortlist,
+      shillText: opts.shillText,
+      ticker: opts.ticker,
+      ...(opts.chainHint ? { chainHint: opts.chainHint } : {}),
+      fetcher,
+      ...(args.runDisambiguation
+        ? { runDisambiguation: args.runDisambiguation }
+        : {}),
+      disambiguationDayCount,
+      disambiguationCap,
+    })
+    if (picked.spentDisambiguation) {
+      disambiguationDayCount += 1
+      disambiguationDirty = true
+    }
+    return picked
+  }
+
   for (const item of sealed) {
     if (accepted.length >= TELEGRAM_ALPHA_RESEARCH_MAX_ENQUEUE) break
 
@@ -379,15 +296,11 @@ export async function enqueueTelegramAlphaResearch(args: Readonly<{
         continue
       }
       if (resolved.status === "ambiguous" && resolved.shortlist.length > 0) {
-        const picked = await disambiguateShortlist({
+        const picked = await runPick({
           shortlist: resolved.shortlist,
           shillText: item.text,
           ticker: resolved.shortlist[0]?.symbolDisplay ?? "TOKEN",
           ...(chainHint ? { chainHint } : {}),
-          fetcher,
-          ...(args.runDisambiguation
-            ? { runDisambiguation: args.runDisambiguation }
-            : {}),
         })
         if (picked.ok) {
           await tryEnqueue({
@@ -453,15 +366,11 @@ export async function enqueueTelegramAlphaResearch(args: Readonly<{
         continue
       }
       if (resolved.status === "ambiguous" && resolved.shortlist.length > 0) {
-        const picked = await disambiguateShortlist({
+        const picked = await runPick({
           shortlist: resolved.shortlist,
           shillText: item.text,
           ticker,
           ...(chainHint ? { chainHint } : {}),
-          fetcher,
-          ...(args.runDisambiguation
-            ? { runDisambiguation: args.runDisambiguation }
-            : {}),
         })
         if (picked.ok) {
           await tryEnqueue({
@@ -505,6 +414,9 @@ export async function enqueueTelegramAlphaResearch(args: Readonly<{
 
   if (!args.dryRun && (accepted.length > 0 || parked.length > 0)) {
     await state.saveResearchQueue(queue)
+  }
+  if (!args.dryRun && disambiguationDirty) {
+    await saveDisambiguationDayCount(state, args.nowIso, disambiguationDayCount)
   }
 
   const receipt: TelegramAlphaResearchReceipt = {
@@ -553,81 +465,4 @@ function parkAmbiguous(args: Readonly<{
     reason: args.reason.slice(0, 280),
   })
   return enqueueResearch(args.queue, entry, 10_000)
-}
-
-async function disambiguateShortlist(args: Readonly<{
-  shortlist: readonly CanonicalIdentity[]
-  shillText: string
-  ticker: string
-  chainHint?: CanonicalIdentity["chain"]
-  fetcher: FetchLike
-  runDisambiguation?: DisambiguationSessionRunner
-}>): Promise<
-  | { ok: true; identity: CanonicalIdentity; confidence: number }
-  | { ok: false; reason: string }
-> {
-  const securityById = new Map<string, { hardFail: boolean; status: string; flags: readonly string[] }>()
-  for (const id of args.shortlist.slice(0, TELEGRAM_ALPHA_SHORTLIST_MAX)) {
-    const key = `${id.chain}:${id.tokenAddress}`
-    try {
-      const scan = await fetchSecurityGate(args.fetcher, id.chain, id.tokenAddress)
-      securityById.set(key, {
-        hardFail: scan.hardFail,
-        status: scan.status,
-        flags: scan.flags,
-      })
-    } catch {
-      securityById.set(key, { hardFail: false, status: "pending", flags: [] })
-    }
-  }
-
-  const filtered = filterShortlistForDisambiguation({
-    shortlist: args.shortlist,
-    ...(args.chainHint ? { chainHint: args.chainHint } : {}),
-    securityById,
-  })
-  if (filtered.length === 0) {
-    return { ok: false, reason: "shortlist-filtered-empty" }
-  }
-  if (filtered.length === 1) {
-    return { ok: true, identity: filtered[0]!, confidence: 100 }
-  }
-  if (!args.runDisambiguation) {
-    return { ok: false, reason: "no-disambiguation-runner" }
-  }
-
-  const candidates = filtered.map((id) => {
-    const key = `${id.chain}:${id.tokenAddress}`
-    const sec = securityById.get(key)
-    return {
-      id: key,
-      chain: id.chain,
-      tokenAddress: id.tokenAddress,
-      symbolDisplay: id.symbolDisplay,
-      securityStatus: sec?.status ?? "pending",
-      securityFlags: sec?.flags ?? [],
-    }
-  })
-
-  try {
-    const raw = await args.runDisambiguation({
-      prompt: DISAMBIGUATION_PROMPT,
-      message: disambiguationUserMessage({
-        shillText: args.shillText,
-        ticker: args.ticker,
-        ...(args.chainHint ? { chainHint: args.chainHint } : {}),
-        candidates,
-      }),
-    })
-    const parsed = parseDisambiguationPick(raw)
-    if (!parsed.ok) return { ok: false, reason: `disambiguation:${parsed.reason}` }
-    if (parsed.pick === null || parsed.confidence < TELEGRAM_ALPHA_DISAMBIG_CONFIDENCE_MIN) {
-      return { ok: false, reason: "disambiguation:low-confidence" }
-    }
-    const identity = validateModelPick(filtered, parsed.pick)
-    if (!identity) return { ok: false, reason: "disambiguation:pick-not-in-shortlist" }
-    return { ok: true, identity, confidence: parsed.confidence }
-  } catch {
-    return { ok: false, reason: "disambiguation:session-error" }
-  }
 }

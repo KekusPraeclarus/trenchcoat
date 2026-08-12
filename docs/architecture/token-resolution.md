@@ -2,9 +2,9 @@
 description: Canonical candidate identity - resolving tickers/CAs from untrusted text to one (chain, token_address, pair_address) triple before anything is counted, researched, or tracked. Deterministic-first with bounded model-judged disambiguation for ambiguous tickers.
 scope: module
 status: draft
-last_verified: 2026-07-19
+last_verified: 2026-08-12
 read_when:
-  - Editing src/lib/resolve.ts, mention counting, the research queue, or watchlist entry creation.
+  - Editing src/lib/resolve.ts, token-disambiguation, social-cashtag-bridge, mention counting, the research queue, or watchlist entry creation.
 ---
 
 # Token resolution
@@ -18,9 +18,11 @@ downstream number (divergence, source scores, paper P&L) is silently wrong.
 Resolution runs **before** a candidate can be tracked anywhere in the system:
 deterministic host code (`src/lib/resolve.ts`) first. Ambiguous tickers stay
 `ambiguous` until an operator Telegram shortlist pick (shipped) or a later
-raw-CA context binds them. A bounded model-judged disambiguation session is
-designed below (INV-S16) but **not yet wired** — `DISAMBIGUATION_PROMPT` and
-`validateModelPick` exist; no cron resolver session launches them.
+raw-CA context binds them. Shared shortlist disambiguation
+(`src/orchestrator/token-disambiguation.ts`) is **wired** for the social
+cashtag bridge and telegram-alpha cashtag path under
+`research.disambiguation_daily_cap` (ADR 046 / ADR 015). A fuller cron
+dossier resolver session remains designed below (INV-S16).
 
 ## Canonical identity
 
@@ -76,12 +78,15 @@ cosmetic only — no logic ever keys on ticker.
    (liquidity moving to a new pair) are detected on the watchlist-scan cycle
    and update `pair_address` with a dated note in the token's research file.
 
-## Model-judged disambiguation (designed — not wired)
+## Model-judged disambiguation
 
-**Status (2026-07-18):** interface/schema/`validateModelPick` exist; no
-`writeResolution` archive writer and no cron session consume
-`DISAMBIGUATION_PROMPT`. Treat this section as the target design until a
-session + `archive/resolution-log.jsonl` land.
+**Status (2026-08-12):** `disambiguateShortlist` + `DISAMBIGUATION_PROMPT` +
+`validateModelPick` run for social-cashtag-bridge and telegram-alpha when a
+cashtag shortlist is ambiguous. Daily spend counts against
+`research.disambiguation_daily_cap` (stored on
+`social-cashtag-clusters.json` for the cashtag bridge). Cron dossier sessions
+and `archive/resolution-log.jsonl` remain deferred; treat the dossier trail
+below as the target design for that fuller path.
 
 Ambiguity is not a hard stop — a shill usually contains enough context to
 identify the exact token, and the model is better at that judgment than any

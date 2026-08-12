@@ -24,6 +24,12 @@ Always write `reports/<run-id>/decision-proposals.json` as a full
 `card.verdict` must be exactly `track`, `drop`, `ignore`, or `revisit`; never
 `pass` or `watch`. Resolved subjects must include the canonical `card.identity`.
 
+**Market quality.** When inbox `market-quality` shows `status=fail` and the
+scanner still passes, propose `verdict: track` with `watchlistStatus: watching`
+(safe thin token). The host may also downgrade `tracking` → `watching` when
+market quality fails. Do not expect a public broadcast for watching thin tokens
+— the host blocks that fanout.
+
 **Mint risk is contextual, not automatic hard-fail.** Scanner `mintable` /
 `mint-authority` flags are cautions. Weigh capped emissions, PoW/reward
 schedules, vesting, and authority controls. When mint is active, set

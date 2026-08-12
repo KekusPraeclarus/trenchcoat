@@ -53,16 +53,23 @@ chat remains separate ([chat-agent.md](chat-agent.md)).
 
 ## Live market tape (CA turns)
 
+Module: `src/discord/live-tape.ts` (wired from `handleConversationTurn`).
+
 - One validated CA per turn via shared extraction (`chainCaTokensInText` /
   `parseChainCa` / bare CA + chain hint) and `validateConversationResearchSubject`
+- When the text already has a `chain:CA` form, do not also accept that same
+  address as a bare CA (blocks `evilchain:0x…` → bare accept)
 - Host DexScreener prefetch before the ask-mode runner (INV-R1 gated fetch)
 - Pair selection matches collect-observation (chain id + base token address find;
   never liquidity rank)
 - Trusted metric lines inject into `buildDiscordConversationPrompt`
+- Pass `liveTape` into the runner only via conditional spread
+  (`...(liveTape ? { liveTape } : {})`) under `exactOptionalPropertyTypes`
 - Fetch error fails closed: soft note only; no invented numbers
 - When tape status is ok, the host prompt overrides the discord-chat skill
   knowledge-store-only rule for current market numbers
 - Synthesis path does not prefetch; it stays report-path synthesis only
+- Reply sanitize extends preamble strip for DexScreener / prefetch / live-tape leaks
 
 ## Research hand-off
 

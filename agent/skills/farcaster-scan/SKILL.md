@@ -21,8 +21,9 @@ Scan Farcaster for-you + operator channels and train the feed with likes.
    research nominations when a canonical `chain` + `tokenAddress` appears verbatim
    in sealed same-run inbox evidence and ≥2 independent authors/clusters support it.
    Prefer confirming hosts listed in `research-candidates-hint.json` when present.
-   Never invent contract addresses. Ticker-only nominations are rejected. The host
-   may enqueue research queue entries only — never watchlist, decisions, ledger, or
+   Never invent contract addresses. Ticker-only nominations are rejected — the host
+   owns persistent cashtag clusters across runs. Stay CA-only here. The host may
+   enqueue research queue entries only — never watchlist, decisions, ledger, or
    wallets.
 5. Optionally write `reports/<run-id>/chat-summary.json` (schema 1: empty or
    matching `itemIds`, 3–8 context bullets, confined same-run sources). Never

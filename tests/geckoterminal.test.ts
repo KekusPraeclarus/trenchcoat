@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  buildGeckoNewPoolsUrl,
   buildGeckoOhlcvUrl,
   fetchClosedOhlcv,
+  fetchGeckoNewPools,
   firstExecutionCandle,
   nextBeforeTimestamp,
   parseClosedOhlcv,
+  parseGeckoPools,
   type FetchLike,
 } from "../src/collectors/market/geckoterminal.js"
 
@@ -137,4 +140,49 @@ describe("GeckoTerminal OHLCV semantics", () => {
 
     expect(fetcher).toHaveBeenCalledTimes(3)
   }, 15_000)
+})
+
+describe("GeckoTerminal new pools", () => {
+  it("builds the new_pools URL with optional page", () => {
+    const url = buildGeckoNewPoolsUrl({ network: "solana", page: 2 })
+    expect(url.pathname).toBe("/api/v2/networks/solana/new_pools")
+    expect(url.searchParams.get("page")).toBe("2")
+  })
+
+  it("parses pool_created_at when present", () => {
+    const pools = parseGeckoPools({
+      data: [{
+        id: "solana_7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+        attributes: {
+          address: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+          name: "TEST / SOL",
+          pool_created_at: "2026-07-23T11:00:00.000Z",
+        },
+      }],
+    })
+    expect(pools).toHaveLength(1)
+    expect(pools[0]?.createdAt).toBe("2026-07-23T11:00:00.000Z")
+    expect(pools[0]?.network).toBe("solana")
+  })
+
+  it("fetches new pools with the version accept header", async () => {
+    const fetcher = vi.fn<FetchLike>(async () => new Response(JSON.stringify({
+      data: [{
+        id: "eth_0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+        attributes: {
+          address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+          name: "WETH / USDC",
+        },
+      }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }))
+
+    const pools = await fetchGeckoNewPools(fetcher, { network: "eth", page: 1 })
+    expect(pools).toHaveLength(1)
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("accept")).toBe(
+      "application/json;version=20230302",
+    )
+  })
 })

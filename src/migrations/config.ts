@@ -1144,3 +1144,71 @@ export function migrateConfigToV25(raw: unknown): unknown {
     },
   }
 }
+
+export const SOCIAL_CASHTAG_BRIDGE_V26_DEFAULTS = {
+  enabled: true,
+  min_authors: 2,
+  window_days: 7,
+  max_enqueues_per_run: 3,
+  max_clusters: 500,
+  skip_promotional: true,
+} as const
+
+export const NEW_POOLS_FEED_V26_DEFAULTS = {
+  enabled: true,
+  shadow_mode: false,
+  chains: ["solana", "ethereum", "base", "robinhood"],
+  gecko_page: 1,
+  max_candidates_per_run: 40,
+  max_enqueues_per_run: 3,
+  max_enqueues_per_day: 5,
+  min_pool_age_minutes: 15,
+  max_pool_age_hours: 24,
+} as const
+
+/**
+ * Schema 26: persistent cashtag social bridge + live GeckoTerminal new-pools
+ * feed for earlier research discovery (ADR 046).
+ */
+export function migrateConfigToV26(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 26) return raw
+
+  const v25 = (
+    record?.["schema"] === 25
+      ? record
+      : migrateConfigToV25(raw)
+  ) as Record<string, unknown>
+
+  const prevResearch = (v25["research"] ?? {}) as Record<string, unknown>
+  const prevBridge = (prevResearch["social_cashtag_bridge"] ?? {}) as Record<string, unknown>
+  const prevFeed = (v25["new_pools_feed"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v25,
+    schema: 26,
+    research: {
+      ...prevResearch,
+      social_cashtag_bridge: {
+        ...SOCIAL_CASHTAG_BRIDGE_V26_DEFAULTS,
+        ...prevBridge,
+        enabled: prevBridge["enabled"] === false
+          ? false
+          : (prevBridge["enabled"] ?? SOCIAL_CASHTAG_BRIDGE_V26_DEFAULTS.enabled),
+      },
+    },
+    new_pools_feed: {
+      ...NEW_POOLS_FEED_V26_DEFAULTS,
+      ...prevFeed,
+      enabled: prevFeed["enabled"] === false
+        ? false
+        : (prevFeed["enabled"] ?? NEW_POOLS_FEED_V26_DEFAULTS.enabled),
+      shadow_mode: prevFeed["shadow_mode"] === true
+        ? true
+        : (prevFeed["shadow_mode"] ?? NEW_POOLS_FEED_V26_DEFAULTS.shadow_mode),
+      chains: Array.isArray(prevFeed["chains"]) && prevFeed["chains"].length > 0
+        ? prevFeed["chains"]
+        : [...NEW_POOLS_FEED_V26_DEFAULTS.chains],
+    },
+  }
+}

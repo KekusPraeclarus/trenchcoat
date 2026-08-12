@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
 import {
   migrateConfigToV24,
-  migrateConfigToV25,
+  migrateConfigToV26,
 } from "../../src/migrations/config.js"
 
 const seed = JSON.parse(
@@ -24,7 +24,7 @@ describe("config migration v24", () => {
   it("upgrades schema 23 once to schema 24", () => {
     const migrated = migrateConfigToV24(asV23()) as Record<string, unknown>
     expect(migrated["schema"]).toBe(24)
-    expect(ConfigSchema.parse(migrateConfigToV25(migrated)).schema).toBe(25)
+    expect(ConfigSchema.parse(migrateConfigToV26(migrated)).schema).toBe(26)
   })
 
   it("is idempotent", () => {
@@ -34,7 +34,7 @@ describe("config migration v24", () => {
   })
 
   it("turns the suggestion followup on for an existing installation", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV25(asV23()))
+    const parsed = ConfigSchema.parse(migrateConfigToV26(asV23()))
     expect(parsed.incident_remediation.discord_suggestions.followup_enabled).toBe(true)
   })
 
@@ -43,7 +43,7 @@ describe("config migration v24", () => {
     const remediation = v23["incident_remediation"] as Record<string, unknown>
     const suggestions = remediation["discord_suggestions"] as Record<string, unknown>
     suggestions["followup_enabled"] = false
-    const parsed = ConfigSchema.parse(migrateConfigToV25(v23))
+    const parsed = ConfigSchema.parse(migrateConfigToV26(v23))
     expect(parsed.incident_remediation.discord_suggestions.followup_enabled).toBe(false)
   })
 
@@ -52,7 +52,7 @@ describe("config migration v24", () => {
     const remediation = v23["incident_remediation"] as Record<string, unknown>
     const suggestions = remediation["discord_suggestions"] as Record<string, unknown>
     suggestions["min_confidence"] = 0.9
-    const parsed = ConfigSchema.parse(migrateConfigToV25(v23))
+    const parsed = ConfigSchema.parse(migrateConfigToV26(v23))
     expect(parsed.incident_remediation.discord_suggestions.min_confidence).toBe(0.9)
   })
 })

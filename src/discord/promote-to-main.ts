@@ -18,6 +18,10 @@ import {
   archivedProvenanceAllowlist,
   resolveGateArchiveThenLive,
 } from "../orchestrator/gate-evidence.js"
+import {
+  resolveMarketQualityFromArchive,
+  writeMarketQualityReceipt,
+} from "../orchestrator/market-quality-evidence.js"
 import { reconcileIndex } from "../orchestrator/index-reconcile.js"
 
 export type DiscordMainPromoteResult = Readonly<{
@@ -101,6 +105,22 @@ export async function promoteDiscordTrackToMain(args: Readonly<{
       }
     }
 
+    const resolveMarketQuality = async (
+      proposal: Parameters<NonNullable<
+        Parameters<typeof applyDecisionProposals>[0]["resolveMarketQuality"]
+      >>[0],
+    ) => {
+      const resolved = resolveMarketQualityFromArchive(
+        archive,
+        args.runId,
+        proposal,
+        nowIso,
+      )
+      if (!resolved) return undefined
+      await writeMarketQualityReceipt(archive, args.runId, resolved.receipt)
+      return resolved
+    }
+
     const applied = await applyDecisionProposals({
       agentRoot: args.discordAgentRoot,
       runId: args.runId,
@@ -113,6 +133,7 @@ export async function promoteDiscordTrackToMain(args: Readonly<{
       allowedProvenanceIds,
       proposalIds: new Set([decision.proposal.proposalId]),
       resolveGate,
+      resolveMarketQuality,
       commit: true,
     })
 

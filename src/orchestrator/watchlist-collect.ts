@@ -96,6 +96,7 @@ export async function collectWatchlistScan(args: Readonly<{
     }
 
     try {
+      // No cheap prior liquidity in watchlist state; first snapshot omits delta.
       const market = await writeMarketSnapshots({
         writer: args.writer,
         runId: args.runId,
@@ -105,11 +106,18 @@ export async function collectWatchlistScan(args: Readonly<{
         ...(suffix ? { snapshotSuffix: suffix } : {}),
       })
       snapshotNames.push(...market.names)
+      const mq = market.marketQuality
+        ? ` marketQuality=${market.marketQuality.status}`
+        : ""
       if (market.marketPairCount > 0) {
         usableSubjects += 1
-        statusLines.push(`subject=${subject} market=ok security=${market.security.status}`)
+        statusLines.push(
+          `subject=${subject} market=ok security=${market.security.status}${mq}`,
+        )
       } else {
-        statusLines.push(`subject=${subject} market=empty security=${market.security.status}`)
+        statusLines.push(
+          `subject=${subject} market=empty security=${market.security.status}${mq}`,
+        )
       }
     } catch {
       statusLines.push(`subject=${subject} market=failed`)

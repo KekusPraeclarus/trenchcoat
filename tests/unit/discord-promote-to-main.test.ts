@@ -107,6 +107,27 @@ describe("promoteDiscordTrackToMain", () => {
           freshnessTier: "live",
         }],
       })}\n`)
+      writeFileSync(join(inbox, "market-quality.json"), `${JSON.stringify({
+        source: "host.market-quality",
+        fetchedAt: "2026-07-20T12:00:00.000Z",
+        trust: "untrusted-external",
+        items: [{
+          provenance: `${runId}:market-quality:solana:${identity.tokenAddress}`,
+          dedupeKey: `solana:${identity.tokenAddress}`,
+          text: [
+            `chain=solana`,
+            `token=${identity.tokenAddress}`,
+            `pair=${identity.pairAddress}`,
+            `status=pass`,
+            `reasons=none`,
+            `liquidityUsd=100000`,
+            `previousLiquidityUsd=n/a`,
+          ].join(" "),
+          ts: "2026-07-20T12:00:00.000Z",
+          ageSec: 0,
+          freshnessTier: "live",
+        }],
+      })}\n`)
 
       const result = await promoteDiscordTrackToMain({
         discordAgentRoot: discordAgent,

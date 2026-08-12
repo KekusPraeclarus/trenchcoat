@@ -9,6 +9,7 @@ import type {
   DeliveryReceipt,
   ExonerationProposal,
   GateReceipt,
+  MarketQualityReceipt,
   OutcomeObservation,
   PairedEpisodeRecord,
   PostRunVerifierReport,
@@ -40,6 +41,7 @@ export type PostRunVerifierInput = Readonly<{
   afterWatchlistHash: `sha256:${string}`
   receipts: readonly ValidationReceipt[]
   gateReceipts: readonly GateReceipt[]
+  marketQualityReceipts: readonly MarketQualityReceipt[]
   nowIso: string
 }>
 

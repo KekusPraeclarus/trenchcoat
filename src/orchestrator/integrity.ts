@@ -12,6 +12,7 @@ const AGENT_PROTECTED_PATHS = [
   "state/fc-engagement.json",
   "state/ledger.json",
   "state/research-queue.json",
+  "state/social-cashtag-clusters.json",
   "state/wallets.json",
   "state/wallet-runners.json",
   "state/watchlist.json",
