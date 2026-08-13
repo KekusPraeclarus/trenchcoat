@@ -73,27 +73,27 @@ export function chromeCookiesToPlaywright(raw: unknown): PumpStorageCookie[] {
       throw new Error("Cookie import row is invalid")
     }
     const cookie = row as Record<string, unknown>
-    if (typeof cookie.name !== "string" || typeof cookie.value !== "string") {
+    if (typeof cookie["name"] !== "string" || typeof cookie["value"] !== "string") {
       throw new Error("Cookie import row missing name or value")
     }
-    const session = cookie.session === true
-    const expiresRaw = cookie.expires ?? cookie.expirationDate
+    const session = cookie["session"] === true
+    const expiresRaw = cookie["expires"] ?? cookie["expirationDate"]
     const expiresNum = session || expiresRaw === undefined
       ? -1
       : Math.trunc(Number(expiresRaw))
     out.push({
-      name: cookie.name,
-      value: cookie.value,
-      domain: typeof cookie.domain === "string" && cookie.domain.length > 0
-        ? cookie.domain
+      name: cookie["name"],
+      value: cookie["value"],
+      domain: typeof cookie["domain"] === "string" && cookie["domain"].length > 0
+        ? cookie["domain"]
         : ".pump.fun",
-      path: typeof cookie.path === "string" && cookie.path.length > 0
-        ? cookie.path
+      path: typeof cookie["path"] === "string" && cookie["path"].length > 0
+        ? cookie["path"]
         : "/",
       expires: Number.isFinite(expiresNum) ? expiresNum : -1,
-      httpOnly: cookie.httpOnly === true,
-      secure: cookie.secure !== false,
-      sameSite: mapSameSite(cookie.sameSite),
+      httpOnly: cookie["httpOnly"] === true,
+      secure: cookie["secure"] !== false,
+      sameSite: mapSameSite(cookie["sameSite"]),
     })
   }
   return out
@@ -107,19 +107,19 @@ export function localStorageRecordToOrigin(
     throw new Error("localStorage import must be a JSON object")
   }
   const record = raw as Record<string, unknown>
-  if (typeof record.origin === "string" && Array.isArray(record.localStorage)) {
+  if (typeof record["origin"] === "string" && Array.isArray(record["localStorage"])) {
     const items: Array<{ name: string, value: string }> = []
-    for (const item of record.localStorage) {
+    for (const item of record["localStorage"]) {
       if (!item || typeof item !== "object") {
         throw new Error("localStorage import row is invalid")
       }
       const entry = item as Record<string, unknown>
-      if (typeof entry.name !== "string" || typeof entry.value !== "string") {
+      if (typeof entry["name"] !== "string" || typeof entry["value"] !== "string") {
         throw new Error("localStorage import row missing name or value")
       }
-      items.push({ name: entry.name, value: entry.value })
+      items.push({ name: entry["name"], value: entry["value"] })
     }
-    return { origin: record.origin, localStorage: items }
+    return { origin: record["origin"], localStorage: items }
   }
   const localStorage: Array<{ name: string, value: string }> = []
   for (const [name, value] of Object.entries(record)) {
