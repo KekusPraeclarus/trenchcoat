@@ -84,6 +84,7 @@ function mockSignalClient(trades: readonly FomoTradeEvent[]): FomoDataSource {
     readTrending: async () => [],
     readAlerts: async () => [],
     readProfile: async () => undefined,
+    readProfileCalls: async () => [],
     remainingToday: async () => 100,
     close: async () => undefined,
   }
@@ -112,6 +113,7 @@ function mockTraderClient(): FomoDataSource {
     readTrending: async () => [],
     readAlerts: async () => [],
     readProfile: async () => undefined,
+    readProfileCalls: async () => [],
     remainingToday: async () => 100,
     close: async () => undefined,
   }

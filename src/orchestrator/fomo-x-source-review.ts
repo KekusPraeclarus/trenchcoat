@@ -7,6 +7,9 @@ import { StateStore } from "../lib/state.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { freshnessFromIso, pointInTimeSnapshot } from "../collectors/fomo/freshness.js"
 import { scrapeProfileHistory } from "../collectors/twitter/profile-history.js"
+import { FomoWebClient } from "../collectors/fomo/web-client.js"
+import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
+import type { FomoTradeEvent } from "../collectors/fomo/types.js"
 import {
   applyClassificationResult,
   markClassifying,
@@ -108,7 +111,8 @@ function classifySkipStatus(
 
 /**
  * Host collect for one pending Fomo→X nomination. Prefer injected `posts`/`history`
- * over Playwright so unit tests never launch a browser.
+ * over Playwright so unit tests never launch a browser. Injected `profileCalls`
+ * skip the FOMO profile scrape.
  */
 export async function collectFomoXSourceReview(args: Readonly<{
   runId: string
@@ -118,6 +122,8 @@ export async function collectFomoXSourceReview(args: Readonly<{
   archiveRoot: string
   posts?: readonly InjectedHistoryPost[]
   history?: readonly InjectedHistoryPost[]
+  profileCalls?: readonly FomoTradeEvent[]
+  client?: Pick<FomoWebClient, "readProfileCalls" | "close">
 }>): Promise<CollectionSummary> {
   const config = loadConfig()
   if (!config.fomo.enabled || !config.fomo.x_source_review.enabled) {
@@ -280,10 +286,47 @@ export async function collectFomoXSourceReview(args: Readonly<{
     }),
   })
 
+  const profileCalls = await loadProfileCalls(args, pending.fomoHandle, config)
+  await args.writer.writeInbox(args.runId, "fomo-profile-calls", {
+    source: "host.fomo-x-source-review.profile-calls",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [
+      {
+        provenance: `${args.runId}:fomo-profile:${pending.fomoHandle}`,
+        text: `kind=fomo-profile-calls handle=${pending.fomoHandle} buyCount=${profileCalls.length}`,
+        ts: args.fetchedAt,
+        ageSec: 0,
+        freshnessTier: "live" as const,
+      },
+      ...profileCalls.slice(0, 200).flatMap((call) => {
+        if (!call.tokenAddress) return []
+        const fields = freshnessFromIso(call.eventAt, args.fetchedAt)
+        const snap = fields.ok && fields.ts && fields.ageSec !== undefined && fields.freshnessTier
+          ? { ts: fields.ts, ageSec: fields.ageSec, freshnessTier: fields.freshnessTier }
+          : pointInTimeSnapshot(call.eventAt, args.fetchedAt)
+        return [{
+          provenance: `fomo-profile:@${pending.fomoHandle}`,
+          text: [
+            "purpose=fomo-profile-call",
+            `handle=${pending.fomoHandle}`,
+            "action=buy",
+            ...(call.chain ? [`chain=${call.chain}`] : []),
+            `buy ${call.tokenAddress}`,
+          ].join(" "),
+          ts: snap.ts,
+          ageSec: snap.ageSec,
+          freshnessTier: snap.freshnessTier,
+          dedupeKey: `${call.tokenAddress}:${call.eventAt}`,
+        }]
+      }),
+    ],
+  })
+
   await saveReviewCount(args.archiveRoot, day, used + 1)
 
   return {
-    snapshotNames: ["x-source-manifest", "x-source-history"],
+    snapshotNames: ["x-source-manifest", "x-source-history", "fomo-profile-calls"],
     fypAuthors: [],
     discoverySightings: [],
     fcDiscoverySightings: [],
@@ -293,5 +336,43 @@ export async function collectFomoXSourceReview(args: Readonly<{
     skipAgent: false,
     collectionKind: "external",
     collectionStatus: "fomo-x-ready",
+  }
+}
+
+async function loadProfileCalls(
+  args: Readonly<{
+    profileCalls?: readonly FomoTradeEvent[]
+    client?: Pick<FomoWebClient, "readProfileCalls" | "close">
+    posts?: readonly InjectedHistoryPost[]
+    history?: readonly InjectedHistoryPost[]
+    archiveRoot: string
+  }>,
+  fomoHandle: string,
+  config: ReturnType<typeof loadConfig>,
+): Promise<readonly FomoTradeEvent[]> {
+  if (args.profileCalls) return args.profileCalls
+  if (args.client) {
+    try {
+      return await args.client.readProfileCalls(fomoHandle)
+    } catch {
+      return []
+    }
+  }
+  if (args.posts || args.history) return []
+  if (!fomoSessionExists()) return []
+  const client = new FomoWebClient({
+    archiveRoot: args.archiveRoot,
+    dailyNavigationBudget: config.fomo.daily_navigation_budget,
+    minDelayMs: config.fomo.min_delay_ms,
+    maxDelayMs: config.fomo.max_delay_ms,
+    navigationTimeoutMs: config.fomo.navigation_timeout_ms,
+    maxPayloadBytes: config.fomo.max_payload_bytes,
+  })
+  try {
+    return await client.readProfileCalls(fomoHandle)
+  } catch {
+    return []
+  } finally {
+    await client.close()
   }
 }

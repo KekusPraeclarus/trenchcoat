@@ -46,7 +46,9 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 | `agent/state/x-narrative-sources.json` | host | Narrative utility probation / follow eligibility |
 
 - `discoveredFrom: "fomo-leaderboard"` enters `source-lifecycle.json` only after
-  deterministic historical call extraction meets shiller thresholds.
+  deterministic historical call extraction meets shiller thresholds. Extraction
+  unions sealed X-post CAs with dated FOMO profile swap buys (quote→meme).
+  Tickers and FOMO profile wallets do not count.
 - Classification agent output never mutates lists or follows. Shiller and
   narrative tracks graduate independently (`both` must pass both).
 - Historical posts are never reused as live narrative evidence.

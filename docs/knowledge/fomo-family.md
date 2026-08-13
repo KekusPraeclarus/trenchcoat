@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-08-13
 source: https://fomo.family
 ---
 
@@ -53,9 +53,11 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
   Provider outages remain `provider-pending` and are retried on later
   `outcomes-settle` runs. Solana bar pricing uses GeckoTerminal with
   SolanaTracker/Birdeye fallback when configured.
-- `fomo-x-source-review` — classify nominated X accounts; host merge extracts
-  historical calls for shillers (`awaiting-review-epoch`) and registers narrative
-  probation for narrative/both
+- `fomo-x-source-review` — classify nominated X accounts. Host merge unions
+  sealed X-post CAs with dated FOMO profile swap buys (`fomo-profile-calls`).
+  Quote→meme swaps only. Sells, quote mints, and profile wallets stay unused.
+  Shillers need ≥10 calls and ≥5 tokens (`awaiting-review-epoch`). Narrative
+  and both still need `narrative_source_probation.enabled` to register.
 - `fomo-narrative-source-scan` — live (<=6h) posts from probation narrative X
   sources (never reuses historical review posts)
 - `narrative-source-review` — promote/demote narrative sources; capped follow

@@ -15,6 +15,7 @@ import { registerDiscoveryCandidates, sourceIdForHandle } from "../sources/lifec
 import { appendSourceCallEventsFromItems } from "./call-log.js"
 import { provenanceToSource } from "./rug-dock.js"
 import { extractCallEvents } from "../lib/call-events.js"
+import { isQuoteOrNativeMint } from "../lib/native-mints.js"
 
 const ReasonCodeSchema = z.enum([
   "shill-dense",
@@ -113,6 +114,31 @@ function loadSealedHistoryItems(
   }
 }
 
+function loadSealedProfileCallItems(
+  agentRoot: string,
+  runId: string,
+): ReadonlyArray<{ provenance: string, text: string, ts: string }> {
+  const path = join(agentRoot, "inbox", runId, "fomo-profile-calls.json")
+  if (!existsSync(path)) return []
+  try {
+    const envelope = SnapshotEnvelopeSchema.parse(JSON.parse(readFileSync(path, "utf8")))
+    return envelope.items
+      .filter((item) => (
+        typeof item.provenance === "string"
+        && item.provenance.startsWith("fomo-profile:@")
+        && typeof item.text === "string"
+        && item.text.includes("purpose=fomo-profile-call")
+      ))
+      .map((item) => ({
+        provenance: item.provenance,
+        text: item.text,
+        ts: typeof item.ts === "string" ? item.ts : envelope.fetchedAt,
+      }))
+  } catch {
+    return []
+  }
+}
+
 function resolveShillerSourceId(xHandle: string, provenance: string): string {
   const mapped = provenanceToSource(provenance.includes(":") ? provenance.split(":").slice(0, 2).join(":") : `twitter:@${xHandle}`)
   if (mapped) return mapped.sourceId
@@ -150,23 +176,40 @@ async function runShillerBackfill(args: Readonly<{
 }>> {
   const handle = args.xHandle.toLowerCase()
   const history = loadSealedHistoryItems(args.agentRoot, args.runId)
+  const profileCalls = loadSealedProfileCallItems(args.agentRoot, args.runId)
   const sourceId = resolveShillerSourceId(handle, `twitter:@${handle}`)
   const layout = archiveLayout(args.archiveRoot)
 
-  const items = history.map((item) => ({
+  const historyItems = history.map((item) => ({
     provenance: item.provenance.startsWith("twitter:@") || item.provenance.startsWith("x:@")
       ? item.provenance
       : `twitter:@${handle}`,
     text: item.text,
     ts: item.ts,
   }))
+  const fomoItems = profileCalls.map((item) => ({
+    provenance: item.provenance,
+    text: item.text,
+    ts: item.ts,
+  }))
+  const items = [...historyItems, ...fomoItems]
 
-  const eligibleCalls = items.flatMap((item) => extractCallEvents({
+  const historyCalls = historyItems.flatMap((item) => extractCallEvents({
     sourceId,
     provenance: item.provenance,
     text: item.text,
     mentionedAt: item.ts,
   })).filter((call) => call.chainHint === "evm" || call.chainHint === "solana")
+  const fomoCalls = fomoItems.flatMap((item) => extractCallEvents({
+    sourceId,
+    provenance: item.provenance,
+    text: item.text,
+    mentionedAt: item.ts,
+  })).filter((call) => (
+    (call.chainHint === "evm" || call.chainHint === "solana")
+    && !isQuoteOrNativeMint(call.rawAddress)
+  ))
+  const eligibleCalls = [...historyCalls, ...fomoCalls]
 
   const callCount = eligibleCalls.length
   const distinctTokens = new Set(
@@ -188,6 +231,8 @@ async function runShillerBackfill(args: Readonly<{
       backfillEpochDay,
       callCount,
       distinctTokens,
+      xCallCount: historyCalls.length,
+      profileCallCount: fomoCalls.length,
       appended: append.appended,
       note: "Below call/token thresholds — not registered into source-lifecycle",
     }, args.nominationId)
@@ -217,6 +262,8 @@ async function runShillerBackfill(args: Readonly<{
     backfillEpochDay,
     callCount,
     distinctTokens,
+    xCallCount: historyCalls.length,
+    profileCallCount: fomoCalls.length,
     appended: append.appended,
     note: "Registered fomo-leaderboard probation only — managed-list promotion requires a later review epoch",
   }, args.nominationId)

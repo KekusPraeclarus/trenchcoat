@@ -7,6 +7,8 @@ import {
   mapConvergence,
   mapHotToken,
   mapLeaderboardEntry,
+  mapProfileSwapBuy,
+  mapProfileSwapBuys,
   mapThesis,
   mapTrader,
   expandFeedItems,
@@ -25,7 +27,7 @@ import {
 import { freshnessFromIso, isLiveEligible, snapshotFieldsFromEvent } from "../../src/collectors/fomo/freshness.js"
 import { classifyFomoRequest } from "../../src/collectors/fomo/request-policy.js"
 import { resetRateGatesForTests } from "../../src/lib/rate-gate.js"
-import { isNativeOrWrapMint, inferChainFromTokenAddress } from "../../src/lib/native-mints.js"
+import { isNativeOrWrapMint, isQuoteOrNativeMint, inferChainFromTokenAddress } from "../../src/lib/native-mints.js"
 import leaderboard from "../fixtures/providers/fomo/leaderboard.json" with { type: "json" }
 
 describe("fomo mappers", () => {
@@ -141,6 +143,56 @@ describe("fomo mappers", () => {
     })
     expect(event?.handles).toEqual(["a", "b"])
   })
+
+  it("maps quote-to-meme profile swaps and skips sells and quote mints", () => {
+    const observedAt = "2026-08-13T00:00:00.000Z"
+    const buy = mapProfileSwapBuy({
+      id: "swap-1",
+      inTokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      outTokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+      networkId: 1399811149,
+      createdAt: "2026-08-01T12:00:00.000Z",
+    }, "claymorepx", observedAt)
+    expect(buy?.action).toBe("buy")
+    expect(buy?.tokenAddress).toBe("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump")
+    expect(buy?.wallet).toBeUndefined()
+
+    const sell = mapProfileSwapBuy({
+      inTokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+      outTokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      networkId: 1399811149,
+      createdAt: "2026-08-01T12:00:00.000Z",
+    }, "claymorepx", observedAt)
+    expect(sell).toBeUndefined()
+
+    const quoteOnly = mapProfileSwapBuy({
+      inTokenAddress: "So11111111111111111111111111111111111111112",
+      outTokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      networkId: 1399811149,
+      createdAt: "2026-08-01T12:00:00.000Z",
+    }, "claymorepx", observedAt)
+    expect(quoteOnly).toBeUndefined()
+
+    const undated = mapProfileSwapBuy({
+      inTokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      outTokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+      networkId: 1399811149,
+    }, "claymorepx", observedAt)
+    expect(undated).toBeUndefined()
+
+    const nested = mapProfileSwapBuys({
+      responseObject: {
+        swaps: [{
+          inTokenAddress: "So11111111111111111111111111111111111111112",
+          outTokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+          networkId: 1399811149,
+          timestamp: "2026-08-01T12:00:00.000Z",
+        }],
+      },
+    }, "ether_monk", observedAt)
+    expect(nested).toHaveLength(1)
+    expect(nested[0]?.handle).toBe("ether_monk")
+  })
 })
 
 describe("native mint denylist", () => {
@@ -149,6 +201,9 @@ describe("native mint denylist", () => {
     expect(isNativeOrWrapMint("so11111111111111111111111111111111111111112", "WSOL")).toBe(true)
     expect(isNativeOrWrapMint("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump", "SOL")).toBe(true)
     expect(isNativeOrWrapMint("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump", "Jimothy")).toBe(false)
+    expect(isQuoteOrNativeMint("So11111111111111111111111111111111111111112")).toBe(true)
+    expect(isQuoteOrNativeMint("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")).toBe(true)
+    expect(isQuoteOrNativeMint("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump")).toBe(false)
     expect(inferChainFromTokenAddress("Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump")).toBe("solana")
     expect(inferChainFromTokenAddress("0xaf4c10fef50059d1e3e8ab1c80e46db6a76098b4")).toBeUndefined()
   })
@@ -169,6 +224,8 @@ describe("fomo freshness", () => {
 describe("fomo request policy", () => {
   it("allows GET on fomo hosts and blocks mutations", () => {
     expect(classifyFomoRequest("GET", "https://prod-api.fomo.family/v1/leaderboard").allow).toBe(true)
+    expect(classifyFomoRequest("GET", "https://prod-api.fomo.family/v2/users/abc/swaps").allow).toBe(true)
+    expect(classifyFomoRequest("GET", "https://prod-api.fomo.family/v2/users/abc/spotlight").allow).toBe(true)
     expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/proxy/mostHeld").allow).toBe(true)
     expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/v1/trade").allow).toBe(false)
     expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/v2/users/edit").allow).toBe(false)

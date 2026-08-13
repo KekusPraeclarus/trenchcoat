@@ -1,6 +1,6 @@
 import { getChain } from "../../lib/chains.js"
-import { validateChainAddress } from "../../lib/address.js"
-import { inferChainFromTokenAddress } from "../../lib/native-mints.js"
+import { isValidEvmAddress, validateChainAddress } from "../../lib/address.js"
+import { inferChainFromTokenAddress, isQuoteOrNativeMint } from "../../lib/native-mints.js"
 import { asIsoTimestamp } from "./freshness.js"
 import {
   FomoRawActivitySchema,
@@ -454,6 +454,97 @@ export function extractArrayPayload(payload: unknown, keys: readonly string[]): 
     }
   }
   return []
+}
+
+function nestedAddress(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim()
+  if (!value || typeof value !== "object") return undefined
+  const address = Reflect.get(value as object, "address")
+  if (typeof address === "string" && address.trim()) return address.trim()
+  return undefined
+}
+
+function stringField(value: Readonly<Record<string, unknown>>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const found = nestedAddress(value[key])
+    if (found) return found
+  }
+  return undefined
+}
+
+/**
+ * Quote→meme profile swaps only. Sells, meme↔meme, and quote/native mints
+ * never become shiller calls. Profile wallets stay unused.
+ */
+export function mapProfileSwapBuy(
+  raw: unknown,
+  handle: string,
+  observedAt: string,
+): FomoTradeEvent | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const value = raw as Record<string, unknown>
+  const inAddr = stringField(value, ["inTokenAddress", "inMint", "fromTokenAddress", "tokenIn"])
+  const outAddr = stringField(value, ["outTokenAddress", "outMint", "toTokenAddress", "tokenOut"])
+  if (!inAddr || !outAddr) return undefined
+  const inSymbol = stringField(value, ["inTokenSymbol", "inSymbol"])
+  const outSymbol = stringField(value, ["outTokenSymbol", "outSymbol", "symbol"])
+  if (!isQuoteOrNativeMint(inAddr, inSymbol) || isQuoteOrNativeMint(outAddr, outSymbol)) {
+    return undefined
+  }
+  const eventAt = asIsoTimestamp(
+    value["timestamp"]
+    ?? value["createdAt"]
+    ?? value["created_at"]
+    ?? value["executedAt"]
+    ?? value["swappedAt"]
+    ?? value["blockTime"]
+    ?? value["time"],
+  )
+  if (!eventAt) return undefined
+  const networkId = typeof value["networkId"] === "number" ? value["networkId"] : undefined
+  const chain = resolveActivityChain({
+    chainRaw: typeof value["chain"] === "string" ? value["chain"] : undefined,
+    networkId,
+    tokenAddress: outAddr,
+  })
+  if (chain) {
+    const entry = getChain(chain)
+    if (!entry || !validateChainAddress(entry.addressFormat, outAddr)) return undefined
+  } else if (!isValidEvmAddress(outAddr)) {
+    return undefined
+  }
+  const id = value["id"]
+  return {
+    ...(id !== undefined ? { sourceId: String(id) } : {}),
+    handle,
+    action: "buy",
+    ...(chain ? { chain } : {}),
+    tokenAddress: outAddr,
+    ...(outSymbol ? { symbol: outSymbol.slice(0, 32) } : {}),
+    eventAt,
+    observedAt,
+  }
+}
+
+export function mapProfileSwapBuys(
+  payload: unknown,
+  handle: string,
+  observedAt: string,
+): FomoTradeEvent[] {
+  const rows = extractArrayPayload(payload, ["swaps", "data", "items", "responseObject"])
+  const list = rows.length > 0 ? rows : (Array.isArray(payload) ? payload : [])
+  const seen = new Set<string>()
+  const out: FomoTradeEvent[] = []
+  for (const row of list) {
+    const mapped = mapProfileSwapBuy(row, handle, observedAt)
+    if (!mapped?.tokenAddress) continue
+    const key = `${mapped.tokenAddress.toLowerCase()}|${mapped.eventAt}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(mapped)
+    if (out.length >= 200) break
+  }
+  return out
 }
 
 export { normalizeXHandle, mapNetworkId }

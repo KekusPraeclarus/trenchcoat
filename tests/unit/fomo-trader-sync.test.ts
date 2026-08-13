@@ -59,6 +59,7 @@ function mockClient(entries: readonly FomoLeaderboardEntry[] = []): FomoDataSour
     readTrending: async () => [],
     readAlerts: async () => [],
     readProfile: async () => undefined,
+    readProfileCalls: async () => [],
     remainingToday: async () => 100,
     close: async () => undefined,
   }

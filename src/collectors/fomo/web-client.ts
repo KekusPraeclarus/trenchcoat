@@ -15,6 +15,7 @@ import {
   extractArrayPayload,
   mapAlertEvent,
   mapLeaderboardEntry,
+  mapProfileSwapBuys,
   mapThesis,
   mapTradeEvent,
   mapTrendingObservation,
@@ -353,6 +354,35 @@ export class FomoWebClient {
     }, observedAt) : undefined
   }
 
+  /**
+   * Dated quote→meme buys from `/v2/users/{id}/swaps`. Spotlight has no trade
+   * timestamp, so it stays unused. Never reads profile wallets.
+   */
+  async readProfileCalls(handle: string): Promise<FomoTradeEvent[]> {
+    const observedAt = this.nowIso()
+    const safe = encodeURIComponent(handle.trim().replace(/^@/u, ""))
+    const hits = await this.navigateAndCapture(
+      "profile-calls",
+      `/profile/${safe}`,
+      (url) => /prod-api\.fomo\.family\/v2\/users\/[^/]+\/swaps/iu.test(url),
+    )
+    const seen = new Set<string>()
+    const buys: FomoTradeEvent[] = []
+    for (const hit of hits) {
+      if (hit.status === 404) continue
+      if (hit.status < 200 || hit.status >= 300) continue
+      for (const mapped of mapProfileSwapBuys(hit.body, handle.trim().replace(/^@/u, "").toLowerCase(), observedAt)) {
+        if (!mapped.tokenAddress) continue
+        const key = `${mapped.tokenAddress.toLowerCase()}|${mapped.eventAt}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        buys.push(mapped)
+        if (buys.length >= 200) return buys
+      }
+    }
+    return buys
+  }
+
   async readTokenPage(chain: string, tokenAddress: string): Promise<{
     theses: FomoThesis[]
     trades: FomoTradeEvent[]
@@ -421,6 +451,7 @@ export type FomoDataSource = Pick<
   | "readTrending"
   | "readAlerts"
   | "readProfile"
+  | "readProfileCalls"
   | "getLeaderboard"
   | "getTrendingHandles"
   | "getHandleStats"
