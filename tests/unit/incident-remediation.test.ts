@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -39,6 +39,15 @@ import { remediationLayout } from "../../src/remediation/paths.js"
 import type { PatchProposal, RemediationIncident } from "../../src/remediation/schemas.js"
 import { PatchProposalSchema } from "../../src/remediation/schemas.js"
 import { decidePreReviewLoop } from "../../src/remediation/pre-review-loop.js"
+import {
+  clearPostBuildArtifacts,
+  decideLiveRecovery,
+  jobIsHealthy,
+  jobsForIncident,
+  jobsForLogPath,
+  shouldReopenTerminal,
+  type LiveHealthView,
+} from "../../src/remediation/live-recovery.js"
 
 describe("incident remediation config", () => {
   it("migrates schema 12 → 13 with disabled defaults", () => {
@@ -383,3 +392,134 @@ describe("log cursor rotation", () => {
     expect(sanitizeSecretLike("rotated")).toBe("rotated")
   })
 })
+
+function healthyListScan(overrides: Partial<LiveHealthView> = {}): LiveHealthView {
+  return {
+    jobs: [{
+      job: "list-scan",
+      lastSuccessAt: "2026-08-13T13:29:43.000Z",
+      lastFailureAt: "2026-08-13T05:58:25.000Z",
+    }],
+    findings: [],
+    xBlocked: false,
+    ...overrides,
+  }
+}
+
+describe("live recovery floors", () => {
+  it("maps x-scan logs to list-scan", () => {
+    expect(jobsForLogPath("/tmp/trenchcoat.x-scan.err.log")).toEqual(["list-scan"])
+    expect(jobsForLogPath("/tmp/trenchcoat.watchlist-scan.out.log")).toEqual([
+      "watchlist-scan",
+    ])
+    expect(jobsForLogPath("/tmp/trenchcoat.router.err.log")).toEqual([])
+  })
+
+  it("infers list-scan from log evidence when the incident has no job", () => {
+    expect(jobsForIncident({
+      origin: "log",
+      evidencePaths: ["/tmp/trenchcoat.x-scan.err.log"],
+    })).toEqual(["list-scan"])
+  })
+
+  it("ignores a log incident when the mapped job is healthy", () => {
+    expect(decideLiveRecovery({
+      origin: "log",
+      jobs: ["list-scan"],
+      health: healthyListScan(),
+    })).toEqual({ kind: "ignore", reason: "already-recovered" })
+  })
+
+  it("proceeds when the mapped job last failure is newer than success", () => {
+    expect(decideLiveRecovery({
+      origin: "log",
+      jobs: ["list-scan"],
+      health: healthyListScan({
+        jobs: [{
+          job: "list-scan",
+          lastSuccessAt: "2026-08-13T05:00:00.000Z",
+          lastFailureAt: "2026-08-13T13:00:00.000Z",
+        }],
+      }),
+    })).toEqual({ kind: "proceed" })
+  })
+
+  it("proceeds for a health finding while the job is still cadence-stale", () => {
+    expect(decideLiveRecovery({
+      origin: "health",
+      jobs: ["chart-sweep"],
+      health: {
+        jobs: [{ job: "chart-sweep", lastSuccessAt: "2026-07-18T18:07:57.000Z" }],
+        findings: [{
+          code: "job-cadence-stale",
+          job: "chart-sweep",
+          component: "jobs",
+          summary: "job chart-sweep last success age=25d",
+        }],
+        xBlocked: false,
+      },
+    })).toEqual({ kind: "proceed" })
+  })
+
+  it("does not treat Discord suggestions as recovered ops", () => {
+    expect(decideLiveRecovery({
+      origin: "discord-suggestion",
+      jobs: ["list-scan"],
+      health: healthyListScan(),
+    })).toEqual({ kind: "proceed" })
+  })
+
+  it("treats list-scan as unhealthy when x is blocked or the unit is down", () => {
+    expect(jobIsHealthy(healthyListScan({ xBlocked: true }), "list-scan")).toBe(false)
+    expect(jobIsHealthy(healthyListScan({
+      findings: [{
+        code: "systemd-unit-inactive",
+        component: "systemd",
+        summary: "systemd unit trenchcoat-x-scan state=deactivating",
+      }],
+    }), "list-scan")).toBe(false)
+  })
+
+  it("does not reopen a failed fingerprint while the job is healthy", () => {
+    expect(shouldReopenTerminal({
+      origin: "log",
+      phase: "failed",
+      jobs: ["list-scan"],
+      health: healthyListScan(),
+    })).toBe(false)
+  })
+
+  it("reopens a failed fingerprint when the mapped job is degraded", () => {
+    expect(shouldReopenTerminal({
+      origin: "log",
+      phase: "failed",
+      jobs: ["list-scan"],
+      health: healthyListScan({
+        jobs: [{
+          job: "list-scan",
+          lastSuccessAt: "2026-08-13T05:00:00.000Z",
+          lastFailureAt: "2026-08-13T13:00:00.000Z",
+        }],
+      }),
+    })).toBe(true)
+  })
+
+  it("does not reopen when no job can be mapped", () => {
+    expect(shouldReopenTerminal({
+      origin: "log",
+      phase: "failed",
+      jobs: [],
+      health: healthyListScan(),
+    })).toBe(false)
+  })
+
+  it("removes leftover post-build artifacts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rem-art-"))
+    writeFileSync(join(dir, "diff-summary.json"), "{\"schema\":1}\n")
+    writeFileSync(join(dir, "proposal.json"), "{\"schema\":1}\n")
+    clearPostBuildArtifacts(dir)
+    expect(existsSync(join(dir, "diff-summary.json"))).toBe(false)
+    expect(existsSync(join(dir, "proposal.json"))).toBe(true)
+  })
+})
+

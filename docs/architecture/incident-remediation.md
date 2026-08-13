@@ -20,12 +20,19 @@ claim-index writes take a brief agent lock only for that mutation.
 ## Flow
 
 1. **Scan** — bounded deltas: health snapshot **findings** (cadence/heartbeat/stuck-run/systemd), skip journals, structured `/tmp/trenchcoat.*.{out,err}.log` lines (inode/size cursors), and passive Discord suggestion threads when `discord_suggestions.enabled`.
+   The host drops log/health/skip candidates when every mapped job is healthy (`already-recovered`).
+   A terminal fingerprint reopens only when a mapped job is degraded.
+   Log prompts use a bounded `evidence-log.txt` snapshot.
 2. **Fingerprint** — stable id from job/error-class/component/target (not raw
-   timestamps/text). Evidence stored as untrusted envelopes; prompts get paths only.
+   timestamps/text). Log lines without a JSON `job` inherit the log stem
+   (`trenchcoat.x-scan.err.log` → `list-scan`). Evidence stored as untrusted envelopes; prompts get paths only.
 3. **Triage** — `composer-2.5-fast` → `ignore | attention-now | defer-weekly`.
    Host may downgrade `attention-now`, never upgrade past evidence floors.
    Discord suggestions enter already-triaged as `attention-now` after host gates.
-4. **Immediate** — diagnose → propose → pre-review → risk/approval → build in
+4. **Immediate** — the host re-checks live health before diagnose.
+   It ignores `already-recovered` (Discord suggestions skip this floor).
+   It deletes leftover `diff-summary.json` / `gate.json` / `post-review.json`.
+   Then diagnose → propose → pre-review → risk/approval → build in
    isolated worktree → post-diff review → **`pnpm install --frozen-lockfile`**
    (sibling worktrees do not inherit `node_modules`) → gates (`typecheck` /
    `lint` / `test:all`) → ff-only push →

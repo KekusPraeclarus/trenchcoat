@@ -2,7 +2,7 @@
 description: ADR — Host-owned hourly incident remediation with Telegram high-risk approval and a separate weekly deferred pass; weekly decision-policy harness unchanged.
 scope: project
 status: accepted
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 ---
 
 # ADR 017 — Hourly incident remediation lane
@@ -58,6 +58,10 @@ ops repair.
   path fails on the Linux VPS (`launchctl: not found`) and can halt automation.
 - Pre-review `revise` auto-loops up to `max_pre_review_revises` (see ADR 029
   follow-ups and [incident-remediation.md](../architecture/incident-remediation.md)).
+- Host live-recovery floors drop log/health/skip incidents when mapped jobs are
+  healthy, and they do not reopen a terminal fingerprint until a mapped job is
+  degraded again. Diagnose never sees the raw rotating log; leftover post-build
+  artifacts are removed before a new diagnose.
 
 ## References
 

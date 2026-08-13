@@ -8,6 +8,11 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "../lib/canonical-json.js"
 import { buildHealthSnapshot } from "../orchestrator/health.js"
+import {
+  jobsForLogPath,
+  liveHealthFromSnapshot,
+  type LiveHealthView,
+} from "./live-recovery.js"
 import type { RemediationLayout } from "./paths.js"
 import {
   classifyErrorClass,
@@ -224,6 +229,7 @@ export async function collectRemediationIntake(args: Readonly<{
   candidates: IntakeCandidate[]
   cursors: RemediationCursorsFile
   healthSummaryPath: string
+  liveHealth: LiveHealthView
 }> {
   const home = join(homedir(), ".trenchcoat")
   const archiveRoot = args.archiveRoot ?? join(home, "archive")
@@ -334,8 +340,9 @@ export async function collectRemediationIntake(args: Readonly<{
         message: parsed.message,
         ...(parsed.job ? { job: parsed.job } : {}),
       })
+      const inferredJob = parsed.job ?? jobsForLogPath(path)[0]
       const fingerprint = stableIncidentFingerprint({
-        ...(parsed.job ? { job: parsed.job } : {}),
+        ...(inferredJob ? { job: inferredJob } : {}),
         component: "log",
         errorClass,
         ...(path.split("/").pop()
@@ -348,7 +355,7 @@ export async function collectRemediationIntake(args: Readonly<{
       candidates.push({
         fingerprint,
         incidentId: shortIncidentId(fingerprint),
-        ...(parsed.job ? { job: parsed.job } : {}),
+        ...(inferredJob ? { job: inferredJob } : {}),
         component: "log",
         errorClass,
         title: summary,
@@ -448,6 +455,7 @@ export async function collectRemediationIntake(args: Readonly<{
     candidates,
     cursors: nextCursors,
     healthSummaryPath: healthPath,
+    liveHealth: liveHealthFromSnapshot(health),
   }
 }
 

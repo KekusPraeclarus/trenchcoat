@@ -61,8 +61,17 @@ import {
   upsertIncident,
 } from "./store.js"
 import { runPostFixClaimAudit } from "./post-fix-audit.js"
+import {
+  clearPostBuildArtifacts,
+  decideLiveRecovery,
+  jobsForIncident,
+  jobsForLogPath,
+  liveHealthFromSnapshot,
+  shouldReopenTerminal,
+} from "./live-recovery.js"
 import { runOneShotSession } from "../orchestrator/session.js"
 import { type RevalidationSessionRunner } from "./revalidate.js"
+import { buildHealthSnapshot } from "../orchestrator/health.js"
 
 async function updateIncident(
   incidentId: string,
@@ -146,11 +155,52 @@ export async function scanRemediationIncidents(args: Readonly<{
   let created = 0
 
   for (const candidate of intake.candidates) {
-    const existing = store.findByFingerprint(candidate.fingerprint, true)
-    if (existing) continue
+    const existingActive = store.findByFingerprint(candidate.fingerprint, true)
+    if (existingActive) continue
+    const existingAny = store.findByFingerprint(candidate.fingerprint, false)
+    const candidateJobs = [
+      ...(candidate.job ? [candidate.job] : []),
+      ...candidate.evidence.flatMap((item) => item.path ? jobsForLogPath(item.path) : []),
+    ]
+    const uniqueJobs = [...new Set(candidateJobs)]
+    const origin = candidate.component === "health"
+      ? "health" as const
+      : candidate.component === "log"
+        ? "log" as const
+        : candidate.component === "skip"
+          ? "skip" as const
+          : "other" as const
+    if (existingAny && !shouldReopenTerminal({
+      origin,
+      phase: existingAny.phase,
+      jobs: uniqueJobs.length > 0 ? uniqueJobs : jobsForIncident(existingAny),
+      health: intake.liveHealth,
+    })) {
+      continue
+    }
+
+    const recovered = decideLiveRecovery({
+      origin,
+      jobs: uniqueJobs,
+      health: intake.liveHealth,
+    })
+    if (recovered.kind === "ignore") continue
 
     const artDir = incidentArtifactDir(layout, candidate.incidentId)
     mkdirSync(artDir, { recursive: true, mode: 0o700 })
+    const logSnapPath = join(artDir, "evidence-log.txt")
+    const logLines = candidate.evidence.filter((item) => item.kind === "log-line")
+    let evidence = candidate.evidence
+    if (logLines.length > 0) {
+      await writeAtomicFileFsync(
+        logSnapPath,
+        `${logLines.map((item) => item.summary).join("\n")}\n`,
+        0o600,
+      )
+      evidence = candidate.evidence.map((item) =>
+        item.kind === "log-line" ? { ...item, path: logSnapPath } : item,
+      )
+    }
     const evidenceIndex = join(artDir, "evidence-index.json")
     await writeAtomicFileFsync(
       evidenceIndex,
@@ -158,13 +208,13 @@ export async function scanRemediationIncidents(args: Readonly<{
         schema: 1,
         trust: "host-derived",
         incidentId: candidate.incidentId,
-        evidence: candidate.evidence,
+        evidence,
         healthSummaryPath: intake.healthSummaryPath,
       }, null, 2)}\n`,
       0o600,
     )
 
-    let incident = candidateToIncident(candidate, nowIso)
+    let incident = candidateToIncident({ ...candidate, evidence }, nowIso)
     if (candidate.deterministicIgnore) {
       incident = {
         ...incident,
@@ -484,6 +534,7 @@ async function runRemediationPhases(args: Readonly<{
   const artDir = incidentArtifactDir(layout, args.incident.incidentId)
   mkdirSync(artDir, { recursive: true, mode: 0o700 })
   const archiveRoot = join(homedir(), ".trenchcoat", "archive")
+  const agentRoot = join(homedir(), ".trenchcoat", "agent")
 
   let record = args.incident
   const setPhase = async (
@@ -505,6 +556,22 @@ async function runRemediationPhases(args: Readonly<{
     || record.phase === "diagnosing"
     || (args.weekly && record.phase === "deferred")
   ) {
+    if (record.origin !== "discord-suggestion") {
+      const snapshot = await buildHealthSnapshot({ agentRoot, archiveRoot })
+      const recovered = decideLiveRecovery({
+        origin: record.origin,
+        jobs: jobsForIncident(record),
+        health: liveHealthFromSnapshot(snapshot),
+      })
+      if (recovered.kind === "ignore") {
+        await setPhase("ignored", {
+          terminalError: recovered.reason,
+          triageReason: recovered.reason,
+        })
+        return
+      }
+    }
+    clearPostBuildArtifacts(artDir)
     await setPhase("diagnosing")
     const diag = await runDiagnoseAgent({
       repoRoot: args.repoRoot,

@@ -368,6 +368,8 @@ scan of configured Discord channels for buildable suggestions. Defaults
 host-rendered clarifying question in the thread on the first `forming` round.
 Set it to `false` to keep the lane silent on Discord.
 
+Host live-recovery floors (not configurable): log/health/skip candidates whose mapped jobs are healthy are dropped as `already-recovered`. A terminal fingerprint reopens only when a mapped job is degraded. Discord suggestions skip this floor.
+
 | Field | Default | Role |
 |---|---|---|
 | `enabled` | `false` | Master switch |
@@ -442,7 +444,8 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 Authenticated [pump.fun](https://pump.fun) SPA scrape. Defaults keep the
 lane off. Jobs also fail closed unless
 `archive/provider-evaluations/pump/gates.json` is fresh and `provider` is
-`pass`. Burner session via `tc auth pump`. See
+`pass`. Burner session via `tc auth pump`. Rollout:
+[ops/fafo-pump/SHADOW-CANARY.md](../../ops/fafo-pump/SHADOW-CANARY.md). See
 [knowledge/pump-fun.md](knowledge/pump-fun.md) and
 [ADR 047](adr/047-pump-feed-scan.md).
 
