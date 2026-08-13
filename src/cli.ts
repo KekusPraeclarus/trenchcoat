@@ -50,6 +50,8 @@ Commands:
   x-engagement status
   fc-engagement dry-run <run-id>
   fc-engagement status
+  pump-engagement dry-run <run-id>
+  pump-engagement status
   harness run [--dry-run] [--skip-tests] [--skip-deploy]
   harness propose --epoch <id>
   harness prepare <hypothesis-id>
@@ -80,12 +82,24 @@ Commands:
   research <subject>
   auth twitter [--create-managed-list] [--headed]
   auth fomo [--headed]
+  auth pump [--headed]
+  auth pump --import <storage-state.json>
+  auth pump --import-cookies <json> [--import-local-storage <json>]
+  auth pump --import-cookie-header <file> [--import-local-storage <json>]
   auth farcaster --create --fname <name>
   auth farcaster --fid <n> --username <name> --mnemonic-stdin
   auth telegram-channels
   jobs
 `)
   process.exit(1)
+}
+
+function flagValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag)
+  if (idx < 0) return undefined
+  const value = args[idx + 1]
+  if (!value || value.startsWith("-")) usage()
+  return value
 }
 
 function resolveHomes(): { agentRoot: string, archiveRoot: string } {
@@ -468,6 +482,8 @@ async function cmdRemediations(rest: string[]): Promise<void> {
     })
     if (file.activeIncidentId === id) file = { ...file, activeIncidentId: null }
     await store.save(file)
+    const { clearIntegrityHoldForIncident } = await import("./remediation/integrity-hold.js")
+    await clearIntegrityHoldForIncident(id)
     console.log(JSON.stringify({ ok: true, incidentId: id, phase: "failed" }, null, 2))
     return
   }
@@ -1436,6 +1452,31 @@ async function main(): Promise<void> {
         }
       }
       break
+    case "pump-engagement":
+      {
+        const sub = rest[0]
+        const { agentRoot, archiveRoot } = resolveHomes()
+        if (sub === "status") {
+          const { loadConfig } = await import("./lib/config.js")
+          const { probePumpEngagementSummary } = await import("./orchestrator/pump-engagement.js")
+          console.log(JSON.stringify(probePumpEngagementSummary(agentRoot, loadConfig()), null, 2))
+        } else if (sub === "dry-run") {
+          const runId = rest[1]
+          if (!runId) usage()
+          const { processPumpScanEngagement } = await import("./orchestrator/pump-engagement.js")
+          const report = await processPumpScanEngagement({
+            agentRoot,
+            archiveRoot,
+            runId: runId!,
+            dryRun: true,
+            execute: false,
+          })
+          console.log(JSON.stringify(report, null, 2))
+        } else {
+          usage()
+        }
+      }
+      break
     case "harness":
       await cmdHarness(rest)
       break
@@ -1460,6 +1501,31 @@ async function main(): Promise<void> {
       } else if (rest[0] === "fomo") {
         const { authFomoInteractive } = await import("./collectors/social/fomo-auth.js")
         await authFomoInteractive()
+      } else if (rest[0] === "pump") {
+        const flags = rest.slice(1)
+        const storageStatePath = flagValue(flags, "--import")
+        const cookiesPath = flagValue(flags, "--import-cookies")
+        const cookieHeaderPath = flagValue(flags, "--import-cookie-header")
+        const cookieDomain = flagValue(flags, "--cookie-domain")
+        const localStoragePath = flagValue(flags, "--import-local-storage")
+        if (storageStatePath || cookiesPath || cookieHeaderPath || localStoragePath) {
+          const { importPumpSession } = await import("./collectors/social/pump-auth.js")
+          const result = await importPumpSession({
+            ...(storageStatePath ? { storageStatePath } : {}),
+            ...(cookiesPath ? { cookiesPath } : {}),
+            ...(cookieHeaderPath ? { cookieHeaderPath } : {}),
+            ...(cookieDomain ? { cookieDomain } : {}),
+            ...(localStoragePath ? { localStoragePath } : {}),
+          })
+          console.log(`Imported burner session → ${result.path}`)
+          console.log(`cookies=${result.cookieCount} localStorage=${result.localStorageCount}`)
+          if (!result.looksAuthed) {
+            console.warn("warning: imported session has no Privy identity token")
+          }
+        } else {
+          const { authPumpInteractive } = await import("./collectors/social/pump-auth.js")
+          await authPumpInteractive()
+        }
       } else if (rest[0] === "farcaster") {
         await cmdAuthFarcaster(rest.slice(1))
       } else if (rest[0] === "telegram-channels") {

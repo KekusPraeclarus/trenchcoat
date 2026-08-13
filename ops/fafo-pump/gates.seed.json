@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "probeRunId": "probe-2026-08-13",
+  "evaluatedAt": "2026-08-13T00:00:00.000Z",
+  "fixtureHashes": {
+    "unavailable.json": "seed-stub"
+  },
+  "gates": {
+    "provider": {
+      "verdict": "fail",
+      "successRate": 0,
+      "longestOutageHours": 48,
+      "p95LatencyMs": 15000,
+      "sampleSize": 0
+    },
+    "feed": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    },
+    "leaderboard": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    },
+    "following": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    }
+  }
+}

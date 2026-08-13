@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -45,7 +45,8 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **26** (earlier discovery: `research.social_cashtag_bridge`
+Current schema is **27** (pump.fun feed scan — ADR 047; earlier discovery:
+`research.social_cashtag_bridge`
 and `new_pools_feed` — ADR 046; prior schema **25** retention sweeps for
 purged alpha-ack tombstones and dormant narrative dossiers under
 `retention.alpha_ack_days` / `retention.narrative_dossier_days` — ADR 044,
@@ -74,7 +75,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v25 shapes via `migrateConfigToV26`.
+`loadConfig` migrates v1–v26 shapes via `migrateConfigToV27`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -384,7 +385,7 @@ Set it to `false` to keep the lane silent on Discord.
 | `revalidation.enabled` | `true` | Post-fix claim audit (parent `enabled` still required) |
 | `revalidation.required_healthy_observations` | `2` | Healthy post-deploy observations per affected source |
 | `revalidation.max_rounds` | `3` | Inconclusive retry cap |
-| `revalidation.max_wait_hours` | `24` | Recovery / inconclusive wait cap |
+| `revalidation.max_wait_hours` | `24` | Recovery / inconclusive wait cap. Skip when every affected source kind is absent from the ledger |
 | `revalidation.evaluate_model` / `review_model` | `composer-2.5-fast` | Unanimous invalidation reviewers |
 | `revalidation.auto_correct` | `true` | Stage destination-aware `finding.correction` events |
 
@@ -435,6 +436,31 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `narrative_source_probation.probation_days` | `14` | Utility measurement window |
 | `narrative_source_probation.min_accepted_contributions` / `min_distinct_narratives` | `3` / `2` | Follow eligibility floors |
 | `narrative_source_probation.demotion_idle_days` | `28` | Idle unfollow trigger |
+
+### `pump` (schema 27)
+
+Authenticated [pump.fun](https://pump.fun) SPA scrape. Defaults keep the
+lane off. Jobs also fail closed unless
+`archive/provider-evaluations/pump/gates.json` is fresh and `provider` is
+`pass`. Burner session via `tc auth pump`. See
+[knowledge/pump-fun.md](knowledge/pump-fun.md) and
+[ADR 047](adr/047-pump-feed-scan.md).
+
+| Field | Default | Role |
+|---|---|---|
+| `enabled` | `false` | Master switch; false skips `pump-scan` |
+| `shadow_mode` | `true` | Archives calls and writes receipts. No mutations. No research enqueue |
+| `daily_navigation_budget` | `200` | Local ledger cap on page navigations |
+| `max_pages_per_feed` | `5` | Doomscroll cap after the per-tab cursor |
+| `following_min_follows` | `10` | Following tab runs only at this follow count |
+| `max_profile_chart_pages` | `5` | Profile call-chart visits per run |
+| `engagement.likes_per_window` | `2` | Like cap per window |
+| `engagement.like_window_minutes` | `10` | Like window length |
+| `engagement.max_follows_per_run` | `3` | Follow cap per `pump-scan` |
+| `leaderboard.enabled` | `true` | Scrape handles only. No wallet nomination |
+| `leaderboard.max_handles` | `50` | Leaderboard row cap |
+| `research.max_enqueues_per_day` | `3` | Host enqueue from Following then Top |
+| `calls.min_age_hours` | `24` | Peak settle wait after a call |
 
 ### `research.social_cashtag_bridge` (schema 26)
 
@@ -549,6 +575,11 @@ application is not wired yet — only wallets are applied today.
 | `tc wallets seed <file>` | operator-seed wallets into empty `state/wallets.json` |
 | `tc wallets add-candidates <file> [--dry-run]` | merge operator-nominated candidates into existing wallet state |
 | `tc auth twitter` | headful interactive re-auth (documented sandbox exception) |
+| `tc auth fomo` | headful burner login for fomo.family |
+| `tc auth pump [--headed]` | headful burner login for pump.fun; press Enter after login |
+| `tc auth pump --import <storage-state.json>` | copy a local Playwright session file; never paste cookies into chat |
+| `tc auth pump --import-cookie-header <file> [--import-local-storage <json>]` | build the session from a DevTools Cookie header plus localStorage |
+| `tc pump-engagement status` / `dry-run <run-id>` | Pump like/follow probe |
 | `tc auth twitter --create-managed-list` | one-time private managed source list; persists list id/url (ADR 004) |
 | `tc probe twitter` | scrape all configured targets + lifecycle summary; no membership mutations |
 | `tc source-list review [--dry-run] [--no-sync]` | deterministic promote/demote; dry-run skips state and X writes |

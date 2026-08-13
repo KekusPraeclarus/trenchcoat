@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -50,6 +50,18 @@ X profile history scraping lives in `src/collectors/twitter/profile-history.ts`
 and shares a crash-resumable page budget under
 `archive/provider-usage/twitter/fomo-source-review/`. Per-nomination resume
 checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
+
+### Pump.fun
+
+Authenticated SPA scrape under `src/collectors/pump/`. Host job `pump-scan`
+(30m) scrapes FYP, Top, and News. It scrapes Following after 10 follows.
+Leaderboard rows keep handles only. The agent proposes like/follow/unfollow.
+The host applies those choices after the scrape. Calls archive to
+`archive/outcomes/pump-call-*.json`. They never enter `source-call-log.jsonl`.
+Profile ids never enter `wallets.json`. Shadow mode is the default.
+Knowledge: [pump-fun.md](../knowledge/pump-fun.md).
+FAFO status: [ops/fafo-pump/REPORT.md](../../ops/fafo-pump/REPORT.md).
+ADR: [047-pump-feed-scan.md](../adr/047-pump-feed-scan.md).
 
 ## Sources
 

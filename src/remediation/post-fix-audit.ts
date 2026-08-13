@@ -48,6 +48,7 @@ import type { ClaimRevalidationResult, RemediationIncident } from "./schemas.js"
 import {
   computeImpactWindow,
   hasPostFixRecoveryProof,
+  sourceKindsMissingFromLedger,
 } from "./source-health.js"
 import type { RemediationStore } from "./store.js"
 
@@ -97,6 +98,14 @@ function pastMaxWait(args: Readonly<{
   return nowMs - deployedMs > args.maxWaitHours * 3_600_000
 }
 
+async function requireOperatorAttention(
+  home: string | undefined,
+  result: Omit<PostFixAuditResult, "phase"> & { detail: string },
+): Promise<PostFixAuditResult> {
+  await clearIntegrityHold(home)
+  return { phase: "attention-required", ...result }
+}
+
 export async function runPostFixClaimAudit(args: Readonly<{
   layout: RemediationLayout
   store: RemediationStore
@@ -126,10 +135,7 @@ export async function runPostFixClaimAudit(args: Readonly<{
   })
 
   if (impact.unknownMarketImpact && impact.sources.length === 0) {
-    return {
-      phase: "attention-required",
-      detail: "unknown-market-impact",
-    }
+    return requireOperatorAttention(args.home, { detail: "unknown-market-impact" })
   }
 
   const sources = impact.sources.length > 0
@@ -140,6 +146,14 @@ export async function runPostFixClaimAudit(args: Readonly<{
   }
 
   const nowIso = systemClock.nowIso()
+  const ledger = args.store.loadSourceHealthLedger()
+  const missingKinds = sourceKindsMissingFromLedger(ledger.observations, sources)
+  if (sources.length > 0 && missingKinds.length === sources.length) {
+    return requireOperatorAttention(args.home, {
+      detail: `no-source-health-observations:${missingKinds.join(",")}`,
+    })
+  }
+
   await setIntegrityHold({
     schema: 1,
     incidentId: args.incident.incidentId,
@@ -154,7 +168,6 @@ export async function runPostFixClaimAudit(args: Readonly<{
     return { phase: "completed", detail: "already-corrected" }
   }
 
-  const ledger = args.store.loadSourceHealthLedger()
   const recovery = hasPostFixRecoveryProof({
     observations: ledger.observations,
     sourceKinds: sources,
@@ -169,10 +182,9 @@ export async function runPostFixClaimAudit(args: Readonly<{
       maxWaitHours: args.config.maxWaitHours,
       nowIso,
     })) {
-      return {
-        phase: "attention-required",
+      return requireOperatorAttention(args.home, {
         detail: `recovery-wait-exhausted:${recovery.reason ?? "no-proof"}`,
-      }
+      })
     }
     return {
       phase: "awaiting-recovery-data",
@@ -186,10 +198,9 @@ export async function runPostFixClaimAudit(args: Readonly<{
     recoveryConfirmedAt: recovery.recoveryConfirmedAt,
   })
   if (!window.ok || !window.startExclusive || !window.endInclusive) {
-    return {
-      phase: "attention-required",
+    return requireOperatorAttention(args.home, {
       detail: window.reason ?? "impact-window-unknown",
-    }
+    })
   }
 
   const archiveLayout = await ensureArchive(args.archiveRoot)
@@ -333,24 +344,22 @@ export async function runPostFixClaimAudit(args: Readonly<{
 
   if (summary.inconclusive > 0 && summary.invalidated === 0 && summary.stands < windowClaims.length) {
     if (round >= args.config.maxRounds) {
-      return {
-        phase: "attention-required",
+      return requireOperatorAttention(args.home, {
         detail: `inconclusive-exhausted-rounds:${round}`,
         recoveryConfirmedAt: recovery.recoveryConfirmedAt,
         revalidationRound: round,
-      }
+      })
     }
     if (pastMaxWait({
       deployedAt: args.deployedAt,
       maxWaitHours: args.config.maxWaitHours,
       nowIso,
     })) {
-      return {
-        phase: "attention-required",
+      return requireOperatorAttention(args.home, {
         detail: "inconclusive-wait-exhausted",
         recoveryConfirmedAt: recovery.recoveryConfirmedAt,
         revalidationRound: round,
-      }
+      })
     }
     return {
       phase: "awaiting-recovery-data",
@@ -376,12 +385,11 @@ export async function runPostFixClaimAudit(args: Readonly<{
   )
 
   if (reconcile.attentionRequired) {
-    return {
-      phase: "attention-required",
+    return requireOperatorAttention(args.home, {
       detail: reconcile.attentionReason ?? "reconcile-failed",
       recoveryConfirmedAt: recovery.recoveryConfirmedAt,
       revalidationRound: round,
-    }
+    })
   }
 
   if (summary.invalidated === 0 || !args.config.autoCorrect) {

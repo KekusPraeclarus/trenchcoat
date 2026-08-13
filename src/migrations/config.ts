@@ -1172,7 +1172,7 @@ export const NEW_POOLS_FEED_V26_DEFAULTS = {
  */
 export function migrateConfigToV26(raw: unknown): unknown {
   const record = raw as Record<string, unknown> | null
-  if (record?.["schema"] === 26) return raw
+  if (record?.["schema"] === 26 || record?.["schema"] === 27) return raw
 
   const v25 = (
     record?.["schema"] === 25
@@ -1209,6 +1209,87 @@ export function migrateConfigToV26(raw: unknown): unknown {
       chains: Array.isArray(prevFeed["chains"]) && prevFeed["chains"].length > 0
         ? prevFeed["chains"]
         : [...NEW_POOLS_FEED_V26_DEFAULTS.chains],
+    },
+  }
+}
+
+export const PUMP_V27_DEFAULTS = {
+  enabled: false,
+  shadow_mode: true,
+  daily_navigation_budget: 200,
+  min_delay_ms: 1_500,
+  max_delay_ms: 3_500,
+  navigation_timeout_ms: 30_000,
+  max_payload_bytes: 1_000_000,
+  max_pages_per_feed: 5,
+  following_min_follows: 10,
+  max_profile_chart_pages: 5,
+  engagement: {
+    enabled: true,
+    likes_per_window: 2,
+    like_window_minutes: 10,
+    max_follows_per_run: 3,
+  },
+  leaderboard: {
+    enabled: true,
+    max_handles: 50,
+  },
+  research: {
+    max_enqueues_per_day: 3,
+  },
+  calls: {
+    min_age_hours: 24,
+  },
+} as const
+
+/**
+ * Schema 27: pump.fun web SPA feed scan, agent like/follow, host call
+ * archive and peak settle (ADR 047). Defaults stay off until FAFO.
+ */
+export function migrateConfigToV27(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 27) return raw
+
+  const v26 = (
+    record?.["schema"] === 26
+      ? record
+      : migrateConfigToV26(raw)
+  ) as Record<string, unknown>
+
+  const prevPump = (v26["pump"] ?? {}) as Record<string, unknown>
+  const prevEngagement = (prevPump["engagement"] ?? {}) as Record<string, unknown>
+  const prevLeaderboard = (prevPump["leaderboard"] ?? {}) as Record<string, unknown>
+  const prevResearch = (prevPump["research"] ?? {}) as Record<string, unknown>
+  const prevCalls = (prevPump["calls"] ?? {}) as Record<string, unknown>
+
+  return {
+    ...v26,
+    schema: 27,
+    pump: {
+      ...PUMP_V27_DEFAULTS,
+      ...prevPump,
+      enabled: prevPump["enabled"] === true
+        ? true
+        : (prevPump["enabled"] ?? PUMP_V27_DEFAULTS.enabled),
+      shadow_mode: prevPump["shadow_mode"] === false
+        ? false
+        : (prevPump["shadow_mode"] ?? PUMP_V27_DEFAULTS.shadow_mode),
+      engagement: {
+        ...PUMP_V27_DEFAULTS.engagement,
+        ...prevEngagement,
+      },
+      leaderboard: {
+        ...PUMP_V27_DEFAULTS.leaderboard,
+        ...prevLeaderboard,
+      },
+      research: {
+        ...PUMP_V27_DEFAULTS.research,
+        ...prevResearch,
+      },
+      calls: {
+        ...PUMP_V27_DEFAULTS.calls,
+        ...prevCalls,
+      },
     },
   }
 }

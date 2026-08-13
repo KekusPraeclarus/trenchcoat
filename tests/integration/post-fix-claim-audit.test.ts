@@ -19,6 +19,7 @@ import {
 } from "../../src/remediation/source-health.js"
 import { createRemediationStore } from "../../src/remediation/store.js"
 import type { RemediationIncident } from "../../src/remediation/schemas.js"
+import { loadIntegrityHold } from "../../src/remediation/integrity-hold.js"
 
 const COMMIT = "abcdef1234567"
 const DEPLOYED_AT = "2026-07-21T01:00:00.000Z"
@@ -260,6 +261,7 @@ describe("post-fix claim audit integration", () => {
     })
     expect(first.phase).toBe("awaiting-recovery-data")
     expect(first.detail).toMatch(/inconclusive-retry-round:1/)
+    expect(loadIntegrityHold(home)?.incidentId).toBe(incident.incidentId)
 
     const second = await runPostFixClaimAudit({
       layout,
@@ -275,5 +277,94 @@ describe("post-fix claim audit integration", () => {
     })
     expect(second.phase).toBe("attention-required")
     expect(second.detail).toMatch(/inconclusive-exhausted-rounds/)
+    expect(loadIntegrityHold(home)).toBeUndefined()
+  })
+
+  it("skips wait and does not hold when source kinds have no ledger rows", async () => {
+    const { home, agentRoot, archiveRoot, layout, store } = await setupFixture({
+      incidentId: "rem-intpostfix-market",
+    })
+    await store.saveSourceHealthLedger(emptySourceHealthLedger())
+    const incident: RemediationIncident = {
+      schema: 1,
+      incidentId: "rem-intpostfix-market",
+      fingerprint: "fp-int-postfix-market",
+      phase: "deployed",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-21T01:00:00.000Z",
+      title: "discord live tape",
+      severity: "info",
+      attemptCount: 1,
+      originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
+      evidencePaths: [],
+      proposedPaths: ["src/collectors/market/providers.ts", "src/discord/live-tape.ts"],
+      deployedAt: DEPLOYED_AT,
+    }
+
+    const result = await runPostFixClaimAudit({
+      layout,
+      store,
+      incident,
+      agentRoot,
+      archiveRoot,
+      config: auditConfig,
+      sourceCommit: COMMIT,
+      deployedAt: DEPLOYED_AT,
+      home,
+    })
+
+    expect(result.phase).toBe("attention-required")
+    expect(result.detail).toBe("no-source-health-observations:coingecko,dexscreener")
+    expect(loadIntegrityHold(home)).toBeUndefined()
+  })
+
+  it("releases the hold when recovery wait is exhausted", async () => {
+    const { home, agentRoot, archiveRoot, layout, store } = await setupFixture({
+      incidentId: "rem-intpostfix-wait",
+    })
+    let ledger = emptySourceHealthLedger()
+    ledger = appendSourceHealthObservation(ledger, classifyXScanObservation({
+      targetKind: "home",
+      targetLabel: "home",
+      observedAt: "2026-07-20T10:00:00.000Z",
+      postCount: 0,
+      hitCursor: false,
+      challenged: false,
+    }))
+    await store.saveSourceHealthLedger(ledger)
+    const incident: RemediationIncident = {
+      schema: 1,
+      incidentId: "rem-intpostfix-wait",
+      fingerprint: "fp-int-postfix-wait",
+      phase: "deployed",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-21T01:00:00.000Z",
+      title: "empty FYP",
+      severity: "warn",
+      attemptCount: 1,
+      originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
+      evidencePaths: [],
+      proposedPaths: ["docs/architecture/discord-conversation.md"],
+      affectedSources: [SOURCE_KIND_X_HOME_FYP],
+      deployedAt: DEPLOYED_AT,
+    }
+
+    const result = await runPostFixClaimAudit({
+      layout,
+      store,
+      incident,
+      agentRoot,
+      archiveRoot,
+      config: { ...auditConfig, maxWaitHours: 24 },
+      sourceCommit: COMMIT,
+      deployedAt: DEPLOYED_AT,
+      home,
+    })
+
+    expect(result.phase).toBe("attention-required")
+    expect(result.detail).toMatch(/^recovery-wait-exhausted:/u)
+    expect(loadIntegrityHold(home)).toBeUndefined()
   })
 })

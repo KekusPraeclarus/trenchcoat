@@ -1,0 +1,10 @@
+{
+  "users": [
+    {
+      "username": "lb-alpha",
+      "rank": 1,
+      "address": "DROP-THIS-WALLET-ADDRESS-MUST-NOT-MAP",
+      "wallet": "So11111111111111111111111111111111111111112"
+    }
+  ]
+}

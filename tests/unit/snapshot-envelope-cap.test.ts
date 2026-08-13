@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 import { SNAPSHOT_MAX_ITEMS } from "../../src/contracts/schemas.js"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { writeXFypEligibleSnapshot } from "../../src/orchestrator/x-fyp-eligible.js"
+import { writePumpFypEligibleSnapshot } from "../../src/orchestrator/pump-fyp-eligible.js"
 
 describe("writeXFypEligibleSnapshot envelope cap", () => {
   it("caps overflow posts to SNAPSHOT_MAX_ITEMS with truncated marker", async () => {
@@ -29,5 +30,28 @@ describe("writeXFypEligibleSnapshot envelope cap", () => {
     ) as { items: ReadonlyArray<{ text: string }> }
     expect(envelope.items).toHaveLength(SNAPSHOT_MAX_ITEMS)
     expect(envelope.items.at(-1)?.text).toBe(`truncated=${total - keep}`)
+  })
+})
+
+describe("writePumpFypEligibleSnapshot envelope cap", () => {
+  it("caps overflow items to SNAPSHOT_MAX_ITEMS with truncated marker", async () => {
+    const agentRoot = mkdtempSync(join(tmpdir(), "tc-pump-fyp-cap-env-"))
+    const runId = "pump-scan-fyp-cap-env"
+    const writer = new SnapshotWriter(agentRoot)
+    const total = SNAPSHOT_MAX_ITEMS + 8
+    await writePumpFypEligibleSnapshot({
+      writer,
+      runId,
+      fetchedAt: "2026-08-13T12:00:00.000Z",
+      items: Array.from({ length: total }, (_, i) => ({
+        itemId: `coin-${i}`,
+        author: `user${i}`,
+      })),
+    })
+    const envelope = JSON.parse(
+      readFileSync(join(agentRoot, "inbox", runId, "pump-fyp-eligible.json"), "utf8"),
+    ) as { items: ReadonlyArray<{ text: string }> }
+    expect(envelope.items).toHaveLength(SNAPSHOT_MAX_ITEMS)
+    expect(envelope.items.at(-1)?.text.startsWith("truncated=")).toBe(true)
   })
 })

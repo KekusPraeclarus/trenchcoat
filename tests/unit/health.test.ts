@@ -6,6 +6,7 @@ import { ensureArchive, runArchiveDir } from "../../src/lib/archive.js"
 import { StateStore } from "../../src/lib/state.js"
 import { createJournalStore } from "../../src/orchestrator/journal-store.js"
 import {
+  KEY_HEALTH_JOBS,
   buildHealthSnapshot,
   formatHealthText,
   healthCreatesReviewScope,
@@ -263,16 +264,20 @@ describe("buildHealthSnapshot", () => {
     expect(text).toContain("trenchcoat health")
     expect(text).toContain("research: actionable=0")
     expect(text).toMatch(/^fomo: enabled=\S+ shadow=\S+ \(parallel-only\) fallback=st:\S+ be:\S+$/mu)
+    expect(text).toMatch(/^pump: enabled=\S+ shadow=\S+ \(parallel-only\)$/mu)
     expect(text).not.toMatch(/TELEGRAM_|HMAC|token=/iu)
 
     const json = toHealthJsonPayload(health)
     expect(json["schema"]).toBe(1)
     expect(Array.isArray(json["warnings"])).toBe(true)
     expect(json["fomo"]).toMatchObject({ parallelOnly: true })
+    expect(json["pump"]).toMatchObject({ parallelOnly: true })
+    expect(KEY_HEALTH_JOBS.includes("pump-scan")).toBe(false)
 
     const lines = healthSnapshotLines(health)
     expect(lines.some((l) => l.startsWith("fcStaleStreak="))).toBe(true)
     expect(lines.some((l) => l.startsWith("fomoEnabled="))).toBe(true)
+    expect(lines.some((l) => l.startsWith("pumpEnabled="))).toBe(true)
     expect(skipLedgerLines(health.skipReasons)[0]).toContain("queue-empty")
   }, 15_000)
 

@@ -6,6 +6,7 @@ import {
   computeImpactWindow,
   emptySourceHealthLedger,
   hasPostFixRecoveryProof,
+  sourceKindsMissingFromLedger,
 } from "../../src/remediation/source-health.js"
 import type { SourceHealthObservation } from "../../src/remediation/schemas.js"
 
@@ -247,5 +248,32 @@ describe("appendSourceHealthObservation", () => {
     ledger = appendSourceHealthObservation(ledger, o)
     ledger = appendSourceHealthObservation(ledger, o)
     expect(ledger.observations).toHaveLength(1)
+  })
+})
+
+describe("sourceKindsMissingFromLedger", () => {
+  it("returns kinds with zero observations, sorted", () => {
+    const o = classifyXScanObservation({
+      targetKind: "home",
+      targetLabel: "home",
+      observedAt: "2026-07-21T01:00:00.000Z",
+      postCount: 1,
+      hitCursor: false,
+      challenged: false,
+    })
+    expect(sourceKindsMissingFromLedger([o], ["dexscreener", "coingecko", SOURCE_KIND_X_HOME_FYP]))
+      .toEqual(["coingecko", "dexscreener"])
+  })
+
+  it("returns empty when every kind has an observation", () => {
+    const o = classifyXScanObservation({
+      targetKind: "home",
+      targetLabel: "home",
+      observedAt: "2026-07-21T01:00:00.000Z",
+      postCount: 1,
+      hitCursor: false,
+      challenged: false,
+    })
+    expect(sourceKindsMissingFromLedger([o], [SOURCE_KIND_X_HOME_FYP])).toEqual([])
   })
 })

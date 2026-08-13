@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "id": "coin-news-1",
+      "handle": "news-desk",
+      "mint": "So11111111111111111111111111111111111111112",
+      "chain": "solana"
+    }
+  ]
+}

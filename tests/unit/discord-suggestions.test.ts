@@ -22,7 +22,7 @@ import {
 import type { DiscordHistoryMessage } from "../../src/discord/bot-client.js"
 import {
   migrateConfigToV17,
-  migrateConfigToV26,
+  migrateConfigToV26, migrateConfigToV27,
   DISCORD_SUGGESTIONS_V17_DEFAULTS,
 } from "../../src/migrations/config.js"
 import { ConfigSchema } from "../../src/lib/config.js"
@@ -87,8 +87,8 @@ describe("discord suggestions config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV26(seed))
-    expect(parsed.schema).toBe(26)
+    const parsed = ConfigSchema.parse(migrateConfigToV27(seed))
+    expect(parsed.schema).toBe(27)
     expect(parsed.incident_remediation.discord_suggestions.enabled).toBe(false)
   })
 })

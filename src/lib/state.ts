@@ -15,6 +15,9 @@ import {
   XBotHealthSchema,
   FcEngagementFileSchema,
   FcSourceLifecycleFileSchema,
+  PumpEngagementFileSchema,
+  PumpCallerScoresFileSchema,
+  PumpBotHealthSchema,
   ScorecardSchema,
   type LedgerFile,
   type ResearchQueueFile,
@@ -29,6 +32,9 @@ import {
   type XBotHealth,
   type FcEngagementFile,
   type FcSourceLifecycleFile,
+  type PumpEngagementFile,
+  type PumpCallerScoresFile,
+  type PumpBotHealth,
   type Scorecard,
 } from "../contracts/schemas.js"
 import {
@@ -58,6 +64,9 @@ export class StateStore {
   xEngagementPath(): string { return join(this.stateDir, "x-engagement.json") }
   xBotHealthPath(): string { return join(this.stateDir, "x-bot-health.json") }
   fcEngagementPath(): string { return join(this.stateDir, "fc-engagement.json") }
+  pumpEngagementPath(): string { return join(this.stateDir, "pump-engagement.json") }
+  pumpCallerScoresPath(): string { return join(this.stateDir, "pump-caller-scores.json") }
+  pumpBotHealthPath(): string { return join(this.stateDir, "pump-bot-health.json") }
   ledgerPath(): string { return join(this.stateDir, "ledger.json") }
   researchQueuePath(): string { return join(this.stateDir, "research-queue.json") }
   socialCashtagClustersPath(): string { return join(this.stateDir, "social-cashtag-clusters.json") }
@@ -176,6 +185,67 @@ export class StateStore {
     await writeAtomicFile(
       this.xBotHealthPath(),
       `${JSON.stringify(XBotHealthSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadPumpEngagement(): PumpEngagementFile {
+    const today = new Date().toISOString().slice(0, 10)
+    return readOrDefault(
+      this.pumpEngagementPath(),
+      (v) => PumpEngagementFileSchema.parse(v),
+      {
+        schema: 1,
+        followedHandles: [],
+        likedItemIds: [],
+        lastLikedAt: {},
+        lastFollowedAt: {},
+        pendingActionIds: [],
+        decisions: [],
+        receipts: [],
+        daily: { day: today, likes: 0, follows: 0, unfollows: 0 },
+      },
+    )
+  }
+
+  async savePumpEngagement(file: PumpEngagementFile): Promise<void> {
+    await writeAtomicFile(
+      this.pumpEngagementPath(),
+      `${JSON.stringify(PumpEngagementFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadPumpCallerScores(): PumpCallerScoresFile {
+    return readOrDefault(
+      this.pumpCallerScoresPath(),
+      (v) => PumpCallerScoresFileSchema.parse(v),
+      { schema: 1, callers: [] },
+    )
+  }
+
+  async savePumpCallerScores(file: PumpCallerScoresFile): Promise<void> {
+    await writeAtomicFile(
+      this.pumpCallerScoresPath(),
+      `${JSON.stringify(PumpCallerScoresFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadPumpBotHealth(nowIso?: string): PumpBotHealth {
+    const updatedAt = nowIso ?? new Date().toISOString()
+    return readOrDefault(
+      this.pumpBotHealthPath(),
+      (v) => PumpBotHealthSchema.parse(v),
+      {
+        schema: 1,
+        updatedAt,
+        consecutiveFailures: 0,
+      },
+    )
+  }
+
+  async savePumpBotHealth(file: PumpBotHealth): Promise<void> {
+    await writeAtomicFile(
+      this.pumpBotHealthPath(),
+      `${JSON.stringify(PumpBotHealthSchema.parse(file), null, 2)}\n`,
     )
   }
 

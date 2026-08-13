@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "id": "coin-follow-1",
+      "author": "followed-user",
+      "mint": "So11111111111111111111111111111111111111112",
+      "chain": "solana"
+    }
+  ]
+}

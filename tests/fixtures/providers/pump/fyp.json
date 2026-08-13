@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "id": "coin-alpha-1",
+      "author": "alice.calls",
+      "mint": "So11111111111111111111111111111111111111112",
+      "chain": "solana"
+    }
+  ]
+}

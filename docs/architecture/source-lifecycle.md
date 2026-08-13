@@ -2,7 +2,7 @@
 description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-07-20
+last_verified: 2026-08-13
 read_when:
   - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
   - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
@@ -50,6 +50,15 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 - Classification agent output never mutates lists or follows. Shiller and
   narrative tracks graduate independently (`both` must pass both).
 - Historical posts are never reused as live narrative evidence.
+
+## Pump.fun follow graph (feed training)
+
+Binding decision: [ADR 047](../adr/047-pump-feed-scan.md).
+
+Pump likes and follows train the Pump FYP/Top/News feed. They do not write
+the X managed list or `source-lifecycle.json`. Follow evidence is Pump UI
+call charts plus settled `pump-caller-scores.json`. Profile ids never enter
+`wallets.json`.
 
 ## Farcaster follow-graph (parallel)
 

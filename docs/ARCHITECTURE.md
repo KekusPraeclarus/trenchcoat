@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -105,7 +105,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–046
+│   ├── adr/                  # binding decisions 001–047
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,

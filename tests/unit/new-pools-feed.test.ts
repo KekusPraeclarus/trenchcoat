@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { readFileSync as readSeed } from "node:fs"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { ConfigSchema, securityThresholdsFromConfig } from "../../src/lib/config.js"
-import { migrateConfigToV26 } from "../../src/migrations/config.js"
+import { migrateConfigToV26, migrateConfigToV27 } from "../../src/migrations/config.js"
 import type { MarketPair } from "../../src/collectors/market/providers.js"
 import type { NewPoolsFeedItem } from "../../src/contracts/schemas.js"
 import {
@@ -39,7 +39,7 @@ function feedConfig(overrides?: Record<string, unknown>) {
     max_pool_age_hours: 24,
     ...overrides,
   }
-  return ConfigSchema.parse(migrateConfigToV26(raw))
+  return ConfigSchema.parse(migrateConfigToV27(raw))
 }
 
 let activeConfig = feedConfig()

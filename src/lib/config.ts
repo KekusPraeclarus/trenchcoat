@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV26 } from "../migrations/config.js"
+import { migrateConfigToV27 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 import { getChain } from "./chains.js"
 
@@ -15,7 +15,7 @@ const ChannelSchema = z.object({
 const NewPoolsChainSchema = z.enum(["solana", "ethereum", "base", "robinhood"])
 
 export const ConfigSchema = z.object({
-  schema: z.literal(26),
+  schema: z.literal(27),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -550,6 +550,34 @@ export const ConfigSchema = z.object({
       demotion_idle_days: z.number().int().min(1).max(180).default(28),
     }).default({}),
   }).default({}),
+  pump: z.object({
+    enabled: z.boolean().default(false),
+    shadow_mode: z.boolean().default(true),
+    daily_navigation_budget: z.number().int().min(1).max(500).default(200),
+    min_delay_ms: z.number().int().min(0).max(30_000).default(1_500),
+    max_delay_ms: z.number().int().min(0).max(60_000).default(3_500),
+    navigation_timeout_ms: z.number().int().min(1_000).max(120_000).default(30_000),
+    max_payload_bytes: z.number().int().min(1_000).max(5_000_000).default(1_000_000),
+    max_pages_per_feed: z.number().int().min(1).max(20).default(5),
+    following_min_follows: z.number().int().min(1).max(500).default(10),
+    max_profile_chart_pages: z.number().int().min(0).max(50).default(5),
+    engagement: z.object({
+      enabled: z.boolean().default(true),
+      likes_per_window: z.number().int().min(0).max(2).default(2),
+      like_window_minutes: z.number().int().min(10).max(1_440).default(10),
+      max_follows_per_run: z.number().int().min(0).max(20).default(3),
+    }).default({}),
+    leaderboard: z.object({
+      enabled: z.boolean().default(true),
+      max_handles: z.number().int().min(1).max(200).default(50),
+    }).default({}),
+    research: z.object({
+      max_enqueues_per_day: z.number().int().min(0).max(50).default(3),
+    }).default({}),
+    calls: z.object({
+      min_age_hours: z.number().int().min(1).max(168).default(24),
+    }).default({}),
+  }).default({}),
   source_safety: z.object({
     intent_classifier_daily_cap: z.number().int().default(20),
   }),
@@ -893,7 +921,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV26(raw))
+  return ConfigSchema.parse(migrateConfigToV27(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

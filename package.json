@@ -41,6 +41,9 @@
     "fomo:install-gates": "tsx scripts/install-fomo-gates.ts",
     "fomo:smoke": "tsx scripts/smoke-fomo-live.ts",
     "fomo:shadow-metrics": "tsx scripts/fomo-shadow-metrics.ts",
+    "probe:pump": "tsx scripts/probe-pump.ts",
+    "pump:install-gates": "tsx scripts/install-pump-gates.ts",
+    "pump:smoke": "tsx scripts/smoke-pump-live.ts",
     "check": "pnpm typecheck && pnpm test",
     "prepare:agent": "tsx scripts/scaffold-agent.ts"
   },

@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 ---
 
 # Incident remediation
@@ -47,6 +47,8 @@ claim-index writes take a brief agent lock only for that mutation.
    observations from the deployed commit; revalidate typed market claims in the
    conservative impact window; append-only supersede invalidated state; stage
    one destination-aware `finding.correction` per incident (no harness/canary).
+   Skip the wait when no affected source kind appears in the ledger. Release the
+   hold on `attention-required`, `failed`, and `completed`.
 
 ## Discord suggestions (schema 17)
 
@@ -115,6 +117,12 @@ Phases after `deployed`: `awaiting-recovery-data` → collect/revalidate →
 `reconciling-state` → `correcting` → `completed` (or `attention-required`).
 Unknown impact window / unknown market-affecting paths → operator alert, no
 automatic correction. Historical manual FYP corrections are not backfilled.
+The integrity hold blocks broadcasts from affected jobs during the wait.
+`attention-required` and `tc remediations fail` release that hold.
+The host still does not complete without recovery proof (INV-S28).
+A source kind with no ledger rows cannot prove recovery.
+When every affected source kind is missing, the audit goes to
+`attention-required` at once.
 
 ## Risk
 
@@ -147,7 +155,9 @@ automatic correction. Historical manual FYP corrections are not backfilled.
   After deploy the incident stays `awaiting-recovery-data` until
   `required_healthy_observations` post-deploy healthy source proofs exist
   (or `max_wait_hours` / attention). That holds `activeIncidentId` and blocks
-  other remediations (`max_active=1`).
+  other remediations (`max_active=1`). When no affected source kind has ledger
+  rows, the audit skips that wait. It goes to `attention-required` and
+  releases the hold.
 
 ## Serialization
 

@@ -1,5 +1,5 @@
 {
-  "schema": 26,
+  "schema": 27,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -421,6 +421,34 @@
       "min_accepted_contributions": 3,
       "min_distinct_narratives": 2,
       "demotion_idle_days": 28
+    }
+  },
+  "pump": {
+    "enabled": false,
+    "shadow_mode": true,
+    "daily_navigation_budget": 200,
+    "min_delay_ms": 1500,
+    "max_delay_ms": 3500,
+    "navigation_timeout_ms": 30000,
+    "max_payload_bytes": 1000000,
+    "max_pages_per_feed": 5,
+    "following_min_follows": 10,
+    "max_profile_chart_pages": 5,
+    "engagement": {
+      "enabled": true,
+      "likes_per_window": 2,
+      "like_window_minutes": 10,
+      "max_follows_per_run": 3
+    },
+    "leaderboard": {
+      "enabled": true,
+      "max_handles": 50
+    },
+    "research": {
+      "max_enqueues_per_day": 3
+    },
+    "calls": {
+      "min_age_hours": 24
     }
   },
   "source_safety": {

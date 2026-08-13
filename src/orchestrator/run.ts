@@ -41,6 +41,7 @@ import { ingestDiscoverySightings, runSourceListReview } from "./source-list.js"
 import { ingestFcDiscoverySightings, runFcSourceReview } from "./fc-source-list.js"
 import { processListScanEngagement } from "./x-engagement.js"
 import { processFarcasterScanEngagement } from "./fc-engagement.js"
+import { processPumpScanEngagement } from "./pump-engagement.js"
 import { applyDecisionProposals } from "./proposals.js"
 import { reconcileIndexWithReceipt } from "./index-reconcile.js"
 import { loadActiveCanaryAssignment } from "../harness/canary.js"
@@ -373,6 +374,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     subject: string
     chain?: string
     tokenAddress?: string
+    enqueuedBy?: string
   } | undefined
   let signalHandled = false
   const onSignal = (signal: NodeJS.Signals): void => {
@@ -471,6 +473,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         subject: due.subject,
         ...(due.chain ? { chain: due.chain } : {}),
         ...(due.tokenAddress ? { tokenAddress: due.tokenAddress } : {}),
+        ...(due.enqueuedBy ? { enqueuedBy: due.enqueuedBy } : {}),
       }
     } else if (!opts.resumeRunId) {
       const pre = await evaluateJobPreconditions({
@@ -549,6 +552,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       narrativeLogReport?: unknown
       engagementReport?: unknown
       fcEngagementReport?: unknown
+      pumpEngagementReport?: unknown
       harnessReport?: unknown
       platformNotes?: readonly string[]
     } = {}
@@ -659,7 +663,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
 
     if (
       !skipAgent
-      && (job.name === "list-scan" || job.name === "farcaster-scan")
+      && (job.name === "list-scan" || job.name === "farcaster-scan" || job.name === "pump-scan")
     ) {
       const hintNow = systemClock.nowIso()
       const hints = detectSocialResearchCandidates({
@@ -1147,6 +1151,40 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         })
       }
     }
+    let pumpEngagementReport: unknown
+    if (job.name === "pump-scan" && !opts.dryCollect && !skipAgent) {
+      pumpEngagementReport = await processPumpScanEngagement({
+        agentRoot: opts.paths.agentRoot,
+        archiveRoot: opts.paths.archiveRoot,
+        runId,
+        execute: true,
+        blockExternalEffects: canary.blockExternalEffects,
+      })
+      writeFileSync(
+        join(reportDir, "pump-engagement-host.json"),
+        `${JSON.stringify(pumpEngagementReport, null, 2)}\n`,
+      )
+      chatFactsExtras = { ...chatFactsExtras, pumpEngagementReport }
+      if (
+        pumpEngagementReport
+        && typeof pumpEngagementReport === "object"
+        && "malformed" in pumpEngagementReport
+        && (pumpEngagementReport as { malformed?: string }).malformed
+      ) {
+        await appendRunIncident(layout, runId, {
+          schema: 1,
+          incidentId: sha256Json({
+            runId,
+            kind: "malformed-pump-engagement",
+            reason: (pumpEngagementReport as { malformed: string }).malformed,
+          }),
+          runId,
+          kind: "other",
+          message: `malformed pump-engagement proposal: ${(pumpEngagementReport as { malformed: string }).malformed}`,
+          occurredAt: systemClock.nowIso(),
+        })
+      }
+    }
     const disambiguationRunSession = async (
       sessionArgs: Readonly<{ prompt: string; message: string }>,
     ) => {
@@ -1165,7 +1203,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
     let researchCandidatesReport: unknown
     if (
-      (job.name === "list-scan" || job.name === "farcaster-scan")
+      (job.name === "list-scan" || job.name === "farcaster-scan" || job.name === "pump-scan")
       && !opts.dryCollect
       && !skipAgent
     ) {
@@ -1706,6 +1744,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         `fcDiscovery=${collection.fcDiscoverySightings.length}`,
       )
     }
+    if (job.name === "pump-scan") {
+      platformNotes.push(`pumpSnapshots=${collection.snapshotNames.length}`)
+    }
     if (job.name === "list-scan" || job.name === "telegram-alpha") {
       platformNotes.push(
         ...(job.name === "list-scan"
@@ -2010,6 +2051,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ...(chatFactsExtras.fcEngagementReport
             ? { fcEngagementReport: chatFactsExtras.fcEngagementReport }
             : {}),
+          ...(chatFactsExtras.pumpEngagementReport
+            ? { pumpEngagementReport: chatFactsExtras.pumpEngagementReport }
+            : {}),
           ...(chatFactsExtras.harnessReport
             ? { harnessReport: chatFactsExtras.harnessReport }
             : {}),
@@ -2021,6 +2065,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
             `reports/${runId}/agent.md`,
             ...(job.name === "list-scan" ? [`reports/${runId}/x-engagement-host.json`] : []),
             ...(job.name === "farcaster-scan" ? [`reports/${runId}/fc-engagement-host.json`] : []),
+            ...(job.name === "pump-scan" ? [`reports/${runId}/pump-engagement-host.json`] : []),
             ...(job.name === "harness-improve"
               ? [`archive/runs/${runId}/host-reports/harness-improve.json`]
               : []),

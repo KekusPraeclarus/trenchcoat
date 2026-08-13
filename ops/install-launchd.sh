@@ -946,6 +946,7 @@ begin_deploy_pause() {
     com.trenchcoat.job.wallet-review \
     com.trenchcoat.job.fomo-trader-sync \
     com.trenchcoat.job.fomo-signal-scan \
+    com.trenchcoat.job.pump-scan \
     com.trenchcoat.job.discord-wallet-signal-scan \
     com.trenchcoat.job.fomo-x-source-review \
     com.trenchcoat.job.fomo-narrative-source-scan \
@@ -981,6 +982,7 @@ job_to_label() {
     wallet-review) echo com.trenchcoat.job.wallet-review ;;
     fomo-trader-sync) echo com.trenchcoat.job.fomo-trader-sync ;;
     fomo-signal-scan) echo com.trenchcoat.job.fomo-signal-scan ;;
+    pump-scan) echo com.trenchcoat.job.pump-scan ;;
     discord-wallet-signal-scan) echo com.trenchcoat.job.discord-wallet-signal-scan ;;
     fomo-x-source-review) echo com.trenchcoat.job.fomo-x-source-review ;;
     fomo-narrative-source-scan) echo com.trenchcoat.job.fomo-narrative-source-scan ;;
@@ -1043,6 +1045,7 @@ restore_scheduled_units_after_abort() {
     com.trenchcoat.job.wallet-review \
     com.trenchcoat.job.fomo-trader-sync \
     com.trenchcoat.job.fomo-signal-scan \
+    com.trenchcoat.job.pump-scan \
     com.trenchcoat.job.discord-wallet-signal-scan \
     com.trenchcoat.job.fomo-x-source-review \
     com.trenchcoat.job.fomo-narrative-source-scan \
@@ -1148,6 +1151,7 @@ write_interval_plist com.trenchcoat.job.wallet-scan-evm wallet-scan-evm 900 1
 write_interval_plist com.trenchcoat.job.wallet-review wallet-review 86400
 write_interval_plist com.trenchcoat.job.fomo-trader-sync fomo-trader-sync 21600 1
 write_interval_plist com.trenchcoat.job.fomo-signal-scan fomo-signal-scan 1200 1
+write_interval_plist com.trenchcoat.job.pump-scan pump-scan 1800 1
 write_interval_plist com.trenchcoat.job.discord-wallet-signal-scan discord-wallet-signal-scan 300 1
 write_interval_plist com.trenchcoat.job.fomo-x-source-review fomo-x-source-review 7200 1
 write_interval_plist com.trenchcoat.job.fomo-narrative-source-scan fomo-narrative-source-scan 21600 1
@@ -1193,6 +1197,7 @@ for label in \
   com.trenchcoat.job.wallet-review \
   com.trenchcoat.job.fomo-trader-sync \
   com.trenchcoat.job.fomo-signal-scan \
+  com.trenchcoat.job.pump-scan \
   com.trenchcoat.job.discord-wallet-signal-scan \
   com.trenchcoat.job.fomo-x-source-review \
   com.trenchcoat.job.fomo-narrative-source-scan \

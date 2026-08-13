@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   migrateConfigToV13,
-  migrateConfigToV26,
+  migrateConfigToV26, migrateConfigToV27,
   INCIDENT_REMEDIATION_V13_DEFAULTS,
   INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,
 } from "../../src/migrations/config.js"
@@ -72,8 +72,8 @@ describe("incident remediation config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV26(seed))
-    expect(parsed.schema).toBe(26)
+    const parsed = ConfigSchema.parse(migrateConfigToV27(seed))
+    expect(parsed.schema).toBe(27)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.incident_remediation.schedule_enabled).toBe(false)
     expect(parsed.incident_remediation.revalidation.enabled).toBe(true)

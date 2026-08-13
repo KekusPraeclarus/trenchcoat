@@ -230,6 +230,15 @@ export function hasPostFixRecoveryProof(args: Readonly<{
   }
 }
 
+/** Source kinds that never appear in the ledger cannot produce recovery proof. */
+export function sourceKindsMissingFromLedger(
+  observations: readonly SourceHealthObservation[],
+  sourceKinds: readonly string[],
+): string[] {
+  const seen = new Set(observations.map((o) => o.sourceKind))
+  return [...sourceKinds].filter((kind) => !seen.has(kind)).sort()
+}
+
 export function observationsInWindow(args: Readonly<{
   observations: readonly SourceHealthObservation[]
   startExclusive: string

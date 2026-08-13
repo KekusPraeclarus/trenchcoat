@@ -82,23 +82,24 @@ async function updateIncident(
       updatedAt: systemClock.nowIso(),
     }
     file = upsertIncident(file, next)
-    if ((ACTIVE_REMEDIATION_PHASES as Set<string>).has(next.phase)) {
-      file = { ...file, activeIncidentId: incidentId }
-    }
-    if (
-      next.phase === "completed"
+    const terminal = next.phase === "completed"
       || next.phase === "failed"
       || next.phase === "ignored"
       || next.phase === "rejected"
       || next.phase === "deferred"
       || next.phase === "rolled-back"
       || next.phase === "attention-required"
-    ) {
-      if (file.activeIncidentId === incidentId) {
-        file = { ...file, activeIncidentId: null }
-      }
+    if ((ACTIVE_REMEDIATION_PHASES as Set<string>).has(next.phase)) {
+      file = { ...file, activeIncidentId: incidentId }
+    }
+    if (terminal && file.activeIncidentId === incidentId) {
+      file = { ...file, activeIncidentId: null }
     }
     await store.save(file)
+    if (terminal) {
+      const { clearIntegrityHoldForIncident } = await import("./integrity-hold.js")
+      await clearIntegrityHoldForIncident(incidentId)
+    }
     return next
   } finally {
     lock.release()

@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
 import { DEPLOYMENT_CONFIG_SCHEMA } from "../../src/lib/deployment.js"
-import { migrateConfigToV25, migrateConfigToV26 } from "../../src/migrations/config.js"
+import { migrateConfigToV25, migrateConfigToV26, migrateConfigToV27 } from "../../src/migrations/config.js"
 
 const seed = JSON.parse(
   readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
@@ -25,7 +25,7 @@ describe("config migration v25", () => {
   it("upgrades schema 24 once and validates as schema 25", () => {
     const migrated = migrateConfigToV25(asV24()) as Record<string, unknown>
     expect(migrated["schema"]).toBe(25)
-    expect(ConfigSchema.parse(migrateConfigToV26(migrated)).schema).toBe(26)
+    expect(ConfigSchema.parse(migrateConfigToV27(migrated)).schema).toBe(27)
   })
 
   it("is idempotent", () => {
@@ -35,12 +35,12 @@ describe("config migration v25", () => {
   })
 
   it("keeps the deployment config schema aligned", () => {
-    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(26)
+    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(27)
     expect(ConfigSchema.parse(seed).schema).toBe(DEPLOYMENT_CONFIG_SCHEMA)
   })
 
   it("adds retention sweep defaults for an existing installation", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV26(migrateConfigToV25(asV24())))
+    const parsed = ConfigSchema.parse(migrateConfigToV27(migrateConfigToV25(asV24())))
     expect(parsed.retention.alpha_ack_days).toBe(30)
     expect(parsed.retention.narrative_dossier_days).toBe(120)
   })
@@ -50,13 +50,13 @@ describe("config migration v25", () => {
     const retention = v24["retention"] as Record<string, unknown>
     retention["alpha_ack_days"] = 7
     retention["narrative_dossier_days"] = 365
-    const parsed = ConfigSchema.parse(migrateConfigToV26(migrateConfigToV25(v24)))
+    const parsed = ConfigSchema.parse(migrateConfigToV27(migrateConfigToV25(v24)))
     expect(parsed.retention.alpha_ack_days).toBe(7)
     expect(parsed.retention.narrative_dossier_days).toBe(365)
   })
 
   it("keeps the existing retention windows", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV26(migrateConfigToV25(asV24())))
+    const parsed = ConfigSchema.parse(migrateConfigToV27(migrateConfigToV25(asV24())))
     expect(parsed.retention.inbox_archive_days).toBe(30)
     expect(parsed.retention.run_archive_days).toBe(90)
     expect(parsed.retention.chat_reports_days).toBe(30)

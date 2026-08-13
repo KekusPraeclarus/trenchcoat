@@ -43,6 +43,7 @@ import {
 } from "./review-collect.js"
 import { writeXFypEligibleSnapshot } from "./x-fyp-eligible.js"
 import { collectFomoTraderSync } from "./fomo-trader-collect.js"
+import { collectPumpScan } from "./pump-collect.js"
 import { collectFomoSignalScan } from "./fomo-signal-collect.js"
 import { collectDiscordWalletSignalScan } from "./discord-wallet-signal-collect.js"
 import { collectFomoXSourceReview } from "./fomo-x-source-review.js"
@@ -136,6 +137,7 @@ export async function collectForJob(args: Readonly<{
     queueId?: string
     chain?: string
     tokenAddress?: string
+    enqueuedBy?: string
   }>
   fetcher?: typeof fetch
   /** Injected scrape results for streaming list-scan target passes */
@@ -256,6 +258,14 @@ export async function collectForJob(args: Readonly<{
       })
     case "narrative-source-review":
       return collectNarrativeSourceReviewHost(args)
+    case "pump-scan":
+      return collectPumpScan({
+        runId: args.runId,
+        writer: args.writer,
+        fetchedAt: args.fetchedAt,
+        agentRoot: args.agentRoot,
+        archiveRoot: args.archiveRoot,
+      })
     default: {
       const _exhaustive: never = job
       throw new Error(`Unhandled job collection policy: ${String(_exhaustive)}`)
@@ -537,6 +547,7 @@ async function collectResearch(args: Readonly<{
     queueId?: string
     chain?: string
     tokenAddress?: string
+    enqueuedBy?: string
   }>
   fetcher?: typeof fetch
 }>): Promise<CollectionSummary> {
@@ -599,6 +610,7 @@ async function collectResearch(args: Readonly<{
     pairs: resolved.pairs,
     ...(args.archiveRoot ? { archiveRoot: args.archiveRoot } : {}),
     ...(args.researchSubject.queueId ? { queueId: args.researchSubject.queueId } : {}),
+    ...(args.researchSubject.enqueuedBy ? { enqueuedBy: args.researchSubject.enqueuedBy } : {}),
     ...(args.fetcher ? { fetcher: args.fetcher } : {}),
   })
   return {

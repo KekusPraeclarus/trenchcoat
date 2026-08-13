@@ -147,6 +147,7 @@ describe("job catalog", () => {
       "watchlist-scan",
       "wallet-discovery",
       "research",
+      "pump-scan",
     ]) {
       expect(names.has(required as never)).toBe(true)
     }

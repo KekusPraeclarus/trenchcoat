@@ -17,6 +17,8 @@ import { log } from "../lib/log.js"
 import { systemClock } from "../lib/clock.js"
 import { providerGateAllowsSchedule } from "../collectors/fomo/gates.js"
 import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
+import { providerGateAllowsSchedule as pumpProviderGateAllowsSchedule } from "../collectors/pump/gates.js"
+import { pumpSessionExists } from "../collectors/social/pump-auth.js"
 
 export type JobSkipReason =
   | "queue-empty"
@@ -32,6 +34,9 @@ export type JobSkipReason =
   | "fomo-missing-session"
   | "fomo-provider-gate"
   | "fomo-capability-gate"
+  | "pump-disabled"
+  | "pump-missing-session"
+  | "pump-provider-gate"
   | "router-unconfigured"
   | "no-pending-ingress"
   | "telegram-digest-disabled"
@@ -108,6 +113,7 @@ const HOST_GATED_JOBS = new Set<JobName>([
   "telegram-digest",
   "farcaster-scan",
   "fc-source-review",
+  "pump-scan",
 ])
 
 export function isHostGatedJob(job: JobName): boolean {
@@ -303,6 +309,24 @@ export async function evaluateJobPreconditions(args: Readonly<{
     }
     if (!providerGateAllowsSchedule(args.archiveRoot)) {
       return { skip: true, reason: "fomo-provider-gate" }
+    }
+  }
+
+  if (args.job === "pump-scan") {
+    let cfg
+    try {
+      cfg = loadConfig()
+    } catch {
+      return { skip: true, reason: "pump-disabled" }
+    }
+    if (!cfg.pump.enabled) {
+      return { skip: true, reason: "pump-disabled" }
+    }
+    if (!pumpSessionExists()) {
+      return { skip: true, reason: "pump-missing-session" }
+    }
+    if (!pumpProviderGateAllowsSchedule(args.archiveRoot)) {
+      return { skip: true, reason: "pump-provider-gate" }
     }
   }
 

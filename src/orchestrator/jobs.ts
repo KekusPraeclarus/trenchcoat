@@ -24,6 +24,7 @@ export type JobName =
   | "fomo-x-source-review"
   | "fomo-narrative-source-scan"
   | "narrative-source-review"
+  | "pump-scan"
   | "recover"
   | "harness-improve"
   | "harness-meta-improve"
@@ -65,6 +66,7 @@ export const JOBS: ReadonlyArray<JobDefinition> = Object.freeze([
   { name: "fomo-x-source-review", skill: "fomo-x-source-review", description: "Classify Fomo-nominated X accounts", preconditionTier: "host" },
   { name: "fomo-narrative-source-scan", skill: "review", description: "Scan probation narrative X sources", preconditionTier: "host" },
   { name: "narrative-source-review", skill: "review", description: "Promote or demote narrative X sources", preconditionTier: "host" },
+  { name: "pump-scan", skill: "pump-scan", description: "Scan pump.fun FYP Top News Following and leaderboard", preconditionTier: "collector" },
   { name: "recover", skill: "recover", description: "Recovery assist", preconditionTier: "none" },
   { name: "harness-improve", skill: "review", description: "Propose policy patch PR from sealed audit", preconditionTier: "none" },
   { name: "harness-meta-improve", skill: "review", description: "Shadow paired meta trial for improver-config", preconditionTier: "none" },

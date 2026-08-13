@@ -2,7 +2,7 @@
 description: Research queue lifecycle - how candidates from scans, narrative transitions, new-pool feed, alpha digestion, and chat become bounded research runs. Schema, dedupe, priority, revisit handling, expiry.
 scope: module
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 read_when:
   - Editing candidate enqueueing, the research job trigger, narrative bridge, social cashtag bridge, new-pools enqueue, or revisit/expiry handling.
 ---
@@ -85,7 +85,8 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   `enqueueOperatorResearch` / `runOperatorResearchNow` under the workspace lock.
   After resolution, the host reuses DexScreener pairs from resolve and collects
   market/security, cached FOMO context, optional Discord wallet-signal context
-  (`discord-wallet-context`, ADR 035), and bounded X search concurrently before
+  (`discord-wallet-context`, ADR 035), optional Pump UI token context when
+  `enqueuedBy` starts with `pump:` (ADR 047), and bounded X search concurrently before
   the network-denied research passes.
 - **Cron path** — `tc run research` reserves one due entry (kept in-file as
   `researching`), assembles a full dossier (`meta`, `market-dex`,
@@ -157,6 +158,13 @@ session. Gate runs in `runOperatorResearchNow` before synthesis.
   WBNB, …) and reserved chain symbols (`SOL`, `ETH`, …) are never enqueued.
   Default cap is `signal_scan.max_enqueues_per_day` (3). See
   [knowledge/fomo-family.md](../knowledge/fomo-family.md)
+- **Pump feed bridge** — `pump-scan` may enqueue `trigger: "social"` entries
+  from Following first, then Top, when `shadow_mode=false`. `enqueuedBy` is
+  `pump:following` or `pump:top`. Native/wrap mints are skipped. Daily cap is
+  `pump.research.max_enqueues_per_day` (3). FYP coins enter only via agent
+  `research-candidates.json` with a verbatim CA. See
+  [knowledge/pump-fun.md](../knowledge/pump-fun.md) and
+  [ADR 047](../adr/047-pump-feed-scan.md)
 - **Wallet convergence bridge** — after `wallet-scan-*`, host may enqueue
   `trigger: "wallet-convergence"` (priority 70) when ≥4 event-time `tracking`
   wallets buy the same fresh token. Independent of the unverified alert path;

@@ -18,7 +18,7 @@ import {
 } from "../../src/harness/meta-schedule.js"
 import { harnessSkipReasonFromSlug } from "../../src/orchestrator/preconditions.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV26 } from "../../src/migrations/config.js"
+import { migrateConfigToV27 } from "../../src/migrations/config.js"
 
 const CONFIG_HASH = `sha256:${"d".repeat(64)}` as const
 
@@ -65,7 +65,7 @@ async function seal(archiveRoot: string, epochId: string): Promise<void> {
 
 function writeEnabledConfig(trenchcoatDir: string, scheduleEnabled = true): void {
   mkdirSync(trenchcoatDir, { recursive: true })
-  const raw = migrateConfigToV26({
+  const raw = migrateConfigToV27({
     schema: 4,
     telegram_channels: [],
     twitter: {

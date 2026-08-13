@@ -77,6 +77,7 @@ describe("runOutcomesSettle", () => {
     expect(report.walletBuys.buysUpdated).toBe(1)
     expect(report.walletCopyTrades).toBeDefined()
     expect(report.fomoCopyTrades).toBeDefined()
+    expect(report.pumpCalls).toBeDefined()
   })
 
   it("FOMO copy-trade settle receives bars after gecko exhaustion via Solana fallback", async () => {

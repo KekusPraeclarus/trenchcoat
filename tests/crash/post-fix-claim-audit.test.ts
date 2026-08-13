@@ -16,6 +16,7 @@ import {
   emptySourceHealthLedger,
 } from "../../src/remediation/source-health.js"
 import { createRemediationStore } from "../../src/remediation/store.js"
+import { loadIntegrityHold } from "../../src/remediation/integrity-hold.js"
 import type { RemediationIncident, SourceHealthObservation } from "../../src/remediation/schemas.js"
 import type { RouterEvent } from "../../src/contracts/schemas.js"
 
@@ -154,6 +155,7 @@ describe("post-fix claim audit crash / resume", () => {
       home,
     })
     expect(first.phase).toBe("awaiting-recovery-data")
+    expect(loadIntegrityHold(home)?.incidentId).toBe(INCIDENT_ID)
 
     let ledger = store.loadSourceHealthLedger()
     ledger = appendSourceHealthObservation(ledger, observation({
@@ -187,6 +189,7 @@ describe("post-fix claim audit crash / resume", () => {
     expect(stands.phase).toBe("completed")
     expect(stands.detail).toBe("all-claims-stand")
     expect(stands.correctionEventIds).toBeUndefined()
+    expect(loadIntegrityHold(home)).toBeUndefined()
 
     const invalidateHome = mkdtempSync(join(tmpdir(), "tc-pfx-crash-inv-"))
     const invAgent = join(invalidateHome, "agent")

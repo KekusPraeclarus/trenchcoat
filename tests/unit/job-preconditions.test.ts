@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { StateStore } from "../../src/lib/state.js"
@@ -232,5 +232,35 @@ describe("job preconditions", () => {
     expect(result.exitCode).toBe(0)
     const ledger = skipLedgerPath(archiveRoot, "review")
     expect(existsSync(ledger)).toBe(false)
+  })
+
+  it("skips pump-scan when pump is disabled", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-precond-pump-"))
+    const home = join(root, "home")
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    mkdirSync(join(home, ".trenchcoat"), { recursive: true })
+    const seed = JSON.parse(
+      readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
+    ) as Record<string, unknown>
+    writeFileSync(
+      join(home, ".trenchcoat", "config.json"),
+      `${JSON.stringify(seed, null, 2)}\n`,
+    )
+    const prevHome = process.env["HOME"]
+    process.env["HOME"] = home
+    try {
+      const result = await evaluateJobPreconditions({
+        job: "pump-scan",
+        agentRoot,
+        archiveRoot,
+        nowIso: NOW,
+      })
+      expect(result).toMatchObject({ skip: true, reason: "pump-disabled" })
+    } finally {
+      if (prevHome === undefined) delete process.env["HOME"]
+      else process.env["HOME"] = prevHome
+    }
   })
 })

@@ -133,6 +133,8 @@ describe("prop_inv_i4_inbox_writer_ownership", () => {
       "src/orchestrator/new-pools-feed.ts",
       "src/orchestrator/research-candidates.ts",
       "src/orchestrator/x-fyp-eligible.ts",
+      "src/orchestrator/pump-fyp-eligible.ts",
+      "src/orchestrator/pump-collect.ts",
       "src/orchestrator/fomo-trader-collect.ts",
       "src/orchestrator/fomo-signal-collect.ts",
       "src/orchestrator/discord-wallet-signal-collect.ts",

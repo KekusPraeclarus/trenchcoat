@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "id": "coin-top-1",
+      "username": "bob-top",
+      "tokenAddress": "So11111111111111111111111111111111111111112",
+      "chain": "solana"
+    }
+  ]
+}

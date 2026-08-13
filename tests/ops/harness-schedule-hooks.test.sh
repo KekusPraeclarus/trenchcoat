@@ -125,4 +125,9 @@ materialize_launchd "$LD_FC" --with-farcaster
 test -f "$LD_FC/Library/LaunchAgents/com.trenchcoat.job.farcaster-scan.plist"
 test -f "$LD_FC/Library/LaunchAgents/com.trenchcoat.job.fc-source-review.plist"
 
+echo "== pump-scan scheduled =="
+test -f "$SYS_WITH/.config/systemd/user/trenchcoat-job-pump-scan.service"
+test -f "$SYS_WITH/.config/systemd/user/trenchcoat-job-pump-scan.timer"
+test -f "$LD_WITH/Library/LaunchAgents/com.trenchcoat.job.pump-scan.plist"
+
 echo "ALL_OK"

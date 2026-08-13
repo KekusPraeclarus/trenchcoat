@@ -54,6 +54,17 @@ export async function clearIntegrityHold(home?: string): Promise<void> {
   }
 }
 
+/** Drop the hold only when it belongs to this incident. */
+export async function clearIntegrityHoldForIncident(
+  incidentId: string,
+  home?: string,
+): Promise<boolean> {
+  const hold = loadIntegrityHold(home)
+  if (!hold || hold.incidentId !== incidentId) return false
+  await clearIntegrityHold(home)
+  return true
+}
+
 export function jobHeldByIntegrity(
   hold: IntegrityHold | undefined,
   job: string,

@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -44,13 +44,14 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `chart-sweep` | every 1h | GeckoTerminal 15m → 1h/4h aggregation, indicators, PNG manifests; **host-pre skip** when no active watchlist | early-move flags (skipped when no charts) |
 | `review` | daily 07:00 | sealed report manifests (path-only) + pending alpha + watchlist/macro + **host health snapshot** + skip-ledger counts; scope also from empty queues / silent wallets / stale FC / recurring skips | distillation `agent.md`, bounded `decision-proposals.json`, `alpha-digest.json`, durable `state/research/*.md`; host reconciles INDEX |
 | `audit` | weekly | outcome data: returns/liquidity since each past decision | scorecard update, **source-score update**, audit report |
-| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | peak source-call settle + wallet/Fomo FIFO copy-trade + horizon diagnostics + ledger entry finalisation; refreshes harness canary maturity from settled decision outcomes | **no agent** — resumable settlement writers (ADR 031/032) |
+| `outcomes-settle` | every 6h (`RunAtLoad`) + before audit | peak source-call settle + wallet/Fomo FIFO copy-trade + pump-call 24h peak + horizon diagnostics + ledger entry finalisation; refreshes harness canary maturity from settled decision outcomes | **no agent** — resumable settlement writers (ADR 031/032/047) |
 | `wallet-discovery` | every 6h | watchlist token identities → Helius/Infura/Robinhood early buyers | host stages `candidate` wallets + cursors; evidence-only agent reads frozen snapshot |
 | `wallet-runner-discovery` | every 30m (off/shadow by default) | Gecko fresh pools → DexScreener identity + closed 6h metrics → verified buyers | host writes `state/wallet-runners.json`; registers `new-pools` candidates after recurrence; ADR 020 |
 | `wallet-scan-solana` | every 5m | Helius finalized wallet actions | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
 | `wallet-scan-evm` | every 15m | Infura (eth/base) + throttled Robinhood public RPC | host archives buy outcomes; tip/backfill cursors; may run convergence stage |
 | `wallet-review` | daily / after scans | lagged settled buy outcomes + bounded voter + persisted exclusion evidence | **no agent** — promote/drop + `wallet.lifecycle` router events |
 | `discord-wallet-signal-scan` | every 5m | Discord Cielo/relay wallet-alert REST poll → buy confluence / sell pressure; isolated from `wallets.json` (ADR 035) | **no agent** |
+| `pump-scan` | every 30m | pump.fun FYP/Top/News/Following/leaderboard + call charts (ADR 047); skips unless `pump.enabled` + session + gates | likes/follows in `pump-engagement.json`; host archives calls; Following/Top may enqueue research |
 | `harness-improve` | weekly (on by default; `--without-harness` opts out) + success-only non-blocking kick after scheduled `audit` exits 0 (install scripts only; audit code/sealing unchanged) | sealed scorecard epochs + settled decision outcomes / signals only | **no agent write to prod** — confined worktree + `test:all` + agent-gated plan/impl review; ff `origin/main` then local main + runtime deploy → `activation_pending` (ADR 005); never activates agent or starts canary from schedule. Typed readiness skips write host-report + skip ledger + `schedule-report.json` and surface as `lastSkip` in health (not lastSuccess) |
 | `harness-meta-improve` | ~monthly / when fresh epoch pair appears (`meta_schedule_days`) | sealed epochs only; shadow improver-config trials | **no agent write to prod** — paired offline meta-utility; never integrates/deploys/activates until `tc harness meta promote` (ADR 039); INV-S15 lock-exempt |
 | `incident-remediate` | hourly (off by default) | health/logs/skips | host remediation lane (ADR 017); Telegram approval for high-risk |
@@ -586,7 +587,7 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/market-bars.ts` — live DexScreener/GeckoTerminal BarProviders
 - `src/orchestrator/outcomes-settle.ts` — peak shills + wallet/Fomo copy-trade + horizon diagnostics + ledger entry finalisation (ADR 031/032)
 - `src/orchestrator/settle-decisions.ts` — decision-bundle → `outcomes/decision/…` (harness mining / canary consumer)
-- `src/orchestrator/settle-source-peaks.ts` / `settle-wallet-copy-trades.ts` / `settle-fomo-copy-trades.ts` — ADR 032 settlers. Fomo copy-trade reports `sellOnly`, `nonPriceable`, `providerPending`, and `priced` (no `pendingBars`); only `priced` rows write `fomo-trader-scores.json`.
+- `src/orchestrator/settle-source-peaks.ts` / `settle-wallet-copy-trades.ts` / `settle-fomo-copy-trades.ts` / `settle-pump-calls.ts` — ADR 032/047 settlers. Fomo copy-trade reports `sellOnly`, `nonPriceable`, `providerPending`, and `priced` (no `pendingBars`); only `priced` rows write `fomo-trader-scores.json`. Pump calls wait 24h then peak/rug settle into `pump-caller-scores.json`.
 - `src/orchestrator/settle-ledger.ts` — entry-pending → open at first post-decision bar
 - `src/orchestrator/audit.ts` — outcome computation (incl. counterfactuals),
   calibration, source attribution (ledger marking via outcomes-settle)

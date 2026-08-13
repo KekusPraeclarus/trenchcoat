@@ -21,6 +21,10 @@ import {
   runSettleFomoCopyTrades,
   type FomoCopyTradeSettleReport,
 } from "./settle-fomo-copy-trades.js"
+import {
+  runSettlePumpCalls,
+  type PumpCallSettleReport,
+} from "./settle-pump-calls.js"
 import { runLedgerSettle, type LedgerSettleReport } from "./settle-ledger.js"
 
 export type OutcomesSettleReport = Readonly<{
@@ -29,6 +33,7 @@ export type OutcomesSettleReport = Readonly<{
   walletBuys: WalletSettleReport
   walletCopyTrades: WalletCopyTradeSettleReport
   fomoCopyTrades: FomoCopyTradeSettleReport
+  pumpCalls: PumpCallSettleReport
   ledger?: LedgerSettleReport
 }>
 
@@ -117,6 +122,32 @@ export async function runOutcomesSettle(args: Readonly<{
     ...(args.feeBpsPerSide !== undefined ? { feeBpsPerSide: args.feeBpsPerSide } : {}),
   })
 
+  const pumpCalls = await runSettlePumpCalls({
+    layout: args.layout,
+    nowIso: args.nowIso,
+    ...(args.agentRoot ? { agentRoot: args.agentRoot } : {}),
+    ...(args.walletBars
+      ? {
+          loadBars: async (event, horizonHours) => {
+            const synthetic: WalletBuyOutcome = {
+              schema: 1,
+              eventId: "pump_bar",
+              walletId: `pump:${event.tokenAddress}`,
+              chain: event.chain as WalletBuyOutcome["chain"],
+              tokenAddress: event.tokenAddress,
+              boughtAt: args.nowIso,
+              finalized: true,
+              removed: false,
+              priceable: true,
+              rug: false,
+              side: "buy",
+            }
+            return args.walletBars!(synthetic, horizonHours)
+          },
+        }
+      : {}),
+  })
+
   let ledger: LedgerSettleReport | undefined
   if (args.agentRoot) {
     ledger = await runLedgerSettle({
@@ -133,6 +164,7 @@ export async function runOutcomesSettle(args: Readonly<{
     walletBuys,
     walletCopyTrades,
     fomoCopyTrades,
+    pumpCalls,
     ...(ledger ? { ledger } : {}),
   }
 }

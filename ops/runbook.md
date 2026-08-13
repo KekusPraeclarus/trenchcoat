@@ -43,6 +43,7 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `research` | Immediate drain when social/narrative/fomo enqueue; hourly cron remains as backstop |
 | `fomo-trader-sync` | every 6h (host-only; skips unless `fomo.enabled` + gates) |
 | `fomo-signal-scan` | every 20m (host-only; skips unless `fomo.enabled` + gates) |
+| `pump-scan` | every 30m (host-only; skips unless `pump.enabled` + session + gates) |
 | `discord-wallet-signal-scan` | every 5m (host-only REST poll; skips unless `chat.discord.wallet_signals.enabled`; requires `DISCORD_RESEARCH_BOT_TOKEN` + Read Message History on configured channels; never Send; ship with `shadow_mode: true`, flip to `false` after parse verification on VPS) |
 | `fomo-x-source-review` | every 2h (one nomination; requires `fomo.x_source_review.enabled`) |
 | `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
@@ -258,9 +259,10 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   starve remediations. Operator Telegram digests/failures/approval cards are
   descriptive (ADR 028); approve commands are host-parsed with id normalization
   so `Rem 92da…` typos still land (ADR 030). Recovery:
-  `tc remediations status|suggestions|retry|scan|run` and
+  `tc remediations status|suggestions|retry|scan|run|fail` and
   `approve remediation rem-<id>` (or `tc remediations approve rem-<id>` on the
   VPS). Post-approve build is kicked as a detached `remediations run` child.
+  `tc remediations fail rem-<id>` also releases a leftover integrity hold.
   See docs/architecture/incident-remediation.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that

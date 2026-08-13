@@ -182,6 +182,12 @@ export type HealthFomoState = Readonly<{
   }>
 }>
 
+export type HealthPumpState = Readonly<{
+  enabled: boolean
+  shadowMode: boolean
+  parallelOnly: true
+}>
+
 export type HealthBroadcastFeedbackState = Readonly<{
   /** false when broadcast.feedback is off — the lane then reports zero counts */
   enabled: boolean
@@ -220,6 +226,7 @@ export type HealthSnapshot = Readonly<{
   router: BroadcastPipelineSnapshot
   deployment: HealthDeploymentState
   fomo: HealthFomoState
+  pump: HealthPumpState
   broadcastFeedback: HealthBroadcastFeedbackState
   findings: readonly HealthFinding[]
   warnings: readonly string[]
@@ -683,6 +690,23 @@ function fomoState(): HealthFomoState {
   }
 }
 
+function pumpState(): HealthPumpState {
+  try {
+    const cfg = loadConfig()
+    return {
+      enabled: cfg.pump.enabled,
+      shadowMode: cfg.pump.shadow_mode,
+      parallelOnly: true,
+    }
+  } catch {
+    return {
+      enabled: false,
+      shadowMode: true,
+      parallelOnly: true,
+    }
+  }
+}
+
 /**
  * Operator feedback lane state (ADR 043). Reads are best effort: a missing or
  * broken ledger reports an empty lane and never breaks the health snapshot.
@@ -775,6 +799,7 @@ export const JOB_CADENCE_SEC: Readonly<Partial<Record<JobName, number>>> = Objec
   audit: 604_800,
   // harness-meta-improve has no timer, so it gets no cadence
   "harness-improve": 604_800,
+  "pump-scan": 1_800,
 })
 
 const LISTENER_HEARTBEAT_STALE_SEC = 15 * 60
@@ -1058,6 +1083,7 @@ export async function buildHealthSnapshot(args: Readonly<{
   const router = snapshotBroadcastPipeline(layout, capturedAt)
   const deployment = deploymentState()
   const fomo = fomoState()
+  const pump = pumpState()
   const broadcastFeedback = broadcastFeedbackState(
     nowMs,
     ...(args.feedbackHome ? [args.feedbackHome] as const : []),
@@ -1078,6 +1104,7 @@ export async function buildHealthSnapshot(args: Readonly<{
     router,
     deployment,
     fomo,
+    pump,
     broadcastFeedback,
   }
   const findings = buildFindings(base)
@@ -1218,6 +1245,9 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
   lines.push(
     `fomo: enabled=${snapshot.fomo.enabled} shadow=${snapshot.fomo.shadowMode} (parallel-only) fallback=st:${snapshot.fomo.solanaOhlcvFallback.solanaTracker} be:${snapshot.fomo.solanaOhlcvFallback.birdeye}`,
   )
+  lines.push(
+    `pump: enabled=${snapshot.pump.enabled} shadow=${snapshot.pump.shadowMode} (parallel-only)`,
+  )
   const fb = snapshot.broadcastFeedback
   lines.push(
     fb.enabled
@@ -1305,6 +1335,7 @@ export function toHealthJsonPayload(snapshot: HealthSnapshot): Readonly<Record<s
         : snapshot.deployment.sourceHash,
     },
     fomo: snapshot.fomo,
+    pump: snapshot.pump,
     broadcastFeedback: snapshot.broadcastFeedback,
     findings: snapshot.findings.slice(0, 64),
     warnings: snapshot.warnings.slice(0, 64),
@@ -1333,6 +1364,7 @@ export function healthSnapshotLines(snapshot: HealthSnapshot): string[] {
     `deployManifest=${snapshot.deployment.manifestPresent} schemaMismatch=${snapshot.deployment.schemaMismatch}`
       + ` sourceDirty=${snapshot.deployment.sourceDirty === true}`,
     `fomoEnabled=${snapshot.fomo.enabled} fomoShadow=${snapshot.fomo.shadowMode}`,
+    `pumpEnabled=${snapshot.pump.enabled} pumpShadow=${snapshot.pump.shadowMode}`,
     `warnings=${snapshot.warnings.length}`,
   ]
   for (const warning of snapshot.warnings.slice(0, 20)) {

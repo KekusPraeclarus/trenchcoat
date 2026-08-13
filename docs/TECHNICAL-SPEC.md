@@ -2,7 +2,7 @@
 description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
   - You are about to add a dependency, data source, or change the harness/model routing.
@@ -212,6 +212,10 @@ Minimising burn without harming results, enforced by design rather than hope:
   - Fomo.family — authenticated Playwright SPA scrape (burner profile under
     `~/.trenchcoat/fomo-profile/`); leaderboard/feed/trending → research enqueue,
     wallet candidates, and gated X-source review (ADR 009; FAFO gates required)
+  - Pump.fun — authenticated Playwright SPA scrape (burner profile under
+    `~/.trenchcoat/pump-profile/`); FYP/Top/News/Following → like/follow feed
+    training, call archive, and host research enqueue (ADR 047; FAFO gates
+    required; no wallets from profiles)
 - **Scheduling**: launchd (macOS) / cron invoking the orchestrator CLI
   (`trenchcoat run <job>`, alias `tc`)
 - **Broadcast**: host-validated outbox items → in-repo router intake (HMAC +

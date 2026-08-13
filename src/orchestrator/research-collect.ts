@@ -25,6 +25,7 @@ import {
   type FomoObservation,
 } from "../collectors/fomo/observations.js"
 import { freshnessFromIso } from "../collectors/fomo/freshness.js"
+import { pumpSessionExists } from "../collectors/social/pump-auth.js"
 import {
   liveTokenEvents,
   loadObservationCache as loadDiscordWalletObservationCache,
@@ -116,6 +117,28 @@ async function writeFomoContextSnapshot(args: Readonly<{
     }).catch(() => undefined)
     return "fomo-context"
   }
+}
+
+async function writePumpTokenContextSnapshot(args: Readonly<{
+  writer: SnapshotWriter
+  runId: string
+  identity: CanonicalIdentity
+  fetchedAt: string
+}>): Promise<string | undefined> {
+  if (!pumpSessionExists()) return undefined
+  await args.writer.writeInbox(args.runId, "pump-token-context", {
+    source: "host.pump-token-context",
+    fetchedAt: args.fetchedAt,
+    trust: "untrusted-external",
+    items: [{
+      provenance: `${args.runId}:pump-token-context`,
+      text: `chain=${args.identity.chain} mint=${args.identity.tokenAddress}`,
+      ts: args.fetchedAt,
+      ageSec: 0,
+      freshnessTier: "live",
+    }],
+  })
+  return "pump-token-context"
 }
 
 async function writeDiscordWalletContextSnapshot(args: Readonly<{
@@ -707,6 +730,7 @@ export async function collectResearchDossier(args: Readonly<{
   identity: CanonicalIdentity
   fetchedAt: string
   queueId?: string
+  enqueuedBy?: string
   archiveRoot?: string
   fetcher?: typeof fetch
   twitterScrape?: typeof scrapeResearchTokenTwitter
@@ -769,6 +793,15 @@ export async function collectResearchDossier(args: Readonly<{
     })
     : Promise.resolve(undefined)
 
+  const pumpPromise = args.enqueuedBy?.startsWith("pump:")
+    ? writePumpTokenContextSnapshot({
+      writer: args.writer,
+      runId: args.runId,
+      identity: args.identity,
+      fetchedAt: args.fetchedAt,
+    })
+    : Promise.resolve(undefined)
+
   const twitterPromise = (async (): Promise<{
     names: string[]
     popularity?: TwitterPopularitySummary
@@ -825,17 +858,19 @@ export async function collectResearchDossier(args: Readonly<{
     }
   })()
 
-  const [market, fomoName, discordWalletName, twitterBranch] = await Promise.all([
+  const [market, fomoName, discordWalletName, pumpName, twitterBranch] = await Promise.all([
     marketPromise,
     fomoPromise,
     discordWalletPromise,
+    pumpPromise,
     twitterPromise,
   ])
 
-  // Deterministic order after settle: market/security, fomo, discord-wallet, twitter
+  // Deterministic order after settle: market/security, fomo, discord-wallet, pump, twitter
   snapshotNames.push(...market.names)
   if (fomoName) snapshotNames.push(fomoName)
   if (discordWalletName) snapshotNames.push(discordWalletName)
+  if (pumpName) snapshotNames.push(pumpName)
   snapshotNames.push(...twitterBranch.names)
 
   return {

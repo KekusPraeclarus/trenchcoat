@@ -491,6 +491,171 @@ export const XBotHealthSchema = z.object({
 })
 export type XBotHealth = z.infer<typeof XBotHealthSchema>
 
+export const PumpHandleSchema = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/u)
+export const PumpItemIdSchema = z.string().regex(/^[A-Za-z0-9._-]{1,128}$/u)
+export const PumpFeedTabSchema = z.enum(["fyp", "top", "news", "following"])
+
+export const PumpEngagementActionSchema = z.enum(["like", "follow", "unfollow"])
+export const PumpEngagementReasonCodeSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/u)
+
+export const PumpEngagementProposalItemSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("like"),
+    itemId: PumpItemIdSchema,
+    authorHandle: PumpHandleSchema,
+    reasonCode: PumpEngagementReasonCodeSchema,
+    rationale: z.string().min(1).max(280),
+  }),
+  z.object({
+    action: z.literal("follow"),
+    handle: PumpHandleSchema,
+    reasonCode: PumpEngagementReasonCodeSchema,
+    rationale: z.string().min(1).max(280),
+  }),
+  z.object({
+    action: z.literal("unfollow"),
+    handle: PumpHandleSchema,
+    reasonCode: PumpEngagementReasonCodeSchema,
+    rationale: z.string().min(1).max(280),
+  }),
+])
+export type PumpEngagementProposalItem = z.infer<typeof PumpEngagementProposalItemSchema>
+
+export const PumpEngagementProposalFileSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  proposedAt: IsoTimestampSchema,
+  items: z.array(PumpEngagementProposalItemSchema).max(50),
+})
+export type PumpEngagementProposalFile = z.infer<typeof PumpEngagementProposalFileSchema>
+
+export const PumpEngagementDecisionSchema = z.object({
+  schema: z.literal(1),
+  actionId: Sha256Schema,
+  action: PumpEngagementActionSchema,
+  target: z.string().min(1).max(128),
+  reasonCode: PumpEngagementReasonCodeSchema,
+  accepted: z.boolean(),
+  rejectReason: z.string().max(120).optional(),
+  runId: SafeIdSchema,
+  decidedAt: IsoTimestampSchema,
+})
+export type PumpEngagementDecision = z.infer<typeof PumpEngagementDecisionSchema>
+
+export const PumpEngagementOutcomeSchema = z.enum([
+  "already-satisfied",
+  "verified",
+  "verified-after-attempt-error",
+  "ambiguous",
+  "failed-before-mutation",
+])
+export type PumpEngagementOutcome = z.infer<typeof PumpEngagementOutcomeSchema>
+
+export const PumpEngagementReceiptSchema = z.object({
+  schema: z.literal(1),
+  receiptId: Sha256Schema,
+  actionId: Sha256Schema,
+  action: PumpEngagementActionSchema,
+  target: z.string().min(1).max(128),
+  attemptedAt: IsoTimestampSchema,
+  verified: z.boolean(),
+  ambiguous: z.boolean(),
+  outcome: PumpEngagementOutcomeSchema.optional(),
+  attemptError: z.string().max(500).optional(),
+  verificationError: z.string().max(500).optional(),
+  error: z.string().max(500).optional(),
+})
+export type PumpEngagementReceipt = z.infer<typeof PumpEngagementReceiptSchema>
+
+export const PumpEngagementFileSchema = z.object({
+  schema: z.literal(1),
+  followedHandles: z.array(PumpHandleSchema).max(5_000),
+  likedItemIds: z.array(PumpItemIdSchema).max(50_000),
+  lastLikedAt: z.record(z.string(), IsoTimestampSchema).default({}),
+  lastFollowedAt: z.record(z.string(), IsoTimestampSchema).default({}),
+  pendingActionIds: z.array(Sha256Schema).max(10_000),
+  decisions: z.array(PumpEngagementDecisionSchema).max(100_000),
+  receipts: z.array(PumpEngagementReceiptSchema).max(100_000),
+  daily: z.object({
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    likes: z.number().int().nonnegative().default(0),
+    follows: z.number().int().nonnegative().default(0),
+    unfollows: z.number().int().nonnegative().default(0),
+  }),
+})
+export type PumpEngagementFile = z.infer<typeof PumpEngagementFileSchema>
+
+export const PumpFypEligibleItemSchema = z.object({
+  itemId: PumpItemIdSchema,
+  author: PumpHandleSchema,
+})
+export type PumpFypEligibleItem = z.infer<typeof PumpFypEligibleItemSchema>
+
+export const PumpFypEligibleManifestSchema = z.object({
+  schema: z.literal(1),
+  runId: SafeIdSchema,
+  collectedAt: IsoTimestampSchema,
+  items: z.array(PumpFypEligibleItemSchema).max(500),
+})
+export type PumpFypEligibleManifest = z.infer<typeof PumpFypEligibleManifestSchema>
+
+export const PumpCallEventSchema = z.object({
+  schema: z.literal(1),
+  callerId: PumpHandleSchema,
+  chain: z.string().min(1).max(32),
+  tokenAddress: z.string().min(20).max(128),
+  calledAt: IsoTimestampSchema,
+  provenance: z.string().min(1).max(256),
+  feedTab: PumpFeedTabSchema.optional(),
+  itemId: PumpItemIdSchema.optional(),
+})
+export type PumpCallEvent = z.infer<typeof PumpCallEventSchema>
+
+export const PumpCallerScoreSchema = z.object({
+  handle: PumpHandleSchema,
+  settledCalls: z.number().int().nonnegative(),
+  hits: z.number().int().nonnegative(),
+  hitMean: z.number().min(0).max(1),
+  medianPeakPct: z.number(),
+  rugExposure: z.number().min(0).max(1),
+  scoreCutoff: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+})
+export type PumpCallerScore = z.infer<typeof PumpCallerScoreSchema>
+
+export const PumpCallerScoresFileSchema = z.object({
+  schema: z.literal(1),
+  callers: z.array(PumpCallerScoreSchema).max(10_000),
+})
+export type PumpCallerScoresFile = z.infer<typeof PumpCallerScoresFileSchema>
+
+export const PumpBotHealthActionSchema = z.object({
+  action: PumpEngagementActionSchema,
+  target: z.string().min(1).max(128),
+  runId: SafeIdSchema,
+  attemptedAt: IsoTimestampSchema,
+})
+export type PumpBotHealthAction = z.infer<typeof PumpBotHealthActionSchema>
+
+export const PumpBotHealthFailureSchema = z.object({
+  action: PumpEngagementActionSchema.optional(),
+  target: z.string().min(1).max(128).optional(),
+  runId: SafeIdSchema.optional(),
+  attemptedAt: IsoTimestampSchema,
+  error: z.string().max(500),
+  ambiguous: z.boolean().default(false),
+})
+export type PumpBotHealthFailure = z.infer<typeof PumpBotHealthFailureSchema>
+
+export const PumpBotHealthSchema = z.object({
+  schema: z.literal(1),
+  updatedAt: IsoTimestampSchema,
+  consecutiveFailures: z.number().int().nonnegative().max(10_000),
+  lastVerifiedAction: PumpBotHealthActionSchema.optional(),
+  lastFailure: PumpBotHealthFailureSchema.optional(),
+})
+export type PumpBotHealth = z.infer<typeof PumpBotHealthSchema>
+
 export const SourceLifecycleTransitionSchema = z.object({
   schema: z.literal(1),
   transitionId: Sha256Schema,
@@ -1122,6 +1287,7 @@ export const OutcomeObservationSchema = z.object({
     "resolution",
     "source-call",
     "wallet-buy",
+    "pump-call",
   ]),
   subjectId: SafeIdSchema,
   horizonHours: z.number().int().positive(),
