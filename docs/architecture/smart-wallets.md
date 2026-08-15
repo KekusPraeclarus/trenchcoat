@@ -2,7 +2,7 @@
 description: Smart-wallet discovery, deterministic scoring, bounded LLM vote, promotion/drop hysteresis, and mandatory lifecycle router events.
 scope: project
 status: active
-last_verified: 2026-07-23
+last_verified: 2026-08-15
 read_when:
   - Editing wallet collectors, scoring, lifecycle transitions, or wallet router events
 ---
@@ -85,7 +85,9 @@ mutating queue/router state.
 at the job wrapper ([ADR 027](../adr/027-improvement-lanes-skip-agent-lock.md),
 [ADR 031](../adr/031-wallet-settle-brief-locks-and-ledger.md)). Provider I/O and
 archive settlement run unlocked; `wallets.json` / ledger RMW uses a brief
-`withAgentWorkspaceLock`. Scans are host-only (no Cursor session). Round-robin
+`withAgentWorkspaceLock`. If that lock stays held, settle records `lockDeferred`
+and completes; the next cycle retries the pending write. Scans are host-only
+(no Cursor session). Round-robin
 prefers wallets with the oldest cursors so backfill progresses under the
 per-run cap.
 

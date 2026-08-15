@@ -2,7 +2,7 @@
 description: ADR — Same-stage narrative developments route through novelty dedupe; worthiness uses accepted delivery history; resolved research must propose one broadcast.
 scope: project
 status: accepted
-last_verified: 2026-07-24
+last_verified: 2026-08-15
 ---
 
 # ADR 023 — Narrative development routing and mandatory research broadcast
@@ -84,7 +84,8 @@ capital-flow `auditClaim.type: "rotation"`.
 - `decision-proposals.json` verdict must be exactly `track|drop|ignore|revisit`;
   invalid tokens (`watch`, `pass`, …) fail proposal load and downstream Discord
   subscribe/tracking gates (`verdict-missing`).
-- Host worthiness, schema validation, and Discord budget still gate fanout;
+- Host worthiness and schema validation still gate fanout (Discord message
+  budget removed by ADR 041);
   the host never invents market text (INV-B2).
 
 ## Consequences

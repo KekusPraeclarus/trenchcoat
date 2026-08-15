@@ -2,7 +2,7 @@
 description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-15
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -31,9 +31,9 @@ with backoff. Counts live in `summarizeIngressCounts` /
 `snapshotBroadcastPipeline` for status/health wiring.
 
 `finding.broadcast` ingress fails closed when its Telegram channel payload is
-absent. This prevents a legacy or interrupted raw event from falling back to the
-same short text on both channels: Telegram receives the promoted landscape
-overview, while Discord receives a run-scoped bottom-line distillation.
+absent. This prevents a legacy or interrupted raw event from falling back to
+`event.text` on both channels. Discord copies the Telegram leader text
+(ADR 041). Topic-merged followers omit both destinations.
 
 The router is a **long-lived KeepAlive process** (`com.trenchcoat.router` via
 `ops/install-launchd.sh` → `tc router serve`). Jobs only stage + HMAC-POST; without
@@ -57,7 +57,7 @@ the router process, broadcasts never fan out. SQLite lives at
 Frozen in `src/contracts/schemas.ts` as `RouterEventSchema`.
 
 - `finding.broadcast` — severity `watch|notable|urgent`, length-capped `text`, state refs, host-verifiable `auditClaim`, optional `channels` payloads
-- `finding.correction` — severity `info`, host integrity notice after post-fix claim audit (INV-S28); carries `correction` metadata (incidentId, invalidatedClaimIds, originalEventIds, optional Discord reply target); requires pre-attached channel payloads; bypasses worthiness and Discord market budget; Discord may reply to a persisted provider message ID for a single-claim correction, else standalone
+- `finding.correction` — severity `info`, host integrity notice after post-fix claim audit (INV-S28); carries `correction` metadata (incidentId, invalidatedClaimIds, originalEventIds, optional Discord reply target); requires pre-attached channel payloads; bypasses worthiness as an integrity notice; Discord may reply to a persisted provider message ID for a single-claim correction, else standalone
 - `wallet.lifecycle` — severity `lifecycle`, host-rendered `reasonLine`, immutable transition metadata (no `channels`; never distilled)
 
 Event ids are content hashes of the canonical broadcast fields (not `channels`).

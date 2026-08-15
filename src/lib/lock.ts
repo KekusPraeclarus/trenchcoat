@@ -135,6 +135,17 @@ function sleep(ms: number): Promise<void> {
  * (e.g. post-fix claim indexes). Retries so a long scan does not fail the
  * whole remediation job.
  */
+export const AGENT_LOCK_HELD_MESSAGE = "workspace lock held — agent mutation deferred"
+
+/** Default brief-RMW retry: 3 minutes, then callers may fail-soft. */
+export const SETTLE_AGENT_LOCK_ATTEMPTS = 36
+export const SETTLE_AGENT_LOCK_DELAY_MS = 5_000
+
+export function isAgentLockHeldError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /workspace lock held/iu.test(message)
+}
+
 export async function withAgentWorkspaceLock<T>(
   agentRoot: string,
   fn: () => Promise<T>,
@@ -153,5 +164,23 @@ export async function withAgentWorkspaceLock<T>(
     }
     if (i + 1 < attempts) await sleep(delayMs)
   }
-  throw new Error("workspace lock held — agent mutation deferred")
+  throw new Error(AGENT_LOCK_HELD_MESSAGE)
+}
+
+/**
+ * Brief RMW that leaves work pending when a scan still holds agent/.lock.
+ * Archive settlement must not fail the whole job after hours of pricing.
+ */
+export async function withAgentWorkspaceLockOrDefer<T>(
+  agentRoot: string,
+  fn: () => Promise<T>,
+  opts?: Readonly<{ attempts?: number; delayMs?: number }>,
+): Promise<{ ok: true, value: T } | { ok: false, deferred: true }> {
+  try {
+    const value = await withAgentWorkspaceLock(agentRoot, fn, opts)
+    return { ok: true, value }
+  } catch (error) {
+    if (isAgentLockHeldError(error)) return { ok: false, deferred: true }
+    throw error
+  }
 }

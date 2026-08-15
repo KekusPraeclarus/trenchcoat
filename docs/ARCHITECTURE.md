@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -29,6 +29,7 @@ bridges (broadcast and chat):
 ├───────────────────────────────────────────┤  │ spawns research sub-agents  │
 │ COLLECTORS (src/collectors/)              │  └───────────────┬─────────────┘
 │ twitter · farcaster (Neynar) · telegram   │                  │
+│ · pump.fun · discord-wallet signals       │                  │
 │ → alpha queue · market data (gecko,       │                  │
 │ dexscreener, coingecko trending, F&G)     │                  │
 │ · wallets · web · indicators (RSI, …)     │                  │
@@ -105,7 +106,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–047
+│   ├── adr/                  # binding decisions 001–047 (no 008)
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
@@ -119,7 +120,15 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   │   │                     #   fear & greed, security gate, indicators
 │   │   ├── wallets/          # Helius / Infura providers
 │   │   ├── fomo/             # Fomo.family web client (nomination / signals)
+│   │   ├── pump/             # pump.fun SPA scrape + engagement (ADR 047)
+│   │   ├── discord-wallet/   # Cielo/relay wallet-alert poll (ADR 035)
 │   │   └── web/              # Tavily search (research)
+│   ├── discord/              # Gateway research / tracking / conversation
+│   ├── remediation/          # host incident remediation (ADR 017)
+│   ├── broadcast-feedback/   # operator Discord reaction tuning (ADR 043)
+│   ├── chain-integration/    # unknown-chain add lane (ADR 016)
+│   ├── charts/               # offline SVG→PNG chart renderer
+│   ├── listen/               # KeepAlive listeners (x-scan, channels, discord)
 │   ├── sources/              # X FYP candidacy + lagged promote/demote (ADR 004);
 │   │                         #   FC follow-graph lifecycle (ADR 007)
 │   ├── social/               # X / FC engagement proposal validation / throttle
@@ -171,8 +180,9 @@ Detailed per-module docs live in [architecture/](architecture/README.md):
 
 - [orchestrator.md](architecture/orchestrator.md) — jobs, Cursor CLI sessions,
   outbox → router, audit + ledger, rug-dock, journal resume, alpha-queue lifecycle
-- [collectors.md](architecture/collectors.md) — twitter / farcaster / telegram,
-  market data, security gate, indicators, rate limiting, snapshot/provenance
+- [collectors.md](architecture/collectors.md) — twitter / farcaster / telegram /
+  pump / discord-wallet, market data, security gate, indicators, rate limiting,
+  snapshot/provenance
 - [agent-workspace.md](architecture/agent-workspace.md) — the bot's instructions,
   skills, knowledge store (incl. narratives + sources), outbox, sandbox config
 - [chat-agent.md](architecture/chat-agent.md) — telegram bridge, minimal

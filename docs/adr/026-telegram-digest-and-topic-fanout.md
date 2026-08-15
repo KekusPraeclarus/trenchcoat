@@ -10,8 +10,9 @@ date: 2026-07-22
 
 Shared agent outbox → ingest → `renderChannelPayloads` ran Telegram's landscape
 overview **per staged item** on the full chat report. Multiple same-run events
-therefore produced reworded versions of the whole narrative board. Discord already
-attached at most one payload per run, so it looked fine while Telegram repeated.
+therefore produced reworded versions of the whole narrative board. Discord
+later copies the same Telegram leader text (ADR 041). The older "one Discord
+payload per run" rule no longer applies.
 
 Cross-run worthiness history only considered accepted router ingress, so a second
 job could pass before the first reached that state and stage a semantic duplicate.

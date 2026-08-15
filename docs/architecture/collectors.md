@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -61,7 +61,15 @@ The host applies those choices after the scrape. Calls archive to
 Profile ids never enter `wallets.json`. Shadow mode is the default.
 Knowledge: [pump-fun.md](../knowledge/pump-fun.md).
 FAFO status: [ops/fafo-pump/REPORT.md](../../ops/fafo-pump/REPORT.md).
+Rollout: [ops/fafo-pump/SHADOW-CANARY.md](../../ops/fafo-pump/SHADOW-CANARY.md).
 ADR: [047-pump-feed-scan.md](../adr/047-pump-feed-scan.md).
+
+### Discord wallet-alert channels
+
+Read-only REST poll under `src/collectors/discord-wallet/`. Job
+`discord-wallet-signal-scan` (every 5m). Isolated from `wallets.json`.
+See [discord-wallet-signals.md](discord-wallet-signals.md).
+ADR: [035-discord-wallet-signal-confluence.md](../adr/035-discord-wallet-signal-confluence.md).
 
 ## Sources
 
@@ -519,6 +527,9 @@ be tracked and purged per message id.
 - `src/collectors/farcaster/engagement.ts` — likes applicator
 - `src/collectors/farcaster/signer.ts` — host custody / KeyGateway setup (INV-A1)
 - `src/collectors/telegram/listener.ts` — gramjs subscription, flood-wait handling
+- `src/collectors/pump/web-client.ts` — pump.fun SPA scrape (ADR 047)
+- `src/collectors/discord-wallet/parse.ts` — Cielo/relay wallet-alert parse (ADR 035)
+- `src/collectors/fomo/web-client.ts` — Fomo.family SPA scrape (ADR 009)
 - `src/collectors/market/security.ts` — GoPlus/RugCheck mapping (LP + mint caution-only)
 - `src/collectors/market/aggregate.ts` — 15m → higher-TF closed candle aggregation
 

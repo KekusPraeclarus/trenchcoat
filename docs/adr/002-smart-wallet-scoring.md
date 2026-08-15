@@ -2,7 +2,7 @@
 description: ADR — wallet score is 80% deterministic + 20% bounded fail-closed LLM vote.
 status: accepted
 date: 2026-07-16
-last_verified: 2026-07-20
+last_verified: 2026-08-15
 ---
 
 # ADR 002 — Smart-wallet scoring

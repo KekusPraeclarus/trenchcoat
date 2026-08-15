@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 ---
 
 # Incident remediation
@@ -21,6 +21,8 @@ claim-index writes take a brief agent lock only for that mutation.
 
 1. **Scan** — bounded deltas: health snapshot **findings** (cadence/heartbeat/stuck-run/systemd), skip journals, structured `/tmp/trenchcoat.*.{out,err}.log` lines (inode/size cursors), and passive Discord suggestion threads when `discord_suggestions.enabled`.
    The host drops log/health/skip candidates when every mapped job is healthy (`already-recovered`).
+   It also ignores in-SLA `outcomes-settle` incomplete-run findings (age under 24h)
+   and bare `incomplete runs=N` count warnings.
    A terminal fingerprint reopens only when a mapped job is degraded.
    Log prompts use a bounded `evidence-log.txt` snapshot.
 2. **Fingerprint** — stable id from job/error-class/component/target (not raw
@@ -43,6 +45,8 @@ claim-index writes take a brief agent lock only for that mutation.
    survive the 1k truncation.
    diagnose/propose may return typed `not-viable` (host closes the incident).
    Distinguish `propose:session failed` (infra) from `pre-review-reject` (product).
+   Findings with component `runs` use origin `health`. Do not propose a 30m
+   dead-mutex abandon for `outcomes-settle` — that contradicts INV-S15.
    On pre-review `revise`, the host re-enters propose with `priorPreReviewPath` up
    to `max_pre_review_revises` (default 5) before `pre-review-revise-exhausted`
    fails the incident for operator attention. `reject` fails on the first decision.

@@ -40,6 +40,10 @@ import type { PatchProposal, RemediationIncident } from "../../src/remediation/s
 import { PatchProposalSchema } from "../../src/remediation/schemas.js"
 import { decidePreReviewLoop } from "../../src/remediation/pre-review-loop.js"
 import {
+  candidateToIncident,
+  isDeterministicIgnore,
+} from "../../src/remediation/intake.js"
+import {
   clearPostBuildArtifacts,
   decideLiveRecovery,
   jobIsHealthy,
@@ -520,6 +524,40 @@ describe("live recovery floors", () => {
     clearPostBuildArtifacts(dir)
     expect(existsSync(join(dir, "diff-summary.json"))).toBe(false)
     expect(existsSync(join(dir, "proposal.json"))).toBe(true)
+  })
+})
+
+describe("outcomes-settle catch-up intake", () => {
+  it("ignores in-SLA incomplete settle findings and count warnings", () => {
+    expect(isDeterministicIgnore({
+      errorClass: "stuck-incomplete-run",
+      message: "incomplete run outcomes-settle-2026-08-14T05-28-18-727Z age=237m",
+    })).toBe("outcomes-settle-catch-up")
+    expect(isDeterministicIgnore({
+      errorClass: "other",
+      message: "incomplete runs=1",
+    })).toBe("incomplete-run-count")
+    expect(isDeterministicIgnore({
+      errorClass: "stuck-incomplete-run",
+      message: "incomplete run outcomes-settle-2026-08-14T05-28-18-727Z age=1440m",
+    })).toBeUndefined()
+    expect(isDeterministicIgnore({
+      errorClass: "stuck-incomplete-run",
+      message: "incomplete run list-scan-2026-08-14T05-28-18-727Z age=237m",
+    })).toBeUndefined()
+  })
+
+  it("maps runs-component findings to health origin", () => {
+    const incident = candidateToIncident({
+      fingerprint: "abc123def456abc123def456",
+      incidentId: "rem-abc123def456",
+      component: "runs",
+      errorClass: "stuck-incomplete-run",
+      title: "incomplete run outcomes-settle-2026-08-15T05-28-20-043Z age=198m",
+      severity: "error",
+      evidence: [],
+    }, "2026-08-15T08:47:00.000Z")
+    expect(incident.origin).toBe("health")
   })
 })
 

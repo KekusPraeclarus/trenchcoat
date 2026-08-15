@@ -2,7 +2,7 @@
 description: ADR — Host composer-2.5-fast worthiness gate approves or rejects agent market broadcasts before stage.
 scope: project
 status: accepted
-last_verified: 2026-07-22
+last_verified: 2026-08-15
 ---
 
 # ADR 014 — Broadcast worthiness review
@@ -50,7 +50,8 @@ surviving proposal, without letting the host invent market broadcast copy.
 - Worthiness is a latency and CLI-session cost on every mechanically-valid
   proposal; empty outbox / no proposals incur no session.
 - Operators can disable or retarget the model via config without code changes;
-  disabling removes the semantic brake (Discord budget still applies).
+  disabling removes the semantic brake. Discord message budget no longer
+  applies (superseded by ADR 041).
 - Distillers remain rewrite-only and still omit `model` (default `composer-2.5`);
   do not conflate worthiness with Discord/Telegram distill.
 

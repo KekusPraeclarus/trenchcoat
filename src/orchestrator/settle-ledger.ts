@@ -1,7 +1,11 @@
 import { join } from "node:path"
 import { type ArchiveLayout } from "../lib/archive.js"
 import { StateStore } from "../lib/state.js"
-import { withAgentWorkspaceLock } from "../lib/lock.js"
+import {
+  SETTLE_AGENT_LOCK_ATTEMPTS,
+  SETTLE_AGENT_LOCK_DELAY_MS,
+  withAgentWorkspaceLockOrDefer,
+} from "../lib/lock.js"
 import type { CanonicalIdentity, LedgerPosition } from "../contracts/schemas.js"
 import { loadDecisionBundle } from "./decision-bundle.js"
 import { finalizeEntry, firstEligibleObservation } from "./ledger.js"
@@ -14,6 +18,7 @@ export type LedgerSettleReport = Readonly<{
   entriesFinalized: number
   pending: number
   skipped: number
+  lockDeferred?: boolean
 }>
 
 function decisionTsFor(position: LedgerPosition, layout: ArchiveLayout): string | undefined {
@@ -33,6 +38,8 @@ export async function runLedgerSettle(args: Readonly<{
   loadBars?: BarProvider<CanonicalIdentity>
   /** When false, skip withAgentWorkspaceLock (caller already holds agent lock) */
   acquireLock?: boolean
+  lockAttempts?: number
+  lockDelayMs?: number
 }>): Promise<LedgerSettleReport> {
   const store = new StateStore(join(args.agentRoot, "state"))
   const acquireLock = args.acquireLock !== false
@@ -102,7 +109,18 @@ export async function runLedgerSettle(args: Readonly<{
   }
 
   if (acquireLock) {
-    await withAgentWorkspaceLock(args.agentRoot, commit)
+    const locked = await withAgentWorkspaceLockOrDefer(args.agentRoot, commit, {
+      attempts: args.lockAttempts ?? SETTLE_AGENT_LOCK_ATTEMPTS,
+      delayMs: args.lockDelayMs ?? SETTLE_AGENT_LOCK_DELAY_MS,
+    })
+    if (!locked.ok) {
+      return {
+        ...report,
+        pending: report.pending + planned.length,
+        entriesFinalized: 0,
+        lockDeferred: true,
+      }
+    }
   } else {
     await commit()
   }

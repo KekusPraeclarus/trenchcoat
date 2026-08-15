@@ -471,4 +471,73 @@ describe("buildHealthSnapshot", () => {
     expect(text).toContain("job harness-improve:")
     expect(text).toMatch(/skip=/u)
   })
+
+  it("does not flag a live outcomes-settle under the 24h cap as stuck", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-health-settle-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const state = new StateStore(join(agentRoot, "state"))
+    await state.saveWatchlist({ schema: 1, entries: [] })
+
+    const store = createJournalStore(layout)
+    const settleId = "outcomes-settle-2026-08-15T08-00-00-000Z"
+    const scanId = "list-scan-2026-08-15T09-00-00-000Z"
+    for (const runId of [settleId, scanId]) {
+      await store.save({
+        schema: 1,
+        runId,
+        phase: "integrity-checked",
+        status: "running",
+        phaseHashes: {},
+        sideEffects: {},
+      })
+    }
+
+    const health = await buildHealthSnapshot({
+      agentRoot,
+      archiveRoot,
+      nowIso: "2026-08-15T12:00:00.000Z",
+      layout,
+    })
+
+    const settleFinding = health.findings.find((f) => f.summary.includes(settleId))
+    const scanFinding = health.findings.find((f) => f.summary.includes(scanId))
+    expect(settleFinding).toBeUndefined()
+    expect(scanFinding?.code).toBe("stuck-incomplete-run")
+    expect(scanFinding?.job).toBe("list-scan")
+  })
+
+  it("flags outcomes-settle as stuck only after the 24h abandon cap", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-health-settle-cap-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const state = new StateStore(join(agentRoot, "state"))
+    await state.saveWatchlist({ schema: 1, entries: [] })
+
+    const store = createJournalStore(layout)
+    const runId = "outcomes-settle-2026-08-14T11-00-00-000Z"
+    await store.save({
+      schema: 1,
+      runId,
+      phase: "integrity-checked",
+      status: "running",
+      phaseHashes: {},
+      sideEffects: {},
+    })
+
+    const health = await buildHealthSnapshot({
+      agentRoot,
+      archiveRoot,
+      nowIso: "2026-08-15T12:00:00.000Z",
+      layout,
+    })
+
+    const finding = health.findings.find((f) => f.code === "stuck-incomplete-run")
+    expect(finding?.job).toBe("outcomes-settle")
+    expect(finding?.summary).toContain(runId)
+  })
 })

@@ -2,7 +2,7 @@
 description: ADR — Discord NL idea-tracking under isolated Discord state; mention/reply intake; durable match batches; INV-D3–D8.
 scope: project
 status: accepted
-last_verified: 2026-07-21
+last_verified: 2026-08-15
 ---
 
 # ADR 018 — Discord idea tracking
@@ -15,7 +15,7 @@ appears in scans or research — without a confirmation UX, and without running
 `composer-2.5` on every channel message.
 
 Existing Discord surfaces already covered:
-- Router webhook broadcasts (budgeted)
+- Router webhook broadcasts (unified Telegram/Discord text, ADR 041)
 - Gateway research + token watchlist (ADR 010 / 012)
 - Host chain-integration lane (ADR 016)
 

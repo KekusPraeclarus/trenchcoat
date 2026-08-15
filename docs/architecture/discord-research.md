@@ -2,7 +2,7 @@
 description: Discord research bot — private-guild Gateway listener, isolated state, final-only replies, watch subscriptions.
 scope: module
 status: active
-last_verified: 2026-07-21
+last_verified: 2026-08-15
 read_when:
   - Editing src/discord/ or chat.discord config.
   - Changing Discord research intake, delivery, watchlist, monitor, or idea-tracking behaviour.
@@ -20,7 +20,7 @@ Optional channel conversation over main workspace: [discord-conversation.md](dis
 
 | Surface | Token / transport | Purpose |
 |---|---|---|
-| Router broadcast | `DISCORD_WEBHOOK_URL` | Market `finding.broadcast` fanout (budgeted at channel-render) |
+| Router broadcast | `DISCORD_WEBHOOK_URL` | Market `finding.broadcast` fanout (same text as Telegram leaders, ADR 041) |
 | Research bot | `DISCORD_RESEARCH_BOT_TOKEN` + discord.js Gateway | Interactive research + watch updates in configured guild channels |
 
 ## Product contract

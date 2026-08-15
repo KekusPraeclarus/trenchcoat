@@ -2,7 +2,7 @@
 description: ADR — Allowlisted telegram-alpha channels enqueue research on a single CA or ticker; research may broadcast when solid.
 scope: project
 status: accepted
-last_verified: 2026-07-22
+last_verified: 2026-08-15
 ---
 
 # ADR 015 — Telegram alpha auto-research bridge
@@ -18,7 +18,8 @@ outbox items, so Discord webhook fanout never fired after a solid dossier.
 
 Operator intent: when an allowlisted alpha channel surfaces a token, research
 should start immediately; if the dossier is solid, a market broadcast may go
-to the Discord webhook (still gated by worthiness + Discord budget).
+to the Discord webhook (still gated by worthiness; Discord message budget
+removed by ADR 041).
 
 ## Decision
 

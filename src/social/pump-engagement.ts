@@ -93,7 +93,7 @@ function normalizePumpHandle(raw: string): string | undefined {
 
 /**
  * Apply agent like/follow/unfollow. Likes bind to same-run pump-fyp-eligible
- * item ids. Follow/unfollow bind to authors in that snapshot (INV-S29).
+ * item ids. Follow/unfollow bind to authors in that snapshot (INV-S30).
  */
 export function applyPumpEngagementChoices(args: Readonly<{
   proposal: PumpEngagementProposalFile

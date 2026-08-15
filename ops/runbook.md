@@ -18,6 +18,7 @@ same cadences via user systemd — see [linux-vps.md](linux-vps.md)
     ├── backups/               # weekly archive manifests (last-verified.json)
     ├── twitter-profile/       # Twitter burner auth (never in the repo)
     ├── farcaster/             # Neynar signer + custody (never in the repo)
+    ├── pump-profile/          # pump.fun burner session (never in the repo)
     ├── telegram-session/      # GramJS session (never in the repo)
     ├── agent/                 # runtime workspace (git; weekly push if origin set)
     │   └── state/INDEX.md     # chat/job retrieval rollup (must exist; scaffold creates it)
@@ -53,6 +54,10 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 
 Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbook:
 [ops/fafo-fomo/SHADOW-CANARY.md](fafo-fomo/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth fomo`.
+
+Pump gates: `pnpm pump:install-gates` (default seed fails closed). Rollout playbook:
+[ops/fafo-pump/SHADOW-CANARY.md](fafo-pump/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth pump`.
+Session sync and VPS smoke: same doc § One-time VPS bootstrap.
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
 | `harness-improve` | weekly recovery timer **and** success-only non-blocking kick after scheduled `audit` exits 0 (install scripts only; default on; `--without-harness` opts out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary. Typed readiness deferrals are skips, not successes (`tc harness status`, `tc status`) |

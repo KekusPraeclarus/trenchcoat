@@ -2,6 +2,7 @@
 title: "031 — Wallet settle/scan brief locks and paper ledger finalisation"
 status: accepted
 date: 2026-07-23
+last_verified: 2026-08-15
 ---
 
 # ADR 031: Wallet settle/scan brief locks and paper ledger finalisation
@@ -37,9 +38,13 @@ ledger path.
 2. **Provider I/O and archive settlement run unlocked.** Agent-state RMW
    (`wallets.json` cursors / lifecycle, `ledger.json` entry finalisation)
    uses brief `withAgentWorkspaceLock` only.
-3. **`wallet-scan-*` are host-only** (no Cursor session). Cap wallets per
-   tick (`wallets.max_wallets_per_scan`, default 5) with oldest-cursor
-   round-robin so backfill cannot monopolise wall clock.
+3. **`wallet-scan-*` stay lock-exempt and host-owned for `wallets.json`.**
+   Cap wallets per tick (`wallets.max_wallets_per_scan`, default 5) with
+   oldest-cursor round-robin so backfill cannot monopolise wall clock.
+   An advisory `wallet-evidence` Cursor session may still run (ADR 002 /
+   INV-S19). It writes `wallet-evidence.md` only. It does not write scores,
+   cursors, or lifecycle. (Amended 2026-08-15: the original "no Cursor
+   session" clause did not match the shipped advisory path.)
 4. **Host `settle-ledger`** (composed into `outcomes-settle`): for each
    `entry-pending`, load `decisionTs` from the archived decision bundle
    (not `openedAt`), price via `createLiveIdentityBarProvider`,
@@ -83,3 +88,6 @@ ledger path.
 - Audit scorecard: real `paperPnl*` from ledger + `persistScorecardToState`.
 - After deploy: `tc run outcomes-settle` then `tc run wallet-review`; expect
   progressive 72h+6h maturity, not instant promotions.
+- Ledger/Fomo score RMW fail-soft (`lockDeferred`) when `agent/.lock` stays
+  held after settle retries, so a mid-scan commit cannot fail a multi-hour
+  journal. Health `stuck-incomplete-run` uses the 24h abandon cap for this job.

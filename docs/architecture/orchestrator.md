@@ -1,8 +1,8 @@
 ---
-description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation with urgent bypass, alpha-queue lifecycle, performance-audit job.
+description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -56,6 +56,14 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `harness-meta-improve` | ~monthly / when fresh epoch pair appears (`meta_schedule_days`) | sealed epochs only; shadow improver-config trials | **no agent write to prod** — paired offline meta-utility; never integrates/deploys/activates until `tc harness meta promote` (ADR 039); INV-S15 lock-exempt |
 | `incident-remediate` | hourly (off by default) | health/logs/skips | host remediation lane (ADR 017); Telegram approval for high-risk |
 | `incident-remediate-weekly` | Monday 08:00 local (off by default) | deferred queue | at most one revalidated deferred incident |
+| `delivery-retry` | every 15m | staged router events without a terminal receipt | **no agent** — oldest-first bounded ingress retry |
+| `telegram-digest` | daily 04:00 Europe/London | retention-active narratives | **no agent** — Telegram-only landscape digest (ADR 026/041) |
+| `fomo-trader-sync` | every 6h | Fomo leaderboard handles | **no agent** — optional X nominations (no wallets) |
+| `fomo-signal-scan` | every 20m | Fomo feed / trending / alerts | **no agent** — dated signals + bounded research enqueue |
+| `fomo-x-source-review` | every 6h | one pending Fomo X nomination + bounded history | isolated classifier; host merge fail-closes (ADR 009) |
+| `fomo-narrative-source-scan` | every 6h | live posts from narrative-probation handles | **no agent** — sealed historical-purpose tags stay out of narrative-scan |
+| `narrative-source-review` | daily | lagged narrative-source utility | **no agent** — promote/demote + gated X follow |
+| `recover` | on demand | incomplete journal / quarantine | recovery assist (ADR 006) |
 
 Cadences live in `ops/` templates, not code; tune freely. Host-gated jobs
 (`chart-sweep`, `watchlist-scan`, `research`, wallet evidence jobs, and
@@ -166,8 +174,16 @@ zombies. Pre-seal resume is **not** supported — orphans are marked failed
 pre-seal + no live lock + age ≥30m for agent-lock jobs, or any running age ≥6h;
 `outcomes-settle` is exempt from the 30m no-lock rule and uses a 24h hard age
 cap because catch-up pricing is intentionally long and agent-lock-free).
+Health `stuck-incomplete-run` uses that same 24h cap for `outcomes-settle`
+(other jobs stay at 2h) so a live catch-up does not open a remediation.
+Do not apply the 30m no-lock abandon when the settle mutex pid is dead —
+INV-S15 and ADR 031 keep the 24h hard cap only. Pre-review rejects that change.
 `outcomes-settle` also takes a job mutex under `~/.trenchcoat/locks/` so a
 second timer/manual kick exits 3 (`run-with-lock-retry`) instead of stacking.
+Host pricing runs while the transaction journal is still `integrity-checked`;
+a 4–6h run at that phase with a live mutex pid is catch-up, not a stuck orphan.
+A `lock-held` failure with a real runId after hours was brief ledger/Fomo RMW
+(`classifyRunFailureCode` maps `workspace lock`); that path now fail-softs.
 `runJob` also calls `maybeAbandonOrphansThrottled` before lock acquire (≤1 scan
 per 15m) to fail orphans without operator action. Phases are fsynced
 and atomically renamed. Recovery resumes post-seal incomplete phases only; it
@@ -306,6 +322,9 @@ reasoning, confidence, and cited sources) is the raw material. Weekly:
    first post-decision execution bar (`decisionTs` from the archived decision
    bundle). A drop on an unfilled position cancels it (`censored`); a drop on an
    `open` position marks `exit-pending` (exit bar finalisation is a follow-up).
+   Ledger and Fomo score RMW retry the agent lock, then fail-soft
+   (`lockDeferred`) if a scan still holds it — archive settlement still
+   completes and the next cycle retries the pending writes.
    After settle, the job refreshes harness canary maturity from already-written
    decision outcomes. Host `runSettleDecisions` is the writer for
    `outcomes/decision/<id>/<h>h.json` (mining / keep / canary / audit folds).
@@ -573,11 +592,11 @@ agent notes do not prove prior fanout. From the desktop, prefer
   sealed narrative freshness note)
 - `src/orchestrator/chart-collect.ts` / `narrative-collect.ts` — collector jobs
 - `src/lib/deployment.ts` — runtime `deployment.json` manifest
-- `src/orchestrator/broadcast.ts` — Discord-only daily/urgent budget maths + known verification rules
+- `src/orchestrator/broadcast.ts` — `dayKey` + `VERIFICATION_RULES` (no Discord message budget)
 - `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals, worthiness gate, and stage (no count limit)
 - `src/orchestrator/broadcast-worthiness.ts` — host approve/reject session before stage (INV-B2)
 - `src/orchestrator/telegram-alpha-research.ts` — host CA/ticker → research enqueue (ADR 015)
-- `src/orchestrator/channel-render.ts` — attach Telegram/Discord payloads; Discord budget reserve
+- `src/orchestrator/channel-render.ts` — attach Telegram/Discord payloads; Discord copies Telegram leader text (ADR 041)
 - `src/orchestrator/chat-report.ts` — host-render `reports/chat/<run-id>.md` from trusted run facts after `ingestOutbox` (`list-scan`, `narrative-scan`, `farcaster-scan`, `review`, `research`); optional `chat-summary.json`/`.md` context appended when valid
 - `src/orchestrator/narrative-log.ts` — `pruneNarrativeLog`: drop malformed lines + purge `lastSeen` older than `narratives.retention_days` (default 14)
 - `src/orchestrator/router.ts` — BroadcastItem validation + HMAC `deliverRouterEvent`

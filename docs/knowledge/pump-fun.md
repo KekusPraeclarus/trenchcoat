@@ -49,6 +49,8 @@ pnpm tsx scripts/smoke-pump-live.ts
 pnpm pump:install-gates ops/fafo-pump/gates.seed.json
 ```
 
+VPS rollout (shadow → canary): [ops/fafo-pump/SHADOW-CANARY.md](../../ops/fafo-pump/SHADOW-CANARY.md).
+
 Live hosts and POST paths land in [ops/fafo-pump/REPORT.md](../../ops/fafo-pump/REPORT.md)
 after discover. Do not treat GitHub API dumps as truth.
 

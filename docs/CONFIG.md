@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -84,7 +84,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 14,
+  "schema": 27,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -444,8 +444,7 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 Authenticated [pump.fun](https://pump.fun) SPA scrape. Defaults keep the
 lane off. Jobs also fail closed unless
 `archive/provider-evaluations/pump/gates.json` is fresh and `provider` is
-`pass`. Burner session via `tc auth pump`. Rollout:
-[ops/fafo-pump/SHADOW-CANARY.md](../../ops/fafo-pump/SHADOW-CANARY.md). See
+`pass`. Burner session via `tc auth pump`. See
 [knowledge/pump-fun.md](knowledge/pump-fun.md) and
 [ADR 047](adr/047-pump-feed-scan.md).
 

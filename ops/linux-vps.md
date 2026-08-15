@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-08-12
+last_verified: 2026-08-15
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -185,9 +185,13 @@ Binding rule: `.cursor/rules/live-vps.mdc`.
 # From the repo on the Mac
 ./ops/remote.sh health                 # healthz + KeepAlives + status
 ./ops/remote.sh status                 # any trenchcoat CLI args
-./ops/remote.sh -- 'tail -50 /tmp/trenchcoat.x-scan.err.log'
+./ops/remote.sh -- tail -50 /tmp/trenchcoat.x-scan.err.log
+./ops/remote.sh -- bash -lc 'ps aux | grep outcomes-settle'
 ./ops/remote.sh sync                   # non-secret state → .trenchcoat-remote/
 ```
+
+`--` quotes each argument. One quoted string with spaces becomes one command
+name. Pass words separately, or wrap a script in `bash -lc`.
 
 `sync` pulls `config.json`, `agent/state/`, `agent/reports/` (≤2 MiB files), and
 a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.

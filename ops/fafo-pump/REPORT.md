@@ -16,8 +16,8 @@ Live `pnpm probe:pump discover` on 2026-08-13 with the burner session.
 
 ## Next
 
-1. `TRENCHCOAT_LIVE_PUMP=1 pnpm tsx scripts/smoke-pump-live.ts`
-2. If feed counts are still 0, inspect mapper fields against sanitized
-   `coins-v2/mints` samples. Do not paste session files.
-3. `pnpm probe:pump sanitize --run-id probe-2026-08-13`
-4. Replace `ops/fafo-pump/gates.seed.json` after sample size is enough.
+Shadow rollout steps: [SHADOW-CANARY.md](SHADOW-CANARY.md).
+
+1. Run FAFO discover on VPS and replace `gates.shadow-live.json` when sample size is enough
+2. Complete 14 UTC-day shadow window per SHADOW-CANARY § Phase 2
+3. Flip `pump.shadow_mode` to `false` for canary

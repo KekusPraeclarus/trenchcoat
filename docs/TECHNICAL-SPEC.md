@@ -2,7 +2,7 @@
 description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
   - You are about to add a dependency, data source, or change the harness/model routing.
@@ -86,12 +86,11 @@ lean: minimum tokens for undiminished results.
    (local-main integrate + runtime deploy; agent-workspace activation waits for
    the all-work drain — ADR 005).
 9. **Broadcasts** — brief key findings staged into the **in-repo SQLite router**
-   (`src/router/**`, ADR 001) for Telegram/Discord fan-out. Sparingly and briefly
-   on Discord: severity `urgent` (new narrative forming, sudden sentiment collapse,
-   early chain rotation) **bypasses the Discord daily budget**; a generous hard
-   ceiling exists purely as a runaway-agent failsafe. Telegram has no daily count
-   limit after schema validation. Wallet add/drop uses a separate `lifecycle` lane
-   that does not consume Discord market broadcast budget.
+   (`src/router/**`, ADR 001) for Telegram/Discord fan-out. Discord receives the
+   same host-rendered text as Telegram leaders (ADR 041). There is no Discord
+   daily message budget. Telegram has no daily count limit after schema
+   validation. Wallet add/drop uses a separate `lifecycle` lane that skips
+   channel render.
 10. **Chat agent** — a conversational agent reachable via Telegram to discuss
     findings, probe anything never broadcast, and give an opinion on any token.
     The chat session is a minimal orchestrator that delegates heavy work to
@@ -311,10 +310,9 @@ Minimising burn without harming results, enforced by design rather than hope:
   neutral/uncertain stance, and copies are excluded and measured; rug adjacency
   remains separate and immediate (2026-07-16,
   docs/architecture/audit-metrics.md, INV-S12)
-- Discord broadcast budget initial defaults: 5/day watch+notable, urgent failsafe
-  ceiling 10/day (Telegram uncapped after validation) — config values in
-  docs/CONFIG.md, tune after the first weeks of audits (2026-07-16; Discord-only
-  framing 2026-07-18)
+- Discord message budget (5/day + urgent ceiling) — **superseded by ADR 041**
+  (2026-07-27): unified Telegram/Discord fanout, no Discord count cap. Historical
+  defaults remain in this list only as the 2026-07-16 decision record.
 - Broadcast delivery: **in-repo SQLite router** with HMAC intake, idempotency
   keys, and durable Telegram/Discord fan-out (2026-07-16, ADR 001,
   docs/architecture/router.md) — replaces the earlier "external router stub"
@@ -458,7 +456,9 @@ contribution.
 Niche/fast-moving tech under `docs/knowledge/`. Present today:
 
 - `cursor-cli.md`, `helius.md`, `infura.md`, `x-playwright.md`, `telegram.md`,
-  `discord.md`, `market-risk.md`, `neynar.md`, `tavily.md`
+  `discord.md`, `market-risk.md`, `neynar.md`, `tavily.md`, `fomo-family.md`,
+  `pump-fun.md`, `harness-self-improvement-patterns.md`,
+  `discord-wallet-alert-schemas.md`
 
 Still useful to deepen when those surfaces first go live hard:
 

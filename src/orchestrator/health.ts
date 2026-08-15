@@ -12,6 +12,7 @@ import { readDeployPause, DEPLOY_PAUSE_MAX_AGE_MS } from "../lib/deploy-pause.js
 import { StateStore } from "../lib/state.js"
 import { RunManifestSchema } from "../contracts/schemas.js"
 import { loadJournalForScan } from "./journal-store.js"
+import { hardAbandonAgeMs, jobNameFromRunId } from "./abandon.js"
 import { findIncompleteRunRefs, type IncompleteRunRef } from "./resume.js"
 import {
   snapshotBroadcastPipeline,
@@ -804,8 +805,15 @@ export const JOB_CADENCE_SEC: Readonly<Partial<Record<JobName, number>>> = Objec
 
 const LISTENER_HEARTBEAT_STALE_SEC = 15 * 60
 const MONITOR_HEARTBEAT_STALE_SEC = 7 * 3_600
-const INCOMPLETE_RUN_STUCK_MS = 2 * 3_600_000
+export const INCOMPLETE_RUN_STUCK_MS = 2 * 3_600_000
 const RESEARCHING_STUCK_MS = 3 * 3_600_000
+
+/** outcomes-settle uses the 24h abandon cap; other jobs stay at 2h. */
+export function incompleteRunStuckMs(runId: string): number {
+  return jobNameFromRunId(runId) === "outcomes-settle"
+    ? hardAbandonAgeMs(runId)
+    : INCOMPLETE_RUN_STUCK_MS
+}
 
 function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">): HealthFinding[] {
   const findings: HealthFinding[] = []
@@ -825,12 +833,14 @@ function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">):
   for (const run of snapshot.incompleteRuns) {
     if (run.status !== "running") continue
     const age = run.ageMs ?? 0
-    if (age >= INCOMPLETE_RUN_STUCK_MS) {
+    if (age >= incompleteRunStuckMs(run.runId)) {
+      const job = jobNameFromRunId(run.runId)
       push({
         code: "stuck-incomplete-run",
         severity: "error",
         summary: `incomplete run ${run.runId} age=${Math.floor(age / 60_000)}m`,
         component: "runs",
+        ...(job ? { job } : {}),
       })
     }
   }

@@ -202,7 +202,7 @@ function parseLogLine(line: string): {
   }
 }
 
-function isDeterministicIgnore(args: Readonly<{
+export function isDeterministicIgnore(args: Readonly<{
   errorClass: string
   message: string
   job?: string
@@ -215,6 +215,12 @@ function isDeterministicIgnore(args: Readonly<{
   }
   if (/precondition/u.test(m) && /skip/u.test(m)) return "precondition-skip"
   if (/transient|retrying|will retry/u.test(m)) return "transient"
+  if (/^incomplete runs=/u.test(m)) return "incomplete-run-count"
+  const settleAge = /incomplete run outcomes-settle-\S+ age=(\d+)m/u.exec(m)
+  if (settleAge) {
+    const ageMin = Number(settleAge[1])
+    if (Number.isFinite(ageMin) && ageMin < 24 * 60) return "outcomes-settle-catch-up"
+  }
   return undefined
 }
 
@@ -463,7 +469,7 @@ export function candidateToIncident(
   candidate: IntakeCandidate,
   nowIso: string,
 ): RemediationIncident {
-  const origin = candidate.component === "health"
+  const origin = candidate.component === "health" || candidate.component === "runs"
     ? "health" as const
     : candidate.component === "log"
       ? "log" as const

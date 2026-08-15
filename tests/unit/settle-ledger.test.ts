@@ -5,7 +5,11 @@ import { join } from "node:path"
 import { archiveLayout } from "../../src/lib/archive.js"
 import { StateStore } from "../../src/lib/state.js"
 import { runLedgerSettle } from "../../src/orchestrator/settle-ledger.js"
-import { jobRequiresAgentWorkspaceLock } from "../../src/lib/lock.js"
+import {
+  WorkspaceLock,
+  agentLockPath,
+  jobRequiresAgentWorkspaceLock,
+} from "../../src/lib/lock.js"
 import { selectWalletsForScan } from "../../src/orchestrator/wallet-scan.js"
 import type { WalletRecord, WalletScanCursor } from "../../src/contracts/schemas.js"
 
@@ -154,5 +158,80 @@ describe("runLedgerSettle", () => {
     const pos = store.loadLedger().positions[0]
     expect(pos?.status).toBe("open")
     expect(pos?.entryPrice).toBe(10)
+  })
+
+  it("defers ledger commit when the agent lock is held", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-ledger-lock-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    const layout = archiveLayout(archiveRoot)
+    mkdirSync(layout.decisions, { recursive: true })
+
+    const decisionId = "dec-track-lock"
+    writeFileSync(join(layout.decisions, `${decisionId}.json`), `${JSON.stringify({
+      schema: 1,
+      decisionId,
+      runId: "research-1",
+      decisionTs: "2026-07-20T12:00:00.000Z",
+      card: {
+        decisionId,
+        runId: "research-1",
+        decisionTs: "2026-07-20T12:00:00.000Z",
+        verdict: "track",
+        identity,
+        thesis: "t",
+        horizonHours: 72,
+        invalidation: "i",
+        drivers: ["social"],
+        confidence: 60,
+        signalUse: { rsi: "observed" },
+        sources: ["twitter:@a"],
+        clusters: 1,
+        countercase: "c",
+        gate: "pass",
+      },
+      provenanceIds: ["twitter:@a"],
+      inboxManifestHash: `sha256:${"a".repeat(64)}`,
+      sourceScoresSnapshotHash: `sha256:${"b".repeat(64)}`,
+      marketBlobRefs: [],
+      runConfigHash: `sha256:${"c".repeat(64)}`,
+      policyVersion: "baseline",
+      assignment: "baseline",
+      signals: {},
+    }, null, 2)}\n`)
+
+    const store = new StateStore(join(agentRoot, "state"))
+    await store.saveLedger({
+      schema: 1,
+      positions: [{
+        schema: 1,
+        positionId: `pos-${decisionId}`,
+        decisionId,
+        identity,
+        status: "entry-pending",
+        openedAt: "2026-07-20T12:05:00.000Z",
+      }],
+    })
+
+    const lock = new WorkspaceLock(agentLockPath(agentRoot))
+    expect(lock.tryAcquire()).toBe(true)
+    try {
+      const report = await runLedgerSettle({
+        agentRoot,
+        layout,
+        nowIso: "2026-07-20T14:00:00.000Z",
+        lockAttempts: 2,
+        lockDelayMs: 50,
+        loadBars: async () => [
+          { ts: "2026-07-20T12:05:00.000Z", open: 10, finalized: true },
+        ],
+      })
+      expect(report.lockDeferred).toBe(true)
+      expect(report.entriesFinalized).toBe(0)
+      expect(store.loadLedger().positions[0]?.status).toBe("entry-pending")
+    } finally {
+      lock.release()
+    }
   })
 })

@@ -2,7 +2,7 @@
 description: Context map for the planned autonomous trading pipeline (paper → dollar → bankroll). Design is settled; NO CODE EXISTS YET.
 scope: project
 status: planned
-last_verified: 2026-07-29
+last_verified: 2026-08-15
 ---
 
 # Trading pipeline — design docs

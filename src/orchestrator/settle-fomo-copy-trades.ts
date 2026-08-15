@@ -1,7 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { writeJsonRecord, type ArchiveLayout } from "../lib/archive.js"
-import { withAgentWorkspaceLock } from "../lib/lock.js"
+import {
+  SETTLE_AGENT_LOCK_ATTEMPTS,
+  SETTLE_AGENT_LOCK_DELAY_MS,
+  withAgentWorkspaceLockOrDefer,
+} from "../lib/lock.js"
 import { StateStore } from "../lib/state.js"
 import {
   FomoTradeOutcomeSchema,
@@ -93,6 +97,7 @@ export type FomoCopyTradeSettleReport = Readonly<{
   providerPending: number
   batchesUpdated: number
   tradersScored: number
+  lockDeferred?: boolean
 }>
 
 export type FomoBarProvider = (
@@ -140,6 +145,8 @@ export async function runSettleFomoCopyTrades(args: Readonly<{
   loadBars?: FomoBarProvider
   feeBpsPerSide?: number
   scoreCutoffHours?: number
+  lockAttempts?: number
+  lockDelayMs?: number
 }>): Promise<FomoCopyTradeSettleReport> {
   const batches = loadBatches(args.layout)
   const byEvent = new Map<string, { batchIdx: number; outcome: FomoTradeOutcome }>()
@@ -289,10 +296,16 @@ export async function runSettleFomoCopyTrades(args: Readonly<{
       schema: 1,
       traders,
     })
-    await withAgentWorkspaceLock(args.agentRoot, async () => {
+    const locked = await withAgentWorkspaceLockOrDefer(args.agentRoot, async () => {
       const store = new StateStore(join(args.agentRoot!, "state"))
       await store.saveFomoTraderScores(file)
+    }, {
+      attempts: args.lockAttempts ?? SETTLE_AGENT_LOCK_ATTEMPTS,
+      delayMs: args.lockDelayMs ?? SETTLE_AGENT_LOCK_DELAY_MS,
     })
+    if (!locked.ok) {
+      return { ...report, lockDeferred: true }
+    }
   }
 
   return report
