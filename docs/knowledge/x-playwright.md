@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-07-27
+last_verified: 2026-08-17
 ---
 
 # X / Twitter (Playwright)
@@ -29,7 +29,10 @@ last_verified: 2026-07-27
 ## Read-only scrape
 
 - Module: `src/collectors/twitter/scrape.ts`
-- Route guard aborts every non-GET/HEAD/OPTIONS method
+- Route guard allows GET/HEAD/OPTIONS and read-only X/Twitter GraphQL POSTs
+  whose `operationName` is present and is not a mutation
+  (`Create|Delete|Favorite|Unfavorite|Follow|Unfollow|ListAdd|ListRemove|Retweet|Friendship|dmSend|SendMessage`).
+  Other POSTs abort. Home/FYP hydrates through GraphQL POST.
 - Targets from config v4: FYP + two operator lists + managed list URL when set
 - Cross-target dedupe by post id; keep first-seen provenance
 - Per-target isolation: a closed page/context/browser relaunches the read-only

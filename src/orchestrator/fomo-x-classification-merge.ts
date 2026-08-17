@@ -53,8 +53,27 @@ export type ClassificationMergeReport = Readonly<{
   distinctTokens?: number
 }>
 
-const MIN_SHILLER_CALLS = 10
-const MIN_SHILLER_TOKENS = 5
+export const MIN_SHILLER_CALLS = 10
+export const MIN_SHILLER_TOKENS = 5
+
+export function countEligibleXPostCalls(
+  items: ReadonlyArray<{ provenance: string, text: string, ts: string }>,
+  xHandle: string,
+): Readonly<{ callCount: number, distinctTokens: number }> {
+  const sourceId = resolveShillerSourceId(xHandle.toLowerCase(), `twitter:@${xHandle}`)
+  const calls = items.flatMap((item) => extractCallEvents({
+    sourceId,
+    provenance: item.provenance.startsWith("twitter:@") || item.provenance.startsWith("x:@")
+      ? item.provenance
+      : `twitter:@${xHandle}`,
+    text: item.text,
+    mentionedAt: item.ts,
+  })).filter((call) => call.chainHint === "evm" || call.chainHint === "solana")
+  return {
+    callCount: calls.length,
+    distinctTokens: new Set(calls.map((call) => call.rawAddress.toLowerCase())).size,
+  }
+}
 
 function classificationPath(agentRoot: string, runId: string): string {
   return join(agentRoot, "reports", runId, "fomo-x-classification.json")
@@ -193,12 +212,7 @@ async function runShillerBackfill(args: Readonly<{
     ts: item.ts,
   }))
 
-  const historyCalls = historyItems.flatMap((item) => extractCallEvents({
-    sourceId,
-    provenance: item.provenance,
-    text: item.text,
-    mentionedAt: item.ts,
-  })).filter((call) => call.chainHint === "evm" || call.chainHint === "solana")
+  const historyCounts = countEligibleXPostCalls(historyItems, handle)
   const fomoCalls = fomoItems.flatMap((item) => extractCallEvents({
     sourceId,
     provenance: item.provenance,
@@ -208,12 +222,8 @@ async function runShillerBackfill(args: Readonly<{
     (call.chainHint === "evm" || call.chainHint === "solana")
     && !isQuoteOrNativeMint(call.rawAddress)
   ))
-  const eligibleCalls = [...historyCalls, ...fomoCalls]
-
-  const callCount = eligibleCalls.length
-  const distinctTokens = new Set(
-    eligibleCalls.map((call) => call.rawAddress.toLowerCase()),
-  ).size
+  const callCount = historyCounts.callCount
+  const distinctTokens = historyCounts.distinctTokens
   const backfillEpochDay = args.nowIso.slice(0, 10)
 
   const append = await appendSourceCallEventsFromItems(layout, historyItems, {
@@ -230,10 +240,10 @@ async function runShillerBackfill(args: Readonly<{
       backfillEpochDay,
       callCount,
       distinctTokens,
-      xCallCount: historyCalls.length,
+      xCallCount: historyCounts.callCount,
       profileCallCount: fomoCalls.length,
       appended: append.appended,
-      note: "Below call/token thresholds — not registered into source-lifecycle. FOMO swaps count for entry only.",
+      note: "Below call/token thresholds — not registered into source-lifecycle. X-post CAs only.",
     }, args.nominationId)
     return {
       ok: false,
@@ -261,10 +271,10 @@ async function runShillerBackfill(args: Readonly<{
     backfillEpochDay,
     callCount,
     distinctTokens,
-    xCallCount: historyCalls.length,
+    xCallCount: historyCounts.callCount,
     profileCallCount: fomoCalls.length,
     appended: append.appended,
-    note: "Registered fomo-leaderboard probation only. FOMO swaps count for entry. X-post CAs enter the call log.",
+    note: "Registered fomo-leaderboard probation only. X-post CAs enter the call log. FOMO buys do not count.",
   }, args.nominationId)
 
   return {

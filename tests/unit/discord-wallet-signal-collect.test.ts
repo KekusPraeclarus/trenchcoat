@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV26, migrateConfigToV27 } from "../../src/migrations/config.js"
+import { migrateConfigToV28 } from "../../src/migrations/config.js"
 import { collectDiscordWalletSignalScan } from "../../src/orchestrator/discord-wallet-signal-collect.js"
 import type { DiscordHistoryMessage, DiscordRestClient } from "../../src/discord/bot-client.js"
 import { COLOR_BUY } from "../../src/collectors/discord-wallet/types.js"
@@ -30,7 +30,7 @@ function baseConfig(overrides?: Record<string, unknown>) {
     max_enqueues_per_day: 3,
     ...overrides,
   }
-  return ConfigSchema.parse(migrateConfigToV27(raw))
+  return ConfigSchema.parse(migrateConfigToV28(raw))
 }
 
 function buyMessage(args: Readonly<{

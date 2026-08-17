@@ -10,6 +10,7 @@ import { pointInTimeSnapshot } from "../collectors/fomo/freshness.js"
 import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
 import type { CollectionSummary } from "./collect.js"
 import { upsertXSourceNominations } from "../sources/x-nominations.js"
+import { applyFomoFollows, type FomoFollowFn } from "../sources/fomo-follows.js"
 
 function rankTraders(traders: readonly FomoTrader[]): FomoTrader[] {
   return [...traders].sort((a, b) => {
@@ -81,6 +82,7 @@ export async function collectFomoTraderSync(args: Readonly<{
   client?: FomoDataSource
   /** Test injection — production callers omit and use loadConfig() */
   config?: TrenchcoatConfig
+  follow?: FomoFollowFn
 }>): Promise<CollectionSummary> {
   const config = args.config ?? loadConfig()
   const snapshotNames: string[] = []
@@ -147,15 +149,30 @@ export async function collectFomoTraderSync(args: Readonly<{
   })
   snapshotNames.push("fomo-leaderboard")
 
-  // Shadow stays mutation-free; live may upsert X nominations only (never wallets)
-  if (!config.fomo.shadow_mode && config.fomo.x_source_review.enabled) {
+  // Shadow stays mutation-free. Live may follow FOMO handles and upsert
+  // linked-X nominations only. Never wallets.
+  if (!config.fomo.shadow_mode) {
     const state = new StateStore(join(args.agentRoot, "state"))
-    const next = upsertXSourceNominations(state.loadXSourceNominations(), {
-      traders,
-      nominatedAt: args.fetchedAt,
-      maxPending: config.fomo.x_source_review.max_pending,
-    })
-    await state.saveXSourceNominations(next)
+    if (config.fomo.follows.enabled) {
+      const applied = await applyFomoFollows({
+        file: state.loadFomoFollows(),
+        traders,
+        nowIso: args.fetchedAt,
+        maxFollowing: config.fomo.follows.max_following,
+        maxFollowsPerRun: config.fomo.follows.max_follows_per_run,
+        ...(args.follow ? { follow: args.follow } : {}),
+      })
+      await state.saveFomoFollows(applied.file)
+    }
+    if (config.fomo.x_source_review.enabled) {
+      const next = upsertXSourceNominations(state.loadXSourceNominations(), {
+        traders,
+        nominatedAt: args.fetchedAt,
+        maxPending: config.fomo.x_source_review.max_pending,
+        requireProfileLink: true,
+      })
+      await state.saveXSourceNominations(next)
+    }
   }
 
   return {

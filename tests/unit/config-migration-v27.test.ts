@@ -6,6 +6,7 @@ import { DEPLOYMENT_CONFIG_SCHEMA } from "../../src/lib/deployment.js"
 import {
   migrateConfigToV26,
   migrateConfigToV27,
+  migrateConfigToV28,
   PUMP_V27_DEFAULTS,
 } from "../../src/migrations/config.js"
 
@@ -24,7 +25,7 @@ describe("config migration v27", () => {
   it("upgrades schema 26 once and validates as schema 27", () => {
     const migrated = migrateConfigToV27(asV26()) as Record<string, unknown>
     expect(migrated["schema"]).toBe(27)
-    expect(ConfigSchema.parse(migrated).schema).toBe(27)
+    expect(ConfigSchema.parse(migrateConfigToV28(migrated)).schema).toBe(28)
   })
 
   it("is idempotent", () => {
@@ -34,12 +35,12 @@ describe("config migration v27", () => {
   })
 
   it("keeps the deployment config schema aligned", () => {
-    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(27)
+    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(28)
     expect(ConfigSchema.parse(seed).schema).toBe(DEPLOYMENT_CONFIG_SCHEMA)
   })
 
   it("adds pump defaults off for an existing installation", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV27(asV26()))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(asV26()))
     expect(parsed.pump.enabled).toBe(false)
     expect(parsed.pump.shadow_mode).toBe(true)
     expect(parsed.pump.daily_navigation_budget).toBe(
@@ -81,7 +82,7 @@ describe("config migration v27", () => {
         min_age_hours: 48,
       },
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV27(v26))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(v26))
     expect(parsed.pump.enabled).toBe(true)
     expect(parsed.pump.shadow_mode).toBe(false)
     expect(parsed.pump.daily_navigation_budget).toBe(100)
@@ -99,8 +100,8 @@ describe("config migration v27", () => {
     const research = v25["research"] as Record<string, unknown>
     delete research["social_cashtag_bridge"]
     delete v25["new_pools_feed"]
-    const parsed = ConfigSchema.parse(migrateConfigToV27(migrateConfigToV26(v25)))
-    expect(parsed.schema).toBe(27)
+    const parsed = ConfigSchema.parse(migrateConfigToV28(migrateConfigToV26(v25)))
+    expect(parsed.schema).toBe(28)
     expect(parsed.pump.enabled).toBe(false)
     expect(parsed.new_pools_feed.enabled).toBe(true)
   })

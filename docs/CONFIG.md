@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-17
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -45,7 +45,8 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **27** (pump.fun feed scan — ADR 047; earlier discovery:
+Current schema is **28** (FOMO platform follows vs X review — ADR 048; prior
+schema **27** pump.fun feed scan — ADR 047; earlier discovery:
 `research.social_cashtag_bridge`
 and `new_pools_feed` — ADR 046; prior schema **25** retention sweeps for
 purged alpha-ack tombstones and dormant narrative dossiers under
@@ -75,7 +76,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v26 shapes via `migrateConfigToV27`.
+`loadConfig` migrates v1–v27 shapes via `migrateConfigToV28`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -84,7 +85,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 27,
+  "schema": 28,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -408,20 +409,25 @@ Knowledge-distillation job scope.
 | `lookback_days` | `7` | Sealed complete runs considered for path-only report manifests |
 | `max_reports` | `30` | Cap on report manifests per review run (newest first) |
 
-### `fomo` (schema 9)
+### `fomo` (schema 9, follows in schema 28)
 
 Authenticated `fomo.family` web scrape for trader nomination and signal scans.
 Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 `archive/provider-evaluations/fomo/gates.json` is fresh and the relevant gate is
 `pass`. Burner session via `pnpm dev:cli auth fomo`. See
-[knowledge/fomo-family.md](knowledge/fomo-family.md).
+[knowledge/fomo-family.md](knowledge/fomo-family.md) and
+[ADR 048](adr/048-fomo-follows-vs-x-review.md).
 
 | Field | Default | Role |
 |---|---|---|
 | `enabled` | `false` | Master switch; false ⇒ no Fomo navigation |
-| `shadow_mode` | `true` | Snapshots/receipts only; no wallet, research-queue, X-nomination, watchlist, engagement, or broadcast mutation |
+| `shadow_mode` | `true` | Snapshots/receipts only; no wallet, research-queue, X-nomination, FOMO follow, watchlist, engagement, or broadcast mutation |
 | `daily_navigation_budget` | `200` | Local ledger cap on page navigations |
-| `trader_sync.enabled` | `false` | Leaderboard sync for signals / X nominations (no wallets) |
+| `trader_sync.enabled` | `false` | Leaderboard sync for FOMO follows / linked-X nominations (no wallets) |
+| `trader_sync.max_handles` | `15` | Leaderboard handles considered for follow and linked-X upsert |
+| `follows.enabled` | `false` | Host follow on fomo.family; live migrate turns this on when FOMO is already live |
+| `follows.max_follows_per_run` | `5` | New FOMO follows per trader-sync run |
+| `follows.max_following` | `80` | Cap on stored FOMO followed handles |
 | `signal_scan.enabled` | `false` | Lane B signal job |
 | `signal_scan.feed` / `trending` / `alerts` / `convergence` / `pressure` | `false` | Per-signal capability flags |
 | `signal_scan.max_enqueues_per_day` | `3` | Research-queue writes per UTC day (native/wrap mints never count) |

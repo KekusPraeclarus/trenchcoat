@@ -14,6 +14,21 @@ const seed = JSON.parse(
   readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
 ) as Record<string, unknown>
 
+function liveTraderConfig(): TrenchcoatConfig {
+  const base = ConfigSchema.parse(seed)
+  return {
+    ...base,
+    fomo: {
+      ...base.fomo,
+      enabled: true,
+      shadow_mode: false,
+      trader_sync: { ...base.fomo.trader_sync, enabled: true },
+      follows: { ...base.fomo.follows, enabled: true },
+      x_source_review: { ...base.fomo.x_source_review, enabled: true },
+    },
+  }
+}
+
 function shadowTraderConfig(): TrenchcoatConfig {
   const base = ConfigSchema.parse(seed)
   return {
@@ -158,5 +173,79 @@ describe("fomo trader sync host-only", () => {
     expect(inbox).toContain("handle=alpha")
     expect(inbox).toContain("xHandle=alpha_x")
     expect(inbox).not.toMatch(/chain=|address=/u)
+  })
+
+  it("follows FOMO handles and nominates only linked X accounts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fomo-trader-live-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    const wallets = JSON.stringify({
+      schema: 1,
+      wallets: [],
+      transitions: [],
+      pendingTransitionIds: [],
+      cursors: [],
+      exclusions: [],
+    })
+    writeFileSync(join(agentRoot, "state", "wallets.json"), wallets)
+    await saveFomoGates(archiveRoot, {
+      ...failGates("live"),
+      gates: {
+        provider: { verdict: "pass", sampleSize: 30, successRate: 0.99 },
+        leaderboard: { verdict: "pass", sampleSize: 30 },
+        feed: { verdict: "pass", sampleSize: 30 },
+        trending: { verdict: "pass", sampleSize: 30 },
+        alerts: { verdict: "pass", sampleSize: 30 },
+        theses: { verdict: "fail", sampleSize: 0 },
+      },
+    })
+
+    const followed: string[] = []
+    const writer = new SnapshotWriter(agentRoot)
+    const summary = await collectFomoTraderSync({
+      runId: "fomo-trader-sync-live",
+      writer,
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+      agentRoot,
+      archiveRoot,
+      config: liveTraderConfig(),
+      client: mockClient([
+        {
+          handle: "sameonly",
+          timeframe: "7d",
+          rank: 1,
+          wallets: [],
+          observedAt: "2026-08-17T00:00:00.000Z",
+        },
+        {
+          handle: "linked",
+          xHandle: "linked_x",
+          timeframe: "7d",
+          rank: 2,
+          wallets: [],
+          observedAt: "2026-08-17T00:00:00.000Z",
+        },
+      ]),
+      follow: async ({ handle }) => {
+        followed.push(handle)
+        return { verified: true, ambiguous: false }
+      },
+    })
+
+    expect(summary.collectionStatus).toBe("fomo-leaderboard")
+    expect(followed.sort()).toEqual(["linked", "sameonly"])
+    const nominations = JSON.parse(
+      readFileSync(join(agentRoot, "state", "x-source-nominations.json"), "utf8"),
+    ) as { nominations: Array<{ xHandle: string, matchBasis: string }> }
+    expect(nominations.nominations).toHaveLength(1)
+    expect(nominations.nominations[0]?.xHandle).toBe("linked_x")
+    expect(nominations.nominations[0]?.matchBasis).toBe("fomo-profile-link")
+    expect(readFileSync(join(agentRoot, "state", "wallets.json"), "utf8")).toBe(wallets)
+    const follows = JSON.parse(
+      readFileSync(join(agentRoot, "state", "fomo-follows.json"), "utf8"),
+    ) as { followedHandles: string[] }
+    expect(follows.followedHandles).toEqual(["linked", "sameonly"])
   })
 })

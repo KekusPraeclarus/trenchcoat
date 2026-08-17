@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { sha256Json } from "./canonical-json.js"
-import { migrateConfigToV27 } from "../migrations/config.js"
+import { migrateConfigToV28 } from "../migrations/config.js"
 import { writeAtomicFile } from "./fs-atomic.js"
 import { getChain } from "./chains.js"
 
@@ -15,7 +15,7 @@ const ChannelSchema = z.object({
 const NewPoolsChainSchema = z.enum(["solana", "ethereum", "base", "robinhood"])
 
 export const ConfigSchema = z.object({
-  schema: z.literal(27),
+  schema: z.literal(28),
   telegram_channels: z.array(ChannelSchema).default([]),
   twitter: z.object({
     operator_list_urls: z.tuple([z.string().url(), z.string().url()]),
@@ -504,8 +504,13 @@ export const ConfigSchema = z.object({
     max_event_age_hours: z.number().int().min(1).max(48).default(6),
     trader_sync: z.object({
       enabled: z.boolean().default(false),
-      max_handles: z.number().int().min(1).max(200).default(50),
+      max_handles: z.number().int().min(1).max(200).default(15),
       max_profile_pages: z.number().int().min(1).max(100).default(20),
+    }).default({}),
+    follows: z.object({
+      enabled: z.boolean().default(false),
+      max_follows_per_run: z.number().int().min(0).max(20).default(5),
+      max_following: z.number().int().min(1).max(500).default(80),
     }).default({}),
     signal_scan: z.object({
       enabled: z.boolean().default(false),
@@ -921,7 +926,7 @@ export function loadConfig(path = defaultConfigPath()): TrenchcoatConfig {
     throw new Error(`Config not found at ${path}`)
   }
   const raw = JSON.parse(readFileSync(path, "utf8")) as unknown
-  return ConfigSchema.parse(migrateConfigToV27(raw))
+  return ConfigSchema.parse(migrateConfigToV28(raw))
 }
 
 export function validateConfigFile(path = defaultConfigPath()): Readonly<{

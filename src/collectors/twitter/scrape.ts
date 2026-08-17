@@ -4,6 +4,7 @@ import { type Browser, type BrowserContext, type Page } from "playwright"
 import type { TrenchcoatConfig } from "../../lib/config.js"
 import type { CanonicalIdentity } from "../../contracts/schemas.js"
 import { launchChromium } from "../../lib/playwright-chromium.js"
+import { graphqlOperationName } from "./managed-list.js"
 import { twitterProfileDir } from "../social/twitter-auth.js"
 import { parseTwitterSearchPage, type TwitterPost } from "../twitter/session.js"
 import {
@@ -247,14 +248,44 @@ export async function scrapeTargetUntilCursor(
   }
 }
 
+const BLOCKED_SCRAPE_MUTATION = /^(Create|Delete|Favorite|Unfavorite|Follow|Unfollow|ListAdd|ListRemove|Retweet|Friendship|dmSend|SendMessage)/u
+
+export function isTwitterGraphqlUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.toLowerCase()
+    const hostOk = host === "x.com" || host === "twitter.com"
+      || host === "api.x.com" || host === "api.twitter.com"
+    return hostOk && /\/graphql\//iu.test(parsed.pathname)
+  } catch {
+    return false
+  }
+}
+
+/** Timeline reads only. Mutations stay blocked (INV-R2). */
+export function isAllowedReadTimelinePost(
+  url: string,
+  postData: string | null,
+): boolean {
+  if (!isTwitterGraphqlUrl(url)) return false
+  const op = graphqlOperationName(url, postData)
+  if (!op) return false
+  return !BLOCKED_SCRAPE_MUTATION.test(op)
+}
+
 async function attachReadOnlyRoutes(context: BrowserContext): Promise<void> {
   await context.route("**/*", async (route) => {
-    const method = route.request().method().toUpperCase()
-    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-      await route.abort("blockedbyclient")
+    const request = route.request()
+    const method = request.method().toUpperCase()
+    if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+      await route.continue()
       return
     }
-    await route.continue()
+    if (method === "POST" && isAllowedReadTimelinePost(request.url(), request.postData())) {
+      await route.continue()
+      return
+    }
+    await route.abort("blockedbyclient")
   })
 }
 

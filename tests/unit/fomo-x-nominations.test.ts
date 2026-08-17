@@ -37,6 +37,21 @@ describe("x-source nominations", () => {
     })
   })
 
+  it("skips same-handle when requireProfileLink is set", () => {
+    const file = upsertXSourceNominations(emptyXSourceNominations(), {
+      traders: [
+        trader({ handle: "sameonly" }),
+        trader({ handle: "linked", xHandle: "https://x.com/LinkedX" }),
+      ],
+      nominatedAt: "2026-07-19T00:00:00.000Z",
+      maxPending: 10,
+      requireProfileLink: true,
+    })
+    expect(file.nominations).toHaveLength(1)
+    expect(file.nominations[0]?.xHandle).toBe("linkedx")
+    expect(file.nominations[0]?.matchBasis).toBe("fomo-profile-link")
+  })
+
   it("dedupes by nominationId and bounds pending queue", () => {
     const traders = Array.from({ length: 5 }, (_, i) => trader({
       handle: `h${i}`,

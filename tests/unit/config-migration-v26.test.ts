@@ -7,6 +7,7 @@ import {
   migrateConfigToV25,
   migrateConfigToV26,
   migrateConfigToV27,
+  migrateConfigToV28,
 } from "../../src/migrations/config.js"
 
 const seed = JSON.parse(
@@ -26,7 +27,7 @@ describe("config migration v26", () => {
   it("upgrades schema 25 once and validates as schema 26", () => {
     const migrated = migrateConfigToV26(asV25()) as Record<string, unknown>
     expect(migrated["schema"]).toBe(26)
-    expect(ConfigSchema.parse(migrateConfigToV27(migrated)).schema).toBe(27)
+    expect(ConfigSchema.parse(migrateConfigToV28(migrated)).schema).toBe(28)
   })
 
   it("is idempotent", () => {
@@ -36,12 +37,12 @@ describe("config migration v26", () => {
   })
 
   it("keeps the deployment config schema aligned", () => {
-    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(27)
+    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(28)
     expect(ConfigSchema.parse(seed).schema).toBe(DEPLOYMENT_CONFIG_SCHEMA)
   })
 
   it("adds cashtag bridge and new-pools defaults for an existing installation", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV27(migrateConfigToV26(asV25())))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(migrateConfigToV26(asV25())))
     expect(parsed.research.social_cashtag_bridge.enabled).toBe(true)
     expect(parsed.research.social_cashtag_bridge.min_authors).toBe(2)
     expect(parsed.research.social_cashtag_bridge.window_days).toBe(7)
@@ -84,7 +85,7 @@ describe("config migration v26", () => {
       min_pool_age_minutes: 30,
       max_pool_age_hours: 12,
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV27(v25))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(v25))
     expect(parsed.research.social_cashtag_bridge.enabled).toBe(false)
     expect(parsed.research.social_cashtag_bridge.min_authors).toBe(3)
     expect(parsed.new_pools_feed.enabled).toBe(false)
@@ -99,8 +100,8 @@ describe("config migration v26", () => {
     const retention = v24["retention"] as Record<string, unknown>
     delete retention["alpha_ack_days"]
     delete retention["narrative_dossier_days"]
-    const parsed = ConfigSchema.parse(migrateConfigToV27(migrateConfigToV26(v24)))
-    expect(parsed.schema).toBe(27)
+    const parsed = ConfigSchema.parse(migrateConfigToV28(migrateConfigToV26(v24)))
+    expect(parsed.schema).toBe(28)
     expect(parsed.retention.alpha_ack_days).toBe(30)
     expect(parsed.new_pools_feed.enabled).toBe(true)
   })

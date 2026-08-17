@@ -585,6 +585,26 @@ export const PumpEngagementFileSchema = z.object({
 })
 export type PumpEngagementFile = z.infer<typeof PumpEngagementFileSchema>
 
+export const FomoHandleSchema = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/u)
+
+export const FomoFollowReceiptSchema = z.object({
+  schema: z.literal(1),
+  handle: FomoHandleSchema,
+  attemptedAt: IsoTimestampSchema,
+  verified: z.boolean(),
+  ambiguous: z.boolean(),
+  error: z.string().max(500).optional(),
+})
+export type FomoFollowReceipt = z.infer<typeof FomoFollowReceiptSchema>
+
+export const FomoFollowsFileSchema = z.object({
+  schema: z.literal(1),
+  followedHandles: z.array(FomoHandleSchema).max(5_000),
+  lastFollowedAt: z.record(z.string(), IsoTimestampSchema).default({}),
+  receipts: z.array(FomoFollowReceiptSchema).max(20_000),
+})
+export type FomoFollowsFile = z.infer<typeof FomoFollowsFileSchema>
+
 export const PumpFypEligibleItemSchema = z.object({
   itemId: PumpItemIdSchema,
   author: PumpHandleSchema,

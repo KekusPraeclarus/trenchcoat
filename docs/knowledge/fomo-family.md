@@ -11,7 +11,8 @@ source: https://fomo.family
 [fomo.family](https://fomo.family) is scraped via Playwright with a host-only
 burner session (`~/.trenchcoat/fomo-profile/`). There is no API key. Read-only
 HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
-`/proxy/*` lists); trades/transfers/profile edits stay blocked.
+`/proxy/*` lists). Host follow uses a separate context with `mutationMode`
+for follow/unfollow paths only. Trades/transfers/profile edits stay blocked.
 
 ## Binding rules
 
@@ -25,8 +26,9 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
 
 ## Jobs
 
-- `fomo-trader-sync` — leaderboard handles for signals / optional X nominations
-  (never wallet candidates; Fomo profile `address`/`evmAddress` are not trading
+- `fomo-trader-sync` — leaderboard handles for FOMO-platform follows and
+  optional X nominations when the profile has an explicit X link (never wallet
+  candidates; Fomo profile `address`/`evmAddress` are not trading
   wallets). Host-only; shares the agent workspace lock with `source-list-review`,
   `list-scan`, telegram-alpha (via channels), and x-scan. A hung Playwright X
   list sync can starve trader-sync for hours (`workspace lock held` in
@@ -53,13 +55,12 @@ HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
   Provider outages remain `provider-pending` and are retried on later
   `outcomes-settle` runs. Solana bar pricing uses GeckoTerminal with
   SolanaTracker/Birdeye fallback when configured.
-- `fomo-x-source-review` — classify nominated X accounts. Host merge unions
-  sealed X-post CAs with dated FOMO profile swap buys (`fomo-profile-calls`)
-  for the entry bar only. Quote→meme swaps only. Sells, quote mints, and
-  profile wallets stay unused. Only X-post CAs enter the call log. Shillers
-  need ≥10 calls and ≥5 tokens (`awaiting-review-epoch`). FOMO traders score
-  on FIFO `fomo-trader-scores.json`. Narrative and both still need
-  `narrative_source_probation.enabled` to register.
+- `fomo-x-source-review` — classify nominated X accounts from X posts only.
+  Host merge uses sealed X-post CAs for the shiller entry bar (10 calls / 5
+  tokens). FOMO buys do not count and are not scraped on this job. Sells,
+  quote mints, and profile wallets stay unused. Only X-post CAs enter the
+  call log. FOMO traders score on FIFO `fomo-trader-scores.json`. Narrative
+  and both still need `narrative_source_probation.enabled` to register.
 - `fomo-narrative-source-scan` — live (<=6h) posts from probation narrative X
   sources (never reuses historical review posts)
 - `narrative-source-review` — promote/demote narrative sources; capped follow

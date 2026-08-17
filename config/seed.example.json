@@ -1,5 +1,5 @@
 {
-  "schema": 27,
+  "schema": 28,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -377,8 +377,13 @@
     "max_event_age_hours": 6,
     "trader_sync": {
       "enabled": false,
-      "max_handles": 50,
+      "max_handles": 15,
       "max_profile_pages": 20
+    },
+    "follows": {
+      "enabled": false,
+      "max_follows_per_run": 5,
+      "max_following": 80
     },
     "signal_scan": {
       "enabled": false,

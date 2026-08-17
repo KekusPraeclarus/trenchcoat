@@ -1293,3 +1293,55 @@ export function migrateConfigToV27(raw: unknown): unknown {
     },
   }
 }
+
+export const FOMO_FOLLOWS_V28_DEFAULTS = {
+  enabled: false,
+  max_follows_per_run: 5,
+  max_following: 80,
+} as const
+
+/**
+ * Schema 28: split FOMO platform follows from X review. Cut leaderboard
+ * nomination intake. Host fail-closes thin X-call history before the agent.
+ */
+export function migrateConfigToV28(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 28) return raw
+
+  const v27 = (
+    record?.["schema"] === 27
+      ? record
+      : migrateConfigToV27(raw)
+  ) as Record<string, unknown>
+
+  const prevFomo = (v27["fomo"] ?? {}) as Record<string, unknown>
+  const prevTrader = (prevFomo["trader_sync"] ?? {}) as Record<string, unknown>
+  const prevFollows = (prevFomo["follows"] ?? {}) as Record<string, unknown>
+  const priorHandles = prevTrader["max_handles"]
+  const maxHandles = priorHandles === 50 || priorHandles === undefined
+    ? 15
+    : priorHandles
+  const followsEnabled = prevFollows["enabled"] === true
+    || (
+      prevFollows["enabled"] === undefined
+      && prevFomo["enabled"] === true
+      && prevFomo["shadow_mode"] === false
+    )
+
+  return {
+    ...v27,
+    schema: 28,
+    fomo: {
+      ...prevFomo,
+      trader_sync: {
+        ...prevTrader,
+        max_handles: maxHandles,
+      },
+      follows: {
+        ...FOMO_FOLLOWS_V28_DEFAULTS,
+        ...prevFollows,
+        enabled: followsEnabled,
+      },
+    },
+  }
+}

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
 import {
   migrateConfigToV23,
-  migrateConfigToV26, migrateConfigToV27,
+  migrateConfigToV28,
 } from "../../src/migrations/config.js"
 
 const seed = JSON.parse(
@@ -36,7 +36,7 @@ describe("config migration v23", () => {
   })
 
   it("turns Farcaster search off for a new installation", () => {
-    const migrated = migrateConfigToV27(asV22())
+    const migrated = migrateConfigToV28(asV22())
     expect(ConfigSchema.parse(migrated).research.farcaster_search.enabled).toBe(false)
   })
 
@@ -47,13 +47,13 @@ describe("config migration v23", () => {
       max_casts: 12,
       recent_window_hours: 24,
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV27(v22))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(v22))
     expect(parsed.research.farcaster_search.enabled).toBe(true)
     expect(parsed.research.farcaster_search.max_casts).toBe(12)
   })
 
   it("adds evidence quality defaults", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV27(asV22()))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(asV22()))
     expect(parsed.narratives.evidence_quality).toEqual({
       enabled: true,
       max_promotional_share: 0.5,
@@ -64,7 +64,7 @@ describe("config migration v23", () => {
   })
 
   it("adds broadcast feedback defaults that stay off", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV27(asV22()))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(asV22()))
     expect(parsed.broadcast.feedback.enabled).toBe(false)
     expect(parsed.broadcast.feedback.followup_ttl_hours).toBe(72)
     expect(parsed.broadcast.feedback.history_days).toBe(30)
@@ -79,7 +79,7 @@ describe("config migration v23", () => {
     const v22 = asV22()
     ;(v22["narratives"] as Record<string, unknown>)["retention_days"] = 21
     ;(v22["broadcast"] as Record<string, unknown>)["hot_day_min_staged_events"] = 33
-    const parsed = ConfigSchema.parse(migrateConfigToV27(v22))
+    const parsed = ConfigSchema.parse(migrateConfigToV28(v22))
     expect(parsed.narratives.retention_days).toBe(21)
     expect(parsed.broadcast.hot_day_min_staged_events).toBe(33)
   })

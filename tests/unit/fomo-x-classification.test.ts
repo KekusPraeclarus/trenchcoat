@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
@@ -149,13 +149,10 @@ describe("fomo x classification merge", () => {
       readFileSync(join(agentRoot, "inbox", "fomo-x-source-review-test", "x-source-history.json"), "utf8"),
     ) as { items: Array<{ text: string }> }
     expect(history.items.every((item) => item.text.startsWith("purpose=historical-source-evaluation"))).toBe(true)
-    const profile = JSON.parse(
-      readFileSync(join(agentRoot, "inbox", "fomo-x-source-review-test", "fomo-profile-calls.json"), "utf8"),
-    ) as { items: Array<{ text: string }> }
-    expect(profile.items[0]?.text).toContain("kind=fomo-profile-calls")
+    expect(existsSync(join(agentRoot, "inbox", "fomo-x-source-review-test", "fomo-profile-calls.json"))).toBe(false)
   })
 
-  it("unions sealed FOMO profile buys into shiller call history", async () => {
+  it("does not classify from FOMO profile buys alone", async () => {
     const seeded = await seedShillerMerge({
       includeProfileCalls: true,
     })
@@ -166,12 +163,11 @@ describe("fomo x classification merge", () => {
       nowIso: "2026-07-19T13:00:00.000Z",
     })
     expect(report.ok).toBe(true)
-    expect(report.reason).toBe("classified")
-    expect(report.callCount).toBe(10)
-    expect(report.distinctTokens).toBe(10)
-    expect(report.status).toBe("classified")
+    expect(report.reason).toBe("insufficient-call-history")
+    expect(report.callCount).toBe(0)
+    expect(report.status).toBe("insufficient-history")
     const lifecycle = seeded.state.loadSourceLifecycle()
-    expect(lifecycle.candidates.some((c) => c.handle === "alpha")).toBe(true)
+    expect(lifecycle.candidates.some((c) => c.handle === "alpha")).toBe(false)
     const note = JSON.parse(readFileSync(report.shillerBackfillNote!, "utf8")) as {
       appended: number
       profileCallCount: number
@@ -194,7 +190,7 @@ describe("fomo x classification merge", () => {
       nowIso: "2026-07-19T13:00:00.000Z",
     })
     expect(report.ok).toBe(true)
-    expect(report.callCount).toBe(20)
+    expect(report.callCount).toBe(10)
     const note = JSON.parse(readFileSync(report.shillerBackfillNote!, "utf8")) as {
       appended: number
       profileCallCount: number

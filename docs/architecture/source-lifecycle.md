@@ -1,5 +1,5 @@
 ---
-description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009), plus Farcaster follow-graph lifecycle (ADR 007).
+description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009 / ADR 048), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
 last_verified: 2026-08-17
@@ -42,15 +42,15 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 
 | File | Owner | Role |
 |---|---|---|
-| `agent/state/x-source-nominations.json` | host | Pending Fomo→X nominations (never list/follow by itself) |
+| `agent/state/x-source-nominations.json` | host | Pending Fomo→X nominations from explicit profile X links |
 | `agent/state/x-narrative-sources.json` | host | Narrative utility probation / follow eligibility |
+| `agent/state/fomo-follows.json` | host | FOMO-platform follows for feed buys (ADR 048) |
 
 - `discoveredFrom: "fomo-leaderboard"` enters `source-lifecycle.json` only after
-  deterministic historical call extraction meets shiller thresholds. Extraction
-  unions sealed X-post CAs with dated FOMO profile swap buys (quote→meme) for
-  the entry bar only (10 calls / 5 tokens). Only X-post CAs enter the call log.
-  Promotion scores those X-post outcomes. FOMO traders score on FIFO
-  `fomo-trader-scores.json`. Tickers and FOMO profile wallets do not count.
+  deterministic historical X-post call extraction meets shiller thresholds
+  (10 calls / 5 tokens). FOMO profile buys do not count. Only X-post CAs enter
+  the call log. Promotion scores those X-post outcomes. FOMO traders score on
+  FIFO `fomo-trader-scores.json`. Tickers and FOMO profile wallets do not count.
 - Classification agent output never mutates lists or follows. Shiller and
   narrative tracks graduate independently (`both` must pass both).
 - Historical posts are never reused as live narrative evidence.

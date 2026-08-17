@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-17
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -31,9 +31,9 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
 
 Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
 
-- `fomo-trader-sync` (6h) — leaderboard handles → optional X nominations (no wallets)
+- `fomo-trader-sync` (6h) — FOMO-platform follows plus linked-X nominations (no wallets)
 - `fomo-signal-scan` (20m) — feed/trending/alerts → dated signals + bounded research enqueue
-- `fomo-x-source-review` (6h) — one pending nomination → bounded X history + isolated classifier
+- `fomo-x-source-review` (6h) — one pending linked-X nomination → bounded X history + isolated classifier
 - `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles
 - `narrative-source-review` (daily) — utility promotion and gated X follow/unfollow
 
@@ -44,7 +44,8 @@ Research dossiers may attach live `fomo-context` from the observation cache;
 (excluding historical-purpose items). Shadow mode is the default. Knowledge:
 [fomo-family.md](../knowledge/fomo-family.md).
 FAFO status: [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md).
-ADR: [009-fomo-x-source-nomination.md](../adr/009-fomo-x-source-nomination.md).
+ADR: [009-fomo-x-source-nomination.md](../adr/009-fomo-x-source-nomination.md),
+[048-fomo-follows-vs-x-review.md](../adr/048-fomo-follows-vs-x-review.md).
 
 X profile history scraping lives in `src/collectors/twitter/profile-history.ts`
 and shares a crash-resumable page budget under

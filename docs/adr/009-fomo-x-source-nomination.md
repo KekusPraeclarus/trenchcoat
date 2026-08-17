@@ -10,23 +10,25 @@ last_verified: 2026-08-17
 
 ## Context
 
-Fomo leaderboard traders often have linked or same-handle X accounts that may
-be useful shillers or narrative sources. Classification must not mutate X lists
-or follows directly.
+Fomo leaderboard traders often have a linked X account that may be a useful
+shiller or narrative source. Classification must not mutate X lists or X
+follows directly. FOMO-platform follows are a separate host track (ADR 048).
 
 ## Decision
 
 1. Host upserts nominations into `state/x-source-nominations.json` from dated
-   leaderboard observations.
-2. `fomo-x-source-review` scrapes a bounded history and launches one isolated
+   leaderboard rows that carry an explicit FOMO profile X link. Same-handle
+   fallback does not enter the pending queue. FOMO platform follows are a
+   separate host track (ADR 048).
+2. `fomo-x-source-review` scrapes a bounded X history and launches one isolated
    sandboxed agent per candidate. Output is a strict JSON classification only.
+   The job does not scrape FOMO profile buys.
 3. Host merge fail-closes on missing evidence IDs. `shiller`/`both` require
-   deterministic historical call extraction and existing source-list gates
-   before managed-list promotion (`discoveredFrom: fomo-leaderboard`). Call
-   extraction unions sealed X-post CAs with dated FOMO profile swap buys
-   (quote→meme only) for the entry bar. Only X-post CAs enter the call log.
-   Promotion scores those X-post outcomes. Tickers and profile wallets do
-   not count.
+   deterministic historical X-post call extraction and existing source-list
+   gates before managed-list promotion (`discoveredFrom: fomo-leaderboard`).
+   Entry is sealed X-post CAs only (10 calls / 5 tokens). FOMO buys do not
+   count. Only X-post CAs enter the call log. Promotion scores those X-post
+   outcomes. Tickers and profile wallets do not count.
 4. `narrative`/`both` enter a 14-day utility probation in
    `state/x-narrative-sources.json`. Follows use the existing X engagement
    executor only after measured contribution thresholds.

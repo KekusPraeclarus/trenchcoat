@@ -59,6 +59,7 @@ export function upsertXSourceNominations(
     traders: readonly FomoLeaderboardEntry[]
     nominatedAt: string
     maxPending: number
+    requireProfileLink?: boolean
   }>,
 ): XSourceNominationsFile {
   const byId = new Map(file.nominations.map((item) => [item.nominationId, item]))
@@ -66,6 +67,7 @@ export function upsertXSourceNominations(
   for (const trader of args.traders) {
     const resolved = resolveXHandleFromTrader(trader)
     if (!resolved) continue
+    if (args.requireProfileLink && resolved.matchBasis !== "fomo-profile-link") continue
     const nominationId = nominationIdForHandle(resolved.xHandle)
     const existing = byId.get(nominationId)
     if (existing && existing.status !== "rejected" && existing.status !== "unreviewable") {

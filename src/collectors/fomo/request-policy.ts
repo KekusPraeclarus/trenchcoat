@@ -50,11 +50,18 @@ const DEFAULT_FOMO_READ_POSTS: readonly FomoAllowedPost[] = [
   { host: "prod-api.fomo.family", path: "/hodlers/friends" },
 ]
 
+const FOMO_FOLLOW_PATH_RE = /\/(follow|unfollow|friends\/add|friends\/remove)(\/|$)/iu
+
+export function isFomoFollowMutationPath(path: string): boolean {
+  return FOMO_FOLLOW_PATH_RE.test(path)
+}
+
 export function classifyFomoRequest(
   method: string,
   url: string,
   opts: Readonly<{
     allowedPosts?: readonly FomoAllowedPost[]
+    mutationMode?: boolean
   }> = {},
 ): FomoRequestDecision {
   let parsed: URL
@@ -76,7 +83,7 @@ export function classifyFomoRequest(
   const isPrivy = PRIVY_HOSTS.has(host)
   const isStaticAsset = /\.(js|css|woff2?|png|jpe?g|svg|ico|webmanifest|map)$/iu.test(path)
 
-  if (verb === "GET" || verb === "HEAD") {
+  if (verb === "GET" || verb === "HEAD" || verb === "OPTIONS") {
     if (isFomo || isPrivy || (isStaticAsset && isFomo)) {
       return { allow: true, reason: "read" }
     }
@@ -94,7 +101,19 @@ export function classifyFomoRequest(
       entry.host === host && barePath === entry.path
     ))
     if (match) return { allow: true, reason: `allowed-post:${match.host}${match.path}` }
+    if (opts.mutationMode && isFomo && isFomoFollowMutationPath(barePath)) {
+      return { allow: true, reason: `allowed-follow:${host}${barePath}` }
+    }
     return { allow: false, reason: `post-not-allowlisted:${host}${path}` }
+  }
+
+  if (
+    (verb === "PUT" || verb === "PATCH" || verb === "DELETE")
+    && opts.mutationMode
+    && isFomo
+    && isFomoFollowMutationPath(path.split("?")[0] ?? path)
+  ) {
+    return { allow: true, reason: `allowed-follow:${host}${path}` }
   }
 
   return { allow: false, reason: `mutation-verb:${verb}` }

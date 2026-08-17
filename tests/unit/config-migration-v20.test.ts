@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV20, migrateConfigToV26, migrateConfigToV27, WALLET_SIGNALS_V20_DEFAULTS } from "../../src/migrations/config.js"
+import { migrateConfigToV20, migrateConfigToV28, WALLET_SIGNALS_V20_DEFAULTS } from "../../src/migrations/config.js"
 
 const seed = JSON.parse(
   readFileSync(join(process.cwd(), "config/seed.example.json"), "utf8"),
@@ -35,7 +35,7 @@ describe("config migration v20", () => {
     expect(walletSignals["scan_interval_minutes"]).toBe(
       WALLET_SIGNALS_V20_DEFAULTS.scan_interval_minutes,
     )
-    expect(ConfigSchema.parse(migrateConfigToV27(migrated)).schema).toBe(27)
+    expect(ConfigSchema.parse(migrateConfigToV28(migrated)).schema).toBe(28)
   })
 
   it("rejects overlapping research and wallet_signals channels when enabled", () => {

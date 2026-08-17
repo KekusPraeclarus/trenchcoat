@@ -2,7 +2,7 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-17
 ---
 
 # Module docs
@@ -29,10 +29,10 @@ last_verified: 2026-08-15
 | [broadcast-feedback.md](broadcast-feedback.md) | Operator Discord reactions, Telegram detail, sealed datasets, manual tuning candidates, harness preference gate | `src/broadcast-feedback/`, `src/discord/broadcast-feedback-listener.ts`, `src/router/message-index.ts`, `broadcast.feedback` config (schema 23), ADR 043, INV-B6 |
 | [smart-wallets.md](smart-wallets.md) | Helius/Infura tracking, deterministic+LLM scoring, promotion/drop, mandatory lifecycle events | `src/wallets/`, wallet collectors |
 | [chart-vision.md](chart-vision.md) | Offline SVG→PNG charts from archived OHLCV, manifests, vision as interpretive evidence | chart renderer, chart-sweep skill |
-| [source-lifecycle.md](source-lifecycle.md) | FYP candidacy, lagged promote/demote, managed private X list (ADR 004) + Farcaster follow-graph (ADR 007) | `src/sources/`, `src/sources/fc-lifecycle.ts`, `src/collectors/twitter/managed-list.ts`, `src/collectors/farcaster/`, `source-list` / `fc-source` CLI |
+| [source-lifecycle.md](source-lifecycle.md) | FYP candidacy, lagged promote/demote, managed private X list (ADR 004), Fomo dual-track (ADR 009 / 048), Farcaster follow-graph (ADR 007) | `src/sources/`, `src/sources/fc-lifecycle.ts`, `src/collectors/twitter/managed-list.ts`, `src/collectors/farcaster/`, `source-list` / `fc-source` CLI |
 | [harness-improvement.md](harness-improvement.md) | Policy lane (ADR 005) + shadow improver-config meta lane (ADR 039); mining/manifesto/keep/prior-attempts; sealed-only inputs; operator meta promote; improver must not edit own code/gates (ADR 038) | `src/harness/`, `tc harness`, `config/harness-improver.json` |
 
-ADRs live under [`docs/adr/`](../adr/) (001–047, no 008). Provider knowledge under
+ADRs live under [`docs/adr/`](../adr/) (001–048, no 008). Provider knowledge under
 [`docs/knowledge/`](../knowledge/) (incl. [harness-self-improvement-patterns.md](../knowledge/harness-self-improvement-patterns.md)).
 Parallel-worktree merge rules: [`../development.md`](../development.md).
 

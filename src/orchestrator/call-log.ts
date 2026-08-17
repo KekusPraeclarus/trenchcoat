@@ -74,7 +74,7 @@ export type AppendCallEventsReport = Readonly<{
   events: readonly SourceCallEvent[]
 }>
 
-/** X-post provenance only. FOMO profile swaps are entry evidence, not shill calls. */
+/** X-post provenance only. FOMO profile buys do not enter the call log. */
 export function isXPostProvenance(provenance: string): boolean {
   return provenance.startsWith("twitter:@") || provenance.startsWith("x:@")
 }

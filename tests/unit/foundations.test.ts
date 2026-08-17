@@ -134,9 +134,9 @@ describe("router hmac", () => {
 })
 
 describe("config seed", () => {
-  it("parses the example seed as schema v27", () => {
+  it("parses the example seed as schema v28", () => {
     const parsed = ConfigSchema.parse(seed)
-    expect(parsed.schema).toBe(27)
+    expect(parsed.schema).toBe(28)
     expect(parsed.chat.discord.enabled).toBe(true)
     expect(parsed.twitter.operator_list_urls).toHaveLength(2)
     expect(parsed.twitter.engagement.likes_per_window).toBe(2)

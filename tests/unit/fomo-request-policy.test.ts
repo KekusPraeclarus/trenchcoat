@@ -19,4 +19,16 @@ describe("fomo request policy", () => {
   it("rejects invalid urls", () => {
     expect(classifyFomoRequest("GET", "not-a-url").allow).toBe(false)
   })
+
+  it("allows follow mutations only in mutationMode", () => {
+    const follow = "https://prod-api.fomo.family/v2/follow"
+    expect(classifyFomoRequest("POST", follow).allow).toBe(false)
+    expect(classifyFomoRequest("POST", follow, { mutationMode: true }).allow).toBe(true)
+    expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/v1/orders", {
+      mutationMode: true,
+    }).allow).toBe(false)
+    expect(classifyFomoRequest("PUT", "https://prod-api.fomo.family/v2/unfollow", {
+      mutationMode: true,
+    }).allow).toBe(true)
+  })
 })

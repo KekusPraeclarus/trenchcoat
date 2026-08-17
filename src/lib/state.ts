@@ -11,6 +11,7 @@ import {
   WalletsFileSchema,
   WalletRunnersFileSchema,
   FomoTraderScoresFileSchema,
+  FomoFollowsFileSchema,
   XEngagementFileSchema,
   XBotHealthSchema,
   FcEngagementFileSchema,
@@ -28,6 +29,7 @@ import {
   type WalletsFile,
   type WalletRunnersFile,
   type FomoTraderScoresFile,
+  type FomoFollowsFile,
   type XEngagementFile,
   type XBotHealth,
   type FcEngagementFile,
@@ -41,6 +43,7 @@ import {
   emptyXSourceNominations,
   type XSourceNominationsFile,
 } from "../sources/x-nominations.js"
+import { emptyFomoFollows } from "../sources/fomo-follows.js"
 import {
   emptyNarrativeSources,
   type NarrativeSource,
@@ -74,6 +77,7 @@ export class StateStore {
   walletRunnersPath(): string { return join(this.stateDir, "wallet-runners.json") }
   xSourceNominationsPath(): string { return join(this.stateDir, "x-source-nominations.json") }
   fomoTraderScoresPath(): string { return join(this.stateDir, "fomo-trader-scores.json") }
+  fomoFollowsPath(): string { return join(this.stateDir, "fomo-follows.json") }
   xNarrativeSourcesPath(): string { return join(this.stateDir, "x-narrative-sources.json") }
   decisionsPath(): string { return join(this.stateDir, "decisions.md") }
   scorecardPath(): string { return join(this.stateDir, "scorecard.json") }
@@ -393,6 +397,21 @@ export class StateStore {
     await writeAtomicFile(
       this.fomoTraderScoresPath(),
       `${JSON.stringify(FomoTraderScoresFileSchema.parse(file), null, 2)}\n`,
+    )
+  }
+
+  loadFomoFollows(): FomoFollowsFile {
+    return readOrDefault(
+      this.fomoFollowsPath(),
+      (v) => FomoFollowsFileSchema.parse(v),
+      emptyFomoFollows(),
+    )
+  }
+
+  async saveFomoFollows(file: FomoFollowsFile): Promise<void> {
+    await writeAtomicFile(
+      this.fomoFollowsPath(),
+      `${JSON.stringify(FomoFollowsFileSchema.parse(file), null, 2)}\n`,
     )
   }
 
