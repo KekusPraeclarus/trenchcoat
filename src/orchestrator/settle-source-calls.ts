@@ -1,6 +1,6 @@
 import { type ArchiveLayout } from "../lib/archive.js"
 import { type SourceCallEvent } from "../contracts/schemas.js"
-import { readSourceCallLog } from "./call-log.js"
+import { isFomoProfileProvenance, readSourceCallLog } from "./call-log.js"
 import { writeOutcomeObservation, readOutcomeObservation } from "./scorecard.js"
 import {
   materializeObservation,
@@ -59,6 +59,7 @@ export async function runSettleSourceCalls(args: Readonly<{
   const report = { scanned: 0, written: 0, complete: 0, pending: 0, censored: 0, skipped: 0 }
 
   for (const event of events) {
+    if (isFomoProfileProvenance(event.provenance)) continue
     const subjectId = subjectIdFor(event)
     for (const horizonHours of horizons) {
       if (!isMature(event, horizonHours, settlementHours, nowMs)) continue

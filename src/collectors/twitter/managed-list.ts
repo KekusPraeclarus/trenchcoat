@@ -50,6 +50,14 @@ export function listUrlForId(listId: string): string {
   return `https://x.com/i/lists/${assertListId(listId)}`
 }
 
+export const LIST_UI_TIMEOUT_MS = 30_000
+
+/** Case-insensitive profile href. X keeps the original handle case in the URL. */
+export function profileHrefSelector(handle: string): string {
+  const safe = handle.replace(/[^A-Za-z0-9_]/gu, "")
+  return `a[href="/${safe}" i]`
+}
+
 export function computeMembershipDiff(
   current: readonly string[],
   desired: readonly string[],
@@ -499,13 +507,13 @@ async function addListMemberUi(page: Page, listId: string, handle: string): Prom
   const addBtn = page.getByRole("button", { name: /add|suggest/iu }).first()
   if (await addBtn.count()) await addBtn.click()
   const search = page.getByPlaceholder(/search/iu).or(page.locator('input[type="text"]')).first()
-  await search.waitFor({ timeout: 10_000 })
+  await search.waitFor({ timeout: LIST_UI_TIMEOUT_MS })
   await search.fill(handle)
   await page.waitForTimeout(1_500)
   const row = page.getByRole("button", { name: new RegExp(`@?${handle}`, "iu") })
-    .or(page.locator(`a[href="/${handle}"]`))
+    .or(page.locator(profileHrefSelector(handle)))
     .first()
-  await row.click({ timeout: 10_000 })
+  await row.click({ timeout: LIST_UI_TIMEOUT_MS })
   const confirm = page.getByRole("button", { name: /add|done|save/iu }).first()
   if (await confirm.count()) await confirm.click().catch(() => undefined)
   await page.waitForTimeout(1_500)
@@ -517,15 +525,19 @@ async function removeListMemberUi(page: Page, listId: string, handle: string): P
     waitUntil: "domcontentloaded",
     timeout: 60_000,
   })
-  const row = page.locator(`a[href="/${handle}"]`).first()
-  await row.waitFor({ timeout: 10_000 })
+  const row = page.locator(profileHrefSelector(handle)).first()
+  try {
+    await row.waitFor({ timeout: LIST_UI_TIMEOUT_MS })
+  } catch {
+    return
+  }
   const remove = page.getByRole("button", { name: /remove|more/iu }).first()
   if (await remove.count()) {
     await remove.click()
     const confirm = page.getByRole("menuitem", { name: /remove/iu })
       .or(page.getByRole("button", { name: /remove/iu }))
       .first()
-    await confirm.click({ timeout: 10_000 })
+    await confirm.click({ timeout: LIST_UI_TIMEOUT_MS })
   }
   await page.waitForTimeout(1_500)
   void membershipIdempotencyKey(listId, "remove", handle)

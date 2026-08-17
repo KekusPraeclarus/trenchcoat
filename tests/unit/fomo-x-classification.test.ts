@@ -172,6 +172,37 @@ describe("fomo x classification merge", () => {
     expect(report.status).toBe("classified")
     const lifecycle = seeded.state.loadSourceLifecycle()
     expect(lifecycle.candidates.some((c) => c.handle === "alpha")).toBe(true)
+    const note = JSON.parse(readFileSync(report.shillerBackfillNote!, "utf8")) as {
+      appended: number
+      profileCallCount: number
+      xCallCount: number
+    }
+    expect(note.profileCallCount).toBe(10)
+    expect(note.xCallCount).toBe(0)
+    expect(note.appended).toBe(0)
+  })
+
+  it("appends X-post CAs and keeps FOMO buys out of the call log", async () => {
+    const seeded = await seedShillerMerge({
+      includeProfileCalls: true,
+      xPostCallCount: 10,
+    })
+    const report = await mergeFomoXClassification({
+      agentRoot: seeded.agentRoot,
+      archiveRoot: seeded.archiveRoot,
+      runId: "run-1",
+      nowIso: "2026-07-19T13:00:00.000Z",
+    })
+    expect(report.ok).toBe(true)
+    expect(report.callCount).toBe(20)
+    const note = JSON.parse(readFileSync(report.shillerBackfillNote!, "utf8")) as {
+      appended: number
+      profileCallCount: number
+      xCallCount: number
+    }
+    expect(note.xCallCount).toBe(10)
+    expect(note.profileCallCount).toBe(10)
+    expect(note.appended).toBe(10)
   })
 
   it("keeps insufficient-call-history when FOMO profile swaps are empty", async () => {
@@ -191,7 +222,10 @@ describe("fomo x classification merge", () => {
   })
 })
 
-async function seedShillerMerge(args: Readonly<{ includeProfileCalls: boolean }>) {
+async function seedShillerMerge(args: Readonly<{
+  includeProfileCalls: boolean
+  xPostCallCount?: number
+}>) {
   const root = mkdtempSync(join(tmpdir(), "fomo-x-merge-"))
   const agentRoot = join(root, "agent")
   const archiveRoot = join(root, "archive")
@@ -240,7 +274,9 @@ async function seedShillerMerge(args: Readonly<{ includeProfileCalls: boolean }>
     trust: "untrusted-external",
     items: sealedIds.map((postId, i) => ({
       provenance: "twitter:@alpha",
-      text: `purpose=historical-source-evaluation postId=${postId} author=alpha $CASHCAT ticker shill ${i}`,
+      text: i < (args.xPostCallCount ?? 0)
+        ? `purpose=historical-source-evaluation postId=${postId} author=alpha buy ${solMint(i + 20)} send it`
+        : `purpose=historical-source-evaluation postId=${postId} author=alpha $CASHCAT ticker shill ${i}`,
       ts: `2026-07-${String(1 + (i % 5)).padStart(2, "0")}T12:00:00.000Z`,
       ageSec: 0,
       freshnessTier: "live",

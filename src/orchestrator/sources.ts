@@ -4,6 +4,7 @@ import type { ArchiveLayout } from "../lib/archive.js"
 import type { SourceCallOutcome } from "../sources/outcomes.js"
 import { OutcomeObservationSchema } from "../contracts/schemas.js"
 import { PEAK_HORIZON_HOURS } from "./observations.js"
+import { isFomoProfileProvenance, readSourceCallLog, xPostCallKey } from "./call-log.js"
 
 /** Load sealed source-call outcomes from archive for lifecycle review (peak headline) */
 export function loadSourceCallOutcomes(
@@ -11,6 +12,15 @@ export function loadSourceCallOutcomes(
 ): SourceCallOutcome[] {
   const root = join(layout.outcomes, "source-call")
   if (!existsSync(root)) return []
+  const fomoKeys = new Set(
+    readSourceCallLog(layout)
+      .filter((event) => isFomoProfileProvenance(event.provenance))
+      .map((event) => xPostCallKey({
+        sourceId: event.sourceId,
+        rawAddress: event.rawAddress,
+        mentionedAt: event.mentionedAt,
+      })),
+  )
   const out: SourceCallOutcome[] = []
   for (const subjectId of readdirSync(root)) {
     const dir = join(root, subjectId)
@@ -24,12 +34,21 @@ export function loadSourceCallOutcomes(
         || obs.horizonHours === PEAK_HORIZON_HOURS
       const isLegacy72 = obs.horizonHours === 72
       if (!isPeak && !isLegacy72) continue
+      const colon = obs.subjectId.indexOf(":")
+      const sourceId = colon >= 0 ? obs.subjectId.slice(0, colon) : obs.subjectId
+      const token = colon >= 0 ? obs.subjectId.slice(colon + 1) : obs.subjectId
+      if (fomoKeys.size > 0) {
+        const key = xPostCallKey({
+          sourceId,
+          rawAddress: token,
+          mentionedAt: obs.eventTs,
+        })
+        if (fomoKeys.has(key)) continue
+      }
       const returnValue = obs.excessReturn
       out.push({
         eventId: `${obs.subjectId}:${obs.horizonHours}`,
-        sourceId: obs.subjectId.includes(":")
-          ? obs.subjectId.slice(0, obs.subjectId.indexOf(":"))
-          : obs.subjectId,
+        sourceId,
         tokenId: obs.subjectId,
         mentionedAt: obs.eventTs,
         settledAt: obs.observedAt,

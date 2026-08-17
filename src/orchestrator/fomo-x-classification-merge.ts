@@ -192,7 +192,6 @@ async function runShillerBackfill(args: Readonly<{
     text: item.text,
     ts: item.ts,
   }))
-  const items = [...historyItems, ...fomoItems]
 
   const historyCalls = historyItems.flatMap((item) => extractCallEvents({
     sourceId,
@@ -217,7 +216,7 @@ async function runShillerBackfill(args: Readonly<{
   ).size
   const backfillEpochDay = args.nowIso.slice(0, 10)
 
-  const append = await appendSourceCallEventsFromItems(layout, items, {
+  const append = await appendSourceCallEventsFromItems(layout, historyItems, {
     sourceIdOverride: sourceId,
   })
 
@@ -234,7 +233,7 @@ async function runShillerBackfill(args: Readonly<{
       xCallCount: historyCalls.length,
       profileCallCount: fomoCalls.length,
       appended: append.appended,
-      note: "Below call/token thresholds — not registered into source-lifecycle",
+      note: "Below call/token thresholds — not registered into source-lifecycle. FOMO swaps count for entry only.",
     }, args.nominationId)
     return {
       ok: false,
@@ -265,7 +264,7 @@ async function runShillerBackfill(args: Readonly<{
     xCallCount: historyCalls.length,
     profileCallCount: fomoCalls.length,
     appended: append.appended,
-    note: "Registered fomo-leaderboard probation only — managed-list promotion requires a later review epoch",
+    note: "Registered fomo-leaderboard probation only. FOMO swaps count for entry. X-post CAs enter the call log.",
   }, args.nominationId)
 
   return {

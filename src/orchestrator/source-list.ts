@@ -22,6 +22,8 @@ import { join } from "node:path"
 import { archiveLayout } from "../lib/archive.js"
 import { loadSourceCallOutcomes } from "./sources.js"
 import { SourceWriter } from "./sources-write.js"
+import { readSourceCallLog } from "./call-log.js"
+import { loadDiscoverySightingsFromArchive, registerSealedXCallers } from "../sources/sealed-x-callers.js"
 
 export function thresholdsFromConfig(config: TrenchcoatConfig): SourceLifecycleThresholds {
   return {
@@ -85,6 +87,16 @@ export async function runSourceListReview(
   const scoreCutoff = nowIso
 
   let file = state.loadSourceLifecycle()
+  const layout = archiveLayout(opts.archiveRoot)
+  const callerIngest = registerSealedXCallers(file, {
+    events: readSourceCallLog(layout),
+    sightings: loadDiscoverySightingsFromArchive(layout),
+    nowIso,
+  })
+  file = callerIngest.file
+  if (!opts.dryRun && callerIngest.report.registered > 0) {
+    await state.saveSourceLifecycle(file)
+  }
   if (config.twitter.managed_list.list_id) {
     confineListId(
       config.twitter.managed_list.list_id,
@@ -99,7 +111,7 @@ export async function runSourceListReview(
     }
   }
 
-  const outcomes = opts.outcomes ?? loadSourceCallOutcomes(archiveLayout(opts.archiveRoot))
+  const outcomes = opts.outcomes ?? loadSourceCallOutcomes(layout)
   const performances = new Map(
     file.candidates.map((candidate) => [
       candidate.sourceId,
@@ -167,6 +179,7 @@ export async function runSourceListReview(
       applied: result.applied,
       queued: result.queued,
       desired: desiredManagedHandles(result.file),
+      sealedXCallers: callerIngest.report,
     }, null, 2)}\n`,
   )
 

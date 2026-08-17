@@ -74,6 +74,23 @@ export type AppendCallEventsReport = Readonly<{
   events: readonly SourceCallEvent[]
 }>
 
+/** X-post provenance only. FOMO profile swaps are entry evidence, not shill calls. */
+export function isXPostProvenance(provenance: string): boolean {
+  return provenance.startsWith("twitter:@") || provenance.startsWith("x:@")
+}
+
+export function isFomoProfileProvenance(provenance: string): boolean {
+  return provenance.startsWith("fomo-profile:@")
+}
+
+export function xPostCallKey(args: Readonly<{
+  sourceId: string
+  rawAddress: string
+  mentionedAt: string
+}>): string {
+  return `${args.sourceId}|${args.rawAddress.toLowerCase()}|${args.mentionedAt}`
+}
+
 /** Idempotent append of bullish CA call events from snapshot-shaped items. */
 export async function appendSourceCallEventsFromItems(
   layout: ArchiveLayout,
@@ -89,6 +106,8 @@ export async function appendSourceCallEventsFromItems(
   let skipped = 0
 
   for (const item of items) {
+    if (!isXPostProvenance(item.provenance)) continue
+    if (item.text.includes("purpose=fomo-profile-call")) continue
     const rawItemHash = sha256Json(item as never)
     const sourceId = opts?.sourceIdOverride ?? toSafeSourceId(item.provenance)
     const calls = extractCallEvents({

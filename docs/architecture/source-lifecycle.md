@@ -2,7 +2,7 @@
 description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-17
 read_when:
   - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
   - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
@@ -47,8 +47,10 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 
 - `discoveredFrom: "fomo-leaderboard"` enters `source-lifecycle.json` only after
   deterministic historical call extraction meets shiller thresholds. Extraction
-  unions sealed X-post CAs with dated FOMO profile swap buys (quote→meme).
-  Tickers and FOMO profile wallets do not count.
+  unions sealed X-post CAs with dated FOMO profile swap buys (quote→meme) for
+  the entry bar only (10 calls / 5 tokens). Only X-post CAs enter the call log.
+  Promotion scores those X-post outcomes. FOMO traders score on FIFO
+  `fomo-trader-scores.json`. Tickers and FOMO profile wallets do not count.
 - Classification agent output never mutates lists or follows. Shiller and
   narrative tracks graduate independently (`both` must pass both).
 - Historical posts are never reused as live narrative evidence.
@@ -145,15 +147,17 @@ Engagement never writes `source-lifecycle.json` or `sources.json`.
 Host-only; no Cursor session. Cadence: daily and after a sealed audit.
 
 1. Freeze `scoreCutoff = now`
-2. Aggregate lagged performances (`src/sources/outcomes.ts`) from archive
-   `source-call` outcomes when present (`loadSourceCallOutcomes`); empty
-   archives yield no promotions
-3. Compute promote/demote proposals (`src/sources/lifecycle.ts`)
-4. Cap to `max_transitions_per_review` (default 10); queue excess transition
+2. Register strong X-post callers (≥10 calls, ≥5 tokens) who also appear on a
+   sealed FYP or operator-list snapshot. Home-only callers stay out.
+3. Aggregate lagged performances (`src/sources/outcomes.ts`) from archive
+   `source-call` outcomes when present (`loadSourceCallOutcomes`). Promotion
+   drops FOMO profile-swap keys. Empty archives yield no promotions.
+4. Compute promote/demote proposals (`src/sources/lifecycle.ts`)
+5. Cap to `max_transitions_per_review` (default 10); queue excess transition
    ids (queued ids are not themselves durable transition records until applied)
-5. Commit candidates + applied immutable transitions + pending ids
-6. Synchronize X membership to desired managed handles
-7. Archive review + sync receipt under the host archive
+6. Commit candidates + applied immutable transitions + pending ids
+7. Synchronize X membership to desired managed handles
+8. Archive review + sync receipt under the host archive
 
 CLI: `tc source-list review --dry-run` (no state/X writes),
 `tc source-list sync` (apply desired membership for the persisted list id).

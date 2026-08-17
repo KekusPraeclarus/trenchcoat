@@ -9,7 +9,15 @@ import {
   syncManagedListMembership,
   membershipIdempotencyKey,
   ALLOWED_LIST_MUTATIONS,
+  profileHrefSelector,
 } from "../../src/collectors/twitter/managed-list.js"
+
+describe("profile href selector", () => {
+  it("matches handles without case", () => {
+    expect(profileHrefSelector("0xdeployer")).toBe('a[href="/0xdeployer" i]')
+    expect(profileHrefSelector("Alice")).toBe('a[href="/Alice" i]')
+  })
+})
 
 describe("membership diff", () => {
   it("computes deterministic add/remove", () => {
