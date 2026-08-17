@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
   assertNarrativeDevelopmentAllowed,
+  developmentCatalystEntities,
   developmentSalientTokens,
+  isSameCatalystRewrite,
+  normalizeCatalystEntity,
 } from "../../src/orchestrator/narrative-development.js"
 import type { NarrativeLogEntry } from "../../src/orchestrator/narrative-log.js"
 import type { MarketClaimRecord } from "../../src/orchestrator/market-claims.js"
@@ -52,6 +55,34 @@ function priorClaim(
     destinations: ["telegram"],
   }
 }
+
+const LIST_SCAN_STOCKCOIN =
+  "Stock-token meta sprouting a Base branch. longdotxyz team shipping cleaner launch UX with 200 tokens already listed. CT tying first Base stock pool to Cobie-adjacent AERO liquidity. Early, mostly social."
+const NARRATIVE_SCAN_STOCKCOIN =
+  "Stock token infra expanding on Base. long.xyz dev shipping UX for 200 equity tokens today. First Base stock token getting Cobie timeline heat. StackersXYZ going loud on NFT+token pairing."
+const COINBASE_STOCKCOIN =
+  "Stockcoin meta keeps stretching. CT claims first Coinbase stock token pair on Ethereum with a fresh CA. Another chain branch if liquidity does not ghost."
+
+describe("developmentCatalystEntities", () => {
+  it("folds long.xyz and longdotxyz onto one key", () => {
+    expect(normalizeCatalystEntity("long.xyz")).toBe("longxyz")
+    expect(normalizeCatalystEntity("longdotxyz")).toBe("longxyz")
+    const dotted = developmentCatalystEntities("long.xyz shipped UX on Base. Cobie tape.")
+    const glued = developmentCatalystEntities("longdotxyz shipped UX on Base. Cobie tape.")
+    expect(dotted.has("longxyz")).toBe(true)
+    expect(glued.has("longxyz")).toBe(true)
+    expect(dotted.has("base")).toBe(true)
+    expect(dotted.has("cobie")).toBe(true)
+  })
+
+  it("treats the live Stockcoin rewrite as the same catalyst", () => {
+    expect(isSameCatalystRewrite(NARRATIVE_SCAN_STOCKCOIN, LIST_SCAN_STOCKCOIN)).toBe(true)
+  })
+
+  it("keeps a later Coinbase or Ethereum branch eligible", () => {
+    expect(isSameCatalystRewrite(COINBASE_STOCKCOIN, LIST_SCAN_STOCKCOIN)).toBe(false)
+  })
+})
 
 describe("developmentSalientTokens", () => {
   it("captures cashtags, caps tickers, and distinctive words", () => {
@@ -128,6 +159,25 @@ describe("assertNarrativeDevelopmentAllowed", () => {
       nowIso: NOW,
       sameStageDevelopment: true,
     })).toEqual({ ok: true })
+  })
+
+  it("rejects a reworded same-catalyst development on the same subject", () => {
+    const res = assertNarrativeDevelopmentAllowed({
+      item: development(NARRATIVE_SCAN_STOCKCOIN, "stockcoin-meta"),
+      narrativeLog: [{
+        ...RH,
+        slug: "stockcoin-meta",
+        title: "Stockcoin meta",
+      }],
+      recentClaims: [
+        {
+          ...priorClaim(LIST_SCAN_STOCKCOIN, "2026-07-21T10:00:00.000Z"),
+          subject: "stockcoin-meta",
+        },
+      ],
+      nowIso: NOW,
+    })
+    expect(res).toEqual({ ok: false, reason: "development-same-catalyst" })
   })
 
   it("rejects a repeat of a recent development on the same subject", () => {

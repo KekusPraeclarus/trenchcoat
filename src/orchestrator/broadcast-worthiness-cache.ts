@@ -46,6 +46,20 @@ export function emptyWorthinessCache(): WorthinessCache {
 
 export { claimHash }
 
+/** Claim types whose hash does not name the catalyst. Do not reuse a verdict. */
+const OPEN_CATALYST_CLAIM_TYPES = new Set<AuditClaim["type"]>([
+  "narrative-emergence",
+  "narrative-fade",
+  "narrative-development",
+  "rotation",
+  "sentiment-collapse",
+])
+
+/** True when `{subject, claimHash}` uniquely identifies this catalyst. */
+export function worthinessCacheApplies(claim: AuditClaim): boolean {
+  return !OPEN_CATALYST_CLAIM_TYPES.has(claim.type)
+}
+
 function parseIso(iso: string): number {
   const ms = Date.parse(iso)
   return Number.isFinite(ms) ? ms : Number.NaN

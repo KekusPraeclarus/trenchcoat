@@ -2,7 +2,7 @@
 description: ADR — Host composer-2.5-fast worthiness gate approves or rejects agent market broadcasts before stage.
 scope: project
 status: accepted
-last_verified: 2026-08-15
+last_verified: 2026-08-17
 ---
 
 # ADR 014 — Broadcast worthiness review
@@ -85,4 +85,6 @@ surviving proposal, without letting the host invent market broadcast copy.
 ## Follow-up (ADR 034)
 
 Claim-only worthiness input (no proposal prose / agent.md) and a 48h
-`{subject, claimHash}` verdict cache — see [034-token-cost-host-gates.md](034-token-cost-host-gates.md).
+`{subject, claimHash}` verdict cache for token and wallet claims — see
+[034-token-cost-host-gates.md](034-token-cost-host-gates.md). Open narrative
+claim types skip that cache.

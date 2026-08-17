@@ -16,6 +16,23 @@ const TOKEN_STOPWORDS = new Set([
   "coin", "token", "rotation", "narrative", "watch", "week", "next", "days",
 ])
 
+/** Lane filler that must not count as a catalyst name. */
+const CATALYST_GENERIC = new Set([
+  ...TOKEN_STOPWORDS,
+  "stock", "tokens", "coins", "lane", "infra", "launch", "listed",
+  "shipping", "early", "social", "volume", "liquidity", "timeline",
+  "heat", "today", "team", "first", "pair", "pairs", "pool", "feed",
+  "dev", "equity", "branch", "already", "mostly",
+  "nft", "nfts", "defi", "dao", "usd", "usdc", "usdt",
+  "api", "ceo", "tvl", "ath", "fdv", "mcap",
+])
+
+const NARRATIVE_CLAIM_TYPES: ReadonlySet<string> = new Set([
+  "narrative-development",
+  "narrative-emergence",
+  "rotation",
+])
+
 /**
  * Salient tokens for novelty comparison: cashtags, all-caps ticker-ish tokens,
  * and lowercased words of 4+ chars minus stopwords. Pure tokenization — never
@@ -32,6 +49,86 @@ export function developmentSalientTokens(text: string): Set<string> {
     if (isTickerish || norm.length >= 4) out.add(norm)
   }
   return out
+}
+
+/** Fold long.xyz and longdotxyz onto the same key. */
+export function normalizeCatalystEntity(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^\$/u, "")
+    .replace(/\./gu, "")
+    .replace(/dot/gu, "")
+}
+
+/**
+ * Distinctive names in broadcast copy: domains, tickers, and proper nouns.
+ * Used to catch a rewrite of the same catalyst after wording changes.
+ */
+export function developmentCatalystEntities(text: string): Set<string> {
+  const out = new Set<string>()
+  const slice = text.slice(0, 560)
+  const add = (raw: string): void => {
+    const norm = normalizeCatalystEntity(raw)
+    if (norm.length < 3) return
+    if (CATALYST_GENERIC.has(norm)) return
+    out.add(norm)
+  }
+  for (const match of slice.matchAll(/\b[a-z0-9]+(?:\.[a-z0-9]+)+\b/giu)) {
+    add(match[0])
+  }
+  for (const match of slice.matchAll(/\b[a-z0-9]{2,}dot[a-z0-9]{2,}\b/giu)) {
+    add(match[0])
+  }
+  for (const match of slice.matchAll(/\$[A-Za-z][A-Za-z0-9]{1,15}\b/gu)) {
+    add(match[0])
+  }
+  for (const match of slice.matchAll(/\b[A-Z]{2,12}\b/gu)) {
+    add(match[0])
+  }
+  for (const match of slice.matchAll(/\b[A-Z][a-z]+[A-Z][A-Za-z0-9]*\b/gu)) {
+    add(match[0])
+  }
+  for (const match of slice.matchAll(/\b[A-Z][a-z]{2,20}\b/gu)) {
+    add(match[0])
+  }
+  return out
+}
+
+/** True when incoming copy restates a prior name cluster with at most one new name. */
+export function isSameCatalystRewrite(
+  incomingText: string,
+  priorSummary: string,
+): boolean {
+  const incoming = developmentCatalystEntities(incomingText)
+  const prior = developmentCatalystEntities(priorSummary)
+  if (incoming.size === 0 || prior.size === 0) return false
+  const shared = [...incoming].filter((entity) => prior.has(entity))
+  const fresh = [...incoming].filter((entity) => !prior.has(entity))
+  return shared.length >= 2 && fresh.length < 2
+}
+
+export function repeatsRecentCatalyst(args: Readonly<{
+  text: string
+  subject: string
+  recentClaims: readonly MarketClaimRecord[]
+  nowIso: string
+  narrativeKindsOnly?: boolean
+}>): boolean {
+  const subject = args.subject.trim().toLowerCase()
+  for (const prior of args.recentClaims) {
+    if (prior.subject.trim().toLowerCase() !== subject) continue
+    if (!withinWindow(prior.occurredAt, args.nowIso, DEVELOPMENT_REPEAT_WINDOW_HOURS)) {
+      continue
+    }
+    if (args.narrativeKindsOnly === true) {
+      if (!prior.auditClaimType || !NARRATIVE_CLAIM_TYPES.has(prior.auditClaimType)) {
+        continue
+      }
+    }
+    if (isSameCatalystRewrite(args.text, prior.summary)) return true
+  }
+  return false
 }
 
 function withinWindow(occurredAt: string, nowIso: string, hours: number): boolean {
@@ -62,6 +159,16 @@ export function assertNarrativeDevelopmentAllowed(args: Readonly<{
   const known = args.narrativeLog.some((entry) => entry.slug === subject)
   if (!known) {
     return { ok: false, reason: "development-unknown-narrative:use-narrative-emergence" }
+  }
+
+  if (repeatsRecentCatalyst({
+    text: args.item.text,
+    subject,
+    recentClaims: args.recentClaims,
+    nowIso: args.nowIso,
+    narrativeKindsOnly: true,
+  })) {
+    return { ok: false, reason: "development-same-catalyst" }
   }
 
   const seen = new Set<string>()

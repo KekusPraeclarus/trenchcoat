@@ -16,6 +16,7 @@ import {
   lookupWorthinessCache,
   saveWorthinessCache,
   upsertWorthinessCache,
+  worthinessCacheApplies,
   type WorthinessCache,
 } from "./broadcast-worthiness-cache.js"
 import type { NarrativeLogEntry } from "./narrative-log.js"
@@ -320,11 +321,14 @@ export async function ingestOutbox(args: Readonly<{
     if (worthinessEnabled && args.worthiness && worthinessCache) {
       const subject = capped.auditClaim.subject.trim().toLowerCase()
       const hash = claimHash(capped.auditClaim)
-      const cached = lookupWorthinessCache(worthinessCache, {
-        subject,
-        claimHash: hash,
-        nowIso: args.nowIso,
-      })
+      const cacheApplies = worthinessCacheApplies(capped.auditClaim)
+      const cached = cacheApplies
+        ? lookupWorthinessCache(worthinessCache, {
+          subject,
+          claimHash: hash,
+          nowIso: args.nowIso,
+        })
+        : undefined
       if (cached) {
         if (!cached.worth) {
           reject(`worthiness:cached-not-worth:${cached.reason}`, rawHash)
@@ -364,13 +368,15 @@ export async function ingestOutbox(args: Readonly<{
           reject(`worthiness:${review.reason}`, rawHash)
           continue
         }
-        worthinessCache = upsertWorthinessCache(worthinessCache, {
-          auditClaim: capped.auditClaim,
-          worth: review.worth,
-          reason: review.reason,
-          decidedAt: args.nowIso,
-        })
-        worthinessCacheDirty = true
+        if (cacheApplies) {
+          worthinessCache = upsertWorthinessCache(worthinessCache, {
+            auditClaim: capped.auditClaim,
+            worth: review.worth,
+            reason: review.reason,
+            decidedAt: args.nowIso,
+          })
+          worthinessCacheDirty = true
+        }
         if (!review.worth) {
           reject(`worthiness:not-worth:${review.reason}`, rawHash)
           continue

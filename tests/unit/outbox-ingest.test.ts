@@ -496,6 +496,87 @@ describe("outbox ingest", () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
+  it("ignores worthiness cache for narrative-development claims", async () => {
+    const { upsertWorthinessCache, saveWorthinessCache, emptyWorthinessCache } =
+      await import("../../src/orchestrator/broadcast-worthiness-cache.js")
+    const narrative = {
+      severity: "notable",
+      text: "Vlad shipped agent trading on RH chain. $CASHCAT leading the first flow.",
+      refs: ["state/narratives/example.md"],
+      auditClaim: {
+        type: "narrative-development",
+        subject: "rh-chain-meme-rotation",
+        direction: "rotation",
+        horizonHours: 72,
+        verificationRule: "narrative.development",
+      },
+    }
+    const s = await scaffold({ schema: 1, items: [narrative] })
+    writeFileSync(
+      join(s.agentRoot, "state", "narratives", "log.jsonl"),
+      `${JSON.stringify({
+        slug: "rh-chain-meme-rotation",
+        title: "Robinhood chain meme rotation",
+        firstSeen: "2026-07-16T12:00:00.000Z",
+        lastSeen: "2026-07-17T11:00:00.000Z",
+        evidence: ["twitter:@alice"],
+        stage: "peaking",
+      })}\n`,
+    )
+    const cache = upsertWorthinessCache(emptyWorthinessCache(), {
+      auditClaim: narrative.auditClaim as never,
+      worth: true,
+      reason: "prior development approve",
+      decidedAt: NOW,
+    })
+    await saveWorthinessCache(s.agentRoot, cache)
+    const runSession = vi.fn(async () => '{"worth":true,"reason":"must re-judge"}')
+    const report = await ingestOutbox({
+      agentRoot: s.agentRoot,
+      layout: s.layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      narrativeLogBefore: [{
+        slug: "rh-chain-meme-rotation",
+        title: "Robinhood chain meme rotation",
+        firstSeen: "2026-07-16T12:00:00.000Z",
+        lastSeen: "2026-07-17T11:00:00.000Z",
+        evidence: ["twitter:@alice"],
+        stage: "peaking",
+      }],
+      narrativeEvidenceQuality: {
+        schema: 1,
+        enabled: true,
+        tier: "strong",
+        reasons: [],
+        freshPosts: 8,
+        independentAuthors: 5,
+        promotionalShare: 0.1,
+        primarySourceAuthors: [],
+        excludedCounts: {
+          "collector-status": 0,
+          duplicate: 0,
+          "repeated-promotion": 0,
+          "promotion-pattern": 0,
+          expired: 0,
+        },
+        thresholds: {
+          maxPromotionalShare: 0.5,
+          minIndependentAuthors: 2,
+          minFreshPosts: 2,
+        },
+      },
+      worthiness: {
+        enabled: true,
+        runSession,
+        context: { job: "narrative-scan" },
+      },
+    })
+    expect(report.rejects.map((entry) => entry.reason)).toEqual([])
+    expect(report.staged).toBe(1)
+    expect(runSession).toHaveBeenCalledOnce()
+  })
+
   it("rejects from worthiness cache hit worth false", async () => {
     const { upsertWorthinessCache, saveWorthinessCache, emptyWorthinessCache } =
       await import("../../src/orchestrator/broadcast-worthiness-cache.js")

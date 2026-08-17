@@ -10,6 +10,7 @@ import {
   pruneWorthinessCache,
   saveWorthinessCache,
   upsertWorthinessCache,
+  worthinessCacheApplies,
   WORTHINESS_CACHE_TTL_MS,
 } from "../../src/orchestrator/broadcast-worthiness-cache.js"
 import { saveMarketClaimIndex } from "../../src/orchestrator/market-claims.js"
@@ -31,6 +32,34 @@ function agentRoot(): string {
   writeFileSync(join(root, "state", "narratives", "log.jsonl"), "")
   return root
 }
+
+describe("worthinessCacheApplies", () => {
+  it("skips open narrative claim types", () => {
+    expect(worthinessCacheApplies(CLAIM)).toBe(false)
+    expect(worthinessCacheApplies({
+      ...CLAIM,
+      type: "narrative-development",
+      verificationRule: "narrative.development",
+    })).toBe(false)
+  })
+
+  it("applies to token and wallet claims", () => {
+    expect(worthinessCacheApplies({
+      type: "token-upside",
+      subject: "solana:token",
+      direction: "up",
+      horizonHours: 72,
+      verificationRule: "token.up.72h",
+    })).toBe(true)
+    expect(worthinessCacheApplies({
+      type: "wallet-lifecycle",
+      subject: "wallet:abc",
+      direction: "lifecycle",
+      horizonHours: 24,
+      verificationRule: "wallet.lifecycle",
+    })).toBe(true)
+  })
+})
 
 describe("claimHash", () => {
   it("is stable over lowercased trimmed subject", () => {

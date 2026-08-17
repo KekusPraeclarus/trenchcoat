@@ -29,7 +29,10 @@ acks, duplicate broadcasts, report bullets) does not need a model.
    the agent-facing manifest is empty (`host-alpha-ack-only`).
 4. **Worthiness:** mechanical pre-gate; claim+refs+history only (no `agent.md`,
    no proposal prose); 48h cache at `state/broadcast-worthiness-cache.json`
-   keyed by `{subject, claimHash}`.
+   keyed by `{subject, claimHash}` for token and wallet claims only. Open
+   narrative claim types skip the cache so one approval cannot stamp a later
+   rewrite. Mechanical `mechanical-same-catalyst` rejects a rewrite that shares
+   a name cluster with a 48h same-subject accepted broadcast.
 5. **Distill:** `llm_budget_fraction` 0.5 always; when staged events this run ≥
    `hot_day_min_staged_events` (20), use `hot_day_llm_budget_fraction` 0.25.
    Message budgets (ADR 033) unchanged. Receipt reason `llm-budget-fraction`.

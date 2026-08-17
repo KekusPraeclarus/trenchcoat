@@ -2,7 +2,7 @@
 description: ADR — Same-stage narrative developments route through novelty dedupe; worthiness uses accepted delivery history; resolved research must propose one broadcast.
 scope: project
 status: accepted
-last_verified: 2026-08-15
+last_verified: 2026-08-17
 ---
 
 # ADR 023 — Narrative development routing and mandatory research broadcast
@@ -58,7 +58,10 @@ capital-flow `auditClaim.type: "rotation"`.
 - Pure status-quo restatements remain rejected via `restatesUnchangedNarrativeStage`
   and development repeat checks. Development dedupe compares salient tokens against
   **accepted** prior claims in a 48h window (`extractBroadcastClaimsFromArchive`
-  with `acceptedOnly: true`), not an in-memory index alone.
+  with `acceptedOnly: true`), not an in-memory index alone. It also rejects a
+  rewrite that shares two or more catalyst names and adds fewer than two new
+  names (`development-same-catalyst`). Domain forms such as long.xyz and
+  longdotxyz fold onto one key.
 - `narrative-development` remains the preferred claim type for within-narrative
   updates; compatibility routing exists because agents still mislabel catalysts
   as emergence/rotation.

@@ -10,6 +10,7 @@ import { claimHash } from "./broadcast-worthiness.js"
 import {
   DEVELOPMENT_REPEAT_WINDOW_HOURS,
   developmentSalientTokens,
+  repeatsRecentCatalyst,
 } from "./narrative-development.js"
 import type { MarketClaimRecord } from "./market-claims.js"
 
@@ -108,6 +109,14 @@ export function evaluateMechanicalBroadcastGate(
   ctx.proposedSubjectsSeen.add(subject)
   ctx.proposedClaimHashes.add(hash)
 
+  if (repeatsRecentCatalyst({
+    text: item.text,
+    subject,
+    recentClaims: ctx.recentAcceptedClaims,
+    nowIso: ctx.nowIso,
+  })) {
+    return { ok: false, reason: "mechanical-same-catalyst" }
+  }
   if (isMechanicalRepeatBroadcast(item, ctx.recentAcceptedClaims, ctx.nowIso)) {
     return { ok: false, reason: "mechanical-repeat-broadcast" }
   }

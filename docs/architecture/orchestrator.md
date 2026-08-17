@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-17
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -488,7 +488,11 @@ staged router events.
   after mechanical validation (+ ADR 034 mechanical gate / claimHash cache), a
   host ask-mode session decides `{worth, reason}` from claim+refs+history only
   per item. `worth:false`, session errors, and malformed JSON reject with
-  `worthiness:…` receipts in `broadcast-rejects.json` — never stage. History is
+  `worthiness:…` receipts in `broadcast-rejects.json` — never stage. The 48h
+  `{subject, claimHash}` cache applies to token and wallet claims only. Open
+  narrative claim types always re-run worthiness. Mechanical
+  `mechanical-same-catalyst` rejects a rewrite that shares a name cluster with a
+  48h same-subject accepted broadcast. History is
   subject-scoped for 48h and includes accepted ingress plus still-staged pending
   events (reworded same-catalyst rejected; genuinely new same-subject developments
   allowed). Agent still authors `text`; the host never invents market broadcast
