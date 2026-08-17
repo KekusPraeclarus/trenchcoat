@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     maxDelayMs: 1_200,
     headless: true,
     maxPagesPerFeed: 1,
+    debitAttempts: false,
   })
   try {
     const fyp = await client.readFeed({ tab: "fyp", maxPages: 1 })

@@ -44,7 +44,7 @@ export function loadUsageDay(archiveRoot: string, day: string, budget: number): 
   if (raw.schema !== 1 || raw.day !== day) return emptyUsageDay(day, budget)
   return {
     ...raw,
-    budget: Math.min(raw.budget, budget),
+    budget,
   }
 }
 

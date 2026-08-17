@@ -32,4 +32,12 @@ describe("pump usage crash resume", () => {
     expect(again.reserved).toBe(1)
     expect(again.completedCounted).toBe(1)
   })
+
+  it("uses the caller budget so a smoke cap cannot pin the collect day", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pump-usage-budget-"))
+    await saveUsageDay(root, emptyUsageDay("2026-08-17", 40))
+    const loaded = loadUsageDay(root, "2026-08-17", 200)
+    expect(loaded.budget).toBe(200)
+    expect(loaded.reserved).toBe(0)
+  })
 })

@@ -42,6 +42,7 @@ only. Pump uses `pump-fyp-eligible` and `state/pump-engagement.json`.
 ```bash
 pnpm dev:cli auth pump
 TRENCHCOAT_LIVE_PUMP=1 pnpm tsx scripts/smoke-pump-live.ts
+# Smoke does not debit archive/provider-usage/pump/
 TRENCHCOAT_LIVE_PUMP=1 pnpm probe:pump discover --run-id probe-YYYY-MM-DD
 pnpm probe:pump status --run-id probe-YYYY-MM-DD
 pnpm probe:pump sanitize --run-id probe-YYYY-MM-DD
@@ -96,9 +97,14 @@ prints cookie counts only. It never prints values.
   Import a burner session from your normal browser. Never paste cookies into
   chat, git, or `agent/`
 - Call cards use `coinMint` and `userId`. Join `userId` to `/users/batch`
-  `username`. Do not use the wallet as author. PnL board JSON uses `entries`
+  `username`. Do not use the wallet as author. PnL board JSON uses `entries`.
+  Profile JSON may wrap rows in `callouts`
 - For you, Top, News, and Following are homepage feed tabs. Do not scrape
   `/board` or `/news` for those tabs. The PnL leaderboard is also on `/`
+- Those tabs reshuffle. A prior `lastItemId` is a skip key only. Do not stop
+  the page when that id appears again
+- Live smoke (`pnpm pump:smoke`) does not debit
+  `archive/provider-usage/pump/`. Collect owns that ledger
 - Pump user ids are not trading wallets. Do not nominate them into
   `wallets.json`
 - Inbox item text must not use the word call (X `extractCallEvents` would

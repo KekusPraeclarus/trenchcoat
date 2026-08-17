@@ -138,6 +138,9 @@ describe("pump mappers", () => {
   it("extracts array payloads", () => {
     expect(extractArrayPayload(fyp).length).toBe(1)
     expect(extractArrayPayload({ data: { items: [1, 2] } })).toEqual([1, 2])
+    expect(extractArrayPayload({
+      callouts: [{ coinMint: MINT, calloutId: "c1" }],
+    })).toEqual([{ coinMint: MINT, calloutId: "c1" }])
   })
 })
 

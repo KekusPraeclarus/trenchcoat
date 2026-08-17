@@ -325,9 +325,12 @@ export class PumpWebClient implements PumpDataSource {
         this.detectChallenge(page)
         await feedWait
         if (tabLabel && tabLabel !== PUMP_FEED_TAB_LABEL.fyp) {
+          const resetHits = family.startsWith("feed-")
           await Promise.all(pending)
-          pending.length = 0
-          hits.length = 0
+          if (resetHits) {
+            pending.length = 0
+            hits.length = 0
+          }
           await this.clickFeedTab(page, tabLabel)
           await page.waitForResponse((response) => (
             /frontend-api-v\d+\.pump\.fun/iu.test(response.url())
@@ -375,7 +378,7 @@ export class PumpWebClient implements PumpDataSource {
       for (const raw of extractArrayPayload(hit.body)) {
         const mapped = mapFeedItem(raw, args.tab, observedAt, usernames)
         if (!mapped || seen.has(mapped.itemId)) continue
-        if (args.cursor && mapped.itemId === args.cursor) return items
+        if (args.cursor && mapped.itemId === args.cursor) continue
         seen.add(mapped.itemId)
         items.push(mapped)
       }

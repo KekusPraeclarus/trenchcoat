@@ -208,7 +208,7 @@ export function extractArrayPayload(body: unknown): unknown[] {
   if (Array.isArray(body)) return body
   const raw = asRecord(body)
   if (!raw) return []
-  for (const key of ["items", "coins", "mints", "feed", "data", "users", "leaderboard", "calls", "entries"]) {
+  for (const key of ["items", "coins", "mints", "feed", "data", "users", "leaderboard", "calls", "callouts", "entries"]) {
     const value = raw[key]
     if (Array.isArray(value)) return value
     const nested = asRecord(value)

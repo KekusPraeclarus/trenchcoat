@@ -452,7 +452,7 @@ lane off. Jobs also fail closed unless
 |---|---|---|
 | `enabled` | `false` | Master switch; false skips `pump-scan` |
 | `shadow_mode` | `true` | Archives calls and writes receipts. No mutations. No research enqueue |
-| `daily_navigation_budget` | `200` | Local ledger cap on page navigations |
+| `daily_navigation_budget` | `200` | Local ledger cap on page navigations. Live smoke does not debit this ledger |
 | `max_pages_per_feed` | `5` | Doomscroll cap after the per-tab cursor |
 | `following_min_follows` | `10` | Following tab runs only at this follow count |
 | `max_profile_chart_pages` | `5` | Profile call-chart visits per run |

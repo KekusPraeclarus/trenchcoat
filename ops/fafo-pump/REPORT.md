@@ -13,6 +13,9 @@ Live `pnpm probe:pump discover` on 2026-08-13 with the burner session.
 - Live smoke maps FYP from `/`. Top, News, and Following are homepage
   feed tabs. Do not use `/board` or `/news` for those tabs. The PnL
   leaderboard JSON is `/pnl-leaderboard` on `/`.
+- Live smoke must set `debitAttempts: false`. A 40-nav smoke cap must
+  not rewrite `archive/provider-usage/pump/<day>.json`.
+- Ranked feed cursors skip a prior id. They do not abort the page.
 
 ## Next
 
