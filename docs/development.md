@@ -2,7 +2,7 @@
 description: Developer workflow notes — parallel worktrees, shared-file merge ownership, and how to keep docs honest while coding.
 scope: project
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-18
 read_when:
   - Merging parallel feature worktrees or coordinating multi-agent integration.
   - You need the exclusive-ownership list for shared integration files.
@@ -81,6 +81,34 @@ the check requires `writeInbox` / inbox `mkdirSync`, not mere `join(..., "inbox"
 Signing/wallet SDKs (`viem`, `ethers`, …) are banned under `src/` except the
 host-only Farcaster custody path `src/collectors/farcaster/signer.ts` (ADR 007 /
 INV-A1). Do not broaden that allowlist for trade or agent-mounted code.
+
+## Secret scan (gitleaks)
+
+Install the CLI with `brew install gitleaks`. On Linux, install the GitHub
+release binary. Run `pnpm secret-scan` before you push. CI runs the same
+check on pull requests and on `main` (`.github/workflows/gitleaks.yml`).
+Config lives in `.gitleaks.toml`. The `generic-api-key` allowlist covers
+only mint and CA shapes in `tests/` and `docs/`. It also covers one fake
+Privy JWT in `tests/unit/pump-auth.test.ts`. A real `HELIUS_API_KEY`
+assignment in a test still fails. Mutation-lane `secret-scan` prefers
+`gitleaks dir` on the worktree. It uses the assignment regex when gitleaks
+is missing (INV-I3).
+
+## Git ignore
+
+A public clone must not contain runtime data, secrets, or operator seeds.
+`.gitignore` drops build output, `.env`, agent inbox/reports, local VPS sync
+(`.trenchcoat-remote/`), and operator-only config. Empty `agent/state`
+scaffold files stay tracked. Before the first public push, drop already
+tracked operator files from the index (working copies stay):
+
+```bash
+git rm --cached config/operator-candidates-pons-robinhood.json \
+  ops/fafo-fomo/gates.operator-override-2026-07-19.json \
+  ops/fafo-pump/gates.shadow-live.json \
+  ops/NOTES.md
+```
+
 ## Context graph
 
 Start at [README.md](README.md). Surprises go into [../ops/gotchas.md](../ops/gotchas.md);

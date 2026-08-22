@@ -3,6 +3,7 @@ description: Deterministic offline chart rendering from archived OHLCV plus mode
 scope: project
 status: active
 last_verified: 2026-07-19
+last_edited: 2026-07-29
 read_when:
   - Editing chart renderers, chart-sweep skill, or vision audit slices
 ---

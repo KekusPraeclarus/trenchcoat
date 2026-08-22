@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-18
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -99,6 +99,8 @@ On the **Mac**, stop trenchcoat launchd units so profiles/SQLite are quiet, then
 
 ```bash
 # macOS stock rsync: use --progress (not --info=progress2)
+# Set TRENCHCOAT_SSH_HOST, or put the SSH Host alias in
+# .trenchcoat-local/ssh-host (see ops/ssh-host.example).
 rsync -aH --progress \
   --exclude 'runtime/' \
   --exclude 'runtime.prev/' \
@@ -178,8 +180,19 @@ With secrets set and `.github/workflows/deploy-vps.yml` on `main`:
 `main`). Do not SSH to read `src/` or `docs/`.
 
 **Live runtime data and logs only:** programming agents (and operators) use
-`ops/remote.sh` — SSH **out** only (`Host YOUR_SSH_HOST` in `~/.ssh/config`).
-Binding rule: `.cursor/rules/live-vps.mdc`.
+`ops/remote.sh` — SSH **out** only. Host alias comes from `TRENCHCOAT_SSH_HOST`
+or gitignored `.trenchcoat-local/ssh-host` (see `ops/ssh-host.example`). Do not
+put the alias or the real hostname in git. Binding rule:
+`.cursor/rules/live-vps.mdc`.
+
+One-time on this Mac:
+
+```bash
+mkdir -p .trenchcoat-local
+cp ops/ssh-host.example .trenchcoat-local/ssh-host
+# replace YOUR_SSH_HOST with your SSH config Host alias
+chmod 600 .trenchcoat-local/ssh-host
+```
 
 ```bash
 # From the repo on the Mac
@@ -195,7 +208,7 @@ name. Pass words separately, or wrap a script in `bash -lc`.
 
 `sync` pulls `config.json`, `agent/state/`, `agent/reports/` (≤2 MiB files), and
 a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
-Override host with `TRENCHCOAT_SSH_HOST`.
+`TRENCHCOAT_SSH_HOST` overrides the gitignored local alias file.
 
 ## Ops cheat sheet
 
@@ -219,6 +232,8 @@ Override host with `TRENCHCOAT_SSH_HOST`.
   `trenchcoat auth twitter` / `trenchcoat auth fomo` (headed — needs a display;
   prefer re-rsync profiles from Mac, or SSH `-X` / provider VNC)
 - GramJS session: rsync `telegram-session/` if present
+- Pump.fun session: rsync `pump-profile/storage-state.json` only, or use
+  `./ops/install-pump-session-sync.sh` on the Mac for a 24h catch-up push
 
 ## Security reminders
 

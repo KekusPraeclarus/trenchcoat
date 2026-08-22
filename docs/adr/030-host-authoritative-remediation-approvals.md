@@ -2,6 +2,7 @@
 title: "030 — Host-authoritative Telegram remediation approvals"
 status: accepted
 date: 2026-07-23
+last_verified: 2026-08-18
 ---
 
 # ADR 030: Host-authoritative Telegram remediation approvals
@@ -46,9 +47,8 @@ short briefing in assistant voice with copy-pasteable command lines.
 - Chat agent can no longer “note” an approve without host application when the
   id is recoverable.
 - Approval polish adds a small Cursor ask-session cost on high-risk gates.
-- `tc remediations approve` currently keeps the Node event loop until the
-  in-process worker finishes — background the CLI when chaining multiple
-  approves, or approve then `tc remediations run` separately.
+- Approve kicks a detached `tc remediations run <id>` child. The CLI and
+  Telegram listener return at once.
 
 ## Alternatives considered
 

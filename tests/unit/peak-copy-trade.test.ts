@@ -68,7 +68,7 @@ describe("source peak settle", () => {
       fetchedAt: "2026-07-01T00:00:00.000Z",
       trust: "untrusted-external",
       items: [{
-        provenance: "telegram:alpha",
+        provenance: "twitter:@tester",
         text: `ape ${TOKEN}`,
         ts: "2026-07-01T00:00:00.000Z",
         ageSec: 0,

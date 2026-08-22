@@ -1,0 +1,82 @@
+# trenchcoat gitleaks config. Extends the default rule set.
+title = "trenchcoat"
+
+[extend]
+useDefault = true
+
+# Discord webhooks are not in the default rule set (only Teams/Slack are).
+[[rules]]
+id = "discord-webhook-url"
+description = "Discord inbound webhook URL"
+regex = '''https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[0-9]{17,20}/[A-Za-z0-9_-]{60,100}'''
+keywords = ["discord"]
+
+# Named host credentials, quoted or .env-unquoted. Empty KEY= values do not match.
+[[rules]]
+id = "trenchcoat-env-assignment"
+description = "Non-empty trenchcoat host credential assignment"
+regex = '''(?i)\b((?:CURSOR_API_KEY|HELIUS_API_KEY|INFURA_API_KEY|NEYNAR_API_KEY|TAVILY_API_KEY|BIRDEYE_API_KEY|SOLANATRACKER_API_KEY|GOPLUS_APP_KEY|GOPLUS_APP_SECRET|COINGECKO_DEMO_KEY|TELEGRAM_BOT_TOKEN|TELEGRAM_ROUTER_BOT_TOKEN|TELEGRAM_API_HASH|TRENCHCOAT_ROUTER_TOKEN|TRENCHCOAT_ROUTER_HMAC_KEY|DISCORD_WEBHOOK_URL|DISCORD_RESEARCH_BOT_TOKEN))\s*=[ \t]*['"]?([^\s'"#]{8,})'''
+secretGroup = 2
+keywords = [
+  "cursor_api_key",
+  "helius_api_key",
+  "infura_api_key",
+  "neynar_api_key",
+  "tavily_api_key",
+  "birdeye_api_key",
+  "solanatracker_api_key",
+  "goplus_app",
+  "coingecko_demo_key",
+  "telegram_bot_token",
+  "telegram_router_bot_token",
+  "telegram_api_hash",
+  "trenchcoat_router",
+  "discord_webhook_url",
+  "discord_research_bot_token",
+]
+
+[[rules]]
+id = "trenchcoat-mnemonic-assignment"
+description = "Non-empty FARCASTER_APP_MNEMONIC (12-24 BIP39 words)"
+regex = '''(?i)\bFARCASTER_APP_MNEMONIC[ \t]*=[ \t]*['"]?([a-z]+(?:[ \t]+[a-z]+){11,23})'''
+secretGroup = 1
+keywords = ["farcaster_app_mnemonic"]
+
+[[allowlists]]
+description = "Gitignored local runtime, sync trees, and build output"
+paths = [
+  '''(?:^|/)\.trenchcoat-remote(?:/.*)?$''',
+  '''(?:^|/)\.trenchcoat-local(?:/.*)?$''',
+  '''(?:^|/)node_modules(?:/.*)?$''',
+  '''(?:^|/)dist(?:/.*)?$''',
+  '''(?:^|/)coverage(?:/.*)?$''',
+  '''(?:^|/)archive(?:/.*)?$''',
+  '''(?:^|/)agent/inbox(?:/.*)?$''',
+  '''(?:^|/)agent/alpha-queue(?:/.*)?$''',
+  '''(?:^|/)agent/outbox(?:/.*)?$''',
+  '''(?:^|/)agent/reports(?:/.*)?$''',
+]
+
+# generic-api-key trips on public mint/CA fixtures. Waive only those shapes.
+# A HELIUS_API_KEY assignment in tests/ still fails.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Public mint and pair addresses in tests and docs"
+condition = "AND"
+paths = [
+  '''(?:^|/)tests/''',
+  '''(?:^|/)docs/''',
+]
+regexes = [
+  '''^[1-9A-HJ-NP-Za-km-z]{32,44}$''',
+  '''^0x[a-fA-F0-9]{40}$''',
+  '''^(?:CREDBH|WALLET|LAPSED)[A-Z0-9]{20,}$''',
+  '''^abc[0-9]{20,}$''',
+]
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Truncated fake Privy JWT in pump-auth tests only"
+condition = "AND"
+paths = ['''(?:^|/)tests/unit/pump-auth\.test\.ts$''']
+regexes = ['''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9''']

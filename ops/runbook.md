@@ -14,6 +14,7 @@ same cadences via user systemd — see [linux-vps.md](linux-vps.md)
     ├── pending-research.json  # Telegram research confirm queue (mode 600)
     ├── chat-session.json      # Cursor chat id for operator DMs
     ├── bin/trenchcoat         # launchd wrapper → runtime/ (outside Documents)
+    ├── bin/sync-pump-session  # optional Mac pump session refresh + VPS push
     ├── runtime/               # deployed dist + prod deps (ops/install-launchd.sh)
     ├── backups/               # weekly archive manifests (last-verified.json)
     ├── twitter-profile/       # Twitter burner auth (never in the repo)
@@ -58,6 +59,10 @@ Fomo gates: `pnpm fomo:install-gates` (default seed fails closed). Shadow playbo
 Pump gates: `pnpm pump:install-gates` (default seed fails closed). Rollout playbook:
 [ops/fafo-pump/SHADOW-CANARY.md](fafo-pump/SHADOW-CANARY.md). Auth: `pnpm dev:cli auth pump`.
 Session sync and VPS smoke: same doc § One-time VPS bootstrap.
+Optional Mac LaunchAgent `com.trenchcoat.pump-session-sync` refreshes the
+burner session and pushes `storage-state.json` to the VPS. Install with
+`./ops/install-pump-session-sync.sh`. It uses `RunAtLoad` plus 24h. It does
+not load production Mac collectors.
 | `review` | daily 07:00 — path-only sealed report + alpha manifests; skips when no reports, pending alpha, or watchlist scope |
 | `audit` | weekly Mon 06:00 |
 | `harness-improve` | weekly recovery timer **and** success-only non-blocking kick after scheduled `audit` exits 0 (install scripts only; default on; `--without-harness` opts out) — plan/review/build, push `origin/main` + local ff, runtime deploy; never activates agent or starts canary. Typed readiness deferrals are skips, not successes (`tc harness status`, `tc status`) |

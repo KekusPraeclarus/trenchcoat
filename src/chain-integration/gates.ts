@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { writeAtomicFileFsync, sha256Bytes } from "../lib/fs-atomic.js"
+import { listDirtyWorktreeFiles, scanWorktreeSecrets } from "../lib/secret-scan.js"
 import { ensureWorktreeDeps } from "../lib/worktree-deps.js"
 import { probeCursorCli } from "../orchestrator/session.js"
 
@@ -52,42 +52,14 @@ export async function runCleanGate(args: Readonly<{
   const diffCheck = run(args.worktreePath, "git", ["diff", "--check"], 30_000)
   steps.push({ name: "git-diff-check", ...diffCheck })
 
-  // Secret scan over changed files
-  const changed = spawnSync(
-    "git",
-    ["diff", "--name-only", "HEAD"],
-    { cwd: args.worktreePath, encoding: "utf8" },
-  )
-  const untracked = spawnSync(
-    "git",
-    ["ls-files", "--others", "--exclude-standard"],
-    { cwd: args.worktreePath, encoding: "utf8" },
-  )
-  const files = [
-    ...(changed.stdout ?? "").split("\n"),
-    ...(untracked.stdout ?? "").split("\n"),
-  ].map((s) => s.trim()).filter(Boolean)
-  let secretOk = true
-  let secretDetail = ""
-  const secretRe = /(PRIVATE_KEY|SECRET_KEY|API_KEY|BOT_TOKEN)\s*=\s*['"][^'"]+['"]/u
-  for (const rel of files) {
-    const abs = join(args.worktreePath, rel)
-    if (!existsSync(abs)) continue
-    try {
-      const text = readFileSync(abs, "utf8")
-      if (secretRe.test(text)) {
-        secretOk = false
-        secretDetail = `secret-like assignment in ${rel}`
-        break
-      }
-    } catch {
-      // ignore unreadable
-    }
-  }
+  const secret = scanWorktreeSecrets({
+    worktreePath: args.worktreePath,
+    files: listDirtyWorktreeFiles(args.worktreePath),
+  })
   steps.push({
     name: "secret-scan",
-    ok: secretOk,
-    ...(secretDetail ? { detail: secretDetail } : {}),
+    ok: secret.ok,
+    detail: secret.ok ? secret.engine : (secret.detail ?? secret.engine),
   })
 
   if (!args.skipFullTests) {

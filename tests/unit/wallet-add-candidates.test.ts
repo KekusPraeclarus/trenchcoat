@@ -55,7 +55,7 @@ describe("operator wallet add-candidates", () => {
     const result = addOperatorNominatedCandidates(file, [
       { chain: "solana", address: SOL },
       { chain: "robinhood", address: ROBINHOOD },
-      { chain: "ethereum", address: "0x742d35cc6634c0532925a3b844bc454e4438f44e" },
+      { chain: "ethereum", address: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
     ], NOW)
     expect(result.added).toBe(1)
     expect(result.skippedExisting).toBe(1)

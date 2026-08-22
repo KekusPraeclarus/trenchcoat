@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { spawn } from "node:child_process"
 import { loadDotEnv } from "./lib/dotenv.js"
 import { ConfigSchema } from "./lib/config.js"
-import { migrateConfigToV14 } from "./migrations/config.js"
+import { migrateConfigToV28 } from "./migrations/config.js"
 import { runJob } from "./orchestrator/run.js"
 import { getJob, JOBS } from "./orchestrator/jobs.js"
 import { runPreflight } from "./lib/preflight.js"
@@ -83,6 +83,8 @@ Commands:
   auth twitter [--create-managed-list] [--headed]
   auth fomo [--headed]
   auth pump [--headed]
+  auth pump --status
+  auth pump --refresh [--headed]
   auth pump --import <storage-state.json>
   auth pump --import-cookies <json> [--import-local-storage <json>]
   auth pump --import-cookie-header <file> [--import-local-storage <json>]
@@ -118,7 +120,7 @@ async function cmdInit(seedPath?: string, operatorSeedPath?: string): Promise<vo
   mkdirSync(destDir, { recursive: true, mode: 0o700 })
   const seed = seedPath ?? join(process.cwd(), "config/seed.example.json")
   const raw = JSON.parse(readFileSync(seed, "utf8")) as unknown
-  const cfg = ConfigSchema.parse(migrateConfigToV14(raw))
+  const cfg = ConfigSchema.parse(migrateConfigToV28(raw))
   writeFileSync(join(destDir, "config.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 })
   const agentSrc = join(process.cwd(), "agent")
   const agentDest = join(destDir, "agent")
@@ -1508,7 +1510,40 @@ async function main(): Promise<void> {
         const cookieHeaderPath = flagValue(flags, "--import-cookie-header")
         const cookieDomain = flagValue(flags, "--cookie-domain")
         const localStoragePath = flagValue(flags, "--import-local-storage")
-        if (storageStatePath || cookiesPath || cookieHeaderPath || localStoragePath) {
+        const wantStatus = flags.includes("--status")
+        const wantRefresh = flags.includes("--refresh")
+        if (wantStatus && wantRefresh) usage()
+        if ((wantStatus || wantRefresh) && (
+          storageStatePath || cookiesPath || cookieHeaderPath || localStoragePath
+        )) {
+          usage()
+        }
+        if (wantStatus) {
+          const { inspectPumpSession } = await import("./collectors/social/pump-auth.js")
+          const result = inspectPumpSession()
+          console.log(`session → ${result.path}`)
+          console.log(
+            `looks_authed=${result.looksAuthed} cookies=${result.cookieCount}`
+              + ` identity_cookies=${result.identityCookieCount}`
+              + ` localStorage=${result.localStorageCount}`,
+          )
+        } else if (wantRefresh) {
+          const { refreshPumpSession } = await import("./collectors/social/pump-auth.js")
+          const result = await refreshPumpSession({
+            headless: !flags.includes("--headed"),
+          })
+          console.log(`session → ${result.path}`)
+          console.log(
+            `looks_authed=${result.looksAuthed} wrote=${result.wrote}`
+              + ` cookies=${result.cookieCount}`
+              + ` identity_cookies=${result.identityCookieCount}`
+              + ` localStorage=${result.localStorageCount}`,
+          )
+          if (!result.looksAuthed) {
+            console.warn("warning: refresh left no Privy identity token — re-import the burner")
+            process.exitCode = 2
+          }
+        } else if (storageStatePath || cookiesPath || cookieHeaderPath || localStoragePath) {
           const { importPumpSession } = await import("./collectors/social/pump-auth.js")
           const result = await importPumpSession({
             ...(storageStatePath ? { storageStatePath } : {}),

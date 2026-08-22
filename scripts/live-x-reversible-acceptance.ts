@@ -9,9 +9,13 @@ const statePath = join(agentRoot, "state", "x-engagement.json")
 const prior = JSON.parse(readFileSync(statePath, "utf8")) as {
   followedHandles: string[]
 }
-const target = "example_handle"
+const target = (process.env["LIVE_X_REVERSIBLE_HANDLE"] ?? "").trim().toLowerCase()
+if (!target) {
+  console.error("ABORT: set LIVE_X_REVERSIBLE_HANDLE to a same-run followed handle")
+  process.exit(2)
+}
 if (!prior.followedHandles.map((h) => h.toLowerCase()).includes(target)) {
-  console.error("ABORT: no same-run eligible followed handle to reverse — expected example_handle")
+  console.error("ABORT: no same-run eligible followed handle to reverse")
   process.exit(2)
 }
 
@@ -28,7 +32,7 @@ const mk = (action: "follow" | "unfollow") => ({
   decidedAt: nowIso,
 })
 
-console.log("snapshot prior followed:", prior.followedHandles)
+console.log("snapshot prior followed count:", prior.followedHandles.length)
 const unfollow = await executeEngagementActions({
   accepted: [mk("unfollow")],
   nowIso,

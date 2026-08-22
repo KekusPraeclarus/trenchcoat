@@ -15,7 +15,8 @@ initiates only — SSH out, never VPS → Mac. Do not open router `:8787` public
 
 ## Default tool (live data only)
 
-Use `ops/remote.sh` (host `YOUR_SSH_HOST`, override `TRENCHCOAT_SSH_HOST`).
+Use `ops/remote.sh`. Host alias comes from `TRENCHCOAT_SSH_HOST` or
+gitignored `.trenchcoat-local/ssh-host` (`ops/ssh-host.example`).
 
 | Need | Command |
 |---|---|

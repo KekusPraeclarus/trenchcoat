@@ -22,7 +22,7 @@ const signingBanned = /\b(ethers|viem|@solana\/web3\.js|web3\.js|bitcoinjs|wagmi
 const signingAllowlist = new Set([
   "src/collectors/farcaster/signer.ts",
 ])
-const secretish = /(CURSOR_API_KEY|TELEGRAM_BOT_TOKEN|TRENCHCOAT_ROUTER_TOKEN|PRIVATE_KEY|SECRET_KEY)\s*=\s*['"][^'"]+['"]/
+const secretish = /(CURSOR_API_KEY|TELEGRAM_BOT_TOKEN|TRENCHCOAT_ROUTER_TOKEN|TRENCHCOAT_ROUTER_HMAC_KEY|DISCORD_WEBHOOK_URL|DISCORD_RESEARCH_BOT_TOKEN|FARCASTER_APP_MNEMONIC|PRIVATE_KEY|SECRET_KEY|API_KEY)\s*=\s*(?:['"][^'"]+['"]|[^\s'"#]+)/
 
 for (const file of files) {
   const rel = relative(root, file)

@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+We are pushing directly to production.
+
+Make sure to account for this before commiting any code.
+
+Always make sure the assurance harness has passed green before commiting anything.
+
+Always make sure architecture, comments, and code style are up to standard.
+
+Always make sure temorary mds are purged.
+
+Always make sure secrets are not exposed.
+
+YOLO.

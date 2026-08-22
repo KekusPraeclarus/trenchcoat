@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-08-22
 ---
 
 # X / Twitter (Playwright)
@@ -11,6 +11,8 @@ last_verified: 2026-08-17
 
 - Path: `~/.trenchcoat/twitter-profile/` (not under `agent/`, not in the repo)
 - Create/refresh: `pnpm dev:cli auth twitter` (headed; operator completes login)
+- Auth waits for the home timeline UI. An existing `auth_token` cookie does
+  not close the window. `/account/access` and login/challenge URLs stay open.
 - Session marker: `storage-state.json` mode 600; scrapes refuse without it
 - Challenges → fail closed with re-auth instruction; never auto-solve
 

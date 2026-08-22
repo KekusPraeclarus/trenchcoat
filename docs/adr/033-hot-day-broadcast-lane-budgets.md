@@ -1,12 +1,16 @@
 ---
 title: "033 — Hot-day broadcast lane budgets (Discord 100 / Telegram overview 50)"
-status: accepted
+status: deprecated
 date: 2026-07-23
-last_verified: 2026-07-23
-superseded_in_part_by: "041-unified-broadcast-fanout.md"
+last_verified: 2026-08-18
+superseded_by: "041-unified-broadcast-fanout.md"
 ---
 
-# ADR 033: Hot-day broadcast lane budgets
+# ADR 033: Hot-day broadcast lane budgets (deprecated)
+
+Discord `daily_budget`, `urgent_ceiling`, `discord_distiller`, and run-dedupe no longer exist.
+ADR 041 removed those paths. Telegram topic distill still uses `broadcast.telegram_overview.daily_cap`
+plus ADR 034 LLM fractions.
 
 ## Context
 

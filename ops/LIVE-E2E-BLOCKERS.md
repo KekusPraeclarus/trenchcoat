@@ -1,4 +1,9 @@
-# Live E2E blockers (updated 2026-07-20)
+# Live E2E blockers (updated 2026-08-18)
+
+## Phase status
+
+Phase 0–3 of the 2026-07-18 audit roadmap is done. There is no numbered Phase 4.
+Further work is remaining PARTIAL invariants and live ops. Detail below.
 
 Offline gates (`pnpm test:all`) pass. Credential preflight and live market/gate
 smokes run under `TRENCHCOAT_LIVE_E2E=1` when `.env` is loaded.
@@ -9,7 +14,7 @@ smokes run under `TRENCHCOAT_LIVE_E2E=1` when `.env` is loaded.
 
 - Env synced: `ops/install-launchd.sh --sync-env` copied `TAVILY_API_KEY` (and
   the rest of `.env`) into `~/.trenchcoat/env` at mode 600, atomically.
-- Managed X list created: `list_id 1111111111111111111` (name `trenchcoat-sources`).
+- Managed X list created. The live `list_id` stays in host config, not git.
 - launchd units running after redeploy: broadcast router, Telegram listener, and
   the alpha-channel poller (`com.trenchcoat.router` / `.listener` / `.channels`).
 - Telegram preview cursor acceptance confirmed (advanced cursor, no duplicate on
@@ -89,7 +94,7 @@ and historical archives stay in place for a later opt-in.
 
 ### Why
 
-Neynar for-you for bot the bot FID is stuck on **two future-dated junk
+Neynar for-you for the bot FID is stuck on **two future-dated junk
 casts** (no cursor): `@greg` `2061-09-12` (“time traveling”) and `@akimaru`
 `2076-05-04` (“Hello world!!”). Host correctly expires future timestamps →
 `repeated_two_hash_stale` → `engagementDisabled`. Signer stayed `approved`;
@@ -130,7 +135,7 @@ fallback kept the agent on as analysis-only noise — not recovery.
   - `pnpm dev:cli x-engagement dry-run <run-id>`
 - Scheduling real live jobs (list-scan, research, chat confirmations)
 - Residual X follow edge cases — Phase 3C live-verified follow
-  (`example_handle` on `list-scan-2026-07-18T18-36-02-564Z`); some profiles may
+  (live follow on `list-scan-2026-07-18T18-36-02-564Z`); some profiles may
   still hit `account_not_followable` or `pending_duplicate` (INV-S22)
 - Live isolation (`TRENCHCOAT_LIVE_ISOLATION=1`) operator-green 2026-07-18:
   escape write-block, network-deny, and prompt-injection probes all passed.

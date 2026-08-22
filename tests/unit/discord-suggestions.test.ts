@@ -22,6 +22,7 @@ import {
 import type { DiscordHistoryMessage } from "../../src/discord/bot-client.js"
 import {
   migrateConfigToV17,
+  migrateConfigToV26,
   migrateConfigToV28,
   DISCORD_SUGGESTIONS_V17_DEFAULTS,
 } from "../../src/migrations/config.js"

@@ -2,7 +2,7 @@
 title: "032 — Peak shill returns and copy-trade wallet/Fomo P&L"
 status: accepted
 date: 2026-07-23
-last_verified: 2026-07-23
+last_verified: 2026-08-18
 ---
 
 # ADR 032: Peak shill returns and copy-trade wallet/Fomo P&L
@@ -49,7 +49,8 @@ quality scores.
    contribute to trader scores — never invented losses.
 
 4. **`outcomes-settle`** runs: horizon diagnostics → source peaks → wallet
-   horizon diagnostics → wallet copy-trade → Fomo copy-trade → ledger settle.
+   horizon diagnostics → wallet copy-trade → Fomo copy-trade → pump calls
+   → ledger settle.
 
 ## Alternatives considered
 

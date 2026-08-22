@@ -21,22 +21,28 @@ export async function ensureTwitterProfileDir(): Promise<string> {
   return dir
 }
 
+export function isTwitterAuthBlockedUrl(url: string): boolean {
+  return /\/i\/flow\/login|\/account\/access|challenge/iu.test(url)
+}
+
+export function twitterAuthHomeReady(args: Readonly<{
+  url: string
+  homeUiCount: number
+}>): boolean {
+  if (args.homeUiCount <= 0) return false
+  if (isTwitterAuthBlockedUrl(args.url)) return false
+  return /(?:x|twitter)\.com\/home(?:[/?#]|$)/iu.test(args.url)
+}
+
 async function waitForLoggedIn(context: BrowserContext, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     for (const page of context.pages()) {
       const url = page.url()
-      if (/x\.com\/(home|i\/flow\/login)/u.test(url) || /twitter\.com\/(home|i\/flow\/login)/u.test(url)) {
-        const home = await page.locator('[data-testid="AppTabBar_Home_Link"]').count().catch(() => 0)
-        const primary = await page.locator('[data-testid="primaryColumn"]').count().catch(() => 0)
-        const compose = await page.locator('[data-testid="SideNav_NewTweet_Button"]').count().catch(() => 0)
-        if (home + primary + compose > 0 && !url.includes("/i/flow/login")) {
-          return
-        }
-      }
-      // cookie presence is a strong signal even if UI is slow
-      const cookies = await context.cookies("https://x.com")
-      if (cookies.some((c) => c.name === "auth_token" && c.value.length > 10)) {
+      const home = await page.locator('[data-testid="AppTabBar_Home_Link"]').count().catch(() => 0)
+      const primary = await page.locator('[data-testid="primaryColumn"]').count().catch(() => 0)
+      const compose = await page.locator('[data-testid="SideNav_NewTweet_Button"]').count().catch(() => 0)
+      if (twitterAuthHomeReady({ url, homeUiCount: home + primary + compose })) {
         return
       }
     }
@@ -62,8 +68,10 @@ export async function authTwitterInteractive(): Promise<void> {
   console.log("Opening headed Chromium for X/Twitter burner login.")
   console.log(`Profile: ${dir}`)
   console.log("1. Log in to the burner account in the browser window")
-  console.log("2. Wait until you see the home timeline")
-  console.log("3. This command saves the session automatically (up to 10 minutes)")
+  console.log("2. Complete any account-access or Cloudflare check")
+  console.log("3. Wait until you see the home timeline")
+  console.log("4. This command saves only after the home UI is visible (up to 10 minutes)")
+  console.log("   An existing auth_token cookie does not close the window.")
   console.log("")
 
   const context = await chromium.launchPersistentContext(dir, {

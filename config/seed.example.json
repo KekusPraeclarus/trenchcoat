@@ -144,9 +144,7 @@
     "managed_list": {
       "name": "trenchcoat-sources",
       "description": "Sources promoted by trenchcoat",
-      "capacity": 250,
-      "list_id": "1111111111111111111",
-      "list_url": "https://x.com/i/lists/1111111111111111111"
+      "capacity": 250
     },
     "source_lifecycle": {
       "review_interval_hours": 24,

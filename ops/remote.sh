@@ -10,11 +10,12 @@
 #   ops/remote.sh -- 'tail -50 /tmp/trenchcoat.x-scan.err.log'
 #   ops/remote.sh sync
 #
-# Override host: TRENCHCOAT_SSH_HOST=other ops/remote.sh status
+# Host: TRENCHCOAT_SSH_HOST, else gitignored .trenchcoat-local/ssh-host.
 set -euo pipefail
 
-HOST="${TRENCHCOAT_SSH_HOST:-}"
 REPO_ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+# shellcheck source=ops/load-ssh-host.sh
+. "$REPO_ROOT/ops/load-ssh-host.sh"
 SYNC_DIR="$REPO_ROOT/.trenchcoat-remote"
 
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10)
@@ -75,7 +76,7 @@ ops/remote.sh — live VPS access (desktop SSH out only)
   ops/remote.sh -- <shell>          arbitrary remote command (env sourced)
   ops/remote.sh sync                pull non-secret state into .trenchcoat-remote/
 
-Host: $TRENCHCOAT_SSH_HOST (set TRENCHCOAT_SSH_HOST)
+Host: TRENCHCOAT_SSH_HOST, or gitignored .trenchcoat-local/ssh-host.
 Never copies env, browser profiles, or session material.
 EOF
 }
@@ -83,6 +84,12 @@ EOF
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   usage
   exit 0
+fi
+
+if [ -z "$HOST" ]; then
+  echo "set TRENCHCOAT_SSH_HOST, or write your SSH Host alias to .trenchcoat-local/ssh-host" >&2
+  echo "see ops/ssh-host.example" >&2
+  exit 2
 fi
 
 if [ "${1:-}" = "health" ]; then

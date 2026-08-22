@@ -1,0 +1,3 @@
+# Copy to .trenchcoat-local/ssh-host (gitignored).
+# One SSH config Host alias. No hostname. No user. No key path.
+YOUR_SSH_HOST

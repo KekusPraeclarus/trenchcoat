@@ -36,7 +36,7 @@ describe("runOutcomesSettle", () => {
       fetchedAt: OLD,
       trust: "untrusted-external",
       items: [{
-        provenance: "telegram:alpha",
+        provenance: "twitter:@tester",
         text: `ape ${TOKEN} entry now`,
         ts: OLD,
         ageSec: 0,

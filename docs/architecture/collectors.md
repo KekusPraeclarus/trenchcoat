@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-08-22
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -60,6 +60,8 @@ Leaderboard rows keep handles only. The agent proposes like/follow/unfollow.
 The host applies those choices after the scrape. Calls archive to
 `archive/outcomes/pump-call-*.json`. They never enter `source-call-log.jsonl`.
 Profile ids never enter `wallets.json`. Shadow mode is the default.
+The Mac can refresh the burner session and push `storage-state.json` with
+`ops/install-pump-session-sync.sh`. That agent is not a collector.
 Knowledge: [pump-fun.md](../knowledge/pump-fun.md).
 FAFO status: [ops/fafo-pump/REPORT.md](../../ops/fafo-pump/REPORT.md).
 Rollout: [ops/fafo-pump/SHADOW-CANARY.md](../../ops/fafo-pump/SHADOW-CANARY.md).
@@ -81,7 +83,8 @@ ADR: [035-discord-wallet-signal-confluence.md](../adr/035-discord-wallet-signal-
   `agent/` — the directory name is **not** `browser-profile`)
 - Headless by default; when login or a challenge is detected, fail the run with a
   clear "needs headful re-auth" error — the operator runs `trenchcoat auth twitter`
-  to fix it interactively. Never attempt automated challenge solving.
+  to fix it interactively. Auth waits for the home timeline UI; an existing
+  cookie does not close the window. Never attempt automated challenge solving.
 - Scrape targets: token search results (research job), FYP, exactly two immutable
   operator lists, and one bot-managed private source list
 - **Research token search** — confirmed operator / queue research runs a bounded

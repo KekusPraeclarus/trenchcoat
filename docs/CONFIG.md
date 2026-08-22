@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-08-18
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -183,7 +183,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "worthiness": { "enabled": true, "model": "composer-2.5-fast" },
     "feedback": {
       "enabled": false,
-      "channel_id": "1000000000000000003",
+      "channel_id": "1000000000000000002",
       "followup_ttl_hours": 72,
       "followup_model": "composer-2.5-fast",
       "history_days": 30,
@@ -579,12 +579,14 @@ application is not wired yet — only wallets are applied today.
 | `tc fc-source seed <path> [--dry-run]` | operator seed for FC managed follows (`config/fc-source-seed.example.json`) |
 | `tc fc-source sync [--dry-run]` | apply desired follow graph with verification receipt |
 | `tc fc-engagement status` / `dry-run <run-id>` | FC like engagement probe |
-| `tc init [--seed <config>] [--operator-seed <file>]` | writes `~/.trenchcoat/config.json` from config seed; optional operator wallet seed |
+| `tc init [--seed <config>] [--operator-seed <file>]` | writes `~/.trenchcoat/config.json` from config seed via `migrateConfigToV28`; optional operator wallet seed |
 | `tc wallets seed <file>` | operator-seed wallets into empty `state/wallets.json` |
 | `tc wallets add-candidates <file> [--dry-run]` | merge operator-nominated candidates into existing wallet state |
 | `tc auth twitter` | headful interactive re-auth (documented sandbox exception) |
 | `tc auth fomo` | headful burner login for fomo.family |
 | `tc auth pump [--headed]` | headful burner login for pump.fun; press Enter after login |
+| `tc auth pump --status` | print cookie and localStorage counts; never print values |
+| `tc auth pump --refresh [--headed]` | revisit pump.fun and write the session only when it still looks authenticated |
 | `tc auth pump --import <storage-state.json>` | copy a local Playwright session file; never paste cookies into chat |
 | `tc auth pump --import-cookie-header <file> [--import-local-storage <json>]` | build the session from a DevTools Cookie header plus localStorage |
 | `tc pump-engagement status` / `dry-run <run-id>` | Pump like/follow probe |

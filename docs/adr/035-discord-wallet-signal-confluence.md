@@ -21,8 +21,9 @@ coupling to host smart-wallet state (`wallets.json` / wallet-scan).
    every 5m via `DISCORD_RESEARCH_BOT_TOKEN` (Read Message History only; never
    Send). Gateway research listener early-ignores `wallet_signals.channel_ids`.
 2. **Config:** `chat.discord.wallet_signals` (schema **20**). Seed enables with
-   Solana `1000000000000000003` and EVM `1000000000000000004`, `shadow_mode:
-   true`. Channels must be disjoint from `chat.discord.channel_ids`.
+   placeholder Solana and EVM channel ids, `shadow_mode: true`. Channels must be
+   disjoint from `chat.discord.channel_ids`. Put live ids only in
+   `~/.trenchcoat/config.json`.
 3. **Parse:** allowlisted grammars from
    [discord-wallet-alert-schemas.md](../knowledge/discord-wallet-alert-schemas.md).
    Confluence requires `tokenContract` + `side` buy/sell + `confidence` high|medium.

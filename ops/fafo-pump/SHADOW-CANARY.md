@@ -41,7 +41,7 @@ Push `main`, then on the VPS:
 ~/bin/trenchcoat-deploy
 ```
 
-Confirm `trenchcoat status` shows `configSchema=27`, `runtime=27`, and
+Confirm `trenchcoat status` shows `configSchema=28`, `runtime=28`, and
 `pump: enabled=… shadow=…`.
 
 ### 2. Copy burner session
@@ -51,13 +51,23 @@ On the **Mac** (after local smoke passes):
 ```bash
 ssh "$TRENCHCOAT_SSH_HOST" 'mkdir -p ~/.trenchcoat/pump-profile && chmod 700 ~/.trenchcoat/pump-profile'
 rsync -a ~/.trenchcoat/pump-profile/storage-state.json \
-  "$TRENCHCOAT_SSH_HOST:~/.trenchcoat/"pump-profile/
+  "$TRENCHCOAT_SSH_HOST:~/.trenchcoat/pump-profile/"
 ssh "$TRENCHCOAT_SSH_HOST" 'chmod 600 ~/.trenchcoat/pump-profile/storage-state.json'
 ```
 
 Copy `storage-state.json` only. Do not rsync import files or Chrome profile
 dirs. Re-import on the Mac with `pnpm dev:cli auth pump --import-*` when the
 session expires, then repeat the rsync.
+
+To refresh and push on a 24h catch-up timer without loading Mac collectors:
+
+```bash
+./ops/install-pump-session-sync.sh
+```
+
+`RunAtLoad` runs the job at login if the Mac missed the 24h mark. The job
+skips the VPS push when the session is not authenticated. A dead session
+still needs a fresh browser export. See [docs/knowledge/pump-fun.md](../../docs/knowledge/pump-fun.md).
 
 ### 3. Enable shadow config
 

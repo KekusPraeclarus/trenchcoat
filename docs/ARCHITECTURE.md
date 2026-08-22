@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-18
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -101,12 +101,12 @@ research queue or router webhook broadcasts. See
 trenchcoat/                   # folder currently named trench-bot; rename pending
 ├── AGENTS.md                 # dev-world rules incl. the doc boundary (read it)
 ├── docs/                     # DEVELOPER docs — never mounted into agent/
-│   ├── README.md             # context map, start here
+│   ├── README.md             # developer context map (setup lives in root README.md)
 │   ├── TECHNICAL-SPEC.md
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–047 (no 008)
+│   ├── adr/                  # binding decisions 001–048 (no 008)
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
@@ -157,10 +157,10 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 
 ## System boundaries
 
-1. **Sandbox boundary** — the runtime agent's process is confined to `agent/` by
-   Cursor's OS-level sandbox, with no network. It cannot read `src/`, `docs/`,
-   credentials, or the browser profile. Inputs arrive via inbox and alpha queue;
-   outputs leave only when host-side code picks them up.
+1. **Sandbox boundary** — the runtime agent's process uses Cursor `--sandbox enabled`.
+   Writes outside `agent/` are blocked. Outside reads still succeed on the current CLI
+   (INV-I1 PARTIAL). Keep secrets out of the child env. Never put secrets under `agent/`.
+   Inputs arrive via inbox and alpha queue. Outputs leave only when host-side code picks them up.
 2. **Data-trust boundary** — tweets, Telegram alpha messages, token names, and
    scraped web content are attacker-controlled (alpha channels especially: shill
    pressure is the norm, not the exception). Collectors label them as data with

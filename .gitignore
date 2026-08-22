@@ -1,21 +1,91 @@
+# trenchcoat — what stays out of a public clone.
+# Empty agent/state scaffold files stay tracked. Runtime writes do not.
+
+# Dependencies and build
 node_modules/
-coverage/
 dist/
+coverage/
 *.tsbuildinfo
-.DS_Store
+.pnpm-store/
+.turbo/
+.vite/
+
+# Secrets and local env (keep .env.example)
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+storage-state.json
+**/storage-state.json
+
+# OS and editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Cursor local caches. Shared rules stay tracked.
+.cursor/**
+!.cursor/rules/
+!.cursor/rules/**
+
+# Agent runtime (skills, AGENTS.md, sandbox.json, empty state stay tracked)
+agent/.lock
+agent/.tmp-denied/
 agent/inbox/
 agent/alpha-queue/
 agent/outbox/
 agent/reports/
+agent/state/research/
+agent/state/alpha-acks/
+agent/state/narratives/*
+!agent/state/narratives/log.jsonl
+agent/state/scorecard.json
+agent/state/fc-*.json
+agent/state/pump-*.json
+agent/state/fomo-*.json
 agent/state/x-bot-health.json
-agent/.lock
-*.sqlite3
-*.sqlite3-*
+agent/state/x-source-nominations.json
+agent/state/x-narrative-sources.json
+agent/state/social-cashtag-clusters.json
+
+# Host-only local trees (never in a clone)
 .trenchcoat-local/
 .trenchcoat-remote/
-agent/.tmp-denied/
 archive/
+
+# Operator-only seeds and live gate dumps (keep *.example.json and gates.seed.json)
+config/operator-candidates*.json
+ops/**/gates.operator-override*.json
+ops/**/gates.shadow-live.json
+ops/NOTES.md
+
+# Logs and local databases
 *.log
+*.sqlite3
+*.sqlite3-*
+pnpm-debug.log*
+npm-debug.log*
+
+# Test and scanner dumps
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+gitleaks-report.*
+*.sarif
+
+# Scratch
+tmp/
+.tmp/
+*.orig
+*.rej

@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-18
 ---
 
 # Incident remediation
@@ -36,8 +36,8 @@ claim-index writes take a brief agent lock only for that mutation.
    It deletes leftover `diff-summary.json` / `gate.json` / `post-review.json`.
    Then diagnose → propose → pre-review → risk/approval → build in
    isolated worktree → post-diff review → **`pnpm install --frozen-lockfile`**
-   (sibling worktrees do not inherit `node_modules`) → gates (`typecheck` /
-   `lint` / `test:all`) → ff-only push →
+   (sibling worktrees do not inherit `node_modules`) → gates (`secret-scan` via
+   gitleaks, `typecheck`, `lint`, `test:all`) → ff-only push →
    deploy via `install-systemd.sh` on Linux or `install-launchd.sh` on macOS →
    smoke → revert+`runtime.prev` on failure. Diagnose/propose/review
    Cursor sessions use **ask** mode ([ADR 029](../adr/029-remediation-propose-ask-mode.md));

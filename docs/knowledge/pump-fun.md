@@ -2,7 +2,7 @@
 description: pump.fun authenticated SPA scrape for FYP/Top/News/Following feed curation, leaderboard, and call-chart evidence. Burner-only. No wallets.
 scope: knowledge
 status: active
-last_verified: 2026-08-13
+last_verified: 2026-08-17
 source: https://pump.fun
 read_when:
   - Implementing or debugging the pump.fun collector, pump-scan, or pump engagement.
@@ -87,6 +87,46 @@ pnpm dev:cli auth pump --import-cookie-header ~/.trenchcoat/pump-profile/import-
 
 The host writes `~/.trenchcoat/pump-profile/storage-state.json` mode 600. It
 prints cookie counts only. It never prints values.
+
+Check the saved session without printing values:
+
+```bash
+pnpm dev:cli auth pump --status
+```
+
+`looks_authed` is true when a Privy identity cookie exists, or when Privy
+tokens remain in localStorage. Cookie-only checks miss a refreshable session.
+
+Revisit pump.fun so Privy can mint fresh cookies from those tokens:
+
+```bash
+pnpm dev:cli auth pump --refresh
+```
+
+The host writes the file only when the session still looks authenticated.
+
+## Mac → VPS session sync
+
+Production `pump-scan` runs on the VPS. The Mac can refresh the burner
+session and push `storage-state.json` only.
+
+```bash
+./ops/install-pump-session-sync.sh
+```
+
+That loads `com.trenchcoat.pump-session-sync` only. It does not load
+production Mac collectors. The agent uses `RunAtLoad` plus a 24h interval.
+If the Mac is off, the job runs at the next login. A late run is fine.
+
+Manual one-shot:
+
+```bash
+~/.trenchcoat/bin/sync-pump-session
+```
+
+The job copies `storage-state.json` only. It does not copy import files.
+It skips the VPS push when the session is not authenticated. A dead
+session still needs a fresh browser export and `auth pump --import-*`.
 
 ## Pitfalls
 

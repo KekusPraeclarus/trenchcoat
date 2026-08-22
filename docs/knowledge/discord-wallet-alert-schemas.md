@@ -71,7 +71,7 @@ Unrecognized → **drop** (do not invent side).
 Telegram source:
 
 ```
-#@game_for_one SOL by KP
+#@trader_one SOL by KP
 🟢 Swapped 500 #USDT ($500) for 357.39K #SQUIRE On #OKX @ MC: $1.4m | Age: 125d
 Token: EN2nnxrg8uUi6x2sJkzNPd2eT6rB9rdSoQNNaENA4RZA
 #solana | 📊Trade | ViewTx | Wallet | Chart
@@ -80,7 +80,7 @@ Token: EN2nnxrg8uUi6x2sJkzNPd2eT6rB9rdSoQNNaENA4RZA
 Discord embed description (approx):
 
 ```
-#@game_for_one SOL by KP
+#@trader_one SOL by KP
 Swapped 500 USDT ($500) for 357.39K SQUIRE On OKX @ MC: $1.4m | Age: 125d
 Token: EN2nnxrg8uUi6x2sJkzNPd2eT6rB9rdSoQNNaENA4RZA
 solana | [📊Trade](<…>) | [ViewTx](<…>) | [Wallet](<…>) | [Chart](<…>)
@@ -91,7 +91,7 @@ Parse →
 ```json
 {
   "parser": "cielo_swap",
-  "actor": "@game_for_one SOL by KP",
+  "actor": "@trader_one SOL by KP",
   "chain": "solana",
   "side": "buy",
   "tokenContract": "EN2nnxrg8uUi6x2sJkzNPd2eT6rB9rdSoQNNaENA4RZA",
@@ -110,7 +110,7 @@ Parse →
 ### Example B — EVM sell (🔴 → red sidebar `0xed4245`)
 
 ```
-#game_for_one by KP
+#trader_one by KP
 ⭐️ 🔴 Swapped 8.73 #HTK ($728.88) for 0.38 #WETH On #UniswapV3 @ $83.52 | Age: 3687d
 Token: 0xe5544a2a5fa9b175da60d8eec67add5582bb31b0
 #ethereum | Cielo | ViewTx | Chart | X
@@ -119,7 +119,7 @@ Token: 0xe5544a2a5fa9b175da60d8eec67add5582bb31b0
 Discord (approx):
 
 ```
-game_for_one by KP
+trader_one by KP
 ⭐️ Swapped 8.73 HTK ($728.88) for 0.38 WETH On UniswapV3 @ $83.52 | Age: 3687d
 Token: 0xe5544a2a5fa9b175da60d8eec67add5582bb31b0
 ethereum | [Cielo](<…>) | [ViewTx](<…>) | [Chart](<…>) | [X](<…>)

@@ -2,6 +2,7 @@
 title: "026 — Daily Telegram digest and topic-only intraday posts"
 status: accepted
 date: 2026-07-22
+last_verified: 2026-08-18
 ---
 
 # ADR 026: Daily Telegram digest and topic-only intraday posts
@@ -46,10 +47,8 @@ still-staged candidates. Reworded same-catalyst rejects; genuinely new
 same-subject developments remain eligible. Outbox envelopes are capped at eight
 items per run.
 
-Discord behavior is unchanged.
-
-> **Update (ADR 041):** Discord now forwards the same rendered text as Telegram.
-> Digest window anchor moved to 04:00 Europe/London.
+> **Update (ADR 041):** Discord forwards the same rendered text as Telegram.
+> Digest window anchor is 04:00 Europe/London.
 
 ## Consequences
 

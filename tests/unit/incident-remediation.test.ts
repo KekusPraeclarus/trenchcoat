@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   migrateConfigToV13,
+  migrateConfigToV26,
   migrateConfigToV28,
   INCIDENT_REMEDIATION_V13_DEFAULTS,
   INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,

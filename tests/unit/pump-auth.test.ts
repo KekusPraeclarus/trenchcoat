@@ -9,6 +9,8 @@ import {
   chromeCookiesToPlaywright,
   cookieHeaderToPlaywright,
   importPumpSession,
+  inspectPumpSession,
+  inspectPumpStorageState,
   pumpCookiesLookAuthed,
   pumpSessionExists,
   waitForOperatorEnter,
@@ -145,6 +147,45 @@ describe("pump session import", () => {
     } catch (err) {
       expect(String(err)).not.toContain(secret)
     }
+  })
+
+  it("treats Privy localStorage as authenticated when cookies are anonymous", () => {
+    const inspect = inspectPumpStorageState({
+      cookies: [
+        { name: "cf_clearance", value: "cloudflare-only", domain: ".pump.fun" },
+      ],
+      origins: [
+        {
+          origin: "https://pump.fun",
+          localStorage: [
+            { name: "privy:refresh_token", value: "a".repeat(48) },
+            { name: "privy:token", value: "b".repeat(48) },
+          ],
+        },
+      ],
+    }, "/tmp/pump-storage-state.json")
+    expect(inspect.looksAuthed).toBe(true)
+    expect(inspect.identityCookieCount).toBe(0)
+    expect(inspect.cookieCount).toBe(1)
+    expect(inspect.localStorageCount).toBe(2)
+  })
+
+  it("inspects a written session file without returning values", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pump-inspect-"))
+    writeFileSync(join(dir, "storage-state.json"), JSON.stringify({
+      cookies: [
+        {
+          name: "privy-token",
+          value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9xx",
+          domain: ".pump.fun",
+        },
+      ],
+      origins: [],
+    }))
+    const inspect = inspectPumpSession(dir)
+    expect(inspect.looksAuthed).toBe(true)
+    expect(inspect.identityCookieCount).toBe(1)
+    expect(JSON.stringify(inspect)).not.toContain("eyJ")
   })
 
   it("parses a DevTools Cookie request header", () => {

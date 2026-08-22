@@ -198,6 +198,97 @@ function originLooksAuthed(
   ))
 }
 
+export type PumpSessionInspect = Readonly<{
+  path: string
+  cookieCount: number
+  localStorageCount: number
+  identityCookieCount: number
+  looksAuthed: boolean
+}>
+
+function countLocalStorageKeys(origins: PumpStorageState["origins"]): number {
+  return new Set(
+    origins.flatMap((origin) => origin.localStorage.map((item) => item.name)),
+  ).size
+}
+
+/**
+ * Count cookies and localStorage only. Never return values.
+ */
+export function inspectPumpStorageState(
+  raw: unknown,
+  path: string,
+): PumpSessionInspect {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("pump.fun storage-state.json is malformed — re-run `pnpm dev:cli auth pump`")
+  }
+  const record = raw as { cookies?: unknown, origins?: unknown }
+  const cookies = Array.isArray(record.cookies)
+    ? chromeCookiesToPlaywright(record.cookies)
+    : []
+  const origins = Array.isArray(record.origins)
+    ? record.origins.map((row) => localStorageRecordToOrigin(row))
+    : []
+  return {
+    path,
+    cookieCount: cookies.length,
+    localStorageCount: countLocalStorageKeys(origins),
+    identityCookieCount: cookies.filter((cookie) => IDENTITY_COOKIE.test(cookie.name)).length,
+    looksAuthed: pumpCookiesLookAuthed(cookies) || originLooksAuthed(origins),
+  }
+}
+
+export function inspectPumpSession(profileDirectory = pumpProfileDir()): PumpSessionInspect {
+  const path = assertPumpProfileReady(profileDirectory)
+  return inspectPumpStorageState(JSON.parse(readFileSync(path, "utf8")), path)
+}
+
+/**
+ * Revisit pump.fun with the saved session so Privy can mint fresh cookies.
+ * Write the file only when the session still looks authenticated.
+ */
+export async function refreshPumpSession(opts?: Readonly<{
+  profileDirectory?: string
+  headless?: boolean
+  settleMs?: number
+}>): Promise<PumpSessionInspect & { wrote: boolean }> {
+  const dir = opts?.profileDirectory ?? pumpProfileDir()
+  const statePath = assertPumpProfileReady(dir)
+  const { launchChromium } = await import("../../lib/playwright-chromium.js")
+  const browser = await launchChromium({
+    headless: opts?.headless !== false,
+    args: ["--disable-blink-features=AutomationControlled"],
+  })
+  try {
+    const context = await browser.newContext({
+      storageState: statePath,
+      viewport: { width: 1280, height: 900 },
+    })
+    try {
+      const page = await context.newPage()
+      await page.goto("https://pump.fun", { waitUntil: "domcontentloaded", timeout: 60_000 })
+      const settleMs = opts?.settleMs ?? 8_000
+      const deadline = Date.now() + settleMs
+      while (Date.now() < deadline) {
+        if (pumpCookiesLookAuthed(await context.cookies())) break
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      const next = await context.storageState()
+      const inspect = inspectPumpStorageState(next, statePath)
+      if (!inspect.looksAuthed) {
+        return { ...inspect, wrote: false }
+      }
+      writeFileSync(statePath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
+      chmodSync(statePath, 0o600)
+      return { ...inspect, wrote: true }
+    } finally {
+      await context.close()
+    }
+  } finally {
+    await browser.close()
+  }
+}
+
 function asStorageState(raw: unknown): PumpStorageState {
   if (!raw || typeof raw !== "object") {
     throw new Error("storage-state import is malformed")

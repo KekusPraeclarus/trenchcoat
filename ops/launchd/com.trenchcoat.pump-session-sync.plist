@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template. Prefer: ops/install-pump-session-sync.sh
+     This agent is not a production collector. Do not load trenchcoat job plists. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trenchcoat.pump-session-sync</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"; exec "$HOME/.trenchcoat/bin/sync-pump-session"</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>86400</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/trenchcoat.pump-session-sync.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/trenchcoat.pump-session-sync.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
