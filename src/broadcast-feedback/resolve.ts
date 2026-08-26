@@ -66,4 +66,49 @@ export function resolveBroadcastByMessageId(
   return { ok: true, resolved: { index, event: parsed } }
 }
 
+/** Load a delivered broadcast event by stable event id (feedback ledger stores this). */
+export function resolveBroadcastByEventId(
+  db: Database.Database,
+  eventId: string,
+): ResolveResult {
+  const row = db.prepare(
+    `SELECT payload_json FROM events WHERE event_id = ?`,
+  ).get(eventId) as { payload_json: string } | undefined
+  if (!row) return { ok: false, reason: "missing-event" }
+
+  let parsed: RouterEvent
+  try {
+    parsed = RouterEventSchema.parse(JSON.parse(row.payload_json)) as RouterEvent
+  } catch {
+    return { ok: false, reason: "unreadable-event" }
+  }
+  if (parsed.type !== "finding.broadcast") return { ok: false, reason: "not-a-broadcast" }
+
+  const delivered = db.prepare(
+    `SELECT id FROM deliveries WHERE event_id = ? AND status = 'delivered' LIMIT 1`,
+  ).get(eventId) as { id: string } | undefined
+  if (!delivered) return { ok: false, reason: "not-delivered" }
+
+  const index = db.prepare(
+    `SELECT message_id, destination_id, delivery_id, part_index, part_total, indexed_at
+     FROM provider_message_index WHERE event_id = ? ORDER BY part_index ASC LIMIT 1`,
+  ).get(eventId) as ProviderMessageIndexRow | undefined
+
+  return {
+    ok: true,
+    resolved: {
+      index: index ?? {
+        messageId: "",
+        destinationId: "",
+        deliveryId: delivered.id,
+        eventId,
+        partIndex: 0,
+        partTotal: 1,
+        indexedAt: 0,
+      },
+      event: parsed,
+    },
+  }
+}
+
 export { backfillDiscordProviderMessages, recentIndexedDiscordMessages }

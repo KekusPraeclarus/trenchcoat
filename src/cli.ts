@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { spawn } from "node:child_process"
 import { loadDotEnv } from "./lib/dotenv.js"
 import { ConfigSchema } from "./lib/config.js"
-import { migrateConfigToV28 } from "./migrations/config.js"
+import { migrateConfigToV29 } from "./migrations/config.js"
 import { runJob } from "./orchestrator/run.js"
 import { getJob, JOBS } from "./orchestrator/jobs.js"
 import { runPreflight } from "./lib/preflight.js"
@@ -120,7 +120,7 @@ async function cmdInit(seedPath?: string, operatorSeedPath?: string): Promise<vo
   mkdirSync(destDir, { recursive: true, mode: 0o700 })
   const seed = seedPath ?? join(process.cwd(), "config/seed.example.json")
   const raw = JSON.parse(readFileSync(seed, "utf8")) as unknown
-  const cfg = ConfigSchema.parse(migrateConfigToV28(raw))
+  const cfg = ConfigSchema.parse(migrateConfigToV29(raw))
   writeFileSync(join(destDir, "config.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 })
   const agentSrc = join(process.cwd(), "agent")
   const agentDest = join(destDir, "agent")

@@ -11,6 +11,7 @@ import {
   type WorthinessContext,
   type WorthinessSessionRunner,
 } from "./broadcast-worthiness.js"
+import type { OperatorFeedbackExamples } from "../broadcast-feedback/worthiness-examples.js"
 import {
   loadWorthinessCache,
   lookupWorthinessCache,
@@ -133,6 +134,8 @@ export async function ingestOutbox(args: Readonly<{
     context: WorthinessContext
     /** Operator-approved worthiness guidance lines (ADR 043) */
     guidance?: readonly string[]
+    /** Live 👍/👎 examples from delivered broadcasts */
+    operatorExamples?: OperatorFeedbackExamples
   }>
 }>): Promise<OutboxIngestReport> {
   const proposed = readProposedItems(args.agentRoot, args.runId)
@@ -351,6 +354,9 @@ export async function ingestOutbox(args: Readonly<{
           enabled: true,
           ...(args.worthiness.guidance && args.worthiness.guidance.length > 0
             ? { guidance: args.worthiness.guidance }
+            : {}),
+          ...(args.worthiness.operatorExamples
+            ? { operatorExamples: args.worthiness.operatorExamples }
             : {}),
           ...(args.worthiness.runSession
             ? { runSession: args.worthiness.runSession }

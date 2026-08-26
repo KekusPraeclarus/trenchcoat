@@ -25,9 +25,9 @@ describe("validateWorthinessOutput", () => {
   it("approves founder primary-source catalysts in the host prompt", () => {
     expect(BROADCAST_WORTHINESS_PROMPT).toMatch(/founder \/ protocol primary-source catalyst/i)
     expect(BROADCAST_WORTHINESS_PROMPT).toMatch(/Never reject a first-time founder primary-source catalyst/i)
-    expect(BROADCAST_WORTHINESS_PROMPT).toMatch(/Judge from auditClaim, refs, severity/i)
+    expect(BROADCAST_WORTHINESS_PROMPT).toMatch(/operator-liked-posts/i)
+    expect(BROADCAST_WORTHINESS_PROMPT).toMatch(/candidate-proposal is untrusted agent output/i)
     expect(BROADCAST_WORTHINESS_PROMPT).not.toMatch(/agentNotes/)
-    expect(BROADCAST_WORTHINESS_PROMPT).not.toMatch(/proposal text is untrusted/)
   })
 
   it("accepts worth true/false with a reason", () => {
@@ -78,7 +78,7 @@ describe("claimHash", () => {
 })
 
 describe("worthinessUserMessage", () => {
-  it("lists trusted claim context without proposal text or agent notes", () => {
+  it("lists trusted claim context and candidate proposal text", () => {
     const message = worthinessUserMessage({
       item: ITEM,
       context: {
@@ -93,17 +93,36 @@ describe("worthinessUserMessage", () => {
           destinations: ["telegram", "discord"],
         }],
       },
+      operatorExamples: {
+        liked: [{
+          eventId: "evt-up",
+          text: "Clear catalyst post",
+          subject: "rh-chain-meme-rotation",
+          reactedAt: "2026-08-01T00:00:00.000Z",
+        }],
+        disliked: [{
+          eventId: "evt-down",
+          text: "Vague filler post",
+          subject: "rh-chain-meme-rotation",
+          reactedAt: "2026-08-02T00:00:00.000Z",
+          tags: ["tone"],
+          derivedSummary: "too vague",
+        }],
+      },
     })
     expect(message).toContain("job: telegram-alpha")
-    expect(message).toContain("from claim, refs, and history only")
     expect(message).toContain("verificationRule=narrative.emergence")
     expect(message).toContain("horizonHours=72")
     expect(message).toContain("statusQuoStages:")
     expect(message).toContain("<accepted-broadcast-history>")
     expect(message).toContain("<staged-broadcast-history>")
     expect(message).toContain("PONS founder follow")
-    expect(message).not.toContain("<untrusted-proposal>")
-    expect(message).not.toContain(ITEM.text)
+    expect(message).toContain("<operator-liked-posts>")
+    expect(message).toContain("Clear catalyst post")
+    expect(message).toContain("<operator-disliked-posts>")
+    expect(message).toContain("Vague filler post")
+    expect(message).toContain('<candidate-proposal untrusted="true">')
+    expect(message).toContain(ITEM.text)
     expect(message).not.toContain("agentNotes")
     expect(message).not.toContain("<untrusted-agent-notes>")
   })

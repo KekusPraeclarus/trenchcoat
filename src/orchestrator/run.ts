@@ -93,6 +93,9 @@ import {
   DEFAULT_WORTHINESS_MODEL,
   WORTHINESS_TIMEOUT_MS,
 } from "./broadcast-worthiness.js"
+import { broadcastFeedbackLayout } from "../broadcast-feedback/paths.js"
+import { loadOperatorFeedbackExamples } from "../broadcast-feedback/worthiness-examples.js"
+import { openFeedbackRouterDb } from "../discord/broadcast-feedback-listener.js"
 import { deliverStagedOutbox } from "./delivery.js"
 import { renderChannelPayloads } from "./channel-render.js"
 import { dayKey } from "./broadcast.js"
@@ -205,6 +208,8 @@ export type RunOptions = Readonly<{
   paths: RunPaths
   skipAgent?: boolean
   dryCollect?: boolean
+  /** Merge narrative memory and skip outbox, router, and research drain */
+  noBroadcast?: boolean
   /** Resume an incomplete archive journal instead of creating a new run id */
   resumeRunId?: string
   /** Streaming list-scan: inject pre-scraped bundles (skips Playwright in collect) */
@@ -318,6 +323,13 @@ async function recordHarnessLaneSkip(args: Readonly<{
       ...(typed.nextAction ? { nextAction: typed.nextAction.slice(0, 200) } : {}),
     },
   })
+}
+
+export function runSuppressesBroadcast(args: Readonly<{
+  blockExternalEffects: boolean
+  noBroadcast?: boolean
+}>): boolean {
+  return args.blockExternalEffects || Boolean(args.noBroadcast)
 }
 
 export async function runJob(opts: RunOptions): Promise<RunResult> {
@@ -557,6 +569,11 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       platformNotes?: readonly string[]
     } = {}
     const canary = loadActiveCanaryAssignment(opts.paths.archiveRoot, runId)
+    const noBroadcast = Boolean(opts.noBroadcast)
+    const suppressBroadcast = runSuppressesBroadcast({
+      blockExternalEffects: canary.blockExternalEffects,
+      noBroadcast,
+    })
     // Hoisted for post-seal ingest/chat/discord status-quo dedupe
     let narrativeLogBefore: NarrativeLogEntry[] = []
     let narrativeLogAfter: NarrativeLogEntry[] | undefined
@@ -909,7 +926,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         nowIso: systemClock.nowIso(),
         policyVersion: canary.policyVersion,
         assignment: canary.assignment,
-        blockExternalEffects: canary.blockExternalEffects,
+        blockExternalEffects: suppressBroadcast,
         archiveRoot: opts.paths.archiveRoot,
         allowedProvenanceIds,
         resolveGate,
@@ -1300,7 +1317,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       }
     }
     let deliveryRetryReport: unknown
-    if (job.name === "delivery-retry" && !opts.dryCollect && !canary.blockExternalEffects) {
+    if (job.name === "delivery-retry" && !opts.dryCollect && !suppressBroadcast) {
       const routerUrl = process.env["TRENCHCOAT_ROUTER_URL"]?.trim()
       const hmacKey = process.env["TRENCHCOAT_ROUTER_HMAC_KEY"]?.trim()
       if (routerUrl && hmacKey) {
@@ -1392,7 +1409,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       }
     }
     let telegramDigestReport: unknown
-    if (job.name === "telegram-digest" && !opts.dryCollect && !canary.blockExternalEffects) {
+    if (job.name === "telegram-digest" && !opts.dryCollect && !suppressBroadcast) {
       const {
         prepareTelegramDigest,
         stageTelegramDigestEvent,
@@ -1640,7 +1657,9 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         systemClock.nowIso(),
         retentionDays,
       ).entries
-      narrativeBridgeReport = await bridgeNarrativeTickers({
+      narrativeBridgeReport = noBroadcast
+        ? { skipped: true, reason: "no-broadcast", enqueued: 0 }
+        : await bridgeNarrativeTickers({
         agentRoot: opts.paths.agentRoot,
         archiveRoot: opts.paths.archiveRoot,
         runId,
@@ -1838,7 +1857,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         nowIso: systemClock.nowIso(),
         policyVersion: canary.policyVersion,
         assignment: canary.assignment,
-        blockExternalEffects: canary.blockExternalEffects,
+        blockExternalEffects: suppressBroadcast,
         archiveRoot: opts.paths.archiveRoot,
         allowedProvenanceIds,
         resolveGate,
@@ -1978,6 +1997,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           telegram_digest: { enabled: false },
           hot_day_min_staged_events: 20,
           worthiness: { enabled: true, model: DEFAULT_WORTHINESS_MODEL },
+          feedback: { enabled: false },
         }
       }
     })()
@@ -2017,7 +2037,35 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
         return session.text
       }
       : undefined
-    const ingest = journal.phase === "events-staged" || canary.blockExternalEffects
+    const feedbackCfg = broadcast.feedback
+    const operatorFeedbackExamples = (() => {
+      if (!worthinessCfg.enabled || !feedbackCfg?.enabled) return undefined
+      const db = openFeedbackRouterDb(trenchHome)
+      if (!db) return undefined
+      try {
+        return loadOperatorFeedbackExamples({
+          layout: broadcastFeedbackLayout(trenchHome),
+          db,
+          nowIso: ingestNowIso,
+          historyDays: "history_days" in feedbackCfg ? feedbackCfg.history_days : 60,
+        })
+      } finally {
+        db.close()
+      }
+    })()
+    if (noBroadcast) {
+      writeFileSync(
+        join(runDir, "no-broadcast.json"),
+        `${JSON.stringify({
+          schema: 1,
+          runId,
+          skipped: true,
+          reason: "operator-no-broadcast",
+          skippedAt: ingestNowIso,
+        }, null, 2)}\n`,
+      )
+    }
+    const ingest = journal.phase === "events-staged" || suppressBroadcast
       ? { staged: 0, rejected: 0, rejects: [] as const, items: [] as const }
       : await ingestOutbox({
         agentRoot: opts.paths.agentRoot,
@@ -2039,6 +2087,11 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           ...(worthinessRunSession ? { runSession: worthinessRunSession } : {}),
           ...(outputTuning.worthinessGuidance.length > 0
             ? { guidance: outputTuning.worthinessGuidance }
+            : {}),
+          ...(operatorFeedbackExamples
+            && (operatorFeedbackExamples.liked.length > 0
+              || operatorFeedbackExamples.disliked.length > 0)
+            ? { operatorExamples: operatorFeedbackExamples }
             : {}),
           context: {
             job: job.name,
@@ -2093,7 +2146,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
               : []),
           ],
         }),
-        blockPromotion: canary.blockExternalEffects,
+        blockPromotion: suppressBroadcast,
         ...(unchangedStages.length > 0 ? { unchangedStages } : {}),
       })
       : undefined
@@ -2112,7 +2165,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       })
     }
     let channelRender: Awaited<ReturnType<typeof renderChannelPayloads>> | undefined
-    if (journal.phase === "alpha-purged" && !canary.blockExternalEffects && ingest.staged > 0) {
+    if (journal.phase === "alpha-purged" && !suppressBroadcast && ingest.staged > 0) {
       const telegramOverviewCfg = broadcast.telegram_overview
       const distillDay = dayKey(new Date(ingestNowIso))
       const distillCapPath = topicDistillCapPath(layout, distillDay)
@@ -2159,7 +2212,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
     }
     const routerUrl = process.env["TRENCHCOAT_ROUTER_URL"]?.trim()
     const hmacKey = process.env["TRENCHCOAT_ROUTER_HMAC_KEY"]?.trim()
-    if (routerUrl && hmacKey && !canary.blockExternalEffects) {
+    if (routerUrl && hmacKey && !suppressBroadcast) {
       try {
         delivery = await deliverStagedOutbox({
           layout: layout,
@@ -2437,7 +2490,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       jobMutex?.release()
       lock?.release()
     }
-    if (drainResearchAfter && job.name !== "research") {
+    if (drainResearchAfter && job.name !== "research" && !opts.noBroadcast) {
       scheduleResearchDrain(opts.paths)
     }
   }

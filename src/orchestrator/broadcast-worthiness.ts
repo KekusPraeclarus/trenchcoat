@@ -1,10 +1,11 @@
 /**
  * Host worthiness gate for market broadcasts (INV-B2). After mechanical ingest
  * checks, a fast model approves or rejects agent-authored proposals — fail-closed,
- * never invents broadcast text. Judges from claim + refs + history only.
+ * never invents broadcast text. Uses claim, refs, history, and operator examples.
  */
 
 import type { AuditClaim, BroadcastItem } from "../contracts/schemas.js"
+import type { OperatorFeedbackExamples } from "../broadcast-feedback/worthiness-examples.js"
 import { sha256Json } from "../lib/canonical-json.js"
 import { deslugNarrativeLabel } from "../lib/narrative-label.js"
 import { BROADCAST_WORTHINESS_PROMPT } from "../prompts/host.js"
@@ -13,6 +14,7 @@ import type { StageKnown } from "./narrative-stage-dedupe.js"
 export const WORTHINESS_REASON_MAX = 200
 export const DEFAULT_WORTHINESS_MODEL = "composer-2.5-fast"
 export const WORTHINESS_TIMEOUT_MS = 90_000
+export const WORTHINESS_CANDIDATE_TEXT_MAX = 2_000
 
 export type WorthinessSessionRunner = (
   args: Readonly<{ prompt: string; message: string }>,
@@ -81,6 +83,28 @@ function broadcastList(
   return mapped.length > 0 ? mapped : "(none)"
 }
 
+function operatorExampleList(
+  examples: OperatorFeedbackExamples["liked"] | OperatorFeedbackExamples["disliked"],
+): string {
+  if (examples.length < 1) return "(none)"
+  return examples
+    .map((entry, index) => {
+      const meta = [
+        entry.claimType,
+        entry.severity,
+        entry.subject,
+      ].filter(Boolean).join(" ")
+      const tags = entry.tags && entry.tags.length > 0
+        ? ` tags=${entry.tags.join(",")}`
+        : ""
+      const note = entry.derivedSummary
+        ? ` note=${entry.derivedSummary.slice(0, 120)}`
+        : ""
+      return `${index + 1}. [${entry.reactedAt}] ${meta}${tags}${note}\n   ${entry.text}`
+    })
+    .join("\n")
+}
+
 function stripFence(raw: string): string {
   let text = raw.trim()
   if (text.startsWith("```") && text.endsWith("```")) {
@@ -100,12 +124,22 @@ export function worthinessUserMessage(args: Readonly<{
   context: WorthinessContext
   /** Operator-approved guidance lines (ADR 043); bounded host text only */
   guidance?: readonly string[]
+  /** Live 👍/👎 examples from delivered broadcasts (system text only) */
+  operatorExamples?: OperatorFeedbackExamples
 }>): string {
   const guidance = args.guidance ?? []
+  const candidateText = args.item.text.trim().replace(/\s+/gu, " ").slice(0, WORTHINESS_CANDIDATE_TEXT_MAX)
+  const examples = args.operatorExamples
   return [
-    "Decide whether this market broadcast is worth sending from claim, refs, and history only. Reply with JSON only.",
+    "Decide whether this market broadcast is worth sending. Reply with JSON only.",
     ...(guidance.length > 0
       ? [`<operator-guidance>\n${guidance.map((line) => `- ${line}`).join("\n")}\n</operator-guidance>`]
+      : []),
+    ...(examples && (examples.liked.length > 0 || examples.disliked.length > 0)
+      ? [
+        `<operator-liked-posts>\n${operatorExampleList(examples.liked)}\n</operator-liked-posts>`,
+        `<operator-disliked-posts>\n${operatorExampleList(examples.disliked)}\n</operator-disliked-posts>`,
+      ]
       : []),
     `job: ${args.context.job}`,
     `collectionStatus: ${args.context.collectionStatus ?? "unknown"}`,
@@ -116,6 +150,7 @@ export function worthinessUserMessage(args: Readonly<{
     `severity: ${args.item.severity}`,
     `auditClaim: ${claimLine(args.item.auditClaim)}`,
     `refs: ${args.item.refs.join(", ") || "(none)"}`,
+    `<candidate-proposal untrusted="true">\n${candidateText}\n</candidate-proposal>`,
   ].join("\n")
 }
 
@@ -157,6 +192,7 @@ export async function runBroadcastWorthiness(args: Readonly<{
   runSession?: WorthinessSessionRunner
   enabled?: boolean
   guidance?: readonly string[]
+  operatorExamples?: OperatorFeedbackExamples
 }>): Promise<WorthinessResult> {
   if (args.enabled === false) {
     return { ok: true, worth: true, reason: "disabled" }
@@ -171,6 +207,7 @@ export async function runBroadcastWorthiness(args: Readonly<{
         item: args.item,
         context: args.context,
         ...(args.guidance ? { guidance: args.guidance } : {}),
+        ...(args.operatorExamples ? { operatorExamples: args.operatorExamples } : {}),
       }),
     })
     return validateWorthinessOutput(raw)

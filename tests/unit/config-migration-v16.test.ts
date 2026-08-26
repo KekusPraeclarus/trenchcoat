@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV16, migrateConfigToV28 } from "../../src/migrations/config.js"
+import { migrateConfigToV16, migrateConfigToV29 } from "../../src/migrations/config.js"
 
 const baseV15 = {
   schema: 15,
@@ -93,6 +93,6 @@ describe("config migration v16", () => {
     expect(conversation["enabled"]).toBe(false)
     expect(conversation["model"]).toBe("composer-2.5")
     expect(conversation["max_research_per_turn"]).toBe(5)
-    expect(ConfigSchema.parse(migrateConfigToV28(migrated)).schema).toBe(28)
+    expect(ConfigSchema.parse(migrateConfigToV29(migrated)).schema).toBe(29)
   })
 })

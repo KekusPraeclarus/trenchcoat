@@ -2,7 +2,7 @@
 description: Operator broadcast feedback — Discord reactions, Telegram detail, sealed datasets, and manual tuning candidates (ADR 043).
 scope: module
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-26
 read_when:
   - Editing src/broadcast-feedback/**, src/discord/broadcast-feedback-listener.ts, or the router message index.
   - Changing how operator judgement reaches prompts or the improvement harness.
@@ -31,6 +31,8 @@ flowchart TD
   reply --> evidence[confined evidence file]
   evidence --> classify[classifier - bounded tags]
   classify --> ledger
+  ledger --> worthiness[worthiness gate at ingest]
+  worthiness --> ingest[outbox ingest approve or reject]
   ledger --> seal[broadcast feedback seal]
   seal --> dataset[(sealed dataset)]
   dataset --> prefs[active-preference-set.json]
@@ -50,6 +52,7 @@ flowchart TD
 | Notify | `src/broadcast-feedback/notify.ts` | Sends one Telegram detail request |
 | Follow-up | `src/broadcast-feedback/followup.ts` | Confines the reply, classifies it, records tags |
 | Aggregate | `src/broadcast-feedback/aggregate.ts` | Seals preference pairs and policy examples |
+| Worthiness examples | `src/broadcast-feedback/worthiness-examples.ts` | Loads live 👍/👎 delivered text for the worthiness gate |
 | Candidate | `src/broadcast-feedback/candidate.ts` | Proposes, evaluates, applies, or dismisses one change |
 | Harness view | `src/harness/operator-preference.ts` | Reads the sealed set and blocks regressions |
 
@@ -57,7 +60,26 @@ flowchart TD
 
 `up`, `down`, `ambiguous` (both marks), and `retracted` (no marks). `down` and
 `ambiguous` open one detail request. A later `up` cancels an open request. A
-request expires after 72 hours and the reaction stays.
+request expires after 72 hours and the reaction stays. `retracted` and broadcasts
+with no reaction are a no-op — they never enter liked or disliked examples.
+
+## Runtime worthiness influence
+
+When `broadcast.feedback.enabled` is true, each outbox ingest loads the latest
+👍 and 👎 records from the ledger (within `broadcast.feedback.history_days`),
+resolves delivered broadcast text from the router database, and passes bounded
+examples into the host worthiness gate. The gate compares the candidate proposal
+to those examples:
+
+- `up` → liked example; lean approve when wording, narrative, or idea matches
+- `down` or `ambiguous` → disliked example; lean reject when the candidate resembles it
+- no reaction / `retracted` → excluded; no influence
+
+Raw Telegram follow-up prose never enters worthiness. Bounded tags and derived
+summaries from completed follow-ups may appear on disliked examples only.
+
+Manual seal → candidate → apply remains the path for durable
+`broadcast-output-tuning.json` and decision-policy changes.
 
 ## Tags
 

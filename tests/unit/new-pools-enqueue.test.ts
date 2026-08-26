@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { readFileSync as readSeed } from "node:fs"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV28 } from "../../src/migrations/config.js"
+import { migrateConfigToV29 } from "../../src/migrations/config.js"
 import { archiveLayout, ensureArchive } from "../../src/lib/archive.js"
 import { StateStore } from "../../src/lib/state.js"
 import {
@@ -44,7 +44,7 @@ function feedConfig(overrides?: Record<string, unknown>) {
     max_pool_age_hours: 24,
     ...overrides,
   }
-  return ConfigSchema.parse(migrateConfigToV28(raw))
+  return ConfigSchema.parse(migrateConfigToV29(raw))
 }
 
 let activeConfig = feedConfig()

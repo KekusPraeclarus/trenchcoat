@@ -1,5 +1,5 @@
 {
-  "schema": 28,
+  "schema": 29,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -235,7 +235,7 @@
       "enabled": false,
       "followup_ttl_hours": 72,
       "followup_model": "composer-2.5-fast",
-      "history_days": 30,
+      "history_days": 60,
       "reconcile_max_messages": 100,
       "candidate_min_policy_examples": 5,
       "candidate_min_completed_down": 3,

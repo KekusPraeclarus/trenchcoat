@@ -1345,3 +1345,37 @@ export function migrateConfigToV28(raw: unknown): unknown {
     },
   }
 }
+
+/**
+ * Schema 29: widen broadcast feedback history window from 30 to 60 days so
+ * operator 👍/👎 examples reach further back at worthiness ingest.
+ */
+export function migrateConfigToV29(raw: unknown): unknown {
+  const record = raw as Record<string, unknown> | null
+  if (record?.["schema"] === 29) return raw
+
+  const v28 = (
+    record?.["schema"] === 28
+      ? record
+      : migrateConfigToV28(raw)
+  ) as Record<string, unknown>
+
+  const prevBroadcast = (v28["broadcast"] ?? {}) as Record<string, unknown>
+  const prevFeedback = (prevBroadcast["feedback"] ?? {}) as Record<string, unknown>
+  const priorHistoryDays = prevFeedback["history_days"]
+  const historyDays = priorHistoryDays === 30 || priorHistoryDays === undefined
+    ? 60
+    : priorHistoryDays
+
+  return {
+    ...v28,
+    schema: 29,
+    broadcast: {
+      ...prevBroadcast,
+      feedback: {
+        ...prevFeedback,
+        history_days: historyDays,
+      },
+    },
+  }
+}

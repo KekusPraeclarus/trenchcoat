@@ -10,13 +10,13 @@ import {
 import { extractResearchIntent } from "../../src/chat/research-intent.js"
 import { StateStore } from "../../src/lib/state.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV28 } from "../../src/migrations/config.js"
+import { migrateConfigToV29 } from "../../src/migrations/config.js"
 
 const SOL = "So11111111111111111111111111111111111111112"
 const NOW = "2026-07-17T15:00:00.000Z"
 
 function writeMinimalConfig(dir: string): void {
-  const cfg = ConfigSchema.parse(migrateConfigToV28({
+  const cfg = ConfigSchema.parse(migrateConfigToV29({
     schema: 5,
     twitter: {
       operator_list_urls: [

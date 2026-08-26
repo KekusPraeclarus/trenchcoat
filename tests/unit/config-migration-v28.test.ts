@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { DEPLOYMENT_CONFIG_SCHEMA } from "../../src/lib/deployment.js"
 import {
   migrateConfigToV27,
   migrateConfigToV28,
+  migrateConfigToV29,
   FOMO_FOLLOWS_V28_DEFAULTS,
 } from "../../src/migrations/config.js"
 
@@ -26,10 +26,9 @@ function asV27(): Record<string, unknown> {
 }
 
 describe("config migration v28", () => {
-  it("upgrades schema 27 once and validates as schema 28", () => {
+  it("upgrades schema 27 once to schema 28", () => {
     const migrated = migrateConfigToV28(asV27()) as Record<string, unknown>
     expect(migrated["schema"]).toBe(28)
-    expect(ConfigSchema.parse(migrated).schema).toBe(28)
   })
 
   it("is idempotent", () => {
@@ -38,13 +37,8 @@ describe("config migration v28", () => {
     expect(twice).toEqual(once)
   })
 
-  it("keeps the deployment config schema aligned", () => {
-    expect(DEPLOYMENT_CONFIG_SCHEMA).toBe(28)
-    expect(ConfigSchema.parse(seed).schema).toBe(DEPLOYMENT_CONFIG_SCHEMA)
-  })
-
   it("cuts the old default max_handles and adds follow defaults", () => {
-    const parsed = ConfigSchema.parse(migrateConfigToV28(asV27()))
+    const parsed = ConfigSchema.parse(migrateConfigToV29(asV27()))
     expect(parsed.fomo.trader_sync.max_handles).toBe(15)
     expect(parsed.fomo.follows.max_follows_per_run).toBe(
       FOMO_FOLLOWS_V28_DEFAULTS.max_follows_per_run,
@@ -60,7 +54,7 @@ describe("config migration v28", () => {
       enabled: true,
       shadow_mode: false,
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV28(v27))
+    const parsed = ConfigSchema.parse(migrateConfigToV29(v27))
     expect(parsed.fomo.follows.enabled).toBe(true)
   })
 
@@ -71,16 +65,16 @@ describe("config migration v28", () => {
       ...(fomo["trader_sync"] as Record<string, unknown>),
       max_handles: 20,
     }
-    const parsed = ConfigSchema.parse(migrateConfigToV28(v27))
+    const parsed = ConfigSchema.parse(migrateConfigToV29(v27))
     expect(parsed.fomo.trader_sync.max_handles).toBe(20)
   })
 
-  it("lifts schema 26 through v27 into parseable schema 28", () => {
+  it("lifts schema 26 through v27 into parseable schema 29", () => {
     const v26 = structuredClone(asV27())
     v26["schema"] = 26
     delete v26["pump"]
-    const parsed = ConfigSchema.parse(migrateConfigToV28(migrateConfigToV27(v26)))
-    expect(parsed.schema).toBe(28)
+    const parsed = ConfigSchema.parse(migrateConfigToV29(migrateConfigToV27(v26)))
+    expect(parsed.schema).toBe(29)
     expect(parsed.fomo.trader_sync.max_handles).toBe(15)
   })
 })

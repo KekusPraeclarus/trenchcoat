@@ -2,7 +2,7 @@
 title: "043 — Operator broadcast feedback"
 status: accepted
 date: 2026-08-10
-last_verified: 2026-08-10
+last_verified: 2026-08-26
 ---
 
 # ADR 043: Operator broadcast feedback
@@ -54,9 +54,13 @@ quality, subject choice, and timing had no feedback path at all.
    `sealed/active-preference-set.json`, and rejects a later candidate that
    reduces agreement (`operator-preference-regression`). `src/harness` never
    imports the live feedback store; static lint enforces this.
-9. **Prompt use.** Approved guidance in `config/broadcast-output-tuning.json`
-   enters worthiness, topic distillation, and eligible agent job prompts as
-   short bounded lines.
+9. **Prompt use.** Live 👍/👎 records (within `history_days`) load delivered
+   broadcast text from the router database and enter the host worthiness gate as
+   bounded liked/disliked examples. `up` leans approve; `down` and `ambiguous`
+   lean reject; `retracted` and no reaction are excluded. Approved guidance in
+   `config/broadcast-output-tuning.json` from manual apply still enters
+   worthiness, topic distillation, and eligible agent job prompts as short
+   bounded lines.
 
 ## Consequences
 

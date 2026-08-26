@@ -5,7 +5,7 @@ import { join } from "node:path"
 import {
   migrateConfigToV13,
   migrateConfigToV26,
-  migrateConfigToV28,
+  migrateConfigToV29,
   INCIDENT_REMEDIATION_V13_DEFAULTS,
   INCIDENT_REMEDIATION_V14_REVALIDATION_DEFAULTS,
 } from "../../src/migrations/config.js"
@@ -86,8 +86,8 @@ describe("incident remediation config", () => {
     const seed = JSON.parse(
       readFileSync(new URL("../../config/seed.example.json", import.meta.url), "utf8"),
     )
-    const parsed = ConfigSchema.parse(migrateConfigToV28(seed))
-    expect(parsed.schema).toBe(28)
+    const parsed = ConfigSchema.parse(migrateConfigToV29(seed))
+    expect(parsed.schema).toBe(29)
     expect(parsed.incident_remediation.enabled).toBe(false)
     expect(parsed.incident_remediation.schedule_enabled).toBe(false)
     expect(parsed.incident_remediation.revalidation.enabled).toBe(true)

@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-18
+last_verified: 2026-08-22
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -45,7 +45,8 @@ Cursor child env is scrubbed of router/Telegram/provider keys via
 
 Non-secret operator inputs and tunables. Read at process start by the
 orchestrator, collectors, and chat service. Versioned by a `schema` field.
-Current schema is **28** (FOMO platform follows vs X review — ADR 048; prior
+Current schema is **29** (broadcast feedback `history_days` default 60 — ADR 043; prior
+schema **28** FOMO platform follows vs X review — ADR 048; prior
 schema **27** pump.fun feed scan — ADR 047; earlier discovery:
 `research.social_cashtag_bridge`
 and `new_pools_feed` — ADR 046; prior schema **25** retention sweeps for
@@ -76,7 +77,7 @@ prior schema **9** `fomo` web scrape section with `x_source_review` /
 `narrative_source_probation`, plus prior v8 Fomo fields, v7
 `narratives.retention_days`, v6 `farcaster` / `research.farcaster_search`, and
 v5 `harness_improvement`).
-`loadConfig` migrates v1–v27 shapes via `migrateConfigToV28`.
+`loadConfig` migrates v1–v28 shapes via `migrateConfigToV29`.
 `securityThresholdsFromConfig` maps `gate_thresholds` into scanner/preflight
 structs used by both scheduled runs and operator research (security-gate.md).
 Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
@@ -85,7 +86,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
 
 ```json
 {
-  "schema": 28,
+  "schema": 29,
   "telegram_channels": [
     {
       "channel": "KashKyshAlpha",
@@ -186,7 +187,7 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
       "channel_id": "1000000000000000002",
       "followup_ttl_hours": 72,
       "followup_model": "composer-2.5-fast",
-      "history_days": 30,
+      "history_days": 60,
       "reconcile_max_messages": 100,
       "candidate_min_policy_examples": 5,
       "candidate_min_completed_down": 3,
@@ -568,7 +569,7 @@ application is not wired yet — only wallets are applied today.
 
 | Command | Behaviour |
 |---|---|
-| `tc run <job>` | run one job (cron entry point); agent-mutating jobs refuse if the workspace writer lock is held (exit 3). Improvement jobs (`harness-improve`, `harness-meta-improve`, `incident-remediate`, `incident-remediate-weekly`) skip that lock (INV-S15 / ADR 027). Jobs include `list-scan`, `farcaster-scan`, scans/research/audit, wallets, plus harness/remediation |
+| `tc run <job>` | run one job (cron entry point); agent-mutating jobs refuse if the workspace writer lock is held (exit 3). `--no-broadcast` merges narrative memory and skips outbox, router, and research drain. Improvement jobs (`harness-improve`, `harness-meta-improve`, `incident-remediate`, `incident-remediate-weekly`) skip that lock (INV-S15 / ADR 027). Jobs include `list-scan`, `farcaster-scan`, scans/research/audit, wallets, plus harness/remediation |
 | `tc config validate` | migrate+parse config in memory; no write |
 | `tc config migrate --write` | persist schema migration to `~/.trenchcoat/config.json` |
 | `tc watchlist remove <chain:token> --subject <symbol> --reason <text>` | host removal of ignored/revisit/dropped entries; reconciles `state/INDEX.md` |
@@ -579,7 +580,7 @@ application is not wired yet — only wallets are applied today.
 | `tc fc-source seed <path> [--dry-run]` | operator seed for FC managed follows (`config/fc-source-seed.example.json`) |
 | `tc fc-source sync [--dry-run]` | apply desired follow graph with verification receipt |
 | `tc fc-engagement status` / `dry-run <run-id>` | FC like engagement probe |
-| `tc init [--seed <config>] [--operator-seed <file>]` | writes `~/.trenchcoat/config.json` from config seed via `migrateConfigToV28`; optional operator wallet seed |
+| `tc init [--seed <config>] [--operator-seed <file>]` | writes `~/.trenchcoat/config.json` from config seed via `migrateConfigToV29`; optional operator wallet seed |
 | `tc wallets seed <file>` | operator-seed wallets into empty `state/wallets.json` |
 | `tc wallets add-candidates <file> [--dry-run]` | merge operator-nominated candidates into existing wallet state |
 | `tc auth twitter` | headful interactive re-auth (documented sandbox exception) |

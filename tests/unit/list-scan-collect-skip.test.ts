@@ -6,7 +6,7 @@ import { readFileSync as readSeed } from "node:fs"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { collectForJob } from "../../src/orchestrator/collect.js"
 import { ConfigSchema } from "../../src/lib/config.js"
-import { migrateConfigToV28 } from "../../src/migrations/config.js"
+import { migrateConfigToV29 } from "../../src/migrations/config.js"
 
 const NOW = "2026-07-23T12:00:00.000Z"
 const TOKEN = "EN2nnxrg8uUi6x2sJkzNPd2eT6rB9rdSoQNNaENA4RZA"
@@ -31,7 +31,7 @@ function feedConfig(overrides?: Record<string, unknown>) {
     max_pool_age_hours: 24,
     ...overrides,
   }
-  return ConfigSchema.parse(migrateConfigToV28(raw))
+  return ConfigSchema.parse(migrateConfigToV29(raw))
 }
 
 let activeConfig = feedConfig({ enabled: false })
