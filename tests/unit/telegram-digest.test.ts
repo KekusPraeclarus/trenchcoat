@@ -145,8 +145,9 @@ describe("prepareTelegramDigest", () => {
     expect(launches).toBe(1)
     expect(first.record.event?.type).toBe("narrative.digest")
     expect(first.record.event?.channels?.discord).toBeUndefined()
-    expect(first.record.event?.text).toContain("**Daily narrative map — 2026-07-17**")
-    expect(first.record.event?.text).toContain("**RH Chain Meme Rotation — peaking**")
+    expect(first.record.event?.text).toContain("**Daily narrative map — 2026-07-17** _(AI)_")
+    expect(first.record.event?.text).toContain("**RH Chain Meme Rotation**")
+    expect(first.record.event?.text).not.toContain("**RH Chain Meme Rotation — peaking**")
     expect(first.record.event?.text).not.toContain("agent title ignored")
     expect(first.record.event?.text).not.toContain("No host-approved development")
 

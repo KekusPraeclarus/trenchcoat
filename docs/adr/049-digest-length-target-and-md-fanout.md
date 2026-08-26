@@ -33,6 +33,10 @@ chunked channel posts.
    receives the file. Channel fanout stays section-aware text chunks only.
 4. Operator file send is idempotent per London date via
    `archive/telegram-digests/<date>.operator-md.json`.
+5. **Markdown shape.** Host render uses
+   `**Daily narrative map — YYYY-MM-DD** _(AI)_`, then `**Label**` flush to
+   the body. Headers omit the stage suffix. Blank lines stay between
+   sections only. Channel text and the operator file share this shape.
 
 ## Consequences
 

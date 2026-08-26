@@ -356,8 +356,20 @@ export function validateTelegramDailyDigestOutput(
   return { ok: true, sections }
 }
 
-const DIGEST_TITLE_RE = /^\*\*Daily narrative map — \d{4}-\d{2}-\d{2}\*\*$/u
-const DIGEST_HEADER_RE = /^\*\*[^*\n]+ — (?:peaking|emerging|fading)\*\*$/u
+const DIGEST_TITLE_RE = /^\*\*Daily narrative map — \d{4}-\d{2}-\d{2}\*\*(?: _\(AI\)_)?$/u
+const DIGEST_HEADER_RE = /^\*\*[^*\n]+\*\*$/u
+
+export function renderDailyDigestTitle(londonDate: string): string {
+  return `**Daily narrative map — ${londonDate}** _(AI)_`
+}
+
+function renderDailyDigestSection(label: string, body: string): string {
+  return `**${label}**\n${body}`
+}
+
+function isDigestHeaderBlock(block: string): boolean {
+  return DIGEST_HEADER_RE.test(block)
+}
 
 /**
  * Split a rendered daily digest into atomic Telegram units: title line, then
@@ -375,25 +387,34 @@ export function parseDailyDigestUnits(text: string): string[] {
   }
 
   while (index < blocks.length) {
-    const header = blocks[index]!
-    if (!DIGEST_HEADER_RE.test(header)) {
+    const block = blocks[index]!
+    const firstLine = block.split("\n", 1)[0] ?? ""
+    const rest = block.slice(firstLine.length).replace(/^\n/u, "")
+    if (isDigestHeaderBlock(firstLine) && rest.length > 0) {
+      units.push(block)
+      index += 1
+      continue
+    }
+    if (!isDigestHeaderBlock(block)) {
       if (units.length > 0) {
-        units[units.length - 1] = `${units[units.length - 1]}\n\n${header}`
+        units[units.length - 1] = `${units[units.length - 1]}\n\n${block}`
       } else {
-        units.push(header)
+        units.push(block)
       }
       index += 1
       continue
     }
     const next = blocks[index + 1]
+    const nextFirst = next?.split("\n", 1)[0] ?? ""
     const hasBody = next !== undefined
-      && !DIGEST_HEADER_RE.test(next)
+      && !isDigestHeaderBlock(next)
+      && !isDigestHeaderBlock(nextFirst)
       && !DIGEST_TITLE_RE.test(next)
     if (hasBody) {
-      units.push(`${header}\n\n${next}`)
+      units.push(`${block}\n${next}`)
       index += 2
     } else {
-      units.push(header)
+      units.push(block)
       index += 1
     }
   }
@@ -436,12 +457,10 @@ export function renderDailyDigestMarkdown(args: Readonly<{
   const ordered = sortActiveNarrativesForDigest(args.narratives).filter((entry) => (
     (args.sectionsBySlug[entry.slug] ?? "").trim().length > 0
   ))
-  const parts = [`**Daily narrative map — ${args.londonDate}**`]
+  const parts = [renderDailyDigestTitle(args.londonDate)]
   for (const entry of ordered) {
-    const label = snapshotLabel(entry)
     const body = (args.sectionsBySlug[entry.slug] ?? "").trim()
-    parts.push(`**${label} — ${entry.stage}**`)
-    parts.push(body)
+    parts.push(renderDailyDigestSection(snapshotLabel(entry), body))
   }
   return parts.join("\n\n")
 }
@@ -497,11 +516,10 @@ export function renderDailyDigestCompactFallback(args: Readonly<{
   const ordered = selectDigestNarratives(args.narratives, args.developmentsBySlug)
   if (ordered.length === 0) return null
 
-  const parts: string[] = [`**Daily narrative map — ${args.londonDate}**`]
+  const parts: string[] = [renderDailyDigestTitle(args.londonDate)]
   for (const entry of ordered) {
     const body = normalizeDigestSectionBody(args.developmentsBySlug[entry.slug] ?? "")
-    parts.push(`**${snapshotLabel(entry)} — ${entry.stage}**`)
-    if (body.length > 0) parts.push(body)
+    if (body.length > 0) parts.push(renderDailyDigestSection(snapshotLabel(entry), body))
   }
   return parts.join("\n\n")
 }

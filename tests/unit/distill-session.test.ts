@@ -358,8 +358,9 @@ describe("daily digest rendering", () => {
         "base-trust-collapse": "",
       },
     })
-    expect(rendered).toContain("RH Chain Meme Rotation")
+    expect(rendered).toContain("**RH Chain Meme Rotation**\nWallet lore catalyst printed.")
     expect(rendered).toContain("Wallet lore catalyst printed.")
+    expect(rendered).not.toContain(" — peaking")
     expect(rendered).not.toContain("Base Trust Collapse")
     expect(rendered).not.toContain("No host-approved development")
   })
@@ -418,18 +419,47 @@ describe("daily digest rendering", () => {
     expect(normalizeDigestSectionBody("line one\n\nline two")).toBe("line one line two")
   })
 
-  it("parses digest units as title plus intact sections", () => {
+  it("parses legacy stage headers with a blank line before the body", () => {
     const digest = [
       "**Daily narrative map — 2026-07-28**",
       "**RH Chain Meme Rotation — peaking**",
       "Still peaking on wallet lore.",
-      "**Pons Launchpad Attention — peaking**",
-      "Pad volume keeps stacking.",
     ].join("\n\n")
     expect(parseDailyDigestUnits(digest)).toEqual([
       "**Daily narrative map — 2026-07-28**",
-      "**RH Chain Meme Rotation — peaking**\n\nStill peaking on wallet lore.",
-      "**Pons Launchpad Attention — peaking**\n\nPad volume keeps stacking.",
+      "**RH Chain Meme Rotation — peaking**\nStill peaking on wallet lore.",
     ])
+  })
+
+  it("parses digest units as title plus intact sections", () => {
+    const digest = [
+      "**Daily narrative map — 2026-07-28** _(AI)_",
+      "**RH Chain Meme Rotation**\nStill peaking on wallet lore.",
+      "**Pons Launchpad Attention**\nPad volume keeps stacking.",
+    ].join("\n\n")
+    expect(parseDailyDigestUnits(digest)).toEqual([
+      "**Daily narrative map — 2026-07-28** _(AI)_",
+      "**RH Chain Meme Rotation**\nStill peaking on wallet lore.",
+      "**Pons Launchpad Attention**\nPad volume keeps stacking.",
+    ])
+  })
+
+  it("renders the operator markdown shape: AI title, no stage, flush body", () => {
+    const rendered = renderDailyDigestCompactFallback({
+      londonDate: "2026-08-25",
+      narratives: [{
+        slug: "derivatives-category-surge",
+        stage: "peaking",
+        tickers: [],
+        lastSeen: "2026-08-25T12:00:00.000Z",
+      }],
+      developmentsBySlug: {
+        "derivatives-category-surge": "Definitive shipped perps.",
+      },
+    })
+    expect(rendered).toBe([
+      "**Daily narrative map — 2026-08-25** _(AI)_",
+      "**Derivatives Category Surge**\nDefinitive shipped perps.",
+    ].join("\n\n"))
   })
 })

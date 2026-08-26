@@ -66,10 +66,10 @@ describe("splitTelegramText", () => {
 
 describe("splitDailyDigestTelegramText", () => {
   it("keeps digest sections intact across multiple messages without page labels", () => {
-    const sectionA = "**RH Chain Meme Rotation — peaking**\n\n" + "a".repeat(2_500)
-    const sectionB = "**Pons Launchpad Attention — peaking**\n\n" + "b".repeat(2_500)
+    const sectionA = "**RH Chain Meme Rotation**\n" + "a".repeat(2_500)
+    const sectionB = "**Pons Launchpad Attention**\n" + "b".repeat(2_500)
     const digest = [
-      "**Daily narrative map — 2026-07-28**",
+      "**Daily narrative map — 2026-07-28** _(AI)_",
       sectionA,
       sectionB,
     ].join("\n\n")
@@ -88,7 +88,7 @@ describe("splitDailyDigestTelegramText", () => {
 
 describe("digest markdown file helpers", () => {
   it("names the file from the digest title date", () => {
-    const text = "**Daily narrative map — 2026-08-25**\n\n**RH — peaking**\n\nStill live."
+    const text = "**Daily narrative map — 2026-08-25** _(AI)_\n\n**RH**\nStill live."
     expect(digestMarkdownFilenameFromText(text)).toBe("daily-narrative-map-2026-08-25.md")
     expect(digestMarkdownCaptionFromText(text)).toBe("Daily narrative map — 2026-08-25")
   })
@@ -126,7 +126,7 @@ describe("deliverTelegram daily digest", () => {
       methods.push(String(target))
       return new Response(JSON.stringify({ result: { message_id: 1 } }), { status: 200 })
     })
-    const text = "**Daily narrative map — 2026-08-25**\n\n**RH — peaking**\n\nStill live."
+    const text = "**Daily narrative map — 2026-08-25** _(AI)_\n\n**RH**\nStill live."
     const result = await deliverTelegram(fetcher, "token", "chan", text, { dailyDigest: true })
     expect(methods.some((url) => url.includes("/sendMessage"))).toBe(true)
     expect(methods.some((url) => url.includes("/sendDocument"))).toBe(false)

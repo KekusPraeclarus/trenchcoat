@@ -30,7 +30,9 @@ last_verified: 2026-08-26
   day; one paragraph per section; host may send multiple Telegram messages
   without page labels but never splits a section). The same text also lands
   as `daily-narrative-map-<activity-date>.md` on the operator interface bot
-  only. The public channel never receives that file. Distiller aims for ~8000
+  only. The public channel never receives that file. File shape: title
+  `**Daily narrative map — YYYY-MM-DD** _(AI)_`, then `**Label**` flush to
+  one paragraph with no stage suffix. Distiller aims for ~8000
   characters. Longer maps still send.
   Quiet actives are omitted rather than padded with
   "nothing happened". Discord receives the same rendered text as Telegram

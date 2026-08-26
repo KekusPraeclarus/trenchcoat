@@ -521,7 +521,9 @@ staged router events.
 - Host-only `telegram-digest` (04:00 Europe/London, VPS systemd) emits one
   Telegram-only `narrative.digest` covering retention-active narratives that
   had a host-approved Telegram development in the window (one paragraph per
-  section; section-aware multi-message delivery without page labels). The host
+  section; section-aware multi-message delivery without page labels). Markdown
+  shape: `**Daily narrative map — YYYY-MM-DD** _(AI)_`, then `**Label**` flush
+  to the body with no stage suffix. The host
   also sends the same text as a raw `.md` file to the operator interface bot
   only. The public channel never receives that file. Distiller aims for ~8000
   characters. Longer maps still send. Quiet actives are omitted — no
