@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { classifyFomoRequest } from "../../src/collectors/fomo/request-policy.js"
+import { classifyFomoRequest, isFomoFeedCaptureUrl } from "../../src/collectors/fomo/request-policy.js"
 
 describe("fomo request policy", () => {
   it("allows read traffic on fomo and privy", () => {
@@ -18,6 +18,14 @@ describe("fomo request policy", () => {
 
   it("rejects invalid urls", () => {
     expect(classifyFomoRequest("GET", "not-a-url").allow).toBe(false)
+  })
+
+  it("captures live /feed/token and keeps the old tradingActivity path", () => {
+    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token")).toBe(true)
+    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token?page=1")).toBe(true)
+    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity")).toBe(true)
+    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token/thesis")).toBe(false)
+    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/7d")).toBe(false)
   })
 
   it("allows follow mutations only in mutationMode", () => {

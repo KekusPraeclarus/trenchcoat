@@ -22,6 +22,20 @@
       "timeframe": "7d",
       "trades": 10,
       "winRate": 0.5
+    },
+    {
+      "userHandle": "LiveHandle",
+      "displayName": "Live Handle",
+      "twitter": { "username": "livehandle" },
+      "numTrades": 8,
+      "pnl7d": 100,
+      "address": "So11111111111111111111111111111111111111112"
+    },
+    {
+      "userHandle": "NullTwitter",
+      "twitter": null,
+      "numTrades": 3,
+      "pnl7d": 10
     }
   ]
 }

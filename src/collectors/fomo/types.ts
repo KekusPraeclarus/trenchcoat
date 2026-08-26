@@ -186,38 +186,46 @@ export const FomoGatesFileSchema = z.object({
 })
 export type FomoGatesFile = z.infer<typeof FomoGatesFileSchema>
 
+/** Live API sends null on unused optional fields. `.optional()` rejects null. */
+const optionalText = z.string().nullish()
+const optionalHandle = z.string().min(1).max(64).nullish()
+const optionalDisplayName = z.string().min(1).max(256).nullish()
+const optionalNum = z.number().nullish()
+const optionalInt = z.number().int().nullish()
+const optionalSocial = z.union([z.string(), z.record(z.unknown())]).nullish()
+
 /** Loose raw shapes for fixture-backed SPA payloads (filled after probe) */
 export const FomoRawTraderSchema = z.object({
-  handle: z.string().min(1).max(64).optional(),
-  userHandle: z.string().min(1).max(64).optional(),
-  displayName: z.string().min(1).max(64).optional(),
-  pnl: z.number().optional(),
-  pnl7d: z.number().optional(),
-  pnl24h: z.number().optional(),
-  pnl30d: z.number().optional(),
-  win_rate: z.number().optional(),
-  winRate: z.number().optional(),
-  trades: z.number().int().optional(),
-  numTrades: z.number().int().optional(),
-  swapCount: z.number().int().optional(),
-  rank: z.number().int().optional(),
-  timeframe: z.string().optional(),
-  chain: z.string().optional(),
-  address: z.string().optional(),
-  evmAddress: z.string().optional(),
+  handle: optionalHandle,
+  userHandle: optionalHandle,
+  displayName: optionalDisplayName,
+  pnl: optionalNum,
+  pnl7d: optionalNum,
+  pnl24h: optionalNum,
+  pnl30d: optionalNum,
+  win_rate: optionalNum,
+  winRate: optionalNum,
+  trades: optionalInt,
+  numTrades: optionalInt,
+  swapCount: optionalInt,
+  rank: optionalInt,
+  timeframe: optionalText,
+  chain: optionalText,
+  address: optionalText,
+  evmAddress: optionalText,
   wallets: z.array(z.object({
     chain: z.string(),
     address: z.string().min(20).max(128),
-  }).passthrough()).optional(),
-  solana_wallet: z.string().optional(),
-  base_wallet: z.string().optional(),
-  ethereum_wallet: z.string().optional(),
-  x_handle: z.string().optional(),
-  xHandle: z.string().optional(),
-  twitter: z.string().optional(),
-  twitter_url: z.string().optional(),
-  x_url: z.string().optional(),
-  socials: z.record(z.string()).optional(),
+  }).passthrough()).nullish(),
+  solana_wallet: optionalText,
+  base_wallet: optionalText,
+  ethereum_wallet: optionalText,
+  x_handle: optionalText,
+  xHandle: optionalText,
+  twitter: optionalSocial,
+  twitter_url: optionalText,
+  x_url: optionalText,
+  socials: z.record(z.unknown()).nullish(),
 }).passthrough()
 
 export const FomoRawActivitySchema = z.object({

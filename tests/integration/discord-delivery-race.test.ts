@@ -8,6 +8,7 @@ import { deliverResearchReply } from "../../src/discord/delivery.js"
 import { createDiscordStore, emptyRequestsFile } from "../../src/discord/store.js"
 import type { DiscordRequestRecord } from "../../src/discord/schemas.js"
 import type { DiscordRestClient } from "../../src/discord/bot-client.js"
+import { systemClock } from "../../src/lib/clock.js"
 
 vi.mock("../../src/lib/config.js", () => ({
   loadConfig: () => ({
@@ -41,7 +42,7 @@ describe("discord intake/delivery race", () => {
     try {
       const layout = discordLayout(join(home, ".trenchcoat"))
       const store = createDiscordStore(layout)
-      const nowIso = "2026-07-19T15:00:00.000Z"
+      const nowIso = systemClock.nowIso()
       const running: DiscordRequestRecord = {
         requestId: "1000000000000000003",
         guildId: "1000000000000000001",
@@ -54,7 +55,7 @@ describe("discord intake/delivery race", () => {
         status: "running",
         createdAt: nowIso,
         updatedAt: nowIso,
-        quotaDay: "2026-07-19",
+        quotaDay: nowIso.slice(0, 10),
         deliveredPartKeys: [],
       }
       const file = emptyRequestsFile(nowIso)

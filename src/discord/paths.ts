@@ -23,11 +23,17 @@ export type DiscordLayout = Readonly<{
   walletSignalCursors: string
 }>
 
-export function discordHome(home = join(homedir(), ".trenchcoat")): string {
+/** Tests set HOME. Prefer that over os.homedir(), which can ignore HOME. */
+function defaultTrenchcoatRoot(): string {
+  const home = process.env["HOME"]?.trim() || homedir()
+  return join(home, ".trenchcoat")
+}
+
+export function discordHome(home = defaultTrenchcoatRoot()): string {
   return join(home, "discord")
 }
 
-export function discordLayout(home = join(homedir(), ".trenchcoat")): DiscordLayout {
+export function discordLayout(home = defaultTrenchcoatRoot()): DiscordLayout {
   const root = discordHome(home)
   return {
     root,

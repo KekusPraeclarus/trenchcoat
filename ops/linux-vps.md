@@ -229,8 +229,9 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
 
 - Cursor: already logged in on VPS (step A) — does not travel with rsync
 - X / Fomo Playwright profiles: try rsynced state; on challenge run
-  `trenchcoat auth twitter` / `trenchcoat auth fomo` (headed — needs a display;
-  prefer re-rsync profiles from Mac, or SSH `-X` / provider VNC)
+  `trenchcoat auth twitter` / `trenchcoat auth fomo` (headed — needs a display).
+  Fomo VPS has no display: auth on the Mac, then
+  `./ops/sync-fomo-session.sh` (copies `storage-state.json` only)
 - GramJS session: rsync `telegram-session/` if present
 - Pump.fun session: rsync `pump-profile/storage-state.json` only, or use
   `./ops/install-pump-session-sync.sh` on the Mac for a 24h catch-up push

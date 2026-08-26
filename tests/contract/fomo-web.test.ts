@@ -9,8 +9,11 @@ describe("fomo web contract fixtures", () => {
     const mapped = leaderboard.traders
       .map((raw) => mapLeaderboardEntry(raw, "2026-07-19T00:00:00.000Z", "7d") ?? mapTrader(raw, "2026-07-19T00:00:00.000Z"))
       .filter(Boolean)
-    expect(mapped.length).toBeGreaterThan(0)
+    expect(mapped.length).toBe(leaderboard.traders.length)
     expect(mapped[0]?.handle).toBeTruthy()
+    const live = mapped.find((row) => row?.handle === "livehandle")
+    expect(live?.xHandle).toBe("livehandle")
+    expect(live?.wallets).toEqual([])
   })
 
   it("unavailable fixture documents typed upstream failure", () => {

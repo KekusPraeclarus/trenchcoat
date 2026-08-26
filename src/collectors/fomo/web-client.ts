@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { type Browser, type BrowserContext, type Page, type Response } from "playwright"
 import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertFomoProfileReady, fomoProfileDir } from "../social/fomo-auth.js"
-import { classifyFomoRequest, type FomoAllowedPost } from "./request-policy.js"
+import { classifyFomoRequest, isFomoFeedCaptureUrl, type FomoAllowedPost } from "./request-policy.js"
 import {
   completeAttempt,
   loadUsageDay,
@@ -288,7 +288,7 @@ export class FomoWebClient {
     const hits = await this.navigateAndCapture(
       "feed",
       this.opts.bootPath ?? FOMO_BOOT_PATH,
-      (url) => /prod-api\.fomo\.family\/feed\/tradingActivity/iu.test(url),
+      isFomoFeedCaptureUrl,
     )
     const items = this.firstArray(hits, ["items", "feed", "activity", "trades", "data"])
     const events = items.flatMap((item) => expandFeedItems(item, observedAt))

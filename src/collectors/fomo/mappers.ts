@@ -78,6 +78,18 @@ function normalizeXHandle(raw: string | undefined): string | undefined {
   return handle
 }
 
+function socialTextCandidates(candidate: unknown): string[] {
+  if (typeof candidate === "string") return [candidate]
+  if (!candidate || typeof candidate !== "object") return []
+  const record = candidate as Record<string, unknown>
+  const texts: string[] = []
+  for (const key of ["url", "link", "x_url", "twitter_url", "username", "handle", "userHandle"]) {
+    const value = record[key]
+    if (typeof value === "string" && value.trim()) texts.push(value)
+  }
+  return texts
+}
+
 function extractXLink(value: Readonly<Record<string, unknown>>): Readonly<{
   xHandle?: string
   xProfileUrl?: string
@@ -98,15 +110,20 @@ function extractXLink(value: Readonly<Record<string, unknown>>): Readonly<{
     )
   }
   for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue
-    const handle = normalizeXHandle(candidate)
-    if (!handle) continue
-    return {
-      xHandle: handle,
-      xProfileUrl: `https://x.com/${handle}`,
+    for (const text of socialTextCandidates(candidate)) {
+      const handle = normalizeXHandle(text)
+      if (!handle) continue
+      return {
+        xHandle: handle,
+        xProfileUrl: `https://x.com/${handle}`,
+      }
     }
   }
   return {}
+}
+
+function present<T>(value: T | null | undefined): T | undefined {
+  return value ?? undefined
 }
 
 function resolveHandle(value: Readonly<{
@@ -125,13 +142,17 @@ export function mapTrader(raw: unknown, observedAt?: string): FomoTrader | undef
   const parsed = FomoRawTraderSchema.safeParse(raw)
   if (!parsed.success) return undefined
   const value = parsed.data
-  const handle = resolveHandle(value)
+  const handle = resolveHandle({
+    handle: present(value.handle),
+    userHandle: present(value.userHandle),
+    displayName: present(value.displayName),
+  })
   if (!handle) return undefined
   // Fomo profile address/evmAddress are not trading wallets — never bind them
   const x = extractXLink(value as Record<string, unknown>)
-  const winRate = value.win_rate ?? value.winRate
-  const pnl = value.pnl ?? value.pnl7d ?? value.pnl24h ?? value.pnl30d
-  const trades = value.trades ?? value.numTrades ?? value.swapCount
+  const winRate = present(value.win_rate ?? value.winRate)
+  const pnl = present(value.pnl ?? value.pnl7d ?? value.pnl24h ?? value.pnl30d)
+  const trades = present(value.trades ?? value.numTrades ?? value.swapCount)
   return {
     handle,
     ...(pnl !== undefined ? { pnl } : {}),
@@ -151,7 +172,7 @@ export function mapLeaderboardEntry(
   const trader = mapTrader(raw, observedAt)
   if (!trader) return undefined
   const parsed = FomoRawTraderSchema.safeParse(raw)
-  const rank = parsed.success && parsed.data.rank !== undefined
+  const rank = parsed.success && parsed.data.rank != null
     ? parsed.data.rank
     : 0
   return {

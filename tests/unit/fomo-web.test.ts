@@ -244,6 +244,26 @@ describe("fomo request policy", () => {
     expect(entry?.pnl).toBe(1000)
     expect(entry?.wallets).toEqual([])
   })
+
+  it("maps live twitter object and null without dropping the row", () => {
+    const withObject = mapLeaderboardEntry({
+      userHandle: "LiveHandle",
+      twitter: { username: "xfromobject" },
+      numTrades: 8,
+      pnl7d: 100,
+    }, "2026-08-26T00:00:00.000Z", "7d")
+    expect(withObject?.handle).toBe("livehandle")
+    expect(withObject?.xHandle).toBe("xfromobject")
+    expect(withObject?.wallets).toEqual([])
+
+    const withNull = mapLeaderboardEntry({
+      userHandle: "NullTwitter",
+      twitter: null,
+      numTrades: 3,
+    }, "2026-08-26T00:00:00.000Z", "7d")
+    expect(withNull?.handle).toBe("nulltwitter")
+    expect(withNull?.xHandle).toBeUndefined()
+  })
 })
 
 describe("fomo usage ledger", () => {

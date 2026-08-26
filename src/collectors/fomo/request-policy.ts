@@ -56,6 +56,17 @@ export function isFomoFollowMutationPath(path: string): boolean {
   return FOMO_FOLLOW_PATH_RE.test(path)
 }
 
+/** Live feed is `/feed/token`. Keep the old `/feed/tradingActivity` path too. */
+export function isFomoFeedCaptureUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== "prod-api.fomo.family") return false
+    return parsed.pathname === "/feed/token" || parsed.pathname === "/feed/tradingActivity"
+  } catch {
+    return false
+  }
+}
+
 export function classifyFomoRequest(
   method: string,
   url: string,

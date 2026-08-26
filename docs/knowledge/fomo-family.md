@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-08-26
 source: https://fomo.family
 ---
 
@@ -69,6 +69,18 @@ for follow/unfollow paths only. Trades/transfers/profile edits stay blocked.
   when `fomo.enabled`
 - `narrative-scan` copies sealed fomo narrative posts into
   `narrative-social-fomo-x` (excludes `purpose=historical-source-evaluation`)
+
+## Live API (2026-08-26)
+
+The leaderboard path is still `/v2/leaderboard/7d`.
+The envelope is `{ responseObject: { leaderboard: array } }`.
+The `twitter` field is a string, an object, or null.
+The mapper keeps the row when `userHandle` is present.
+It reads an X handle from a `twitter` object when that object has one.
+It does not treat `address` or `evmAddress` as wallets.
+The live feed path is `/feed/token`.
+The old `/feed/tradingActivity` path stays as a fallback.
+The capture does not take `/feed/token/thesis`.
 
 ## Probe
 

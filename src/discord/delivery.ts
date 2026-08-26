@@ -9,7 +9,6 @@ import {
 } from "./render.js"
 import type { DiscordStore } from "./store.js"
 import type { DiscordRequestRecord } from "./schemas.js"
-import { discordLayout } from "./paths.js"
 
 export const DISCORD_ERRORS = {
   MULTI_NETWORK: "Multiple networks found. Resend as chain:address.",
@@ -43,8 +42,7 @@ async function persistRequestUpdate(
   requestId: string,
   patch: (current: DiscordRequestRecord) => DiscordRequestRecord,
 ): Promise<boolean> {
-  const layout = discordLayout()
-  const locked = await withStoreLockRetry(layout.lock, async () => {
+  const locked = await withStoreLockRetry(store.layout.lock, async () => {
     const nowIso = systemClock.nowIso()
     let file = store.loadRequests()
     const idx = file.requests.findIndex((r) => r.requestId === requestId)

@@ -52,5 +52,7 @@ FAFO notes pass.
 ## Ongoing
 
 - Monthly live smoke: `pnpm tsx scripts/smoke-fomo-live.ts`
-- Re-auth burner if session_expired / challenged rates rise
+- Re-auth burner if session_expired / challenged rates rise.
+  On the Mac: `pnpm dev:cli auth fomo`, then `./ops/sync-fomo-session.sh`.
+  Copy `storage-state.json` only. Do not rsync the Chrome profile.
 - Replace operator override with real FAFO sample/evaluate when implemented
