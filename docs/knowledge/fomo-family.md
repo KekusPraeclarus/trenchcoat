@@ -81,6 +81,10 @@ It does not treat `address` or `evmAddress` as wallets.
 The live feed path is `/feed/token`.
 The old `/feed/tradingActivity` path stays as a fallback.
 The capture does not take `/feed/token/thesis`.
+The live profile path is `/v2/users/userHandle/{handle}`.
+The capture does not take session `/v2/users`.
+A profile fill writes `xHandle` only when the profile has an explicit twitter field.
+Leaderboard `twitter` is null on the 2026-08-26 sample of 150 rows.
 
 ## Probe
 

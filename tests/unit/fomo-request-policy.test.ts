@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { classifyFomoRequest, isFomoFeedCaptureUrl } from "../../src/collectors/fomo/request-policy.js"
+import { classifyFomoRequest, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl } from "../../src/collectors/fomo/request-policy.js"
 
 describe("fomo request policy", () => {
   it("allows read traffic on fomo and privy", () => {
@@ -26,6 +26,14 @@ describe("fomo request policy", () => {
     expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity")).toBe(true)
     expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token/thesis")).toBe(false)
     expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/7d")).toBe(false)
+  })
+
+  it("captures /v2/users/userHandle/{handle} and skips session /v2/users", () => {
+    expect(isFomoProfileUserHandleUrl("https://prod-api.fomo.family/v2/users/userHandle/ether_monk", "ether_monk")).toBe(true)
+    expect(isFomoProfileUserHandleUrl("https://prod-api.fomo.family/v2/users/userHandle/ether_monk?x=1", "ether_monk")).toBe(true)
+    expect(isFomoProfileUserHandleUrl("https://prod-api.fomo.family/v2/users", "ether_monk")).toBe(false)
+    expect(isFomoProfileUserHandleUrl("https://prod-api.fomo.family/v2/users/userHandle/other", "ether_monk")).toBe(false)
+    expect(isFomoProfileUserHandleUrl("https://prod-api.fomo.family/v2/users/abc/swaps", "ether_monk")).toBe(false)
   })
 
   it("allows follow mutations only in mutationMode", () => {

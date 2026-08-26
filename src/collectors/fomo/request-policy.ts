@@ -67,6 +67,21 @@ export function isFomoFeedCaptureUrl(url: string): boolean {
   }
 }
 
+/** Live profile is `/v2/users/userHandle/{handle}`. Skip session `/v2/users`. */
+export function isFomoProfileUserHandleUrl(url: string, handle: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== "prod-api.fomo.family") return false
+    const raw = handle.trim().replace(/^@/u, "")
+    if (!raw) return false
+    const encoded = `/v2/users/userHandle/${encodeURIComponent(raw)}`
+    const plain = `/v2/users/userHandle/${raw}`
+    return parsed.pathname === encoded || parsed.pathname === plain
+  } catch {
+    return false
+  }
+}
+
 export function classifyFomoRequest(
   method: string,
   url: string,

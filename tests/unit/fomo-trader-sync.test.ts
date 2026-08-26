@@ -60,10 +60,13 @@ function failGates(probeRunId: string): FomoGatesFile {
   }
 }
 
-function mockClient(entries: readonly FomoLeaderboardEntry[] = []): FomoDataSource {
+function mockClient(
+  entries: readonly FomoLeaderboardEntry[] = [],
+  statsByHandle: Readonly<Record<string, FomoLeaderboardEntry | undefined>> = {},
+): FomoDataSource {
   return {
     getLeaderboard: async () => [...entries],
-    getHandleStats: async () => undefined,
+    getHandleStats: async (handle: string) => statsByHandle[handle],
     getHotTokens: async () => [],
     getActivity: async () => [],
     pollActivity: async () => ({ count: 0 }),
@@ -247,5 +250,70 @@ describe("fomo trader sync host-only", () => {
       readFileSync(join(agentRoot, "state", "fomo-follows.json"), "utf8"),
     ) as { followedHandles: string[] }
     expect(follows.followedHandles).toEqual(["linked", "sameonly"])
+  })
+
+  it("merges a profile X link onto a leaderboard row that has none", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fomo-trader-profile-x-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    writeFileSync(join(agentRoot, "state", "wallets.json"), JSON.stringify({
+      schema: 1,
+      wallets: [],
+      transitions: [],
+      pendingTransitionIds: [],
+      cursors: [],
+      exclusions: [],
+    }))
+    await saveFomoGates(archiveRoot, {
+      ...failGates("live"),
+      gates: {
+        provider: { verdict: "pass", sampleSize: 30, successRate: 0.99 },
+        leaderboard: { verdict: "pass", sampleSize: 30 },
+        feed: { verdict: "pass", sampleSize: 30 },
+        trending: { verdict: "pass", sampleSize: 30 },
+        alerts: { verdict: "pass", sampleSize: 30 },
+        theses: { verdict: "fail", sampleSize: 0 },
+      },
+    })
+
+    const writer = new SnapshotWriter(agentRoot)
+    await collectFomoTraderSync({
+      runId: "fomo-trader-sync-profile-x",
+      writer,
+      fetchedAt: "2026-08-26T00:00:00.000Z",
+      agentRoot,
+      archiveRoot,
+      config: liveTraderConfig(),
+      client: mockClient(
+        [{
+          handle: "sameonly",
+          timeframe: "7d",
+          rank: 1,
+          wallets: [],
+          observedAt: "2026-08-26T00:00:00.000Z",
+        }],
+        {
+          sameonly: {
+            handle: "sameonly",
+            xHandle: "realxuser",
+            xProfileUrl: "https://x.com/realxuser",
+            timeframe: "7d",
+            rank: 1,
+            wallets: [],
+            observedAt: "2026-08-26T00:00:00.000Z",
+          },
+        },
+      ),
+      follow: async () => ({ verified: true, ambiguous: false }),
+    })
+
+    const nominations = JSON.parse(
+      readFileSync(join(agentRoot, "state", "x-source-nominations.json"), "utf8"),
+    ) as { nominations: Array<{ xHandle: string, matchBasis: string }> }
+    expect(nominations.nominations).toHaveLength(1)
+    expect(nominations.nominations[0]?.xHandle).toBe("realxuser")
+    expect(nominations.nominations[0]?.matchBasis).toBe("fomo-profile-link")
   })
 })

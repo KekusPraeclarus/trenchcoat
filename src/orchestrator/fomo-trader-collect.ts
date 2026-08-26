@@ -116,7 +116,12 @@ export async function collectFomoTraderSync(args: Readonly<{
       if (entry.xHandle) continue
       try {
         const stats = await client.getHandleStats(entry.handle)
-        if (stats) byHandle.set(entry.handle, stats)
+        if (!stats?.xHandle) continue
+        byHandle.set(entry.handle, {
+          ...entry,
+          xHandle: stats.xHandle,
+          ...(stats.xProfileUrl ? { xProfileUrl: stats.xProfileUrl } : {}),
+        })
       } catch {
         // skip unavailable handles
       }

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { type Browser, type BrowserContext, type Page, type Response } from "playwright"
 import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertFomoProfileReady, fomoProfileDir } from "../social/fomo-auth.js"
-import { classifyFomoRequest, isFomoFeedCaptureUrl, type FomoAllowedPost } from "./request-policy.js"
+import { classifyFomoRequest, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
 import {
   completeAttempt,
   loadUsageDay,
@@ -13,6 +13,7 @@ import {
 import {
   expandFeedItems,
   extractArrayPayload,
+  extractProfileUser,
   mapAlertEvent,
   mapLeaderboardEntry,
   mapProfileSwapBuys,
@@ -333,25 +334,19 @@ export class FomoWebClient {
 
   async readProfile(handle: string): Promise<FomoLeaderboardEntry | undefined> {
     const observedAt = this.nowIso()
-    const safe = encodeURIComponent(handle.trim().replace(/^@/u, ""))
+    const rawHandle = handle.trim().replace(/^@/u, "")
+    const safe = encodeURIComponent(rawHandle)
     const hits = await this.navigateAndCapture(
       "profile",
       `/profile/${safe}`,
-      (url) => /prod-api\.fomo\.family\/v2\/users/iu.test(url),
+      (url) => isFomoProfileUserHandleUrl(url, rawHandle),
     )
-    const items = this.firstArray(hits, ["user", "profile", "trader", "data", "items", "responseObject"])
-    const first = items[0] ?? (() => {
-      for (const hit of hits) {
-        if (hit.body && typeof hit.body === "object" && "responseObject" in (hit.body as object)) {
-          return Reflect.get(hit.body as object, "responseObject")
-        }
-      }
-      return hits[0]?.body
-    })()
-    return first ? mapLeaderboardEntry({
-      ...(typeof first === "object" && first ? first as object : {}),
-      userHandle: handle,
-    }, observedAt) : undefined
+    const user = extractProfileUser(hits[0]?.body)
+    if (!user || typeof user !== "object") return undefined
+    return mapLeaderboardEntry({
+      ...user,
+      userHandle: rawHandle,
+    }, observedAt)
   }
 
   /**

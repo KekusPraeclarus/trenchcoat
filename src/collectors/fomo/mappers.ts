@@ -458,6 +458,19 @@ export function thesisRubricComplete(thesis: FomoThesis): boolean {
   )
 }
 
+/** Live profile envelope is `{ responseObject: user }` for `/v2/users/userHandle/{handle}`. */
+export function extractProfileUser(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return undefined
+  const record = payload as Record<string, unknown>
+  const nested = record["responseObject"]
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const user = Reflect.get(nested, "user")
+    if (user && typeof user === "object" && !Array.isArray(user)) return user
+    return nested
+  }
+  return undefined
+}
+
 export function extractArrayPayload(payload: unknown, keys: readonly string[]): unknown[] {
   if (Array.isArray(payload)) return payload
   if (payload === null || typeof payload !== "object") return []

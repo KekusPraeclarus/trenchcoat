@@ -11,6 +11,7 @@ import {
   mapProfileSwapBuys,
   mapThesis,
   mapTrader,
+  extractProfileUser,
   expandFeedItems,
   thesisRubricComplete,
 } from "../../src/collectors/fomo/mappers.js"
@@ -263,6 +264,29 @@ describe("fomo request policy", () => {
     }, "2026-08-26T00:00:00.000Z", "7d")
     expect(withNull?.handle).toBe("nulltwitter")
     expect(withNull?.xHandle).toBeUndefined()
+  })
+
+  it("maps a live profile envelope and keeps twitter null without a same-handle X link", () => {
+    const user = extractProfileUser({
+      success: true,
+      responseObject: {
+        userHandle: "LiveHandle",
+        twitter: null,
+        numTrades: 8,
+      },
+    })
+    const none = mapLeaderboardEntry(user, "2026-08-26T00:00:00.000Z", "7d")
+    expect(none?.handle).toBe("livehandle")
+    expect(none?.xHandle).toBeUndefined()
+
+    const linked = mapLeaderboardEntry(extractProfileUser({
+      responseObject: {
+        userHandle: "LiveHandle",
+        twitter: { username: "realxuser" },
+      },
+    }), "2026-08-26T00:00:00.000Z", "7d")
+    expect(linked?.xHandle).toBe("realxuser")
+    expect(linked?.wallets).toEqual([])
   })
 })
 
