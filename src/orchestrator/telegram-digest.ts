@@ -31,6 +31,12 @@ import {
   type NarrativeLogEntry,
 } from "./narrative-log.js"
 import { buildNarrativeDigestRouterEvent } from "./router.js"
+import {
+  digestMarkdownCaptionFromText,
+  digestMarkdownFilenameFromText,
+  telegramSendDocument,
+  type TelegramBotFetcher,
+} from "../lib/telegram-bot.js"
 
 export const LONDON_TZ = "Europe/London"
 export const DIGEST_HOUR = 4
@@ -537,4 +543,38 @@ export async function stageTelegramDigestEvent(args: Readonly<{
   }
   const outbox = new Outbox(join(args.layout.routerOutbox, args.runId))
   await outbox.stage(args.record.event)
+}
+
+export function digestOperatorReceiptPath(layout: ArchiveLayout, londonDate: string): string {
+  return join(layout.telegramDigests, `${londonDate}.operator-md.json`)
+}
+
+/**
+ * Send the raw digest markdown to the operator interface bot.
+ * Idempotent per London date via a sidecar receipt.
+ */
+export async function sendDigestOperatorMarkdown(args: Readonly<{
+  layout: ArchiveLayout
+  londonDate: string
+  text: string
+  nowIso: string
+  fetcher: TelegramBotFetcher
+  token: string
+  chatId: string
+}>): Promise<"sent" | "reused"> {
+  const path = digestOperatorReceiptPath(args.layout, args.londonDate)
+  if (existsSync(path)) return "reused"
+  const filename = digestMarkdownFilenameFromText(args.text)
+  await telegramSendDocument(args.fetcher, args.token, args.chatId, {
+    filename,
+    bytes: `${args.text.trim()}\n`,
+    caption: digestMarkdownCaptionFromText(args.text),
+  })
+  await writeJsonRecordFsync(path, {
+    schema: 1,
+    londonDate: args.londonDate,
+    filename,
+    sentAt: args.nowIso,
+  } as never)
+  return "sent"
 }

@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { describe, expect, it, vi } from "vitest"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { RouterEventSchema } from "../../src/contracts/schemas.js"
 import { ensureArchive, telegramDigestPath } from "../../src/lib/archive.js"
 import { Outbox } from "../../src/lib/outbox.js"
 import { buildBroadcastRouterEvent, buildNarrativeDigestRouterEvent } from "../../src/orchestrator/router.js"
@@ -14,6 +15,7 @@ import {
   prepareTelegramDigest,
   previousLondonDate,
   resolveDigestLondonDate,
+  sendDigestOperatorMarkdown,
   stageTelegramDigestEvent,
 } from "../../src/orchestrator/telegram-digest.js"
 
@@ -424,6 +426,79 @@ describe("buildNarrativeDigestRouterEvent", () => {
       inputHash: event.dailyDigest!.inputHash as `sha256:${string}`,
     })
     expect(again.eventId).toBe(event.eventId)
+  })
+
+  it("stages a digest longer than 8000 characters", async () => {
+    const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-digest-long-")))
+    const text = `**Daily narrative map — 2026-07-18**\n\n**RH Chain Meme Rotation — peaking**\n\n${"x".repeat(9_000)}`
+    const event = buildNarrativeDigestRouterEvent({
+      runId: RUN_ID,
+      occurredAt: "2026-07-18T19:00:00.000Z",
+      text,
+      londonDate: "2026-07-18",
+      windowStart: "2026-07-17T19:00:00.000Z",
+      windowEnd: "2026-07-18T19:00:00.000Z",
+      activeNarrativeSlugs: ["rh-chain-meme-rotation"],
+      sourceEventIds: [],
+      inputHash: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" as const,
+    })
+    expect(event.text.length).toBeGreaterThan(8_000)
+    expect(() => RouterEventSchema.parse(event)).not.toThrow()
+    await stageTelegramDigestEvent({
+      layout,
+      runId: RUN_ID,
+      record: {
+        schema: 1,
+        londonDate: "2026-07-18",
+        windowStart: event.dailyDigest!.windowStart,
+        windowEnd: event.dailyDigest!.windowEnd,
+        activeNarrativeSlugs: ["rh-chain-meme-rotation"],
+        sourceEventIds: [],
+        inputHash: event.dailyDigest!.inputHash as `sha256:${string}`,
+        outcome: "prepared",
+        renderMethod: "fallback",
+        event,
+        preparedAt: "2026-07-18T19:05:00.000Z",
+      },
+    })
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    expect(outbox.list()).toHaveLength(1)
+    expect(outbox.list()[0]?.text.length).toBeGreaterThan(8_000)
+  })
+})
+
+describe("sendDigestOperatorMarkdown", () => {
+  it("sends a raw markdown file once per London date", async () => {
+    const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-digest-op-")))
+    const text = "**Daily narrative map — 2026-07-17**\n\n**RH — peaking**\n\nStill live."
+    const urls: string[] = []
+    const fetcher = vi.fn(async (url: string) => {
+      urls.push(url)
+      return new Response(JSON.stringify({ result: { message_id: 9 } }), { status: 200 })
+    })
+    const first = await sendDigestOperatorMarkdown({
+      layout,
+      londonDate: "2026-07-18",
+      text,
+      nowIso: "2026-07-18T03:00:00.000Z",
+      fetcher,
+      token: "op-token",
+      chatId: "42",
+    })
+    const second = await sendDigestOperatorMarkdown({
+      layout,
+      londonDate: "2026-07-18",
+      text,
+      nowIso: "2026-07-18T03:05:00.000Z",
+      fetcher,
+      token: "op-token",
+      chatId: "42",
+    })
+    expect(first).toBe("sent")
+    expect(second).toBe("reused")
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toContain("/sendDocument")
+    expect(existsSync(join(layout.telegramDigests, "2026-07-18.operator-md.json"))).toBe(true)
   })
 })
 

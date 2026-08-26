@@ -49,6 +49,10 @@ items per run.
 
 > **Update (ADR 041):** Discord forwards the same rendered text as Telegram.
 > Digest window anchor is 04:00 Europe/London.
+>
+> **Update (ADR 049):** 8000 characters is a distiller target only. Longer
+> maps still send. The host also sends a raw `.md` file to the operator
+> interface bot and the channel.
 
 ## Consequences
 

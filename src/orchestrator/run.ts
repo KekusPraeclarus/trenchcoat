@@ -1396,6 +1396,7 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
       const {
         prepareTelegramDigest,
         stageTelegramDigestEvent,
+        sendDigestOperatorMarkdown,
       } = await import("./telegram-digest.js")
       const config = loadConfig()
       const nowIso = systemClock.nowIso()
@@ -1442,6 +1443,27 @@ export async function runJob(opts: RunOptions): Promise<RunResult> {
           runId,
           record: prepared.record,
         })
+        const operatorToken = process.env["TELEGRAM_BOT_TOKEN"]?.trim()
+        const operatorChatId = process.env["TELEGRAM_OPERATOR_ID"]?.trim()
+        const digestText = prepared.record.event?.text
+        if (operatorToken && operatorChatId && digestText) {
+          try {
+            await sendDigestOperatorMarkdown({
+              layout,
+              londonDate: prepared.record.londonDate,
+              text: digestText,
+              nowIso,
+              fetcher: fetch,
+              token: operatorToken,
+              chatId: operatorChatId,
+            })
+          } catch (error) {
+            log.warn("telegram digest operator markdown skipped", {
+              runId,
+              error: error instanceof Error ? error.message : "unknown",
+            })
+          }
+        }
       }
       telegramDigestReport = prepared.report
       writeFileSync(

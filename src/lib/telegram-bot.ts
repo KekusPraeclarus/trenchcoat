@@ -16,6 +16,29 @@ export const TELEGRAM_SAFE_CHUNK = 3_800
 /** Persist full text and send a summary when a reply exceeds this */
 export const TELEGRAM_LONG_REPORT_CHARS = 7_600
 
+const DIGEST_TITLE_DATE_RE = /^\*\*Daily narrative map — (\d{4}-\d{2}-\d{2})\*\*/u
+const DOCUMENT_FILENAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+
+/** Filename for the raw daily digest markdown file. */
+export function digestMarkdownFilename(activityLondonDate: string): string {
+  const day = /^\d{4}-\d{2}-\d{2}$/u.test(activityLondonDate)
+    ? activityLondonDate
+    : "unknown"
+  return `daily-narrative-map-${day}.md`
+}
+
+/** Read the activity date from a host-rendered digest title. */
+export function digestMarkdownFilenameFromText(text: string): string {
+  const match = text.trim().match(DIGEST_TITLE_DATE_RE)
+  return digestMarkdownFilename(match?.[1] ?? "unknown")
+}
+
+/** Caption for the raw daily digest markdown file. */
+export function digestMarkdownCaptionFromText(text: string): string {
+  const match = text.trim().match(DIGEST_TITLE_DATE_RE)
+  return match ? `Daily narrative map — ${match[1]}` : "Daily narrative map"
+}
+
 async function callBot(
   fetcher: TelegramBotFetcher,
   token: string,
@@ -143,6 +166,55 @@ export async function telegramSendFormattedChunks(
     if (result.messageId) messageIds.push(result.messageId)
   }
   return { parts: parts.length, messageIds }
+}
+
+/** Send a raw file. Never truncates the bytes. */
+export async function telegramSendDocument(
+  fetcher: TelegramBotFetcher,
+  token: string,
+  chatId: string,
+  args: Readonly<{
+    filename: string
+    bytes: string
+    caption?: string
+    contentType?: string
+  }>,
+): Promise<{ messageId?: string }> {
+  if (!DOCUMENT_FILENAME_RE.test(args.filename)) {
+    throw new TypeError("telegram document filename is invalid")
+  }
+  const blob = new Blob([args.bytes], {
+    type: args.contentType ?? "text/markdown; charset=utf-8",
+  })
+  const form = new FormData()
+  form.append("chat_id", chatId)
+  form.append("document", blob, args.filename)
+  if (args.caption && args.caption.trim().length > 0) {
+    form.append("caption", args.caption.trim().slice(0, 1024))
+  }
+  const response = await fetcher(`https://api.telegram.org/bot${token}/sendDocument`, {
+    method: "POST",
+    body: form,
+    redirect: "error",
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "")
+    const err = new Error(
+      `telegram sendDocument HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+    ) as Error & { retryable?: boolean; retryAfterSeconds?: number }
+    err.retryable = response.status === 429 || response.status >= 500
+    const ra = response.headers.get("retry-after")
+    if (ra) err.retryAfterSeconds = Number(ra)
+    throw err
+  }
+  try {
+    const body = await response.json() as { result?: { message_id?: number } }
+    const id = body.result?.message_id
+    return typeof id === "number" ? { messageId: String(id) } : {}
+  } catch {
+    return {}
+  }
 }
 
 /** Daily digest fanout: section-aware chunks, no page labels. */

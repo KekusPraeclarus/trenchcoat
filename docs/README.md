@@ -2,7 +2,7 @@
 description: Context map for developer documentation. What to read, in what order, and what to skip.
 scope: project
 status: active
-last_verified: 2026-08-18
+last_verified: 2026-08-26
 ---
 
 # trenchcoat — developer docs
@@ -27,7 +27,7 @@ Setup, deploy, and CLI live in the root [README.md](../README.md). This file is 
 | Env, config schema, seeds, CLI | [CONFIG.md](CONFIG.md) |
 | A specific module | [architecture/README.md](architecture/README.md) then that module doc |
 | Provider / scrape details | [knowledge/](knowledge/) |
-| A settled decision | [adr/](adr/) (001–048, no 008) |
+| A settled decision | [adr/](adr/) (001–049, no 008) |
 | Parallel worktrees | [development.md](development.md) |
 | Planned trading pipeline | [trading/README.md](trading/README.md) — design only, no code yet |
 | Linux VPS / Actions | [../ops/linux-vps.md](../ops/linux-vps.md) |

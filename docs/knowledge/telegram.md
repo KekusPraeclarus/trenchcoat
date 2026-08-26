@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-08-26
 ---
 
 # Telegram
@@ -28,7 +28,10 @@ last_verified: 2026-08-10
   narratives that had a host-approved Telegram development in the prior
   04:00→04:00 London window (title uses the activity day, not the delivery
   day; one paragraph per section; host may send multiple Telegram messages
-  without page labels but never splits a section). Quiet actives are omitted rather than padded with
+  without page labels but never splits a section). The same text also lands
+  as `daily-narrative-map-<activity-date>.md` on the channel and the operator
+  interface bot. Distiller aims for ~8000 characters. Longer maps still send.
+  Quiet actives are omitted rather than padded with
   "nothing happened". Discord receives the same rendered text as Telegram
   leaders (ADR 041); daily digest stays Telegram-only
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,

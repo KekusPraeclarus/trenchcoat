@@ -106,7 +106,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–048 (no 008)
+│   ├── adr/                  # binding decisions 001–049 (no 008)
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,

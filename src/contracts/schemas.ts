@@ -212,13 +212,19 @@ export const RouterEventTypeSchema = z.enum([
   "wallet.convergence",
 ])
 
+/**
+ * Transport bound for router event and channel text.
+ * 8000 is a digest prompt target only. It is not a send gate.
+ */
+export const ROUTER_EVENT_TEXT_MAX = 256_000
+
 /** Per-destination fanout text. Optional; excluded from eventId derivation. */
 export const RouterChannelPayloadsSchema = z.object({
   telegram: z.object({
-    text: z.string().min(1).max(64_000),
+    text: z.string().min(1).max(ROUTER_EVENT_TEXT_MAX),
   }).optional(),
   discord: z.object({
-    text: z.string().min(1).max(64_000),
+    text: z.string().min(1).max(ROUTER_EVENT_TEXT_MAX),
   }).optional(),
 }).strict()
 export type RouterChannelPayloads = z.infer<typeof RouterChannelPayloadsSchema>
@@ -230,7 +236,7 @@ export const RouterEventSchema = z.object({
   runId: SafeIdSchema,
   type: RouterEventTypeSchema,
   severity: BroadcastSeveritySchema.or(z.literal("lifecycle")).or(z.literal("info")),
-  text: z.string().min(1).max(8_000),
+  text: z.string().min(1).max(ROUTER_EVENT_TEXT_MAX),
   refs: z.array(z.string()).max(16),
   auditClaim: AuditClaimSchema.optional(),
   channels: RouterChannelPayloadsSchema.optional(),

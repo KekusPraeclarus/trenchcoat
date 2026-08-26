@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  digestMarkdownCaptionFromText,
+  digestMarkdownFilenameFromText,
   splitDailyDigestTelegramText,
   splitTelegramText,
   TELEGRAM_SAFE_CHUNK,
+  telegramSendDocument,
   telegramSendFormattedChunks,
 } from "../../src/lib/telegram-bot.js"
+import { deliverTelegram } from "../../src/router/deliver.js"
 import { prepareTelegramReply } from "../../src/chat/telegram-reply.js"
 import { mkdtempSync, readFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -79,6 +83,54 @@ describe("splitDailyDigestTelegramText", () => {
       const hasBStart = part.includes("Pons Launchpad Attention")
       expect(!(hasAStart && hasBStart)).toBe(true)
     }
+  })
+})
+
+describe("digest markdown file helpers", () => {
+  it("names the file from the digest title date", () => {
+    const text = "**Daily narrative map — 2026-08-25**\n\n**RH — peaking**\n\nStill live."
+    expect(digestMarkdownFilenameFromText(text)).toBe("daily-narrative-map-2026-08-25.md")
+    expect(digestMarkdownCaptionFromText(text)).toBe("Daily narrative map — 2026-08-25")
+  })
+})
+
+describe("telegramSendDocument", () => {
+  it("posts multipart sendDocument without truncation", async () => {
+    let url = ""
+    let body: FormData | undefined
+    const fetcher = vi.fn(async (target, init) => {
+      url = String(target)
+      body = init?.body as FormData
+      return new Response(JSON.stringify({ result: { message_id: 3 } }), { status: 200 })
+    })
+    const result = await telegramSendDocument(fetcher, "token", "99", {
+      filename: "daily-narrative-map-2026-08-25.md",
+      bytes: "# map\n",
+      caption: "Daily narrative map — 2026-08-25",
+    })
+    expect(result.messageId).toBe("3")
+    expect(url).toContain("/sendDocument")
+    expect(body).toBeInstanceOf(FormData)
+    expect(body?.get("chat_id")).toBe("99")
+    expect(body?.get("caption")).toBe("Daily narrative map — 2026-08-25")
+    const file = body?.get("document")
+    expect(file).toBeInstanceOf(File)
+    expect((file as File).name).toBe("daily-narrative-map-2026-08-25.md")
+  })
+})
+
+describe("deliverTelegram daily digest", () => {
+  it("sends section chunks and a raw markdown file", async () => {
+    const methods: string[] = []
+    const fetcher = vi.fn(async (target) => {
+      methods.push(String(target))
+      return new Response(JSON.stringify({ result: { message_id: 1 } }), { status: 200 })
+    })
+    const text = "**Daily narrative map — 2026-08-25**\n\n**RH — peaking**\n\nStill live."
+    const result = await deliverTelegram(fetcher, "token", "chan", text, { dailyDigest: true })
+    expect(methods.some((url) => url.includes("/sendMessage"))).toBe(true)
+    expect(methods.some((url) => url.includes("/sendDocument"))).toBe(true)
+    expect(result.messageIds.length).toBeGreaterThanOrEqual(2)
   })
 })
 
