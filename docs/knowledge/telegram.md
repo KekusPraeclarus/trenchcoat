@@ -29,8 +29,9 @@ last_verified: 2026-08-26
   04:00→04:00 London window (title uses the activity day, not the delivery
   day; one paragraph per section; host may send multiple Telegram messages
   without page labels but never splits a section). The same text also lands
-  as `daily-narrative-map-<activity-date>.md` on the channel and the operator
-  interface bot. Distiller aims for ~8000 characters. Longer maps still send.
+  as `daily-narrative-map-<activity-date>.md` on the operator interface bot
+  only. The public channel never receives that file. Distiller aims for ~8000
+  characters. Longer maps still send.
   Quiet actives are omitted rather than padded with
   "nothing happened". Discord receives the same rendered text as Telegram
   leaders (ADR 041); daily digest stays Telegram-only

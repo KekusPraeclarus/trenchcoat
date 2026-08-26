@@ -120,7 +120,7 @@ describe("telegramSendDocument", () => {
 })
 
 describe("deliverTelegram daily digest", () => {
-  it("sends section chunks and a raw markdown file", async () => {
+  it("sends section chunks and never a raw markdown file", async () => {
     const methods: string[] = []
     const fetcher = vi.fn(async (target) => {
       methods.push(String(target))
@@ -129,8 +129,8 @@ describe("deliverTelegram daily digest", () => {
     const text = "**Daily narrative map — 2026-08-25**\n\n**RH — peaking**\n\nStill live."
     const result = await deliverTelegram(fetcher, "token", "chan", text, { dailyDigest: true })
     expect(methods.some((url) => url.includes("/sendMessage"))).toBe(true)
-    expect(methods.some((url) => url.includes("/sendDocument"))).toBe(true)
-    expect(result.messageIds.length).toBeGreaterThanOrEqual(2)
+    expect(methods.some((url) => url.includes("/sendDocument"))).toBe(false)
+    expect(result.messageIds.length).toBeGreaterThanOrEqual(1)
   })
 })
 

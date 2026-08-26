@@ -1,14 +1,7 @@
 import type Database from "better-sqlite3"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
-import {
-  digestMarkdownCaptionFromText,
-  digestMarkdownFilenameFromText,
-  splitTelegramText,
-  telegramSendDailyDigestChunks,
-  telegramSendDocument,
-  telegramSendFormattedChunks,
-} from "../lib/telegram-bot.js"
+import { splitTelegramText, telegramSendDailyDigestChunks, telegramSendFormattedChunks } from "../lib/telegram-bot.js"
 import { indexDiscordProviderMessages } from "./message-index.js"
 
 export type DestinationRow = Readonly<{
@@ -69,17 +62,7 @@ export async function deliverTelegram(
   const result = opts?.dailyDigest
     ? await telegramSendDailyDigestChunks(fetcher, botToken, chatId, text)
     : await telegramSendFormattedChunks(fetcher, botToken, chatId, text)
-  const messageIds = [...result.messageIds]
-  if (opts?.dailyDigest) {
-    const filename = digestMarkdownFilenameFromText(text)
-    const doc = await telegramSendDocument(fetcher, botToken, chatId, {
-      filename,
-      bytes: `${text.trim()}\n`,
-      caption: digestMarkdownCaptionFromText(text),
-    })
-    if (doc.messageId) messageIds.push(doc.messageId)
-  }
-  return { messageIds }
+  return { messageIds: result.messageIds }
 }
 
 export async function deliverDiscord(

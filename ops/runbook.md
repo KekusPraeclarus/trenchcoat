@@ -344,9 +344,10 @@ predeploy backup only when migration itself corrupted host state.
   host-approved Telegram development in the window) are omitted from the map —
   absence is the signal. Retries reuse the immutable event (same `eventId` /
   payload). Delivery may span multiple Telegram messages but never splits a
-  section. The same text also sends as a raw `.md` file to the channel and the
-  operator interface bot. Distiller aims for ~8000 characters. Longer maps
-  still send. Manual: `trenchcoat run telegram-digest` (Linux). Do **not** load a
+  section. The same text also sends as a raw `.md` file to the operator
+  interface bot only. The public channel never receives that file. Distiller
+  aims for ~8000 characters. Longer maps still send. Manual:
+  `trenchcoat run telegram-digest` (Linux). Do **not** load a
   Mac launchd timer while the VPS is production.
 - **Adding a Telegram channel** — add to `~/.trenchcoat/config.json` under
   `telegram_channels` with `mode: "preview"` (preferred). Restart

@@ -27,17 +27,18 @@ chunked channel posts.
 2. **Length is not a send gate.** `RouterEvent.text` and channel payloads use
    `ROUTER_EVENT_TEXT_MAX` as a transport bound only. Stage and fanout must
    not reject a digest because it is longer than 8000 characters.
-3. **Raw markdown fanout.** A prepared digest also sends
-   `daily-narrative-map-<activity-date>.md` to:
-   - the public channel (router bot, after section-aware chunks)
-   - the operator interface bot (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_OPERATOR_ID`)
+3. **Raw markdown fanout.** A prepared digest sends
+   `daily-narrative-map-<activity-date>.md` only to the operator interface bot
+   (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_OPERATOR_ID`). The public channel never
+   receives the file. Channel fanout stays section-aware text chunks only.
 4. Operator file send is idempotent per London date via
    `archive/telegram-digests/<date>.operator-md.json`.
 
 ## Consequences
 
 - Existing ledger events longer than 8000 characters can stage on retry.
-- Channel posts stay section-aware multi-message delivery.
+- Channel posts stay section-aware multi-message delivery and never include a
+  raw `.md` attachment.
 - INV-B2 no longer treats digest overflow as a hard fail.
 
 ## Related

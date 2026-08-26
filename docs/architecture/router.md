@@ -79,7 +79,7 @@ internal-only narrative/decision invalidations). Host `renderChannelPayloads`
 | Destination | Source |
 |---|---|
 | Telegram (intraday) | One fail-closed **short topic paragraph** per normalized `auditClaim.subject` per run when `broadcast.telegram_overview.enabled` (bounded topic packet only — never the global chat report; ≤800 chars; no section headers / bullet briefings; no other-narrative inventory; no host plumbing / workspace paths / provenance or bare @handles); on miss uses packet fallback. Same-subject followers omit `channels.telegram` (`topic-merged`). No daily message-count limit |
-| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one or more messages (one paragraph per section; section-aware split, no page labels) plus a raw `.md` file to the channel and the operator interface bot; quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId`. Distiller aims for ~8000 characters. Longer maps still send. |
+| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one or more messages (one paragraph per section; section-aware split, no page labels). A raw `.md` file goes only to the operator interface bot, never the public channel. Quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId`. Distiller aims for ~8000 characters. Longer maps still send. |
 | Discord | Same text as Telegram when `channels.telegram` is set (`forwarded`); topic-merged followers omit both destinations |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
@@ -110,9 +110,10 @@ Discord mirrors Telegram leaders only (ADR 041).
   used by router fanout (`src/router/deliver.ts`) and the operator chat listener.
   Daily `narrative.digest` uses `telegramSendDailyDigestChunks` instead: section-
   aware packing with no page labels and no section splits. The same run also
-  sends `daily-narrative-map-<activity-date>.md` to the channel (router bot)
-  and to the operator interface bot (`TELEGRAM_BOT_TOKEN`). 8000 characters is
-  a prompt target only. `ROUTER_EVENT_TEXT_MAX` is the transport bound.
+  sends `daily-narrative-map-<activity-date>.md` to the operator interface bot
+  only (`TELEGRAM_BOT_TOKEN`). The public channel never receives that file.
+  8000 characters is a prompt target only. `ROUTER_EVENT_TEXT_MAX` is the
+  transport bound.
   Chat replies longer than ~7600 chars also persist under `agent/reports/chat/`
   with a short summary pointing at the file.
 - Discord: webhook `wait=true`, `allowed_mentions.parse=[]`. Soft chunk ~1900

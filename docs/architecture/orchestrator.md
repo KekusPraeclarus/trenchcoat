@@ -523,8 +523,9 @@ staged router events.
   had a host-approved Telegram development in the window (one paragraph per
   section; section-aware multi-message delivery without page labels). The host
   also sends the same text as a raw `.md` file to the operator interface bot
-  and the channel. Distiller aims for ~8000 characters. Longer maps still
-  send. Quiet actives are omitted — no "nothing happened" filler. Immutable
+  only. The public channel never receives that file. Distiller aims for ~8000
+  characters. Longer maps still send. Quiet actives are omitted — no
+  "nothing happened" filler. Immutable
   ledger under `archive/telegram-digests/<London-date>.json`. No active
   narratives, or active but no window developments → durable no-send record.
   Retries reuse the exact stored event

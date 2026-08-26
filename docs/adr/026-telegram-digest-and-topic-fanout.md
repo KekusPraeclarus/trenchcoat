@@ -52,7 +52,7 @@ items per run.
 >
 > **Update (ADR 049):** 8000 characters is a distiller target only. Longer
 > maps still send. The host also sends a raw `.md` file to the operator
-> interface bot and the channel.
+> interface bot only. The public channel never receives that file.
 
 ## Consequences
 
