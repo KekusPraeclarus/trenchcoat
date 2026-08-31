@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { chromium, type BrowserContext } from "playwright"
 import { defaultConfigPath } from "../../lib/config.js"
 import { ensureChromiumInstalled } from "../../lib/playwright-chromium.js"
+import { clearXSessionHold, xSessionHoldPath } from "../twitter/session-hold.js"
 
 export function twitterProfileDir(): string {
   return join(homedir(), ".trenchcoat", "twitter-profile")
@@ -99,6 +100,10 @@ export async function authTwitterInteractive(): Promise<void> {
     console.log("")
     console.log(`Saved burner session → ${statePath}`)
     console.log("Live scrapes will use this profile (read-only HTTP methods only).")
+    if (clearXSessionHold(xSessionHoldPath())) {
+      console.log("Cleared X session hold.")
+      console.log("Start trenchcoat-x-scan after home loads.")
+    }
   } finally {
     await context.close()
   }

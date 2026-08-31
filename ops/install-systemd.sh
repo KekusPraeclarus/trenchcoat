@@ -20,6 +20,7 @@ RUNTIME_PREVIOUS="$HOME/.trenchcoat/runtime.prev"
 BIN_DIR="$HOME/.trenchcoat/bin"
 TC="$BIN_DIR/trenchcoat"
 PAUSE_FILE="$HOME/.trenchcoat/deploy-pause.json"
+X_HOLD_FILE="$HOME/.trenchcoat/x-scan/session-hold.json"
 DEPLOY_LINK="$HOME/bin/trenchcoat-deploy"
 DRY_RUN=0
 WITH_HARNESS=1
@@ -611,6 +612,14 @@ trenchcoat-job-incident-remediate
 trenchcoat-job-incident-remediate-weekly
 "
 
+# These units open the X burner. Skip them while a challenge hold exists.
+X_HOLD_TIMERS="
+trenchcoat-job-fomo-x-source-review
+trenchcoat-job-fomo-narrative-source-scan
+trenchcoat-job-narrative-source-review
+trenchcoat-job-source-list-review
+"
+
 if [ "$WITH_FARCASTER" -eq 1 ]; then
   SCHEDULED_UNITS="$SCHEDULED_UNITS$FARCASTER_UNITS"
 fi
@@ -854,6 +863,14 @@ if [ "$NO_LOAD" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
 fi
 
 for unit in $SCHEDULED_UNITS; do
+  if [ -f "$X_HOLD_FILE" ] && echo "$X_HOLD_TIMERS" | grep -F -q "$unit"; then
+    echo "x session hold — skip $unit (run tc auth twitter)"
+    if [ "$NO_LOAD" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+      systemctl --user stop "${unit}.timer" 2>/dev/null || true
+      systemctl --user disable "${unit}.timer" 2>/dev/null || true
+    fi
+    continue
+  fi
   enable_unit "$unit" timer
 done
 # on-demand chain unit — enable service only (no timer)
@@ -865,7 +882,15 @@ fi
 if [ "$JOBS_ONLY" -eq 0 ]; then
   enable_unit trenchcoat-listener service
   enable_unit trenchcoat-channels service
-  enable_unit trenchcoat-x-scan service
+  if [ -f "$X_HOLD_FILE" ]; then
+    echo "x session hold — skip trenchcoat-x-scan (run tc auth twitter, then start it)"
+    if [ "$NO_LOAD" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+      systemctl --user stop trenchcoat-x-scan.service 2>/dev/null || true
+      systemctl --user disable trenchcoat-x-scan.service 2>/dev/null || true
+    fi
+  else
+    enable_unit trenchcoat-x-scan service
+  fi
   enable_unit trenchcoat-router service
   enable_unit trenchcoat-backup timer
 fi

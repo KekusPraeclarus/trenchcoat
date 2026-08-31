@@ -224,6 +224,7 @@ describe("buildHealthSnapshot", () => {
       nowIso: NOW,
       layout,
       farcasterEnabled: true,
+      home: root,
     })
 
     expect(health.schema).toBe(1)
@@ -234,6 +235,7 @@ describe("buildHealthSnapshot", () => {
     expect(health.wallets.silent).toBe(true)
     expect(health.x.pendingActions).toBe(1)
     expect(health.x.blocked).toBe(true)
+    expect(health.x.sessionHeld).toBe(false)
     expect(health.farcaster.staleStreak).toBe(2)
     expect(health.farcaster.lastFallbackUsed).toBe(true)
     expect(health.skipReasons["research"]?.["queue-empty"]).toBe(3)
@@ -330,6 +332,7 @@ describe("buildHealthSnapshot", () => {
       nowIso: NOW,
       layout,
       farcasterEnabled: false,
+      home: root,
     })
 
     expect(health.farcaster).toEqual({ enabled: false, recentRuns: 0, staleStreak: 0 })
@@ -365,6 +368,7 @@ describe("buildHealthSnapshot", () => {
       archiveRoot,
       nowIso: NOW,
       layout,
+      home: root,
     })
     expect(health.incompleteRuns.some((r) => (
       r.runId === runId && r.status === "abandoned"
@@ -409,6 +413,7 @@ describe("buildHealthSnapshot", () => {
       archiveRoot,
       nowIso: NOW,
       layout,
+      home: root,
     })
 
     expect(health.skipReasons["research"]?.["daily-cap"]).toBe(3)
@@ -458,6 +463,7 @@ describe("buildHealthSnapshot", () => {
       archiveRoot,
       nowIso: "2026-08-06T12:00:00.000Z",
       layout,
+      home: root,
     })
 
     const harness = health.jobs.find((j) => j.job === "harness-improve")
@@ -500,6 +506,7 @@ describe("buildHealthSnapshot", () => {
       archiveRoot,
       nowIso: "2026-08-15T12:00:00.000Z",
       layout,
+      home: root,
     })
 
     const settleFinding = health.findings.find((f) => f.summary.includes(settleId))
@@ -534,10 +541,41 @@ describe("buildHealthSnapshot", () => {
       archiveRoot,
       nowIso: "2026-08-15T12:00:00.000Z",
       layout,
+      home: root,
     })
 
     const finding = health.findings.find((f) => f.code === "stuck-incomplete-run")
     expect(finding?.job).toBe("outcomes-settle")
     expect(finding?.summary).toContain(runId)
+  })
+
+  it("flags an X session hold after a challenge", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-health-xhold-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const { saveXSessionHold, xSessionHoldPath } = await import(
+      "../../src/collectors/twitter/session-hold.js"
+    )
+    await saveXSessionHold({
+      path: xSessionHoldPath(root),
+      heldAt: "2026-08-28T13:37:06.707Z",
+      target: "home/fyp",
+    })
+
+    const health = await buildHealthSnapshot({
+      agentRoot,
+      archiveRoot,
+      nowIso: NOW,
+      layout,
+      home: root,
+    })
+
+    expect(health.x.sessionHeld).toBe(true)
+    expect(health.x.sessionHeldAt).toBe("2026-08-28T13:37:06.707Z")
+    expect(health.findings.some((f) => f.code === "x-session-held")).toBe(true)
+    expect(formatHealthText(health)).toContain("HELD challenge since 2026-08-28T13:37:06.707Z")
+    expect(healthCreatesReviewScope(health)).toBe(true)
   })
 })

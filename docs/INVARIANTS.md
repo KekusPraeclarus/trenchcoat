@@ -2,7 +2,7 @@
 description: What must always be true in trenchcoat - isolation, prompt-injection resistance, broadcast egress, alpha-queue lifecycle, rate limits, state auditability. Falsifiable properties with stable IDs.
 scope: project
 status: active
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 read_when:
   - Before editing the sandbox config, snapshot pipeline, agent prompts, collectors, or watchlist state handling.
 ---
@@ -103,6 +103,7 @@ check exists at the cited site and covers the full claim.
 | INV-R2 | Normal Twitter collectors are read-only: they never post, like, follow, repost, or DM. Host-only exceptions: (1) managed-list synchronizer may create one private list and add/remove its members after list-ID confinement; (2) engagement applicator applies the bot's like/follow/unfollow choices (FavoriteTweet / friendship ops only), with likes hard-capped at 2 per 10 minutes and like/follow/unfollow targets bound to same-run FYP. Farcaster host writes (likes, follow/unfollow) are additionally gated on Neynar `approved` signer status via `probeFarcasterSigner` (`src/collectors/farcaster/signer.ts`); pending/rejected/unavailable performs no mutation and archives an explicit gate receipt. Pump.fun host mutations are like/follow/unfollow only, bound to same-run `pump-fyp-eligible`, like-capped 2/10m, follow-capped per run. Every other mutating operation remains blocked. Research token search uses the same GET-only browser route | PARTIAL | mutation allowlists + schema hard caps + FYP and Pump eligible binding tests + FC signer gate receipts; live X/Farcaster/Pump session E2E still gated |
 | INV-R3 | On HTTP 429, clients back off (honouring `Retry-After` when present) and never retry in a tight loop | ENFORCED | `gatedFetch` observes 429 onto the shared gate; `gatedFetchWithRetry` bounds attempts (default 3), retries only 429/5xx/timeout, honours capped Retry-After, exponential backoff + jitter (`prop_inv_r3_*` in `tests/unit/http.test.ts`; also covered in `tests/unit/narrative-collect.test.ts`) |
 | INV-R4 | On-demand research (chat or CLI) goes through the same collector layer and rate gate as cron jobs — no direct upstream fetches from `src/chat/` | PARTIAL | `scripts/lint-static.ts` forbids raw chat fetches; Telegram research uses `src/orchestrator/research.ts` + gated Tavily/Dex collectors + host X search (`scrapeResearchTokenTwitter`); live E2E of every collector branch still open |
+| INV-R5 | After an X login/challenge page, the host writes `~/.trenchcoat/x-scan/session-hold.json` and does not open X Playwright again until `tc auth twitter` clears the hold. The loop never retries the challenge page | PARTIAL | `session-hold.ts` + `assertTwitterSessionReady` + x-scan park; `tc auth twitter` clears the file; health finding `x-session-held`; tests `x-session-hold.test.ts` / `x-scan-loop.test.ts` |
 
 ## A — Advisory-only
 

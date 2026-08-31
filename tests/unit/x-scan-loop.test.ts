@@ -13,7 +13,24 @@ import {
   xScanCursorsPath,
 } from "../../src/orchestrator/x-scan-cursors.js"
 import { runXScanLoop } from "../../src/orchestrator/x-scan-loop.js"
-import type { TwitterScrapeTarget } from "../../src/collectors/twitter/scrape.js"
+import type { PersistentTwitterSession, TwitterScrapeTarget } from "../../src/collectors/twitter/scrape.js"
+import {
+  loadXSessionHold,
+  saveXSessionHold,
+  xSessionHoldPath,
+} from "../../src/collectors/twitter/session-hold.js"
+
+function stubSession(
+  extras: Partial<PersistentTwitterSession> = {},
+): PersistentTwitterSession {
+  return {
+    page: () => ({}) as Page,
+    close: async () => undefined,
+    relaunch: async () => ({}) as Page,
+    persistStorageState: async () => undefined,
+    ...extras,
+  }
+}
 
 const targets: TwitterScrapeTarget[] = [
   { kind: "home", url: "https://x.com/home", label: "home/fyp" },
@@ -82,11 +99,7 @@ describe("x-scan loop", () => {
         rounds += 1
         if (rounds >= 1) ac.abort()
       },
-      openSession: async () => ({
-        page: () => ({}) as Page,
-        close: async () => undefined,
-        relaunch: async () => ({}) as Page,
-      }),
+      openSession: async () => stubSession(),
       scrape: async (_page, target) => ({
         bundle: {
           target,
@@ -147,11 +160,7 @@ describe("x-scan loop", () => {
       sleep: async () => {
         ac.abort()
       },
-      openSession: async () => ({
-        page: () => ({}) as Page,
-        close: async () => undefined,
-        relaunch: async () => ({}) as Page,
-      }),
+      openSession: async () => stubSession(),
       scrape: async (_page, target) => ({
         bundle: {
           target,
@@ -212,11 +221,7 @@ describe("x-scan loop", () => {
       sleep: async () => {
         ac.abort()
       },
-      openSession: async () => ({
-        page: () => ({}) as Page,
-        close: async () => undefined,
-        relaunch: async () => ({}) as Page,
-      }),
+      openSession: async () => stubSession(),
       scrape: async (_page, target, opts) => {
         seenStop = opts.stopAtPostId
         return {
@@ -249,11 +254,7 @@ describe("x-scan loop", () => {
       sleep: async () => {
         ac.abort()
       },
-      openSession: async () => ({
-        page: () => ({}) as Page,
-        close: async () => undefined,
-        relaunch: async () => ({}) as Page,
-      }),
+      openSession: async () => stubSession(),
       scrape: async (_page, target) => ({
         bundle: {
           target,
@@ -290,5 +291,139 @@ describe("x-scan loop", () => {
       },
     })
     expect(attempts).toBe(2)
+  })
+
+  it("parks without opening a browser when a session hold exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-xhold-"))
+    await saveXSessionHold({
+      path: xSessionHoldPath(root),
+      heldAt: "2026-08-28T13:37:06.707Z",
+      target: "home/fyp",
+    })
+    const ac = new AbortController()
+    let opened = 0
+    await runXScanLoop({
+      paths: { agentRoot: root, archiveRoot: join(root, "archive") },
+      home: root,
+      signal: ac.signal,
+      resolveTargets: () => [targets[0]!],
+      holdPollMs: 1,
+      sleep: async () => {
+        ac.abort()
+      },
+      openSession: async () => {
+        opened += 1
+        return stubSession()
+      },
+      scrape: async () => {
+        throw new Error("must not scrape while held")
+      },
+      runTarget: async () => {
+        throw new Error("must not run list-scan while held")
+      },
+    })
+    expect(opened).toBe(0)
+  })
+
+  it("writes a session hold on challenge and skips list-scan", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-xchal-"))
+    const ac = new AbortController()
+    let runCalls = 0
+    let persistCalls = 0
+    await runXScanLoop({
+      paths: { agentRoot: root, archiveRoot: join(root, "archive") },
+      home: root,
+      signal: ac.signal,
+      resolveTargets: () => [targets[0]!],
+      holdPollMs: 1,
+      sleep: async () => {
+        ac.abort()
+      },
+      openSession: async () => stubSession({
+        persistStorageState: async () => {
+          persistCalls += 1
+        },
+      }),
+      scrape: async (_page, target) => ({
+        bundle: { target, posts: [], challenged: true },
+        hitCursor: false,
+        pagesScrolled: 0,
+      }),
+      runTarget: async () => {
+        runCalls += 1
+        return {
+          runId: "none",
+          journal: {
+            schema: 1,
+            runId: "none",
+            job: "list-scan",
+            phase: "complete",
+            createdAt: "",
+            updatedAt: "",
+            sideEffects: [],
+          } as never,
+          exitCode: 0,
+        }
+      },
+    })
+    const hold = loadXSessionHold(xSessionHoldPath(root))
+    expect(hold?.reason).toBe("challenge")
+    expect(hold?.target).toBe("home/fyp")
+    expect(runCalls).toBe(0)
+    expect(persistCalls).toBe(0)
+  })
+
+  it("persists storage state after a healthy scrape round", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-xpersist-"))
+    const ac = new AbortController()
+    let persistCalls = 0
+    await runXScanLoop({
+      paths: { agentRoot: root, archiveRoot: join(root, "archive") },
+      home: root,
+      signal: ac.signal,
+      resolveTargets: () => [targets[0]!],
+      maxPages: 1,
+      roundDelayMs: () => 1,
+      sleep: async () => {
+        ac.abort()
+      },
+      openSession: async () => stubSession({
+        persistStorageState: async () => {
+          persistCalls += 1
+        },
+      }),
+      scrape: async (_page, target) => ({
+        bundle: {
+          target,
+          challenged: false,
+          posts: [{
+            id: "p1",
+            author: "a",
+            text: "t",
+            url: "u",
+            timestamp: "2026-07-20T10:00:00.000Z",
+            provenance: "twitter:@a:p1",
+            engagement: { likes: 0, views: 0 },
+          }],
+        },
+        newestPostId: "p1",
+        hitCursor: true,
+        pagesScrolled: 1,
+      }),
+      runTarget: async () => ({
+        runId: "run-persist",
+        journal: {
+          schema: 1,
+          runId: "run-persist",
+          job: "list-scan",
+          phase: "complete",
+          createdAt: "2026-07-20T10:00:00.000Z",
+          updatedAt: "2026-07-20T10:00:00.000Z",
+          sideEffects: [],
+        } as never,
+        exitCode: 0,
+      }),
+    })
+    expect(persistCalls).toBe(1)
   })
 })

@@ -407,6 +407,7 @@ function healthyListScan(overrides: Partial<LiveHealthView> = {}): LiveHealthVie
     }],
     findings: [],
     xBlocked: false,
+    xSessionHeld: false,
     ...overrides,
   }
 }
@@ -462,6 +463,7 @@ describe("live recovery floors", () => {
           summary: "job chart-sweep last success age=25d",
         }],
         xBlocked: false,
+        xSessionHeld: false,
       },
     })).toEqual({ kind: "proceed" })
   })
@@ -476,6 +478,7 @@ describe("live recovery floors", () => {
 
   it("treats list-scan as unhealthy when x is blocked or the unit is down", () => {
     expect(jobIsHealthy(healthyListScan({ xBlocked: true }), "list-scan")).toBe(false)
+    expect(jobIsHealthy(healthyListScan({ xSessionHeld: true }), "list-scan")).toBe(false)
     expect(jobIsHealthy(healthyListScan({
       findings: [{
         code: "systemd-unit-inactive",

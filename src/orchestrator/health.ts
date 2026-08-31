@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import {
   ensureArchive,
@@ -20,6 +21,7 @@ import {
 } from "./delivery.js"
 import type { JobName } from "./jobs.js"
 import { xBotHealthEscalation } from "./x-bot-health.js"
+import { loadXSessionHold, xSessionHoldPath } from "../collectors/twitter/session-hold.js"
 import { buildPreferencePairs } from "../broadcast-feedback/aggregate.js"
 import { broadcastFeedbackLayout } from "../broadcast-feedback/paths.js"
 import {
@@ -146,6 +148,9 @@ export type HealthXState = Readonly<{
   consecutiveFailures: number
   blocked: boolean
   lastVerifiedAt?: string
+  sessionHeld: boolean
+  sessionHeldAt?: string
+  sessionHoldTarget?: string
 }>
 
 export type HealthFarcasterState = Readonly<{
@@ -624,7 +629,29 @@ function walletCounts(agentRoot: string): HealthWalletCounts {
   }
 }
 
-function xState(agentRoot: string, nowIso: string): HealthXState {
+function xSessionHoldState(home?: string): Pick<
+  HealthXState,
+  "sessionHeld" | "sessionHeldAt" | "sessionHoldTarget"
+> {
+  const hold = loadXSessionHold(xSessionHoldPath(home ?? join(homedir(), ".trenchcoat")))
+  if (!hold) return { sessionHeld: false }
+  return {
+    sessionHeld: true,
+    sessionHeldAt: hold.heldAt,
+    ...(hold.target ? { sessionHoldTarget: hold.target } : {}),
+  }
+}
+
+function xState(agentRoot: string, nowIso: string, home?: string): HealthXState {
+  const hold = xSessionHoldState(home)
+  if (!existsSync(join(agentRoot, "state"))) {
+    return {
+      pendingActions: 0,
+      consecutiveFailures: 0,
+      blocked: false,
+      ...hold,
+    }
+  }
   const state = new StateStore(join(agentRoot, "state"))
   const engagement = state.loadXEngagement()
   const health = state.loadXBotHealth(nowIso)
@@ -633,6 +660,7 @@ function xState(agentRoot: string, nowIso: string): HealthXState {
     pendingActions: engagement.pendingActionIds.length,
     consecutiveFailures: health.consecutiveFailures,
     blocked: escalation.escalate,
+    ...hold,
     ...(health.lastVerifiedAction?.attemptedAt
       ? { lastVerifiedAt: health.lastVerifiedAction.attemptedAt }
       : {}),
@@ -884,6 +912,15 @@ function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">):
       component: "x",
     })
   }
+  if (snapshot.x.sessionHeld) {
+    push({
+      code: "x-session-held",
+      severity: "error",
+      summary: `x session held after challenge since ${snapshot.x.sessionHeldAt ?? "unknown"}`
+        + " — run tc auth twitter",
+      component: "x",
+    })
+  }
   if (snapshot.farcaster.enabled && snapshot.farcaster.staleStreak >= 3) {
     push({
       code: "fc-stale-streak",
@@ -1035,6 +1072,7 @@ export function healthCreatesReviewScope(snapshot: HealthSnapshot): boolean {
   if (snapshot.wallets.silent) return true
   if (snapshot.farcaster.enabled && snapshot.farcaster.staleStreak > 0) return true
   if (snapshot.router.ingress.ingressPending > 0 || snapshot.router.ingress.failed > 0) return true
+  if (snapshot.x.sessionHeld) return true
   return false
 }
 
@@ -1047,6 +1085,8 @@ export async function buildHealthSnapshot(args: Readonly<{
   farcasterEnabled?: boolean
   /** Test override; production reads the feedback lane under the real home */
   feedbackHome?: string
+  /** Test override; production reads X session hold under ~/.trenchcoat */
+  home?: string
 }>): Promise<HealthSnapshot> {
   const capturedAt = args.nowIso ?? new Date().toISOString()
   const nowMs = Date.parse(capturedAt)
@@ -1082,9 +1122,7 @@ export async function buildHealthSnapshot(args: Readonly<{
   const wallets = existsSync(join(args.agentRoot, "state"))
     ? walletCounts(args.agentRoot)
     : { tracking: 0, candidate: 0, probation: 0, total: 0, silent: true }
-  const x = existsSync(join(args.agentRoot, "state"))
-    ? xState(args.agentRoot, capturedAt)
-    : { pendingActions: 0, consecutiveFailures: 0, blocked: false }
+  const x = xState(args.agentRoot, capturedAt, args.home)
   const farcaster = await scanFarcasterHealth({
     layout,
     nowMs,
@@ -1226,7 +1264,10 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
   lines.push(
     `x: pending=${snapshot.x.pendingActions}`
       + ` failures=${snapshot.x.consecutiveFailures}`
-      + (snapshot.x.blocked ? " BLOCKED" : ""),
+      + (snapshot.x.blocked ? " BLOCKED" : "")
+      + (snapshot.x.sessionHeld
+        ? ` HELD challenge since ${snapshot.x.sessionHeldAt ?? "unknown"}`
+        : ""),
   )
   lines.push(
     snapshot.farcaster.enabled
@@ -1366,7 +1407,8 @@ export function healthSnapshotLines(snapshot: HealthSnapshot): string[] {
     `researchActionable=${snapshot.research.actionable} researchAmbiguous=${snapshot.research.ambiguous}`,
     `watchlistActive=${snapshot.watchlist.active}`,
     `walletsSilent=${snapshot.wallets.silent} walletsTracking=${snapshot.wallets.tracking}`,
-    `xPending=${snapshot.x.pendingActions} xBlocked=${snapshot.x.blocked}`,
+    `xPending=${snapshot.x.pendingActions} xBlocked=${snapshot.x.blocked}`
+      + ` xSessionHeld=${snapshot.x.sessionHeld}`,
     snapshot.farcaster.enabled
       ? `fcStaleStreak=${snapshot.farcaster.staleStreak} fcFallback=${snapshot.farcaster.lastFallbackUsed === true}`
       : "fcEnabled=false",

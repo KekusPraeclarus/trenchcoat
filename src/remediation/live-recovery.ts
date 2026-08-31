@@ -44,6 +44,7 @@ export type LiveHealthView = Readonly<{
   jobs: readonly LiveJobView[]
   findings: readonly LiveFindingView[]
   xBlocked: boolean
+  xSessionHeld: boolean
 }>
 
 export type LiveRecoveryDecision =
@@ -64,6 +65,7 @@ export function liveHealthFromSnapshot(snapshot: HealthSnapshot): LiveHealthView
       summary: finding.summary,
     })),
     xBlocked: snapshot.x.blocked,
+    xSessionHeld: snapshot.x.sessionHeld,
   }
 }
 
@@ -109,6 +111,10 @@ function xScanUnitInactive(health: LiveHealthView): boolean {
   )
 }
 
+function listScanDegraded(health: LiveHealthView): boolean {
+  return health.xBlocked || health.xSessionHeld || xScanUnitInactive(health)
+}
+
 export function jobIsHealthy(health: LiveHealthView, job: string): boolean {
   const row = jobByName(health, job)
   if (!row?.lastSuccessAt) return false
@@ -117,13 +123,13 @@ export function jobIsHealthy(health: LiveHealthView, job: string): boolean {
   if (successMs === undefined) return false
   if (failureMs !== undefined && failureMs >= successMs) return false
   if (jobHasFinding(health, job)) return false
-  if (job === "list-scan" && (health.xBlocked || xScanUnitInactive(health))) return false
+  if (job === "list-scan" && listScanDegraded(health)) return false
   return true
 }
 
 export function jobIsDegraded(health: LiveHealthView, job: string): boolean {
   if (jobHasFinding(health, job)) return true
-  if (job === "list-scan" && (health.xBlocked || xScanUnitInactive(health))) return true
+  if (job === "list-scan" && listScanDegraded(health)) return true
   const row = jobByName(health, job)
   if (!row) return false
   const successMs = parseIso(row.lastSuccessAt)

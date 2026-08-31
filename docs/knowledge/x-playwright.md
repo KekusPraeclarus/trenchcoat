@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-08-22
+last_verified: 2026-08-31
 ---
 
 # X / Twitter (Playwright)
@@ -14,7 +14,10 @@ last_verified: 2026-08-22
 - Auth waits for the home timeline UI. An existing `auth_token` cookie does
   not close the window. `/account/access` and login/challenge URLs stay open.
 - Session marker: `storage-state.json` mode 600; scrapes refuse without it
-- Challenges → fail closed with re-auth instruction; never auto-solve
+- Healthy x-scan rounds write cookies back to `storage-state.json` (mode 600)
+- Challenges → write `~/.trenchcoat/x-scan/session-hold.json` and park. All X
+  Playwright opens fail closed until `tc auth twitter` clears the hold. Never
+  auto-solve. Never retry the challenge page.
 
 ## Host browser binaries
 
@@ -138,6 +141,15 @@ last_verified: 2026-08-22
   loads that manifest from live inbox or sealed archive.
 - CLI: `pnpm dev:cli x-engagement status`, `pnpm dev:cli x-engagement dry-run <run-id>`
 
+## Session hold
+
+- Path: `~/.trenchcoat/x-scan/session-hold.json` (host-only, never under `agent/`)
+- x-scan writes it on the first challenge and parks. Other X Playwright opens
+  throw `XSessionHeldError` until `tc auth twitter` succeeds
+- `tc status` prints `x: … HELD challenge since <ts>` and finding `x-session-held`
+- Do not start `trenchcoat-x-scan` or X review timers while the hold exists
+  unless you just completed auth
+
 ## Operator probes
 
 ```bash
@@ -151,4 +163,4 @@ pnpm dev:cli x-engagement dry-run <run-id>
 
 - [ADR 004](../adr/004-dynamic-x-list-lifecycle.md)
 - [source-lifecycle.md](../architecture/source-lifecycle.md)
-- INV-R2, INV-S21, INV-S22
+- INV-R2, INV-R5, INV-S21, INV-S22

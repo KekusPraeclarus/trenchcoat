@@ -36,7 +36,7 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 |---|---|
 | `chart-sweep` | hourly |
 | `watchlist-scan` | every 2h |
-| `x-scan` (KeepAlive) | always — round-robin FYP → lists with cursor stop; random 5–30m between rounds (`tc listen x-scan`) |
+| `x-scan` (KeepAlive) | always — round-robin FYP → lists with cursor stop; random 5–30m between rounds (`tc listen x-scan`). One challenge writes `~/.trenchcoat/x-scan/session-hold.json` and parks until `tc auth twitter` |
 | `farcaster-scan` | **not installed by default** — pass `--with-farcaster` to the installer. Then ~every 4h (jittered 3h15m–4h45m; requires `farcaster.enabled` + Neynar auth) |
 | `source-list-review` | daily (`RunAtLoad`) and after a sealed audit; writes lagged `sources.json` scores |
 | `fc-source-review` | **not installed by default** — pass `--with-farcaster`. Then daily (`RunAtLoad`; Farcaster follow-graph sync + lagged scores) |
@@ -216,6 +216,9 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   research needs `DISCORD_RESEARCH_BOT_TOKEN` when `chat.discord.enabled`). If err logs show
   missing `better_sqlite3.node`, re-run `./ops/install-launchd.sh` (installer
   rebuilds the native addon after prod install).
+- X session hold: `tc status` prints `HELD challenge since <ts>` when
+  `~/.trenchcoat/x-scan/session-hold.json` exists. All X Playwright opens stay
+  parked. Recover with headed `tc auth twitter`, then start `trenchcoat-x-scan`.
 - Listener health: the listener touches a heartbeat file every poll cycle;
   `tc status` flags a stale heartbeat (> 15 min). launchd restarts crashes;
   a silently wedged process is caught by the heartbeat and killed by

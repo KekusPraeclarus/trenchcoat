@@ -228,8 +228,10 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
 ## Auth after migrate
 
 - Cursor: already logged in on VPS (step A) — does not travel with rsync
-- X / Fomo Playwright profiles: try rsynced state; on challenge run
+- X / Fomo Playwright profiles: try rsynced state; on challenge the host writes
+  `~/.trenchcoat/x-scan/session-hold.json` and parks. Run
   `trenchcoat auth twitter` / `trenchcoat auth fomo` (headed — needs a display).
+  Auth twitter clears the hold. Then start `trenchcoat-x-scan`.
   Fomo VPS has no display: auth on the Mac, then
   `./ops/sync-fomo-session.sh` (copies `storage-state.json` only)
 - GramJS session: rsync `telegram-session/` if present

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs"
+import { chmodSync, existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { type Browser, type BrowserContext, type Page } from "playwright"
 import type { TrenchcoatConfig } from "../../lib/config.js"
@@ -15,6 +15,7 @@ import {
 } from "./popularity.js"
 import { accumulatePostsUntilCursor } from "./scrape-cursor.js"
 import { log } from "../../lib/log.js"
+import { assertXSessionNotHeld } from "./session-hold.js"
 
 /** Playwright mid-scrape death — page/context/browser closed under us */
 export function isBrowserClosedError(error: unknown): boolean {
@@ -45,12 +46,21 @@ function storageStatePath(): string {
   return join(twitterProfileDir(), "storage-state.json")
 }
 
-export function assertTwitterSessionReady(): string {
+export function assertTwitterSessionReady(home?: string): string {
+  assertXSessionNotHeld(home)
   const state = storageStatePath()
   if (!existsSync(state)) {
     throw new Error("No X session — run `pnpm dev:cli auth twitter` first")
   }
   return state
+}
+
+export async function persistTwitterStorageState(
+  context: BrowserContext,
+  path: string,
+): Promise<void> {
+  await context.storageState({ path })
+  chmodSync(path, 0o600)
 }
 
 export function resolveTwitterTargets(config: TrenchcoatConfig): TwitterScrapeTarget[] {
@@ -306,6 +316,7 @@ export type PersistentTwitterSession = Readonly<{
   page: () => Page
   close: () => Promise<void>
   relaunch: () => Promise<Page>
+  persistStorageState: () => Promise<void>
 }>
 
 /** Keep one authenticated read-only browser alive across round-robin targets */
@@ -318,6 +329,9 @@ export async function openPersistentReadOnlyTwitter(
 
   return {
     page: () => opened.page,
+    persistStorageState: async () => {
+      await persistTwitterStorageState(opened.context, state)
+    },
     close: async () => {
       await opened.context.close().catch(() => undefined)
       await browser.close().catch(() => undefined)

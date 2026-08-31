@@ -13,6 +13,12 @@ import {
   type TwitterScrapeBundle,
   type TwitterScrapeTarget,
 } from "../collectors/twitter/scrape.js"
+import {
+  loadXSessionHold,
+  saveXSessionHold,
+  xSessionHoldPath,
+  XSessionHeldError,
+} from "../collectors/twitter/session-hold.js"
 import { runJob, type RunResult } from "./run.js"
 import {
   advanceXScanCursor,
@@ -67,7 +73,11 @@ export type XScanLoopOptions = Readonly<{
   maxPages?: number
   maxLockRetries?: number
   lockRetryMs?: number
+  /** How long to wait between hold-file polls while parked (tests) */
+  holdPollMs?: number
 }>
+
+export const X_SCAN_HOLD_POLL_MS = 60_000
 
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -117,16 +127,35 @@ async function runListScanWithLockRetry(args: Readonly<{
   throw new Error("unreachable")
 }
 
+async function parkWhileHeld(args: Readonly<{
+  holdPath: string
+  sleep: (ms: number) => Promise<void>
+  pollMs: number
+  signal?: AbortSignal
+}>): Promise<void> {
+  const hold = loadXSessionHold(args.holdPath)
+  log.error("x-scan parked — X session held after challenge", {
+    heldAt: hold?.heldAt,
+    target: hold?.target,
+  })
+  while (!args.signal?.aborted) {
+    if (!loadXSessionHold(args.holdPath)) return
+    await args.sleep(args.pollMs).catch(() => undefined)
+  }
+}
+
 /**
  * Persistent FYP → lists round-robin. Keeps one Playwright session alive,
  * scrolls each target until the last-read post, runs one batched list-scan
  * per round, then sleeps a random 5–30 minutes before the next round.
+ * One challenge writes a session hold and parks until `tc auth twitter`.
  */
 export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
   const cursorsFile = xScanCursorsPath(opts.home)
   const sleep = opts.sleep ?? ((ms: number) => defaultSleep(ms, opts.signal))
   const maxLockRetries = opts.maxLockRetries ?? 60
   const lockRetryMs = opts.lockRetryMs ?? 10_000
+  const holdPollMs = opts.holdPollMs ?? X_SCAN_HOLD_POLL_MS
   const roundDelay = opts.roundDelayMs ?? (() => randomRoundDelayMs(
     X_SCAN_ROUND_DELAY_MIN_MS,
     X_SCAN_ROUND_DELAY_MAX_MS,
@@ -137,7 +166,7 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
   const open = opts.openSession ?? (() => openPersistentReadOnlyTwitter({
     headless: opts.headless !== false,
   }))
-  let session = await open()
+  let session: PersistentTwitterSession | undefined
   let relaunches = 0
 
   log.info("x-scan loop starting", {
@@ -148,11 +177,45 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
   try {
     while (!opts.signal?.aborted) {
       const home = opts.home ?? join(homedir(), ".trenchcoat")
+      const holdPath = xSessionHoldPath(home)
       while (isDeployPaused(home) && !opts.signal?.aborted) {
         log.info("x-scan paused for deploy")
         await sleep(5_000).catch(() => undefined)
       }
       if (opts.signal?.aborted) break
+
+      if (loadXSessionHold(holdPath)) {
+        if (session) {
+          await session.close().catch(() => undefined)
+          session = undefined
+        }
+        await parkWhileHeld({
+          holdPath,
+          sleep,
+          pollMs: holdPollMs,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+        })
+        continue
+      }
+
+      if (!session) {
+        try {
+          session = await open()
+        } catch (error) {
+          if (error instanceof XSessionHeldError || loadXSessionHold(holdPath)) {
+            await parkWhileHeld({
+              holdPath,
+              sleep,
+              pollMs: holdPollMs,
+              ...(opts.signal ? { signal: opts.signal } : {}),
+            })
+            continue
+          }
+          throw error
+        }
+      }
+      if (!session) continue
+      const active = session
 
       const targets = resolveTargets()
       const cursors = loadXScanCursors(cursorsFile)
@@ -169,7 +232,7 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
         let scraped: Awaited<ReturnType<typeof scrapeTargetUntilCursor>> | undefined
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
-            scraped = await scrape(session.page(), target, {
+            scraped = await scrape(active.page(), target, {
               maxPages,
               ...(stopAtPostId ? { stopAtPostId } : {}),
             })
@@ -181,7 +244,7 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
               target: target.label,
               relaunches,
             })
-            await session.relaunch()
+            await active.relaunch()
           }
         }
         if (!scraped) continue
@@ -215,11 +278,16 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
         }
 
         if (scraped.bundle.challenged) {
-          log.error("x-scan challenge detected — needs headful re-auth", {
+          log.error("x-scan challenge detected — parking until tc auth twitter", {
             target: target.label,
           })
-          // Back off hard so we do not hammer a locked account
-          await sleep(30 * 60 * 1_000).catch(() => undefined)
+          await saveXSessionHold({
+            path: holdPath,
+            heldAt: systemClock.nowIso(),
+            target: target.label,
+          })
+          await active.close().catch(() => undefined)
+          session = undefined
           challengedBreak = true
           break
         }
@@ -266,9 +334,20 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
       }
 
       if (opts.signal?.aborted) break
+      if (challengedBreak) continue
+
+      if (session && bundles.length > 0) {
+        try {
+          await session.persistStorageState()
+        } catch (error) {
+          log.warn("x-scan storage-state persist failed", {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
 
       const alphaPending = listPendingAlphaPaths(opts.paths.agentRoot).length
-      if (!challengedBreak && (bundles.length > 0 || alphaPending > 0)) {
+      if (bundles.length > 0 || alphaPending > 0) {
         log.info("x-scan batched list-scan", {
           bundles: bundles.map((b) => b.target.label).join(",") || "(none)",
           posts: bundles.reduce((n, b) => n + b.posts.length, 0),
@@ -301,7 +380,7 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
             bundles: bundles.map((b) => b.target.label).join(","),
           })
         }
-      } else if (!challengedBreak) {
+      } else {
         log.info("x-scan round idle — no posts and no alpha backlog")
       }
 
@@ -319,6 +398,6 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
       }
     }
   } finally {
-    await session.close().catch(() => undefined)
+    await session?.close().catch(() => undefined)
   }
 }

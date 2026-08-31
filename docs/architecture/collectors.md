@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-08-22
+last_verified: 2026-08-31
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -109,7 +109,10 @@ ADR: [035-discord-wallet-signal-confluence.md](../adr/035-discord-wallet-signal-
   configured lists, scrolling each target until the last-read post id
   (`~/.trenchcoat/x-scan/cursors.json`), then runs **one batched** `list-scan` per round with
   injected scrape bundles. Random 5–30 minute delay between completed rounds.
-  Challenge/login fails the target and backs off. Cron `list-scan` is retired.
+  A healthy round writes cookies back to `storage-state.json`. One challenge
+  writes `~/.trenchcoat/x-scan/session-hold.json` and parks every X Playwright
+  open except `tc auth twitter`. The loop does not retry the challenge page.
+  Cron `list-scan` is retired.
 - `list-scan` (legacy one-shot / streaming override) also writes path-only
   `list-scan-alpha-manifest` when not in streaming mode (capped at 500 with
   `truncated=N`) so alpha-queue digestion is not review-only; live Telegram
