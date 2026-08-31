@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { chromium, type BrowserContext } from "playwright"
 import { defaultConfigPath } from "../../lib/config.js"
 import { ensureChromiumInstalled } from "../../lib/playwright-chromium.js"
+import { authIssuesPath, clearAuthIssue } from "../../lib/auth-issues.js"
 
 export function fomoProfileDir(): string {
   return join(homedir(), ".trenchcoat", "fomo-profile")
@@ -92,6 +93,7 @@ export async function authFomoInteractive(): Promise<void> {
     console.log("")
     console.log(`Saved burner session → ${statePath}`)
     console.log("Live scrapes will use this profile (read-only HTTP methods only).")
+    await clearAuthIssue({ path: authIssuesPath(), source: "fomo" })
   } finally {
     await context.close()
   }

@@ -15,6 +15,9 @@ last_verified: 2026-08-31
   not close the window. `/account/access` and login/challenge URLs stay open.
 - Session marker: `storage-state.json` mode 600; scrapes refuse without it
 - Healthy x-scan rounds write cookies back to `storage-state.json` (mode 600)
+- There is no `ops/sync-twitter-session.sh`. After Mac `tc auth twitter`,
+  rsync `twitter-profile/storage-state.json` only to the VPS (mode 600).
+  Do not print cookie values. Fomo and Pump have dedicated sync scripts.
 - Challenges → write `~/.trenchcoat/x-scan/session-hold.json` and park. All X
   Playwright opens fail closed until `tc auth twitter` clears the hold. Never
   auto-solve. Never retry the challenge page.
@@ -147,6 +150,9 @@ last_verified: 2026-08-31
 - x-scan writes it on the first challenge and parks. Other X Playwright opens
   throw `XSessionHeldError` until `tc auth twitter` succeeds
 - `tc status` prints `x: … HELD challenge since <ts>` and finding `x-session-held`
+- A challenge also records `~/.trenchcoat/auth-issues.json`. Two open
+  Playwright auth issues send one operator DM. One issue does not send
+  (INV-R6)
 - Do not start `trenchcoat-x-scan` or X review timers while the hold exists
   unless you just completed auth
 
@@ -163,4 +169,4 @@ pnpm dev:cli x-engagement dry-run <run-id>
 
 - [ADR 004](../adr/004-dynamic-x-list-lifecycle.md)
 - [source-lifecycle.md](../architecture/source-lifecycle.md)
-- INV-R2, INV-R5, INV-S21, INV-S22
+- INV-R2, INV-R5, INV-R6, INV-S21, INV-S22

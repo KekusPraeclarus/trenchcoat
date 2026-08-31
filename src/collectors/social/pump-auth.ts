@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { chromium } from "playwright"
 import { defaultConfigPath } from "../../lib/config.js"
 import { ensureChromiumInstalled } from "../../lib/playwright-chromium.js"
+import { authIssuesPath, clearAuthIssue } from "../../lib/auth-issues.js"
 
 export function pumpProfileDir(): string {
   return join(homedir(), ".trenchcoat", "pump-profile")
@@ -280,6 +281,7 @@ export async function refreshPumpSession(opts?: Readonly<{
       }
       writeFileSync(statePath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
       chmodSync(statePath, 0o600)
+      await clearAuthIssue({ path: authIssuesPath(), source: "pump" })
       return { ...inspect, wrote: true }
     } finally {
       await context.close()
@@ -457,6 +459,9 @@ export async function authPumpInteractive(): Promise<void> {
     console.log("")
     console.log(`Saved burner session → ${statePath}`)
     console.log("Live scrapes reuse this profile. They do not open a login window.")
+    if (pumpCookiesLookAuthed(cookies)) {
+      await clearAuthIssue({ path: authIssuesPath(), source: "pump" })
+    }
   } finally {
     await context.close()
   }

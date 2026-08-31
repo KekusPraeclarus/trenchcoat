@@ -2,7 +2,7 @@
 description: pump.fun authenticated SPA scrape for FYP/Top/News/Following feed curation, leaderboard, and call-chart evidence. Burner-only. No wallets.
 scope: knowledge
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-08-31
 source: https://pump.fun
 read_when:
   - Implementing or debugging the pump.fun collector, pump-scan, or pump engagement.
@@ -29,6 +29,9 @@ only. Pump uses `pump-fyp-eligible` and `state/pump-engagement.json`.
 - Mutations and research enqueue only when FAFO gates pass and
   `shadow_mode=false`. Pump never writes `wallets.json`
 - Health reports Pump as a parallel-only section
+- `PumpClientError` codes `challenged` and `session_expired` record a pump
+  auth issue. Two open Playwright sources send one operator DM (INV-R6).
+  `tc auth pump` clears that record.
 
 ## Jobs
 

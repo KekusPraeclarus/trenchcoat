@@ -11,6 +11,7 @@ import { fomoSessionExists } from "../collectors/social/fomo-auth.js"
 import type { CollectionSummary } from "./collect.js"
 import { upsertXSourceNominations } from "../sources/x-nominations.js"
 import { applyFomoFollows, type FomoFollowFn } from "../sources/fomo-follows.js"
+import { reportSessionAuthFailureCode } from "./auth-issue-notify.js"
 
 function rankTraders(traders: readonly FomoTrader[]): FomoTrader[] {
   return [...traders].sort((a, b) => {
@@ -130,6 +131,11 @@ export async function collectFomoTraderSync(args: Readonly<{
       .slice(0, config.fomo.trader_sync.max_handles) as FomoLeaderboardEntry[]
   } catch (error) {
     const reason = error instanceof FomoClientError ? error.code : "upstream"
+    await reportSessionAuthFailureCode({
+      source: "fomo",
+      code: reason,
+      at: args.fetchedAt,
+    }).catch(() => undefined)
     const names = await writeSkip(args, `fomo-upstream code=${reason}`)
     if (!args.client) await client.close?.()
     return skipResult(names, "fomo-upstream-unavailable")

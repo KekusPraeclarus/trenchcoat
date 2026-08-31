@@ -2,7 +2,7 @@
 title: "026 — Daily Telegram digest and topic-only intraday posts"
 status: accepted
 date: 2026-07-22
-last_verified: 2026-08-18
+last_verified: 2026-08-31
 ---
 
 # ADR 026: Daily Telegram digest and topic-only intraday posts

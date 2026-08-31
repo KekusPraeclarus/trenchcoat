@@ -5,6 +5,7 @@ import { chromium, type BrowserContext } from "playwright"
 import { defaultConfigPath } from "../../lib/config.js"
 import { ensureChromiumInstalled } from "../../lib/playwright-chromium.js"
 import { clearXSessionHold, xSessionHoldPath } from "../twitter/session-hold.js"
+import { authIssuesPath, clearAuthIssue } from "../../lib/auth-issues.js"
 
 export function twitterProfileDir(): string {
   return join(homedir(), ".trenchcoat", "twitter-profile")
@@ -104,6 +105,7 @@ export async function authTwitterInteractive(): Promise<void> {
       console.log("Cleared X session hold.")
       console.log("Start trenchcoat-x-scan after home loads.")
     }
+    await clearAuthIssue({ path: authIssuesPath(), source: "x" })
   } finally {
     await context.close()
   }

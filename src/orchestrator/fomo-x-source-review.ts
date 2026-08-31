@@ -7,6 +7,8 @@ import { StateStore } from "../lib/state.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { freshnessFromIso, pointInTimeSnapshot } from "../collectors/fomo/freshness.js"
 import { scrapeProfileHistory } from "../collectors/twitter/profile-history.js"
+import { saveXSessionHold, xSessionHoldPath } from "../collectors/twitter/session-hold.js"
+import { reportSessionAuthIssue } from "./auth-issue-notify.js"
 import {
   applyClassificationResult,
   markClassifying,
@@ -187,6 +189,19 @@ export async function collectFomoXSourceReview(args: Readonly<{
       })
       await state.saveXSourceNominations(nominations)
       const reason = scraped.challenged ? "fomo-x-challenged" : "fomo-x-history-failed"
+      if (scraped.challenged) {
+        await saveXSessionHold({
+          path: xSessionHoldPath(),
+          heldAt: args.fetchedAt,
+          target: "fomo-x-source-review",
+        }).catch(() => undefined)
+        await reportSessionAuthIssue({
+          source: "x",
+          kind: "challenge",
+          at: args.fetchedAt,
+          detail: "fomo-x-source-review",
+        }).catch(() => undefined)
+      }
       return skipSummary(await writeSkip(args, reason), reason)
     }
 

@@ -2,7 +2,7 @@
 description: Discord research bot — private-guild Gateway listener, isolated state, final-only replies, watch subscriptions.
 scope: module
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-31
 read_when:
   - Editing src/discord/ or chat.discord config.
   - Changing Discord research intake, delivery, watchlist, monitor, or idea-tracking behaviour.
@@ -60,8 +60,9 @@ Optional channel conversation over main workspace: [discord-conversation.md](dis
 - `tc listen` — primary KeepAlive entry (`com.trenchcoat.listener`): Telegram
   operator bridge plus a supervised Discord child when config + token are set
 - `tc listen discord` — Discord only (debug)
-- `tc discord watchlist scan` — material monitor; launchd calendar 0/6/12/18 local
-  (`com.trenchcoat.job.discord-watchlist-scan`)
+- `tc discord watchlist scan` — material monitor. Mac launchd calendar
+  0/6/12/18 local (`com.trenchcoat.job.discord-watchlist-scan`). Linux uses
+  systemd via `ops/install-systemd.sh`.
 - `tc discord chains run|status|retry|fail|continue` — host chain-integration worker
   (`com.trenchcoat.job.discord-chain-integration`, kickstarted on demand;
   `continue` is post-deploy announce + research FIFO handoff via the new runtime)

@@ -2,7 +2,7 @@
 description: Context map for developer documentation. What to read, in what order, and what to skip.
 scope: project
 status: active
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 ---
 
 # trenchcoat — developer docs
@@ -26,6 +26,8 @@ Setup, deploy, and CLI live in the root [README.md](../README.md). This file is 
 | Sandbox, snapshots, collectors, watchlist, ledger, wallets, outbox, alpha-queue | [INVARIANTS.md](INVARIANTS.md) first |
 | Env, config schema, seeds, CLI | [CONFIG.md](CONFIG.md) |
 | A specific module | [architecture/README.md](architecture/README.md) then that module doc |
+| Operator Discord reaction tuning | [architecture/broadcast-feedback.md](architecture/broadcast-feedback.md) (ADR 043) |
+| Daily digest length / operator `.md` | [adr/049-digest-length-target-and-md-fanout.md](adr/049-digest-length-target-and-md-fanout.md) |
 | Provider / scrape details | [knowledge/](knowledge/) |
 | A settled decision | [adr/](adr/) (001–049, no 008) |
 | Parallel worktrees | [development.md](development.md) |

@@ -1,4 +1,4 @@
-# Live E2E blockers (updated 2026-08-18)
+# Live E2E blockers (updated 2026-08-31)
 
 ## Phase status
 
@@ -10,7 +10,15 @@ smokes run under `TRENCHCOAT_LIVE_E2E=1` when `.env` is loaded.
 `live-gates.test.ts` last ran 4 passed / 1 skipped under `TRENCHCOAT_LIVE_E2E=1`
 (operator-verified 2026-07-18).
 
-## Deploy state (operator-verified 2026-07-19; redeploy pending 2026-07-20)
+## Deploy state
+
+Production is the Linux VPS. Use `ops/install-systemd.sh` and `./ops/remote.sh
+health`. Schema is 29. Launchd is Mac-only and must stay unloaded.
+
+The July 2026 bullets below are a historical Mac-host snapshot. They are not
+current VPS state.
+
+### Historical Mac snapshot (operator-verified 2026-07-19)
 
 - Env synced: `ops/install-launchd.sh --sync-env` copied `TAVILY_API_KEY` (and
   the rest of `.env`) into `~/.trenchcoat/env` at mode 600, atomically.

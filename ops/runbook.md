@@ -219,6 +219,8 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
 - X session hold: `tc status` prints `HELD challenge since <ts>` when
   `~/.trenchcoat/x-scan/session-hold.json` exists. All X Playwright opens stay
   parked. Recover with headed `tc auth twitter`, then start `trenchcoat-x-scan`.
+  A hold that lasts hours makes the social archive stale. `narrative-scan` can
+  then finish with an empty outbox while router `healthz` stays ok.
 - Listener health: the listener touches a heartbeat file every poll cycle;
   `tc status` flags a stale heartbeat (> 15 min). launchd restarts crashes;
   a silently wedged process is caught by the heartbeat and killed by

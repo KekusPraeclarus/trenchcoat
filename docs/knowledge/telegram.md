@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 ---
 
 # Telegram
@@ -13,6 +13,9 @@ last_verified: 2026-08-26
 - FLOOD_WAIT backoff; atomic finalized message writes; heartbeat + cursor
 - Operator chat bot is separate from router fanout bot
 - Chat replies allowlist-checked before any handling (INV-B3)
+- Concurrent Playwright auth issues (two or more of x, fomo, pump) send one
+  host-authored operator DM. One open issue does not send. The router does
+  not send this notice (INV-R6)
 - Operator DM directives (ADR 040): leading `/model-high|mid|low`, `/plan`,
   `/agent` are stripped before the LLM; default remains durable composer-2.5
   ask on the agent workspace. `/agent` is an explicit unsandboxed checkout
@@ -67,8 +70,11 @@ last_verified: 2026-08-26
 | Surface | Process | Config / env |
 |---------|---------|--------------|
 | Alpha channels | `tc listen channels` / `com.trenchcoat.channels` | `telegram_channels[]` |
-| Operator DMs | `tc listen telegram` / `com.trenchcoat.listener` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OPERATOR_ID` |
+| Operator interface (DMs) | `tc listen telegram` / `com.trenchcoat.listener` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OPERATOR_ID` |
 | Broadcast fanout | `tc router serve` / `com.trenchcoat.router` | `TELEGRAM_ROUTER_*` |
+
+Operator talk that says "the interface" means the DM bot. It does not mean
+the router or the public channel.
 
 Working alpha: `mode: "preview"`, poller logs `preview:N` / `telegram preview polled`
 (on a ~60s cycle per channel batch), queue files under `agent/alpha-queue/<channel>/` with `provenance: telegram:<channel>`.

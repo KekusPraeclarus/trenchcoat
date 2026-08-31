@@ -236,6 +236,7 @@ describe("buildHealthSnapshot", () => {
     expect(health.x.pendingActions).toBe(1)
     expect(health.x.blocked).toBe(true)
     expect(health.x.sessionHeld).toBe(false)
+    expect(health.authIssues.open).toEqual([])
     expect(health.farcaster.staleStreak).toBe(2)
     expect(health.farcaster.lastFallbackUsed).toBe(true)
     expect(health.skipReasons["research"]?.["queue-empty"]).toBe(3)
@@ -265,6 +266,7 @@ describe("buildHealthSnapshot", () => {
     const text = formatHealthText(health)
     expect(text).toContain("trenchcoat health")
     expect(text).toContain("research: actionable=0")
+    expect(text).toContain("auth: open=none")
     expect(text).toMatch(/^fomo: enabled=\S+ shadow=\S+ \(parallel-only\) fallback=st:\S+ be:\S+$/mu)
     expect(text).toMatch(/^pump: enabled=\S+ shadow=\S+ \(parallel-only\)$/mu)
     expect(text).not.toMatch(/TELEGRAM_|HMAC|token=/iu)
@@ -280,6 +282,7 @@ describe("buildHealthSnapshot", () => {
     expect(lines.some((l) => l.startsWith("fcStaleStreak="))).toBe(true)
     expect(lines.some((l) => l.startsWith("fomoEnabled="))).toBe(true)
     expect(lines.some((l) => l.startsWith("pumpEnabled="))).toBe(true)
+    expect(lines).toContain("authOpen=none")
     expect(skipLedgerLines(health.skipReasons)[0]).toContain("queue-empty")
   }, 15_000)
 

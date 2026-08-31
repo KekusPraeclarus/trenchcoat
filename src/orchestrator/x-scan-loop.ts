@@ -39,6 +39,7 @@ import {
 } from "../remediation/store.js"
 import { remediationLayout } from "../remediation/paths.js"
 import { listPendingAlphaPaths } from "./review-collect.js"
+import { reportSessionAuthIssue } from "./auth-issue-notify.js"
 
 export type XScanLoopPaths = Readonly<{
   agentRoot: string
@@ -286,6 +287,13 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
             heldAt: systemClock.nowIso(),
             target: target.label,
           })
+          await reportSessionAuthIssue({
+            source: "x",
+            kind: "challenge",
+            at: systemClock.nowIso(),
+            detail: target.label,
+            home,
+          }).catch(() => undefined)
           await active.close().catch(() => undefined)
           session = undefined
           challengedBreak = true

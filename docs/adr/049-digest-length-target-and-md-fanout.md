@@ -2,7 +2,7 @@
 title: "049 — Daily digest length target and raw markdown fanout"
 status: accepted
 date: 2026-08-26
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 ---
 
 # ADR 049: Daily digest length target and raw markdown fanout

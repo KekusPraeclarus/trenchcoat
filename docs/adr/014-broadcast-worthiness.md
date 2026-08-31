@@ -72,7 +72,9 @@ surviving proposal, without letting the host invent market broadcast copy.
 - Optional: archive worthiness approve reasons alongside reject receipts for
   operator tuning.
 - Optional: Telegram daily/hourly count ledger if worthiness alone under-filters
-  (still deferred; hot-day ops raised Discord message budget instead — ADR 033).
+  (still deferred). ADR 033 later raised a Discord message budget. ADR 041
+  then removed that budget. Daily digest length is a target, not a send gate
+  (ADR 049).
 
 ## Related
 

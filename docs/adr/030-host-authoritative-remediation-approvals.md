@@ -2,7 +2,7 @@
 title: "030 — Host-authoritative Telegram remediation approvals"
 status: accepted
 date: 2026-07-23
-last_verified: 2026-08-18
+last_verified: 2026-08-31
 ---
 
 # ADR 030: Host-authoritative Telegram remediation approvals

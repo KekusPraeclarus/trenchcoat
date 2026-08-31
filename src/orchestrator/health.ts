@@ -22,6 +22,13 @@ import {
 import type { JobName } from "./jobs.js"
 import { xBotHealthEscalation } from "./x-bot-health.js"
 import { loadXSessionHold, xSessionHoldPath } from "../collectors/twitter/session-hold.js"
+import {
+  AUTH_ISSUE_ALERT_THRESHOLD,
+  authIssuesPath,
+  loadAuthIssueFile,
+  openAuthSources,
+  type AuthIssueSource,
+} from "../lib/auth-issues.js"
 import { buildPreferencePairs } from "../broadcast-feedback/aggregate.js"
 import { broadcastFeedbackLayout } from "../broadcast-feedback/paths.js"
 import {
@@ -153,6 +160,11 @@ export type HealthXState = Readonly<{
   sessionHoldTarget?: string
 }>
 
+export type HealthAuthIssuesState = Readonly<{
+  open: readonly AuthIssueSource[]
+  lastAlertAt?: string
+}>
+
 export type HealthFarcasterState = Readonly<{
   /** false when farcaster.enabled is off — the lane then reports nothing else */
   enabled: boolean
@@ -228,6 +240,7 @@ export type HealthSnapshot = Readonly<{
   watchlist: HealthWatchlistCounts
   wallets: HealthWalletCounts
   x: HealthXState
+  authIssues: HealthAuthIssuesState
   farcaster: HealthFarcasterState
   router: BroadcastPipelineSnapshot
   deployment: HealthDeploymentState
@@ -642,6 +655,15 @@ function xSessionHoldState(home?: string): Pick<
   }
 }
 
+function authIssuesState(home?: string): HealthAuthIssuesState {
+  const file = loadAuthIssueFile(authIssuesPath(home ?? join(homedir(), ".trenchcoat")))
+  const open = openAuthSources(file)
+  return {
+    open,
+    ...(file.lastAlert?.sentAt ? { lastAlertAt: file.lastAlert.sentAt } : {}),
+  }
+}
+
 function xState(agentRoot: string, nowIso: string, home?: string): HealthXState {
   const hold = xSessionHoldState(home)
   if (!existsSync(join(agentRoot, "state"))) {
@@ -921,6 +943,15 @@ function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">):
       component: "x",
     })
   }
+  if (snapshot.authIssues.open.length >= AUTH_ISSUE_ALERT_THRESHOLD) {
+    push({
+      code: "auth-issues-concurrent",
+      severity: "warn",
+      summary: `auth issues open=${snapshot.authIssues.open.join(",")}`
+        + " — operator notice only",
+      component: "auth",
+    })
+  }
   if (snapshot.farcaster.enabled && snapshot.farcaster.staleStreak >= 3) {
     push({
       code: "fc-stale-streak",
@@ -1073,6 +1104,7 @@ export function healthCreatesReviewScope(snapshot: HealthSnapshot): boolean {
   if (snapshot.farcaster.enabled && snapshot.farcaster.staleStreak > 0) return true
   if (snapshot.router.ingress.ingressPending > 0 || snapshot.router.ingress.failed > 0) return true
   if (snapshot.x.sessionHeld) return true
+  if (snapshot.authIssues.open.length >= AUTH_ISSUE_ALERT_THRESHOLD) return true
   return false
 }
 
@@ -1123,6 +1155,7 @@ export async function buildHealthSnapshot(args: Readonly<{
     ? walletCounts(args.agentRoot)
     : { tracking: 0, candidate: 0, probation: 0, total: 0, silent: true }
   const x = xState(args.agentRoot, capturedAt, args.home)
+  const authIssues = authIssuesState(args.home)
   const farcaster = await scanFarcasterHealth({
     layout,
     nowMs,
@@ -1148,6 +1181,7 @@ export async function buildHealthSnapshot(args: Readonly<{
     watchlist,
     wallets,
     x,
+    authIssues,
     farcaster,
     router,
     deployment,
@@ -1270,6 +1304,14 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
         : ""),
   )
   lines.push(
+    snapshot.authIssues.open.length > 0
+      ? `auth: open=${snapshot.authIssues.open.join(",")}`
+        + (snapshot.authIssues.open.length >= AUTH_ISSUE_ALERT_THRESHOLD
+          ? " CONCURRENT"
+          : "")
+      : "auth: open=none",
+  )
+  lines.push(
     snapshot.farcaster.enabled
       ? `fc: staleStreak=${snapshot.farcaster.staleStreak}`
         + ` recent=${snapshot.farcaster.recentRuns}`
@@ -1374,6 +1416,7 @@ export function toHealthJsonPayload(snapshot: HealthSnapshot): Readonly<Record<s
     watchlist: snapshot.watchlist,
     wallets: snapshot.wallets,
     x: snapshot.x,
+    authIssues: snapshot.authIssues,
     farcaster: snapshot.farcaster,
     router: snapshot.router,
     deployment: {
@@ -1409,6 +1452,9 @@ export function healthSnapshotLines(snapshot: HealthSnapshot): string[] {
     `walletsSilent=${snapshot.wallets.silent} walletsTracking=${snapshot.wallets.tracking}`,
     `xPending=${snapshot.x.pendingActions} xBlocked=${snapshot.x.blocked}`
       + ` xSessionHeld=${snapshot.x.sessionHeld}`,
+    snapshot.authIssues.open.length > 0
+      ? `authOpen=${snapshot.authIssues.open.join(",")}`
+      : "authOpen=none",
     snapshot.farcaster.enabled
       ? `fcStaleStreak=${snapshot.farcaster.staleStreak} fcFallback=${snapshot.farcaster.lastFallbackUsed === true}`
       : "fcEnabled=false",

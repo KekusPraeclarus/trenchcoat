@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-08-18
+last_verified: 2026-08-31
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -232,7 +232,9 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
   `~/.trenchcoat/x-scan/session-hold.json` and parks. Run
   `trenchcoat auth twitter` / `trenchcoat auth fomo` (headed — needs a display).
   Auth twitter clears the hold. Then start `trenchcoat-x-scan`.
-  Fomo VPS has no display: auth on the Mac, then
+  There is no `ops/sync-twitter-session.sh`. After Mac `tc auth twitter`,
+  rsync `twitter-profile/storage-state.json` only (mode 600). Do not print
+  cookie values. Fomo VPS has no display: auth on the Mac, then
   `./ops/sync-fomo-session.sh` (copies `storage-state.json` only)
 - GramJS session: rsync `telegram-session/` if present
 - Pump.fun session: rsync `pump-profile/storage-state.json` only, or use

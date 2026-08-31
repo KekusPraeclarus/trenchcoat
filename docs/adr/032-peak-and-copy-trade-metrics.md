@@ -2,7 +2,7 @@
 title: "032 — Peak shill returns and copy-trade wallet/Fomo P&L"
 status: accepted
 date: 2026-07-23
-last_verified: 2026-08-18
+last_verified: 2026-08-31
 ---
 
 # ADR 032: Peak shill returns and copy-trade wallet/Fomo P&L

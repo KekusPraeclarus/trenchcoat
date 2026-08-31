@@ -2,7 +2,7 @@
 description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -79,7 +79,7 @@ internal-only narrative/decision invalidations). Host `renderChannelPayloads`
 | Destination | Source |
 |---|---|
 | Telegram (intraday) | One fail-closed **short topic paragraph** per normalized `auditClaim.subject` per run when `broadcast.telegram_overview.enabled` (bounded topic packet only — never the global chat report; ≤800 chars; no section headers / bullet briefings; no other-narrative inventory; no host plumbing / workspace paths / provenance or bare @handles); on miss uses packet fallback. Same-subject followers omit `channels.telegram` (`topic-merged`). No daily message-count limit |
-| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one or more messages (one paragraph per section; section-aware split, no page labels). A raw `.md` file goes only to the operator interface bot, never the public channel. Quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId`. Distiller aims for ~8000 characters. Longer maps still send. |
+| Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one or more messages (one paragraph per section; section-aware split, no page labels). A raw `.md` file goes only to the operator interface bot, never the public channel (ADR 049). Quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId`. Distiller aims for ~8000 characters. Longer maps still send. |
 | Discord | Same text as Telegram when `channels.telegram` is set (`forwarded`); topic-merged followers omit both destinations |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.

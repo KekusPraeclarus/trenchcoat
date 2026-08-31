@@ -2,7 +2,7 @@
 description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
 status: active
-last_verified: 2026-07-24
+last_verified: 2026-08-31
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -129,6 +129,10 @@ little as possible itself:
 - **Outbound operator DMs** (alerts, research progress/completion) remain
   host-authored templates on the same bot — never agent free-text outside the
   chat turn path
+- Concurrent Playwright auth issues (two or more of x, fomo, pump open at
+  once) send one host-authored operator DM (`auth-issue-notify.ts`). One open
+  issue does not send. The router and public channels do not send this notice
+  (INV-R6, INV-B3)
 
 ## Token-burn notes
 

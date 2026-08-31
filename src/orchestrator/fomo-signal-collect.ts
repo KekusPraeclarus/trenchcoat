@@ -9,6 +9,7 @@ import type { ResearchQueueEntry } from "../contracts/schemas.js"
 import { FomoWebClient, type FomoDataSource } from "../collectors/fomo/web-client.js"
 import { providerGateAllowsSchedule, requireGatePass } from "../collectors/fomo/gates.js"
 import { FomoClientError } from "../collectors/fomo/types.js"
+import { reportSessionAuthFailureCode } from "./auth-issue-notify.js"
 import { snapshotFieldsFromEvent } from "../collectors/fomo/freshness.js"
 import {
   dedupeTradeEvents,
@@ -340,6 +341,11 @@ export async function collectFomoSignalScan(args: Readonly<{
   } catch (error) {
     const reason = error instanceof FomoClientError ? error.code : "upstream"
     if (!args.client) await client.close?.().catch(() => undefined)
+    await reportSessionAuthFailureCode({
+      source: "fomo",
+      code: reason,
+      at: args.fetchedAt,
+    }).catch(() => undefined)
     return skipSummary(await writeSkip(args, `fomo-upstream code=${reason}`), "fomo-upstream-unavailable")
   } finally {
     if (!args.client) await client.close?.().catch(() => undefined)

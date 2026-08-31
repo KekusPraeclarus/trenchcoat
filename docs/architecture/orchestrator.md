@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -57,7 +57,7 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `incident-remediate` | hourly (off by default) | health/logs/skips | host remediation lane (ADR 017); Telegram approval for high-risk |
 | `incident-remediate-weekly` | Monday 08:00 local (off by default) | deferred queue | at most one revalidated deferred incident |
 | `delivery-retry` | every 15m | staged router events without a terminal receipt | **no agent** — oldest-first bounded ingress retry |
-| `telegram-digest` | daily 04:00 Europe/London | retention-active narratives | **no agent** — Telegram-only landscape digest (ADR 026/041) |
+| `telegram-digest` | daily 04:00 Europe/London | retention-active narratives | **no agent** — Telegram-only landscape digest (ADR 026/041/049) |
 | `fomo-trader-sync` | every 6h | Fomo leaderboard handles | **no agent** — optional X nominations (no wallets) |
 | `fomo-signal-scan` | every 20m | Fomo feed / trending / alerts | **no agent** — dated signals + bounded research enqueue |
 | `fomo-x-source-review` | every 6h | one pending Fomo X nomination + bounded history | isolated classifier; host merge fail-closes (ADR 009) |
@@ -525,8 +525,8 @@ staged router events.
   shape: `**Daily narrative map — YYYY-MM-DD** _(AI)_`, then `**Label**` flush
   to the body with no stage suffix. The host
   also sends the same text as a raw `.md` file to the operator interface bot
-  only. The public channel never receives that file. Distiller aims for ~8000
-  characters. Longer maps still send. Quiet actives are omitted — no
+  only (ADR 049). The public channel never receives that file. Distiller aims
+  for ~8000 characters. Longer maps still send. Quiet actives are omitted. No
   "nothing happened" filler. Immutable
   ledger under `archive/telegram-digests/<London-date>.json`. No active
   narratives, or active but no window developments → durable no-send record.
@@ -539,6 +539,10 @@ Chat recall and agent `chat-summary` list what the model **proposed** to broadca
 They are not delivery receipts. When operators report "digest said X but nothing
 landed on TG/Discord", trace in this order:
 
+0. **`tc status` / health** — `HELD challenge` or `auth: open=… CONCURRENT`
+   means Playwright scrapes parked. The social archive then goes stale.
+   `narrative-scan` can finish with an empty outbox while the router stays
+   healthy. Re-auth first. This is not a worthiness miss (INV-R5, INV-R6).
 1. **`agent/outbox/<run-id>.json`** — did the agent write a proposal?
 2. **`archive/runs/<run-id>/broadcast-rejects.json`** (or run report reject list)
    — mechanical gate (`narrative-unchanged-stage`, development repeat,

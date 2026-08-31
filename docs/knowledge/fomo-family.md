@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-08-26
+last_verified: 2026-08-31
 source: https://fomo.family
 ---
 
@@ -23,6 +23,9 @@ for follow/unfollow paths only. Trades/transfers/profile edits stay blocked.
   `shadow_mode=false`. Fomo never writes `wallets.json`. Health reports FOMO
   as a parallel-only section — it never clears FC corroboration or legacy
   research/wallet warnings
+- `FomoClientError` codes `challenged` and `session_expired` record a fomo
+  auth issue. Two open Playwright sources send one operator DM (INV-R6).
+  `tc auth fomo` clears that record.
 
 ## Jobs
 

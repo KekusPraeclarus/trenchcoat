@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-22
+last_verified: 2026-08-31
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---

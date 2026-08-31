@@ -2,7 +2,7 @@
 description: North star, deliverables, tech stack, and the framework decision for trenchcoat. The what and why of the project.
 scope: project
 status: active
-last_verified: 2026-08-15
+last_verified: 2026-08-31
 read_when:
   - You are new to the project or need the goal, stack, or a decision's rationale.
   - You are about to add a dependency, data source, or change the harness/model routing.
@@ -237,9 +237,11 @@ Minimising burn without harming results, enforced by design rather than hope:
   instructions found in them (INV-P*). Alpha-channel text is *more* likely to be
   manipulative than random tweets — same rule, higher suspicion.
 - **The agent proposes broadcasts, the orchestrator sends them.** Outbox items are
-  schema-checked (length cap, severity, refs) before forwarding. Discord receives
-  the same host-rendered text as Telegram leaders (ADR 041). Telegram is uncapped
-  after validation. The sandboxed agent can never reach the router directly.
+  schema-checked (severity, refs, worthiness) before forwarding. Discord receives
+  the same host-rendered text as Telegram leaders (ADR 041). Daily digest length
+  is an 8000-character target. Longer maps still send (ADR 049). Telegram is
+  uncapped after validation. The sandboxed agent can never reach the router
+  directly.
 - **Every piece of evidence has provenance.** Snapshot items carry their source
   handle; decisions cite sources; audits grade sources; scans weight by grade.
 - **Autonomy with a paper trail, not a leash.** No approval gates anywhere; instead
@@ -394,8 +396,9 @@ Accepted quality improvements beyond the base flow, in adoption order. Items
     enough decisions exist; a bot that only works in a bull tape should say so.
 15. **Neynar/Farcaster lens (shipped host path)** — for-you / channels / following
     scrape, likes-only engagement, follow-graph lifecycle as managed-list analog
-    (ADR 007; `farcaster-scan`, `fc-source-review`). Live E2E gated on Neynar
-    signer + `farcaster.enabled`.
+    (ADR 007; `farcaster-scan`, `fc-source-review`). Default and live keep
+    `farcaster.enabled=false` until mobile for-you feed tuning. Re-enable needs
+    Neynar signer plus a clean for-you hash stream. See `docs/knowledge/neynar.md`.
 16. **Smart-money wallet tracking (shipped host path)** — Helius/Infura/Robinhood
     discovery + scan + review jobs, blended scoring (ADR 002), operator seed, and
     `wallet.lifecycle` router events. Live E2E still gated on provider keys

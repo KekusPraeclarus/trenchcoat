@@ -2,7 +2,7 @@
 description: Index of per-module architecture docs. Open the doc matching the module you are editing.
 scope: project
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-08-31
 ---
 
 # Module docs
@@ -25,7 +25,7 @@ last_verified: 2026-08-17
 | [security-gate.md](security-gate.md) | GoPlus/RugCheck field→flag mapping, hard-fail vs caution (incl. contextual mint / ADR 011), market-quality preflight, fail-closed semantics | `src/collectors/market/security.ts`, `src/orchestrator/research-verdict.ts` |
 | [snapshot-archive.md](snapshot-archive.md) | Content-addressed archive, evidence bundles, causal outcome records (incl. `outcomes/decision/…`), run journals, sealed epochs, retention/backup, source-score lag | run-loop archiving, attribution inputs, audit / harness mining reads |
 | [audit-metrics.md](audit-metrics.md) | Epoch/cohort rules, causal execution, honest P&L, horizons, calibration, RSI evaluation, broadcasts, source quality, funnel counterfactuals, decision-outcome settlement | `src/orchestrator/audit.ts`, `settle-decisions.ts` |
-| [router.md](router.md) | KeepAlive SQLite router, HMAC intake, durable fanout, per-channel Telegram/Discord payloads (host-rendered; watchWindow ADR 013), wallet lifecycle lane | `src/router/`, `src/orchestrator/channel-render.ts`, `src/orchestrator/distill-session.ts`, `src/lib/router-contract.ts`, `src/lib/watch-window.ts` |
+| [router.md](router.md) | KeepAlive SQLite router, HMAC intake, durable fanout, per-channel Telegram/Discord payloads (host-rendered; watchWindow ADR 013), daily digest length target (ADR 049), wallet lifecycle lane | `src/router/`, `src/orchestrator/channel-render.ts`, `src/orchestrator/distill-session.ts`, `src/lib/router-contract.ts`, `src/lib/watch-window.ts` |
 | [broadcast-feedback.md](broadcast-feedback.md) | Operator Discord reactions, Telegram detail, sealed datasets, manual tuning candidates, harness preference gate | `src/broadcast-feedback/`, `src/discord/broadcast-feedback-listener.ts`, `src/router/message-index.ts`, `broadcast.feedback` config (schema 23), ADR 043, INV-B6 |
 | [smart-wallets.md](smart-wallets.md) | Helius/Infura tracking, deterministic+LLM scoring, promotion/drop, mandatory lifecycle events | `src/wallets/`, wallet collectors |
 | [chart-vision.md](chart-vision.md) | Offline SVG→PNG charts from archived OHLCV, manifests, vision as interpretive evidence | chart renderer, chart-sweep skill |

@@ -2,7 +2,7 @@
 description: Provider knowledge — Neynar Farcaster API (feeds, search, likes, follows).
 scope: project
 status: active
-last_verified: 2026-07-19
+last_verified: 2026-08-31
 ---
 
 # Neynar

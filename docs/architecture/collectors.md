@@ -112,6 +112,13 @@ ADR: [035-discord-wallet-signal-confluence.md](../adr/035-discord-wallet-signal-
   A healthy round writes cookies back to `storage-state.json`. One challenge
   writes `~/.trenchcoat/x-scan/session-hold.json` and parks every X Playwright
   open except `tc auth twitter`. The loop does not retry the challenge page.
+  Challenge and `session_expired` on x, fomo, or pump also record
+  `~/.trenchcoat/auth-issues.json`. Two open sources send one operator DM.
+  One open source does not send. The router does not send this notice
+  (INV-R6). `tc auth` for that source clears the record. Collectors clear a
+  source through `src/lib/auth-issues.ts` only. They do not import
+  `auth-issue-notify`. Record and operator send live in
+  `src/orchestrator/auth-issue-notify.ts`.
   Cron `list-scan` is retired.
 - `list-scan` (legacy one-shot / streaming override) also writes path-only
   `list-scan-alpha-manifest` when not in streaming mode (capped at 500 with

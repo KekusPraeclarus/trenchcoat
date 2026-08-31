@@ -2,7 +2,7 @@
 description: Discord chain-integration lane — durable intake, multi-model build, clean gates, fast-forward publish, deploy, announce, research handoff.
 scope: module
 status: active
-last_verified: 2026-08-18
+last_verified: 2026-08-31
 read_when:
   - Editing src/chain-integration/ or chat.discord.chain_integration config.
   - Debugging Discord unknown-chain automation, deploy self-survival, or recovery CLI.
@@ -72,7 +72,7 @@ tracking.
 The chain-integration launchd job is **not** bootout during deploy pause (self-deploy
 survival). Drain treats `deploying` as idle-safe; other active phases block idle.
 
-## CLI / launchd
+## CLI / schedule
 
 - `tc discord chains run|status|retry|fail|continue`
 - `com.trenchcoat.job.discord-chain-integration` (kickstarted by listener)

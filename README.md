@@ -2,7 +2,7 @@
 
 trenchcoat is an autonomous crypto research agent. It keeps a token watchlist. It reads X, Farcaster, Telegram, and market feeds. It researches candidates. It tracks narratives and reads charts. It broadcasts rare findings. It scores its sources and audits its own calls.
 
-The host is TypeScript. The interpreter is a sandboxed Cursor CLI session. Auth is `agent login`. Secrets never enter `agent/`. The ledger is currenly paper only. Live trading code is not in this repo.
+The host is TypeScript. The interpreter is a sandboxed Cursor CLI session. Auth is `agent login`. Secrets never enter `agent/`. The ledger is currently paper only. Live trading code is not in this repo.
 
 This repo is a work-in-progress. It will update frequently as I expand it, but there is also a self-improvement harness that will be pushing even more frequent updates. If you want to make use of the improvement harness, you'll want to [set up your own git remote](#own-git-remote). If you want my updates, you'll want to frequently merge `origin/main` into your own `main`. PRs on this repo are welcomed.
 
@@ -69,7 +69,7 @@ pnpm exec tsx src/cli.ts init --seed config/seed.example.json \
   --operator-seed config/operator-seed.example.json
 ```
 
-This writes `~/.trenchcoat/config.json` (mode 600). Wallet seed applies only to an empty `wallets.json`. Watchlist and sources in the operator seed are not applied yet. Schema is **28**. Full contract: [docs/CONFIG.md](docs/CONFIG.md).
+This writes `~/.trenchcoat/config.json` (mode 600). Wallet seed applies only to an empty `wallets.json`. Watchlist and sources in the operator seed are not applied yet. Schema is **29**. Full contract: [docs/CONFIG.md](docs/CONFIG.md).
 
 Checks:
 

@@ -2,7 +2,7 @@
 title: "033 — Hot-day broadcast lane budgets (Discord 100 / Telegram overview 50)"
 status: deprecated
 date: 2026-07-23
-last_verified: 2026-08-18
+last_verified: 2026-08-31
 superseded_by: "041-unified-broadcast-fanout.md"
 ---
 

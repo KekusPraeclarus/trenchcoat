@@ -16,6 +16,7 @@ import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { isNativeOrWrapMint } from "../lib/native-mints.js"
 import { writeJsonRecord, ensureArchive } from "../lib/archive.js"
 import { writePumpFypEligibleSnapshot } from "./pump-fyp-eligible.js"
+import { reportSessionAuthFailureCode } from "./auth-issue-notify.js"
 import {
   advancePumpScanCursor,
   loadPumpScanCursors,
@@ -330,6 +331,11 @@ export async function collectPumpScan(args: Readonly<{
   } catch (error) {
     if (ownedClient) await client.close().catch(() => undefined)
     const reason = error instanceof PumpClientError ? error.code : "upstream"
+    await reportSessionAuthFailureCode({
+      source: "pump",
+      code: reason,
+      at: args.fetchedAt,
+    }).catch(() => undefined)
     return skipResult(
       await writeSkip(args, `pump-upstream code=${reason}`),
       "pump-upstream-unavailable",
