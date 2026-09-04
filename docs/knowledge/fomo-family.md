@@ -16,7 +16,7 @@ for follow/unfollow paths only. Trades/transfers/profile edits stay blocked.
 A direct `/profile/{handle}` load stays on the React Router spinner. Follow
 boots the token route first, then opens the profile. The follow session
 allows Statsig `featureassets.org/v1/initialize` so the Follow control can
-mutate. Verify uses the exact Follow/Following control plus
+mutate. The live follow POST is `/follows`. Verify uses the exact Follow/Following control plus
 `/v2/users/current/followingIds`. Count chips such as `310Following` do
 not count. A failed follow cools that handle for 24 hours. Trader-sync
 retries after that window.

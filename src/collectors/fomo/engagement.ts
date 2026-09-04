@@ -126,6 +126,7 @@ export async function followFomoHandle(args: Readonly<{
           && verb !== "HEAD"
           && verb !== "OPTIONS"
           && /prod-api\.fomo\.family/iu.test(request.url())
+          && /follow/iu.test(request.url())
         ) {
           blockedMutations.push(`${verb} ${request.url().slice(0, 180)}`)
         }

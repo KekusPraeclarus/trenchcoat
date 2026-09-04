@@ -53,7 +53,7 @@ const DEFAULT_FOMO_READ_POSTS: readonly FomoAllowedPost[] = [
   { host: "prod-api.fomo.family", path: "/hodlers/friends" },
 ]
 
-const FOMO_FOLLOW_PATH_RE = /\/(follow|unfollow|following|friends\/add|friends\/remove)(\/|$)/iu
+const FOMO_FOLLOW_PATH_RE = /\/(follows?|unfollow|following|friends\/add|friends\/remove)(\/|$)/iu
 
 export function isFomoFollowMutationPath(path: string): boolean {
   return FOMO_FOLLOW_PATH_RE.test(path)

@@ -40,6 +40,10 @@ describe("fomo request policy", () => {
     const follow = "https://prod-api.fomo.family/v2/follow"
     expect(classifyFomoRequest("POST", follow).allow).toBe(false)
     expect(classifyFomoRequest("POST", follow, { mutationMode: true }).allow).toBe(true)
+    expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/follows", {
+      mutationMode: true,
+    }).allow).toBe(true)
+    expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/follows").allow).toBe(false)
     expect(classifyFomoRequest("POST", "https://prod-api.fomo.family/v1/orders", {
       mutationMode: true,
     }).allow).toBe(false)
