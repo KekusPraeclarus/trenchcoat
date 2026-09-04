@@ -150,8 +150,8 @@ fallback kept the agent on as analysis-only noise — not recovery.
   INV-I1 remains PARTIAL because Cursor CLI still allows outside **reads**;
   write confinement + `disableTmpWrite` + scrubbed child env are the enforced bar.
   INV-I5 container smoke remains reference-only / PARTIAL.
-- **Fomo** — live smoke + operator override gates installed 2026-07-19
-  (`ops/fafo-fomo/gates.operator-override-2026-07-19.json`). Host config
+- **Fomo** — live smoke + operator override gates installed 2026-09-04
+  (`ops/fafo-fomo/gates.operator-override-2026-09-04.json`). Host config
   `enabled=true`, `shadow_mode=false` for trader_sync + signal_scan.
   Verified: `fomo-trader-sync` wrote leaderboard receipts; `fomo-signal-scan`
   wrote hot signals. **Fomo must not register wallet candidates** (profile

@@ -430,7 +430,7 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `follows.max_follows_per_run` | `5` | New FOMO follows per trader-sync run |
 | `follows.max_following` | `80` | Cap on stored FOMO followed handles |
 | `signal_scan.enabled` | `false` | Lane B signal job |
-| `signal_scan.feed` / `trending` / `alerts` / `convergence` / `pressure` | `false` | Per-signal capability flags |
+| `signal_scan.feed` / `trending` / `alerts` / `convergence` / `pressure` | `false` | Per-signal capability flags. Alerts reads followed-trader `/feed/tradingActivity`. |
 | `signal_scan.max_enqueues_per_day` | `3` | Research-queue writes per UTC day (native/wrap mints never count) |
 | `theses.enabled` | `false` | Thesis attachment (adapter-ready; runtime off until gate pass) |
 | `x_source_review.enabled` | `false` | Classify Fomo-nominated X accounts |

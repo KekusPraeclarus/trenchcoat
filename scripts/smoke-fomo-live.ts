@@ -1,7 +1,7 @@
 /**
  * One-shot live smoke against the burner Fomo session.
  * Does not install gates. Exit 0 only if session works and at least one
- * of leaderboard/feed/trending returns without client error.
+ * of leaderboard/feed/trending/alerts returns without client error.
  */
 import { join } from "node:path"
 import { homedir } from "node:os"
@@ -15,19 +15,23 @@ async function main(): Promise<void> {
     leaderboard: number
     feed: number
     trending: number
+    alerts: number
     error: string | null
     sampleHandles: unknown[]
     sampleFeed: unknown[]
     sampleTrending: unknown[]
+    sampleAlerts: unknown[]
   } = {
     session: fomoSessionExists(),
     leaderboard: 0,
     feed: 0,
     trending: 0,
+    alerts: 0,
     error: null,
     sampleHandles: [],
     sampleFeed: [],
     sampleTrending: [],
+    sampleAlerts: [],
   }
   if (!out.session) {
     console.log(JSON.stringify({ ...out, error: "missing-session" }, null, 2))
@@ -62,8 +66,15 @@ async function main(): Promise<void> {
       symbol: t.symbol,
       mint: t.tokenAddress?.slice(0, 8),
     }))
+    const alerts = await client.readAlerts({ limit: 20 })
+    out.alerts = alerts.length
+    out.sampleAlerts = alerts.slice(0, 3).map((item) => ({
+      handle: item.handle ?? null,
+      action: item.action ?? null,
+      mint: item.tokenAddress?.slice(0, 8) ?? null,
+    }))
     console.log(JSON.stringify(out, null, 2))
-    if (out.leaderboard + out.feed + out.trending === 0) {
+    if (out.leaderboard + out.feed + out.trending + out.alerts === 0) {
       process.exitCode = 2
     }
   } catch (error) {

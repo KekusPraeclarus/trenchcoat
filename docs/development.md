@@ -61,7 +61,7 @@ the allowlist in `tests/redteam/static.test.ts` (`prop_inv_i4_inbox_writer_owner
 ```bash
 pnpm dev:cli auth fomo
 pnpm tsx scripts/smoke-fomo-live.ts
-pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-07-19.json
+pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-09-04.json
 # or fail-closed seed: ops/fafo-fomo/gates.seed.json
 pnpm fomo:shadow-metrics --day $(date -u +%F)
 ```

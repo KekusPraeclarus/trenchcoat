@@ -48,8 +48,10 @@ retries after that window.
   `run-with-lock-retry fomo-trader-sync -- --skip-agent`. Not listed in
   `KEY_HEALTH_JOBS` — verify via archive run / `fomo-leaderboard` inbox, not
   `tc status` job lines.
-  - `fomo-signal-scan` — feed / alerts / derived convergence & pressure;
-  trending/hot may enqueue research when gates + config allow. Native/wrap gas
+  - `fomo-signal-scan` — feed `/feed/token` and alerts
+  `/feed/tradingActivity` (followed-trader buys and sells). Derived
+  convergence and pressure stay behind their flags. Trending/hot may
+  enqueue research when gates and config allow. Native/wrap gas
   mints and reserved chain symbols never burn the daily enqueue cap
   (`max_enqueues_per_day`, default 3). Feed cards are `multi_user_buy|sell`
   shapes: expand `body.topTraders` with `networkId` (or solana base58 inference)
@@ -92,7 +94,7 @@ The mapper keeps the row when `userHandle` is present.
 It reads an X handle from a `twitter` object when that object has one.
 It does not treat `address` or `evmAddress` as wallets.
 The live feed path is `/feed/token`.
-The old `/feed/tradingActivity` path stays as a fallback.
+The alerts path is `/feed/tradingActivity`.
 The capture does not take `/feed/token/thesis`.
 The live profile path is `/v2/users/userHandle/{handle}`.
 The capture does not take session `/v2/users`.
@@ -106,7 +108,7 @@ pnpm probe:fomo discover --run-id probe-YYYY-MM-DD
 pnpm probe:fomo status --run-id probe-YYYY-MM-DD
 pnpm probe:fomo sanitize --run-id probe-YYYY-MM-DD
 pnpm tsx scripts/smoke-fomo-live.ts
-pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-07-19.json
+pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-09-04.json
 ```
 
 `probe:fomo` has no `evaluate` command yet. Live smoke confirms parsers against

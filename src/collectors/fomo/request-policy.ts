@@ -59,12 +59,23 @@ export function isFomoFollowMutationPath(path: string): boolean {
   return FOMO_FOLLOW_PATH_RE.test(path)
 }
 
-/** Live feed is `/feed/token`. Keep the old `/feed/tradingActivity` path too. */
+/** Token-scoped feed cards. Followed-trader alerts use `isFomoAlertsCaptureUrl`. */
 export function isFomoFeedCaptureUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
     if (parsed.hostname !== "prod-api.fomo.family") return false
-    return parsed.pathname === "/feed/token" || parsed.pathname === "/feed/tradingActivity"
+    return parsed.pathname === "/feed/token"
+  } catch {
+    return false
+  }
+}
+
+/** Alerts tab is followed-trader activity at `/feed/tradingActivity`. */
+export function isFomoAlertsCaptureUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== "prod-api.fomo.family") return false
+    return parsed.pathname === "/feed/tradingActivity"
   } catch {
     return false
   }

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { type Browser, type BrowserContext, type Page, type Response } from "playwright"
 import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertFomoProfileReady, fomoProfileDir } from "../social/fomo-auth.js"
-import { classifyFomoRequest, FOMO_BOOT_PATH, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
+import { classifyFomoRequest, FOMO_BOOT_PATH, isFomoAlertsCaptureUrl, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
 import {
   completeAttempt,
   loadUsageDay,
@@ -11,6 +11,7 @@ import {
   saveUsageDay,
 } from "./usage.js"
 import {
+  alertFromTradeEvent,
   expandFeedItems,
   extractArrayPayload,
   extractProfileUser,
@@ -183,6 +184,7 @@ export class FomoWebClient {
     path: string,
     match: (url: string) => boolean,
     waitMs = 8_000,
+    afterLoad?: (page: Page) => Promise<void>,
   ): Promise<CapturedJson[]> {
     return this.withDebit(family, async () => {
       await this.pace()
@@ -222,6 +224,7 @@ export class FomoWebClient {
           throw new FomoClientError("session_expired", "Fomo session expired", response.status())
         }
         await page.waitForTimeout(waitMs)
+        if (afterLoad) await afterLoad(page)
         this.detectChallenge(page)
         const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 400) ?? "")
         if (/sign in|log in|login/iu.test(bodyText) && !/leaderboard|feed|trending|prices|alerts|watchlist/iu.test(bodyText)) {
@@ -320,9 +323,26 @@ export class FomoWebClient {
     const hits = await this.navigateAndCapture(
       "alerts",
       this.opts.bootPath ?? FOMO_BOOT_PATH,
-      (url) => /prod-api\.fomo\.family\/.*(alert|notification)/iu.test(url),
+      isFomoAlertsCaptureUrl,
+      6_000,
+      async (page) => {
+        await page.evaluate(`(() => {
+          const nodes = Array.from(document.querySelectorAll(".mobile-blocker"))
+          for (const el of nodes) el.setAttribute("style", "display:none")
+        })()`)
+        try {
+          await page.getByRole("button", { name: /^alerts$/iu }).first().click({ timeout: 10_000 })
+          await page.waitForTimeout(6_000)
+        } catch {
+          // Keep hits if the panel control is missing
+        }
+      },
     )
-    const items = this.firstArray(hits, ["alerts", "data", "items"])
+    const items = this.firstArray(hits, ["items", "feed", "activity", "trades", "data", "responseObject"])
+    const events = items.flatMap((item) => expandFeedItems(item, observedAt))
+    if (events.length > 0) {
+      return events.map(alertFromTradeEvent).slice(0, args.limit ?? 100)
+    }
     return items
       .map((item) => mapAlertEvent(item, observedAt))
       .filter((item): item is FomoAlertEvent => Boolean(item))

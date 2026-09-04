@@ -420,6 +420,21 @@ export function mapThesis(raw: unknown, observedAt?: string): FomoThesis | undef
   }
 }
 
+export function alertFromTradeEvent(trade: FomoTradeEvent): FomoAlertEvent {
+  return {
+    ...(trade.sourceId ? { sourceId: trade.sourceId } : {}),
+    kind: "followed-trade",
+    ...(trade.handle ? { handle: trade.handle } : {}),
+    ...(trade.action ? { action: trade.action } : {}),
+    ...(trade.chain ? { chain: trade.chain } : {}),
+    ...(trade.tokenAddress ? { tokenAddress: trade.tokenAddress } : {}),
+    ...(trade.symbol ? { symbol: trade.symbol } : {}),
+    ...(trade.usdAmount !== undefined ? { usdAmount: trade.usdAmount } : {}),
+    eventAt: trade.eventAt,
+    observedAt: trade.observedAt,
+  }
+}
+
 export function mapAlertEvent(raw: unknown, observedAt: string): FomoAlertEvent | undefined {
   const parsed = FomoRawAlertSchema.safeParse(raw)
   if (!parsed.success) return undefined

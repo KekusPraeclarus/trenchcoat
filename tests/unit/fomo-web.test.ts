@@ -12,6 +12,7 @@ import {
   mapThesis,
   mapTrader,
   extractProfileUser,
+  alertFromTradeEvent,
   expandFeedItems,
   thesisRubricComplete,
 } from "../../src/collectors/fomo/mappers.js"
@@ -100,6 +101,13 @@ describe("fomo mappers", () => {
       symbol: "Jimothy",
     })
     expect(events[1]?.handle).toBe("bob")
+    expect(alertFromTradeEvent(events[0]!)).toMatchObject({
+      kind: "followed-trade",
+      handle: "alice",
+      action: "buy",
+      chain: "solana",
+      tokenAddress: "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump",
+    })
   })
 
   it("infers solana from base58 when networkId is unknown", () => {

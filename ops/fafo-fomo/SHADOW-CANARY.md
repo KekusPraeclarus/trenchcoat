@@ -1,8 +1,9 @@
 # Fomo shadow → canary playbook
 
 Implements the Fomo web integration after gates allow collection.
-**Current status (2026-07-19):** operator override gates installed after live
-smoke (leaderboard/feed/trending). Full multi-day FAFO still pending.
+**Current status (2026-09-04):** operator override gates installed after live
+smoke (trending, feed `/feed/token`, alerts `/feed/tradingActivity`). Full
+multi-day FAFO still pending.
 
 ## Prerequisites
 
@@ -10,7 +11,7 @@ smoke (leaderboard/feed/trending). Full multi-day FAFO still pending.
    non-zero counts (not stubs)
 2. Persist gates: `pnpm fomo:install-gates path/to/gates.json`
    - fail-closed seed: `ops/fafo-fomo/gates.seed.json`
-   - tonight's override: `ops/fafo-fomo/gates.operator-override-2026-07-19.json`
+   - current override: `ops/fafo-fomo/gates.operator-override-2026-09-04.json`
 3. Live config schema current (`tc config validate`)
 
 ## Shadow (exactly 14 UTC days)

@@ -1,10 +1,11 @@
 # FAFO Fomo web probe report
 
-**Probe run:** operator-override-2026-07-19-live-smoke  
-**Evaluated:** 2026-07-19  
+**Probe run:** operator-override-2026-09-04-alerts-smoke  
+**Evaluated:** 2026-09-04  
 **Source:** authenticated Playwright against fomo.family (live SPA)  
-**Verification status:** live smoke pass for leaderboard / feed / trending;
-operator override gates installed — not a multi-day FAFO window
+**Verification status:** live smoke pass for trending, feed `/feed/token`, and
+alerts `/feed/tradingActivity`. Operator override gates installed. Not a
+multi-day FAFO window.
 
 ## Summary
 
@@ -23,10 +24,10 @@ Live SPA facts (2026-07-19):
 ## Gate seeds
 
 - Fail-closed template: [gates.seed.json](gates.seed.json)
-- Operator override (tonight): [gates.operator-override-2026-07-19.json](gates.operator-override-2026-07-19.json)
+- Operator override (alerts): [gates.operator-override-2026-09-04.json](gates.operator-override-2026-09-04.json)
 
 ```bash
-pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-07-19.json
+pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-09-04.json
 ```
 
 ## Probe CLI (scaffold)

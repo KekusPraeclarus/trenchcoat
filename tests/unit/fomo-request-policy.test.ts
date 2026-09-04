@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { classifyFomoRequest, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl } from "../../src/collectors/fomo/request-policy.js"
+import { classifyFomoRequest, isFomoAlertsCaptureUrl, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl } from "../../src/collectors/fomo/request-policy.js"
 
 describe("fomo request policy", () => {
   it("allows read traffic on fomo and privy", () => {
@@ -20,12 +20,14 @@ describe("fomo request policy", () => {
     expect(classifyFomoRequest("GET", "not-a-url").allow).toBe(false)
   })
 
-  it("captures live /feed/token and keeps the old tradingActivity path", () => {
+  it("captures token feed and followed-trader alerts on separate paths", () => {
     expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token")).toBe(true)
     expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token?page=1")).toBe(true)
-    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity")).toBe(true)
+    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity")).toBe(false)
     expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/feed/token/thesis")).toBe(false)
-    expect(isFomoFeedCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/7d")).toBe(false)
+    expect(isFomoAlertsCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity")).toBe(true)
+    expect(isFomoAlertsCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity?limit=50")).toBe(true)
+    expect(isFomoAlertsCaptureUrl("https://prod-api.fomo.family/feed/token")).toBe(false)
   })
 
   it("captures /v2/users/userHandle/{handle} and skips session /v2/users", () => {
