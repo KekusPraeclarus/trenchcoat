@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  backfillNarrativeProbation,
   creditNarrativeContribution,
   emptyNarrativeSources,
   markFollowed,
@@ -8,6 +9,26 @@ import {
 } from "../../src/sources/narrative-lifecycle.js"
 
 describe("narrative source lifecycle", () => {
+  it("backfills classified handles from now so review does not demote on day one", () => {
+    const file = backfillNarrativeProbation(
+      emptyNarrativeSources(),
+      ["Alpha", "beta", "alpha"],
+      "2026-09-04T16:00:00.000Z",
+      14,
+    )
+    expect(file.sources).toHaveLength(2)
+    expect(file.sources[0]?.handle).toBe("alpha")
+    expect(file.sources[0]?.addedAt).toBe("2026-09-04T16:00:00.000Z")
+    expect(file.sources[0]?.probationEndsAt).toBe("2026-09-18T16:00:00.000Z")
+    const reviewed = reviewNarrativeSources(file, {
+      nowIso: "2026-09-04T16:00:00.000Z",
+      minAccepted: 3,
+      minDistinct: 2,
+      demotionIdleDays: 28,
+    })
+    expect(reviewed.sources.every((item) => item.status === "probation")).toBe(true)
+  })
+
   it("registers probation once and credits distinct narratives by slug", () => {
     let file = registerNarrativeProbation(
       emptyNarrativeSources(),

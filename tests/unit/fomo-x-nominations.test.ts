@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   applyClassificationResult,
+  classifiedNarrativeXHandles,
   emptyXSourceNominations,
   markClassifying,
   nextPendingNomination,
@@ -88,5 +89,68 @@ describe("x-source nominations", () => {
     })
     expect(file.nominations[0]?.status).toBe("classified")
     expect(file.nominations[0]?.classification).toBe("shiller")
+  })
+
+  it("selects classified narrative and both handles with a profile X link", () => {
+    const handles = classifiedNarrativeXHandles({
+      schema: 1,
+      nominations: [
+        {
+          nominationId: "a",
+          fomoHandle: "n1",
+          xHandle: "NarrativeOne",
+          matchBasis: "fomo-profile-link",
+          nominatedAt: "2026-08-01T00:00:00.000Z",
+          expiresAt: "2026-08-15T00:00:00.000Z",
+          status: "classified",
+          attempts: 1,
+          classification: "narrative",
+        },
+        {
+          nominationId: "b",
+          fomoHandle: "b1",
+          xHandle: "BothOne",
+          matchBasis: "fomo-profile-link",
+          nominatedAt: "2026-08-01T00:00:00.000Z",
+          expiresAt: "2026-08-15T00:00:00.000Z",
+          status: "classified",
+          attempts: 1,
+          classification: "both",
+        },
+        {
+          nominationId: "c",
+          fomoHandle: "s1",
+          xHandle: "ShillerOne",
+          matchBasis: "fomo-profile-link",
+          nominatedAt: "2026-08-01T00:00:00.000Z",
+          expiresAt: "2026-08-15T00:00:00.000Z",
+          status: "classified",
+          attempts: 1,
+          classification: "shiller",
+        },
+        {
+          nominationId: "d",
+          fomoHandle: "same",
+          xHandle: "SameNarr",
+          matchBasis: "same-handle",
+          nominatedAt: "2026-08-01T00:00:00.000Z",
+          expiresAt: "2026-08-15T00:00:00.000Z",
+          status: "classified",
+          attempts: 1,
+          classification: "narrative",
+        },
+        {
+          nominationId: "e",
+          fomoHandle: "pend",
+          xHandle: "PendingNarr",
+          matchBasis: "fomo-profile-link",
+          nominatedAt: "2026-08-01T00:00:00.000Z",
+          expiresAt: "2026-08-15T00:00:00.000Z",
+          status: "pending",
+          attempts: 0,
+        },
+      ],
+    })
+    expect(handles).toEqual(["narrativeone", "bothone"])
   })
 })

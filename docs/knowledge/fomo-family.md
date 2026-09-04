@@ -71,8 +71,12 @@ retries after that window.
   quote mints, and profile wallets stay unused. Only X-post CAs enter the
   call log. FOMO traders score on FIFO `fomo-trader-scores.json`. Narrative
   and both still need `narrative_source_probation.enabled` to register.
+  Scan and review also backfill classified `narrative`/`both` handles that
+  already have an explicit FOMO profile X link. The 14-day clock starts at
+  first sync.
 - `fomo-narrative-source-scan` — live (<=6h) posts from probation narrative X
-  sources (never reuses historical review posts)
+  sources (never reuses historical review posts). Backfills classified
+  narrative handles when the flag is on.
 - `narrative-source-review` — promote/demote narrative sources; capped follow
   via existing X engagement executor
 - Research dossiers may attach live `fomo-context` from the observation cache

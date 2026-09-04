@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -439,7 +439,7 @@ Defaults keep the integration fully off. Scheduled jobs also fail closed unless
 | `x_source_review.daily_history_page_budget` | `20` | Shared X history/probation page budget (`archive/provider-usage/twitter/fomo-source-review/`) |
 | `x_source_review.lookback_days` / `max_posts_per_review` / `max_pages_per_review` | `90` / `200` / `5` | History scrape bounds |
 | `x_source_review.min_posts` / `min_active_days` / `min_role_evidence_posts` | `20` / `3` / `5` | Classification sample floors |
-| `narrative_source_probation.enabled` | `false` | Narrative-source probation scan/review |
+| `narrative_source_probation.enabled` | `false` | Narrative-source probation scan/review. When on, host backfills classified `narrative`/`both` handles that have an explicit FOMO profile X link. The 14-day clock starts at first sync. |
 | `narrative_source_probation.max_profiles_per_scan` / `max_pages_per_profile` | `5` / `1` | Round-robin live scan bounds |
 | `narrative_source_probation.daily_profile_page_budget` | `20` | Shares the X page-budget ledger with history review |
 | `narrative_source_probation.probation_days` | `14` | Utility measurement window |

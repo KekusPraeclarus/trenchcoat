@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -61,8 +61,8 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `fomo-trader-sync` | every 6h | Fomo leaderboard handles | **no agent** — optional X nominations (no wallets) |
 | `fomo-signal-scan` | every 20m | Fomo feed / trending / alerts | **no agent** — dated signals + bounded research enqueue |
 | `fomo-x-source-review` | every 6h | one pending Fomo X nomination + bounded history | isolated classifier; host merge fail-closes (ADR 009) |
-| `fomo-narrative-source-scan` | every 6h | live posts from narrative-probation handles | **no agent** — sealed historical-purpose tags stay out of narrative-scan |
-| `narrative-source-review` | daily | lagged narrative-source utility | **no agent** — promote/demote + gated X follow |
+| `fomo-narrative-source-scan` | every 6h | live posts from narrative-probation handles. Backfills classified narrative/both first. | **no agent** — sealed historical-purpose tags stay out of narrative-scan |
+| `narrative-source-review` | daily | lagged narrative-source utility. Backfills classified narrative/both first. | **no agent** — promote/demote + gated X follow |
 | `recover` | on demand | incomplete journal / quarantine | recovery assist (ADR 006) |
 
 Cadences live in `ops/` templates, not code; tune freely. Host-gated jobs

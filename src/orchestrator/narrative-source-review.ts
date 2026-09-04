@@ -9,11 +9,13 @@ import {
   type EngagementDriver,
 } from "../collectors/twitter/engagement.js"
 import {
+  backfillNarrativeProbation,
   markDemoted,
   markFollowed,
   reviewNarrativeSources,
   type NarrativeSourcesFile,
 } from "../sources/narrative-lifecycle.js"
+import { classifiedNarrativeXHandles } from "../sources/x-nominations.js"
 import type { XEngagementDecision } from "../contracts/schemas.js"
 import { loadActiveCanaryAssignment } from "../harness/canary.js"
 import { log } from "../lib/log.js"
@@ -90,7 +92,12 @@ export async function runNarrativeSourceReview(args: Readonly<{
   const dryRun = args.dryRun === true
 
   const state = new StateStore(join(args.agentRoot, "state"))
-  const before = state.loadXNarrativeSources()
+  const before = backfillNarrativeProbation(
+    state.loadXNarrativeSources(),
+    classifiedNarrativeXHandles(state.loadXSourceNominations()),
+    args.nowIso,
+    config.fomo.narrative_source_probation.probation_days,
+  )
   const reviewed = reviewNarrativeSources(before, {
     nowIso: args.nowIso,
     minAccepted: config.fomo.narrative_source_probation.min_accepted_contributions,

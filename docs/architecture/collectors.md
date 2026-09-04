@@ -34,8 +34,8 @@ Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
 - `fomo-trader-sync` (6h) — FOMO-platform follows plus linked-X nominations (no wallets). Follow boots the token route, then the profile. Failed follows cool for 24 hours.
 - `fomo-signal-scan` (20m) — feed/trending/alerts → dated signals + bounded research enqueue
 - `fomo-x-source-review` (6h) — one pending linked-X nomination → bounded X history + isolated classifier
-- `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles
-- `narrative-source-review` (daily) — utility promotion and gated X follow/unfollow
+- `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles. Backfills classified narrative/both handles first.
+- `narrative-source-review` (daily) — utility promotion and gated X follow/unfollow. Backfills classified narrative/both handles first.
 
 All snapshots are `trust: "untrusted-external"`. Historical X posts are tagged
 `purpose=historical-source-evaluation` and never enter live narrative evidence.

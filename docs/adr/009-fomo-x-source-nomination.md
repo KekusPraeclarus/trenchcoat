@@ -3,7 +3,7 @@ title: Fomo leaderboard X-source nomination
 description: ADR — Fomo may nominate X accounts only; host merge + probation gate membership and follows.
 status: accepted
 date: 2026-07-19
-last_verified: 2026-08-17
+last_verified: 2026-09-04
 ---
 
 # ADR 009 — Fomo X-source nomination
@@ -30,8 +30,10 @@ follows directly. FOMO-platform follows are a separate host track (ADR 048).
    count. Only X-post CAs enter the call log. Promotion scores those X-post
    outcomes. Tickers and profile wallets do not count.
 4. `narrative`/`both` enter a 14-day utility probation in
-   `state/x-narrative-sources.json`. Follows use the existing X engagement
-   executor only after measured contribution thresholds.
+   `state/x-narrative-sources.json`. Host scan and review also backfill
+   classified rows that already have an explicit FOMO profile X link. The
+   clock starts at first sync, not at nominate time. Follows use the existing
+   X engagement executor only after measured contribution thresholds.
 5. Historical posts are never reused as live narrative evidence.
 
 ## Consequences

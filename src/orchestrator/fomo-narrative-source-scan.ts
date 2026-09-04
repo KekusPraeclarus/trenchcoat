@@ -5,6 +5,8 @@ import { loadConfig } from "../lib/config.js"
 import { StateStore } from "../lib/state.js"
 import { writeAtomicFile } from "../lib/fs-atomic.js"
 import { freshnessFromIso, isLiveEligible } from "../collectors/fomo/freshness.js"
+import { classifiedNarrativeXHandles } from "../sources/x-nominations.js"
+import { backfillNarrativeProbation } from "../sources/narrative-lifecycle.js"
 import {
   loadUsageDay,
   remainingBudget,
@@ -87,7 +89,13 @@ export async function collectFomoNarrativeSourceScan(args: Readonly<{
   }
 
   const state = new StateStore(join(args.agentRoot, "state"))
-  const file = state.loadXNarrativeSources()
+  const file = backfillNarrativeProbation(
+    state.loadXNarrativeSources(),
+    classifiedNarrativeXHandles(state.loadXSourceNominations()),
+    args.fetchedAt,
+    config.fomo.narrative_source_probation.probation_days,
+  )
+  await state.saveXNarrativeSources(file)
   const probation = file.sources
     .filter((item) => item.status === "probation")
     .sort((a, b) => a.handle.localeCompare(b.handle))

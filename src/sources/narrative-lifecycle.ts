@@ -38,6 +38,18 @@ function slugSet(item: NarrativeSource): string[] {
   return []
 }
 
+export function backfillNarrativeProbation(
+  file: NarrativeSourcesFile,
+  handles: readonly string[],
+  addedAt: string,
+  probationDays: number,
+): NarrativeSourcesFile {
+  return handles.reduce(
+    (next, handle) => registerNarrativeProbation(next, handle, addedAt, probationDays),
+    file,
+  )
+}
+
 export function registerNarrativeProbation(
   file: NarrativeSourcesFile,
   handle: string,
