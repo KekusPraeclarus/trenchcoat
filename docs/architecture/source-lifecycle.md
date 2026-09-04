@@ -2,7 +2,7 @@
 description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009 / ADR 048), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-08-17
+last_verified: 2026-09-04
 read_when:
   - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
   - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
@@ -44,7 +44,7 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 |---|---|---|
 | `agent/state/x-source-nominations.json` | host | Pending Fomo→X nominations from explicit profile X links |
 | `agent/state/x-narrative-sources.json` | host | Narrative utility probation / follow eligibility |
-| `agent/state/fomo-follows.json` | host | FOMO-platform follows for feed buys (ADR 048) |
+| `agent/state/fomo-follows.json` | host | FOMO-platform follows for feed buys (ADR 048). Failed follows cool 24 hours. |
 
 - `discoveredFrom: "fomo-leaderboard"` enters `source-lifecycle.json` only after
   deterministic historical X-post call extraction meets shiller thresholds

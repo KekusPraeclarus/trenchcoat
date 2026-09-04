@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { type Browser, type BrowserContext, type Page, type Response } from "playwright"
 import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertFomoProfileReady, fomoProfileDir } from "../social/fomo-auth.js"
-import { classifyFomoRequest, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
+import { classifyFomoRequest, FOMO_BOOT_PATH, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
 import {
   completeAttempt,
   loadUsageDay,
@@ -22,9 +22,6 @@ import {
   mapTrendingObservation,
 } from "./mappers.js"
 import { FomoClientError, type FomoAlertEvent, type FomoLeaderboardEntry, type FomoThesis, type FomoTradeEvent, type FomoTrendingObservation } from "./types.js"
-
-/** Stable boot route so SPA loads leaderboard/feed/trending APIs */
-const FOMO_BOOT_PATH = "/tokens/solana/2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
 
 export type FomoWebClientOptions = Readonly<{
   archiveRoot: string

@@ -10,6 +10,8 @@ export type FomoFollowFn = (args: Readonly<{
   error?: string
 }>>
 
+export const FOMO_FOLLOW_COOLDOWN_MS = 24 * 60 * 60 * 1000
+
 export function emptyFomoFollows(): FomoFollowsFile {
   return {
     schema: 1,
@@ -19,19 +21,52 @@ export function emptyFomoFollows(): FomoFollowsFile {
   }
 }
 
+export function coolingFomoHandles(args: Readonly<{
+  receipts: readonly FomoFollowReceipt[]
+  nowIso: string
+  cooldownMs?: number
+}>): ReadonlySet<string> {
+  const cooldown = args.cooldownMs ?? FOMO_FOLLOW_COOLDOWN_MS
+  const now = Date.parse(args.nowIso)
+  const latest = new Map<string, FomoFollowReceipt>()
+  for (const receipt of args.receipts) {
+    const key = receipt.handle.toLowerCase()
+    const prev = latest.get(key)
+    if (!prev || receipt.attemptedAt > prev.attemptedAt) latest.set(key, receipt)
+  }
+  const out = new Set<string>()
+  if (!Number.isFinite(now)) return out
+  for (const [handle, receipt] of latest) {
+    if (receipt.verified) continue
+    const at = Date.parse(receipt.attemptedAt)
+    if (Number.isFinite(at) && now - at < cooldown) out.add(handle)
+  }
+  return out
+}
+
 export function planFomoFollows(args: Readonly<{
   traders: readonly FomoLeaderboardEntry[]
   followedHandles: readonly string[]
   maxFollowing: number
   maxFollowsPerRun: number
+  receipts?: readonly FomoFollowReceipt[]
+  nowIso?: string
+  cooldownMs?: number
 }>): readonly string[] {
   const have = new Set(args.followedHandles.map((h) => h.toLowerCase()))
+  const cooling = args.nowIso
+    ? coolingFomoHandles({
+      receipts: args.receipts ?? [],
+      nowIso: args.nowIso,
+      ...(args.cooldownMs !== undefined ? { cooldownMs: args.cooldownMs } : {}),
+    })
+    : new Set<string>()
   const room = Math.max(0, args.maxFollowing - have.size)
   const cap = Math.min(args.maxFollowsPerRun, room)
   const out: string[] = []
   for (const trader of args.traders) {
     const handle = trader.handle.trim().replace(/^@/u, "").toLowerCase()
-    if (!handle || have.has(handle) || out.includes(handle)) continue
+    if (!handle || have.has(handle) || cooling.has(handle) || out.includes(handle)) continue
     out.push(handle)
     if (out.length >= cap) break
   }
@@ -55,6 +90,8 @@ export async function applyFomoFollows(args: Readonly<{
     followedHandles: args.file.followedHandles,
     maxFollowing: args.maxFollowing,
     maxFollowsPerRun: args.maxFollowsPerRun,
+    receipts: args.file.receipts,
+    nowIso: args.nowIso,
   })
   if (toFollow.length === 0) {
     return { file: args.file, attempted: 0, verified: 0 }

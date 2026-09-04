@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -31,7 +31,7 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
 
 Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
 
-- `fomo-trader-sync` (6h) — FOMO-platform follows plus linked-X nominations (no wallets)
+- `fomo-trader-sync` (6h) — FOMO-platform follows plus linked-X nominations (no wallets). Follow boots the token route, then the profile. Failed follows cool for 24 hours.
 - `fomo-signal-scan` (20m) — feed/trending/alerts → dated signals + bounded research enqueue
 - `fomo-x-source-review` (6h) — one pending linked-X nomination → bounded X history + isolated classifier
 - `fomo-narrative-source-scan` (6h) — live (≤6h) posts from narrative-probation handles

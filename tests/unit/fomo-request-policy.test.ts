@@ -46,5 +46,15 @@ describe("fomo request policy", () => {
     expect(classifyFomoRequest("PUT", "https://prod-api.fomo.family/v2/unfollow", {
       mutationMode: true,
     }).allow).toBe(true)
+    expect(classifyFomoRequest(
+      "POST",
+      "https://prod-api.fomo.family/v2/users/aefe2ddd-c580-5245-a2f5-e4ed62f7ef10/follow",
+      { mutationMode: true },
+    ).allow).toBe(true)
+    expect(classifyFomoRequest(
+      "POST",
+      "https://prod-api.fomo.family/v2/users/aefe2ddd-c580-5245-a2f5-e4ed62f7ef10/following",
+      { mutationMode: true },
+    ).allow).toBe(true)
   })
 })

@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 source: https://fomo.family
 ---
 
@@ -13,6 +13,11 @@ burner session (`~/.trenchcoat/fomo-profile/`). There is no API key. Read-only
 HTTP methods plus an allowlisted set of SPA read POSTs (`/v2/users` bootstrap,
 `/proxy/*` lists). Host follow uses a separate context with `mutationMode`
 for follow/unfollow paths only. Trades/transfers/profile edits stay blocked.
+A direct `/profile/{handle}` load stays on the React Router spinner. Follow
+boots the token route first, then opens the profile. Verify uses the exact
+Follow/Following control plus `/v2/users/current/followingIds`. Count chips
+such as `310Following` do not count. A failed follow cools that handle for
+24 hours. Trader-sync retries after that window.
 
 ## Binding rules
 

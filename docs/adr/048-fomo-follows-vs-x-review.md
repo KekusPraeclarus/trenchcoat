@@ -20,7 +20,9 @@ the nomination queue with weak X history.
    `state/fomo-follows.json`. Caps are `max_follows_per_run` and
    `max_following`. Shadow mode writes no follows.
 2. Follow mutations use a dedicated browser context with `mutationMode`.
+   The session boots the token route, then opens `/profile/{handle}`.
    Trades, transfers, and wallet writes stay blocked (INV-S19, INV-S31).
+   An unverified follow cools that handle for 24 hours.
 3. X nominations require an explicit FOMO profile X link. Same-handle
    fallback does not enter pending.
 4. X review classifies posts only. Shiller entry is X-post CAs (10 / 5).

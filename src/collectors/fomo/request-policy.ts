@@ -2,6 +2,9 @@ export type FomoRequestDecision =
   | Readonly<{ allow: true, reason: string }>
   | Readonly<{ allow: false, reason: string }>
 
+/** Stable boot route. Direct /profile stays on a spinner until this loads */
+export const FOMO_BOOT_PATH = "/tokens/solana/2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
+
 const FOMO_HOSTS = new Set([
   "fomo.family",
   "www.fomo.family",
@@ -50,7 +53,7 @@ const DEFAULT_FOMO_READ_POSTS: readonly FomoAllowedPost[] = [
   { host: "prod-api.fomo.family", path: "/hodlers/friends" },
 ]
 
-const FOMO_FOLLOW_PATH_RE = /\/(follow|unfollow|friends\/add|friends\/remove)(\/|$)/iu
+const FOMO_FOLLOW_PATH_RE = /\/(follow|unfollow|following|friends\/add|friends\/remove)(\/|$)/iu
 
 export function isFomoFollowMutationPath(path: string): boolean {
   return FOMO_FOLLOW_PATH_RE.test(path)
