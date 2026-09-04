@@ -56,5 +56,11 @@ describe("fomo request policy", () => {
       "https://prod-api.fomo.family/v2/users/aefe2ddd-c580-5245-a2f5-e4ed62f7ef10/following",
       { mutationMode: true },
     ).allow).toBe(true)
+    expect(classifyFomoRequest(
+      "POST",
+      "https://featureassets.org/v1/initialize",
+      { mutationMode: true, allowedPosts: [{ host: "featureassets.org", path: "/v1/initialize" }] },
+    ).allow).toBe(true)
+    expect(classifyFomoRequest("POST", "https://featureassets.org/v1/initialize").allow).toBe(false)
   })
 })

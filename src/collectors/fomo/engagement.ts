@@ -115,10 +115,18 @@ export async function followFomoHandle(args: Readonly<{
       const request = route.request()
       const decision = classifyFomoRequest(request.method(), request.url(), {
         mutationMode: true,
+        allowedPosts: [
+          { host: "featureassets.org", path: "/v1/initialize" },
+        ],
       })
       if (!decision.allow) {
         const verb = request.method().toUpperCase()
-        if (verb !== "GET" && verb !== "HEAD" && verb !== "OPTIONS" && /fomo\.family/iu.test(request.url())) {
+        if (
+          verb !== "GET"
+          && verb !== "HEAD"
+          && verb !== "OPTIONS"
+          && /prod-api\.fomo\.family/iu.test(request.url())
+        ) {
           blockedMutations.push(`${verb} ${request.url().slice(0, 180)}`)
         }
         await route.abort("blockedbyclient")

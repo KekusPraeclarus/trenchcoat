@@ -31,6 +31,7 @@ async function main(): Promise<void> {
   const waitMs = Number(process.argv[3] ?? 8_000)
   const openSpa = process.argv.includes("--open-spa")
   const bootFirst = process.argv.includes("--boot")
+  const clickFollow = process.argv.includes("--click")
 
   const storageState = assertFomoProfileReady(fomoProfileDir())
   const blocked: string[] = []
@@ -105,6 +106,20 @@ async function main(): Promise<void> {
     timeout: 45_000,
   })
   await page.waitForTimeout(waitMs)
+  await page.evaluate(() => {
+    const nodes = Array.from(document.querySelectorAll(".mobile-blocker"))
+    for (const el of nodes) el.setAttribute("style", "display:none")
+  })
+
+  let clickError: string | undefined
+  if (clickFollow) {
+    try {
+      await page.getByRole("button", { name: /^follow$/iu }).first().click({ timeout: 20_000 })
+      await page.waitForTimeout(2_500)
+    } catch (error) {
+      clickError = error instanceof Error ? error.message : String(error)
+    }
+  }
 
   const dump = await page.evaluate(PAGE_DUMP) as {
     url: string
@@ -121,6 +136,8 @@ async function main(): Promise<void> {
     handle,
     openSpa,
     bootFirst,
+    clickFollow,
+    clickError: clickError ?? null,
     waitMs,
     url: dump.url,
     title: dump.title,
@@ -130,9 +147,10 @@ async function main(): Promise<void> {
     scripts: dump.scripts,
     preloads: dump.preloads,
     allButtons: dump.allButtons,
-    userPayloads: userPayloads.slice(0, 8),
-    assetHits: assetHits.slice(0, 40),
-    apiHits: apiHits.slice(0, 40),
+    userPayloads: userPayloads.slice(-8),
+    followHits: apiHits.filter((line) => /follow|following/iu.test(line)).slice(0, 20),
+    assetHits: assetHits.slice(0, 20),
+    apiHits: apiHits.slice(-20),
     blockedCount: blocked.length,
     blockedSample: blocked.slice(0, 12),
     allowedMutations,
