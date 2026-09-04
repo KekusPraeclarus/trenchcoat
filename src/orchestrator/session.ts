@@ -371,6 +371,8 @@ export const SCRUBBED_CHILD_ENV_KEYS = Object.freeze([
   "DISCORD_WEBHOOK_URL",
   "DISCORD_RESEARCH_BOT_TOKEN",
   "TAVILY_API_KEY",
+  "INTAKE_WEBHOOK_URL",
+  "INTAKE_SENDER_KEY",
 ] as const)
 
 export function scrubChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

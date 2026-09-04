@@ -4,6 +4,7 @@ import type Database from "better-sqlite3"
 import { openRouterDb } from "./db.js"
 import { acceptEvent, ensureDefaultDestinations } from "./accept.js"
 import { leaseNextDelivery, processDelivery } from "./deliver.js"
+import { resolveGrokIntakeConfig } from "./grok-deliver.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { log } from "../lib/log.js"
 import { backfillDiscordProviderMessages } from "./message-index.js"
@@ -19,6 +20,8 @@ export type RouterServerOptions = Readonly<{
   telegramBotToken?: string
   telegramChatId?: string
   discordWebhookUrl?: string
+  grokWebhookUrl?: string
+  grokSenderKey?: string
   fetcher?: FetchLike
   workerIntervalMs?: number
 }>
@@ -44,9 +47,17 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
       detail: error instanceof Error ? error.message : "unknown",
     })
   }
+  const grok = resolveGrokIntakeConfig({
+    ...(opts.grokWebhookUrl ? { webhookUrl: opts.grokWebhookUrl } : {}),
+    ...(opts.grokSenderKey ? { senderKey: opts.grokSenderKey } : {}),
+  })
+  if ((opts.grokWebhookUrl || opts.grokSenderKey) && !grok) {
+    log.warn("router grok intake skipped", { reason: "incomplete-or-invalid-env" })
+  }
   ensureDefaultDestinations(db, {
     ...(opts.telegramChatId ? { telegramChatId: opts.telegramChatId } : {}),
     ...(opts.discordWebhookUrl ? { discordWebhookUrl: opts.discordWebhookUrl } : {}),
+    ...(grok ? { grokWebhookUrl: grok.webhookUrl } : {}),
   })
 
   const app = Fastify({
@@ -118,6 +129,8 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
     if (!delivery) return
     await processDelivery(db, fetcher, delivery, {
       ...(opts.telegramBotToken ? { telegramBotToken: opts.telegramBotToken } : {}),
+      ...(opts.telegramChatId ? { telegramChatId: opts.telegramChatId } : {}),
+      ...(grok ? { grokSenderKey: grok.senderKey } : {}),
     })
   }
 

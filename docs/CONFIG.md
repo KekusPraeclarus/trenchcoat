@@ -22,6 +22,7 @@ read_when:
 | `TELEGRAM_OPERATOR_ID` | chat service | the allowlist (INV-B3) — single numeric user id |
 | `TELEGRAM_ROUTER_BOT_TOKEN` / `TELEGRAM_ROUTER_CHAT_ID` | router fanout | dedicated broadcast bot + destination chat/channel id |
 | `DISCORD_WEBHOOK_URL` | router fanout | Discord webhook for broadcast/lifecycle fanout |
+| `INTAKE_WEBHOOK_URL` / `INTAKE_SENDER_KEY` | router fanout | optional Grok Bot narrative intake. Both keys must be set. HTTPS webhook only. Restart the router after you rotate the sender key |
 | `DISCORD_RESEARCH_BOT_TOKEN` | discord listener | Gateway bot token for private-guild research (never logged or stored in config) |
 | `DISCORD_OPERATOR_USER_ID` | discord listener | sole user whose broadcast reactions count as feedback (ADR 043, INV-B6); needs View Channel, Read Message History, Add Reactions in the feedback channel |
 | `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` | collectors | security gate, EVM chains |

@@ -5,9 +5,11 @@ import { runArchiveDir, writeJsonRecordFsync } from "../lib/archive.js"
 import { sha256Json } from "../lib/canonical-json.js"
 import { preferredNarrativeLabel } from "../lib/narrative-label.js"
 import { effectiveFraming } from "../lib/narrative-framing.js"
+import { extractNarrativeTickers } from "../lib/narrative-tickers.js"
 import { Outbox } from "../lib/outbox.js"
 import type {
   AuditClaim,
+  BroadcastSeverity,
   DeliveryReceipt,
   RouterChannelPayloads,
   RouterEvent,
@@ -28,6 +30,7 @@ import {
   platformCoverageLabel,
   resolveSocialPlatformsForClaim,
 } from "./platform-coverage.js"
+import { buildGrokIntakePayload } from "./grok-intake.js"
 
 const TERMINAL: ReadonlySet<DeliveryReceipt["status"]> = new Set([
   "accepted",
@@ -48,6 +51,7 @@ export type ChannelRenderReceipt = Readonly<{
   renderedAt: string
   telegram: "topic-deep-dive" | "topic-fallback" | "topic-merged" | "broadcast-text"
   discord: "forwarded" | "topic-merged"
+  grok: "forwarded" | "topic-merged"
   telegramReason?: string
   inputHash?: `sha256:${string}`
 }>
@@ -222,6 +226,7 @@ export async function renderChannelPayloads(args: Readonly<{
     const channels: RouterChannelPayloads = {}
     let telegramSource: ChannelRenderReceipt["telegram"] = "broadcast-text"
     let discordSource: ChannelRenderReceipt["discord"] = "topic-merged"
+    let grokSource: ChannelRenderReceipt["grok"] = "topic-merged"
     let telegramReason: string | undefined
     let inputHash: `sha256:${string}` | undefined
 
@@ -306,6 +311,26 @@ export async function renderChannelPayloads(args: Readonly<{
     if (channels.telegram) {
       channels.discord = { text: channels.telegram.text }
       discordSource = "forwarded"
+      const snapshot = packetsByLeader.get(event.eventId)?.narrative
+      const tickers = snapshot
+        ? extractNarrativeTickers({
+          slug: snapshot.slug,
+          title: snapshot.title ?? snapshot.slug,
+          firstSeen: snapshot.lastSeen,
+          lastSeen: snapshot.lastSeen,
+          evidence: [],
+          stage: snapshot.stage,
+          ...(snapshot.tickers.length > 0 ? { tickers: [...snapshot.tickers] } : {}),
+        })
+        : []
+      channels.grok = buildGrokIntakePayload({
+        text: channels.telegram.text,
+        ts: event.occurredAt,
+        severity: event.severity as BroadcastSeverity,
+        ...(event.auditClaim ? { auditClaim: event.auditClaim } : {}),
+        ...(tickers.length > 0 ? { tickers } : {}),
+      })
+      grokSource = "forwarded"
     }
 
     const enriched: RouterEvent = { ...event, channels }
@@ -341,6 +366,7 @@ export async function renderChannelPayloads(args: Readonly<{
       renderedAt: args.nowIso,
       telegram: telegramSource,
       discord: discordSource,
+      grok: grokSource,
       ...(telegramReason ? { telegramReason } : {}),
       ...(inputHash ? { inputHash } : {}),
     }

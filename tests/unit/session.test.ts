@@ -177,6 +177,8 @@ describe("prop_inv_i3_scrub_child_env", () => {
       BIRDEYE_API_KEY: "be",
       DISCORD_WEBHOOK_URL: "https://discord.example/hook",
       TAVILY_API_KEY: "tavily",
+      INTAKE_WEBHOOK_URL: "https://grok.example/intake",
+      INTAKE_SENDER_KEY: "sender",
     }
     const scrubbed = scrubChildEnv(polluted)
     for (const key of SCRUBBED_CHILD_ENV_KEYS) {

@@ -2,11 +2,17 @@ import type Database from "better-sqlite3"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { RouterEventSchema, type RouterEvent } from "../contracts/schemas.js"
 import { splitTelegramText, telegramSendDailyDigestChunks, telegramSendFormattedChunks } from "../lib/telegram-bot.js"
+import {
+  GROK_MAX_ATTEMPTS,
+  attachGrokTelegramChatId,
+  deliverGrok,
+  grokBackoffSeconds,
+} from "./grok-deliver.js"
 import { indexDiscordProviderMessages } from "./message-index.js"
 
 export type DestinationRow = Readonly<{
   id: string
-  kind: "telegram" | "discord"
+  kind: "telegram" | "discord" | "grok"
   target: string
 }>
 
@@ -148,11 +154,28 @@ export function leaseNextDelivery(
   return row
 }
 
+function markSkippedNoChannelPayload(
+  db: Database.Database,
+  deliveryId: string,
+  now: number,
+): void {
+  db.prepare(
+    `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
+  ).run(now, deliveryId)
+  db.prepare(
+    `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-no-channel-payload')`,
+  ).run(deliveryId, now)
+}
+
 export async function processDelivery(
   db: Database.Database,
   fetcher: FetchLike,
   delivery: DeliveryRow,
-  opts: Readonly<{ telegramBotToken?: string }>,
+  opts: Readonly<{
+    telegramBotToken?: string
+    telegramChatId?: string
+    grokSenderKey?: string
+  }>,
 ): Promise<void> {
   const dest = db.prepare(
     `SELECT id, kind, target FROM destinations WHERE id = ?`,
@@ -170,26 +193,30 @@ export async function processDelivery(
   const event = RouterEventSchema.parse(JSON.parse(eventRow.payload_json)) as RouterEvent
   const now = Date.now()
 
+  // Grok is finding.broadcast only. Lifecycle and digest have no grok payload.
+  if (dest.kind === "grok" && (event.type !== "finding.broadcast" || !event.channels?.grok)) {
+    markSkippedNoChannelPayload(db, delivery.id, now)
+    return
+  }
+  if (dest.kind === "grok" && !opts.grokSenderKey) {
+    markSkippedNoChannelPayload(db, delivery.id, now)
+    return
+  }
+
   // When channels were host-rendered, omit destinations without a payload
   // (topic-merged followers; correction destination scoping).
-  // Lifecycle events have no channels → both fire.
+  // Lifecycle events have no channels → telegram and discord fire.
   if (event.channels) {
     if (dest.kind === "discord" && event.channels.discord === undefined) {
-      db.prepare(
-        `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
-      ).run(now, delivery.id)
-      db.prepare(
-        `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-no-channel-payload')`,
-      ).run(delivery.id, now)
+      markSkippedNoChannelPayload(db, delivery.id, now)
       return
     }
     if (dest.kind === "telegram" && event.channels.telegram === undefined) {
-      db.prepare(
-        `UPDATE deliveries SET status = 'delivered', lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
-      ).run(now, delivery.id)
-      db.prepare(
-        `INSERT INTO attempts(delivery_id, attempted_at, ok, detail) VALUES (?, ?, 1, 'skipped-no-channel-payload')`,
-      ).run(delivery.id, now)
+      markSkippedNoChannelPayload(db, delivery.id, now)
+      return
+    }
+    if (dest.kind === "grok" && event.channels.grok === undefined) {
+      markSkippedNoChannelPayload(db, delivery.id, now)
       return
     }
   }
@@ -218,6 +245,20 @@ export async function processDelivery(
         ...(replyTo ? { replyToMessageId: replyTo } : {}),
       })
       messageIds = result.messageIds
+    } else if (dest.kind === "grok") {
+      if (!opts.grokSenderKey) {
+        throw Object.assign(new Error("no grok sender key"), { retryable: false })
+      }
+      const payload = event.channels?.grok
+      if (!payload) {
+        throw Object.assign(new Error("missing grok payload"), { retryable: false })
+      }
+      await deliverGrok(
+        fetcher,
+        dest.target,
+        opts.grokSenderKey,
+        attachGrokTelegramChatId(payload, opts.telegramChatId),
+      )
     } else {
       throw Object.assign(new Error(`unknown dest kind`), { retryable: false })
     }
@@ -244,9 +285,13 @@ export async function processDelivery(
   } catch (error) {
     const err = error as Error & { retryable?: boolean; retryAfterSeconds?: number }
     const attempts = delivery.attempt_count + 1
+    const maxAttempts = dest.kind === "grok" ? GROK_MAX_ATTEMPTS : MAX_ATTEMPTS
     const ambiguous = err.message.includes("abort") || err.message.includes("Timeout")
-    const retryable = err.retryable !== false && attempts < MAX_ATTEMPTS
+    const retryable = err.retryable !== false && attempts < maxAttempts
     const status = retryable ? "retry" : "dead"
+    const retryAfterSeconds = dest.kind === "grok" && retryable
+      ? grokBackoffSeconds(attempts, err.retryAfterSeconds)
+      : err.retryAfterSeconds
     db.prepare(
       `UPDATE deliveries
        SET status = ?, attempt_count = ?, duplicate_risk = CASE WHEN ? THEN 1 ELSE duplicate_risk END,
@@ -257,7 +302,7 @@ export async function processDelivery(
       attempts,
       ambiguous ? 1 : 0,
       err.message.slice(0, 500),
-      err.retryAfterSeconds ? now + err.retryAfterSeconds * 1000 : null,
+      retryAfterSeconds ? now + retryAfterSeconds * 1000 : null,
       now,
       delivery.id,
     )

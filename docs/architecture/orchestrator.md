@@ -509,7 +509,7 @@ staged router events.
   packet (leader claim + group member texts + matching narrative snapshot; never
   the global chat report) when `broadcast.telegram_overview.enabled` — receipts
   `topic-deep-dive` / `topic-fallback`; same-subject followers omit
-  `channels.telegram` (`topic-merged`). Discord receives the same string as
+  `channels.telegram` (`topic-merged`). Discord and optional Grok receive the same string as
   Telegram when a leader payload exists (`forwarded` receipt). All public channel
   distillers share `PUBLIC_COPY_RULES` (`src/prompts/host.ts`) and fail closed on
   `internal-jargon` (`tape`, `operator`, `lane noise`, CG category list-position /

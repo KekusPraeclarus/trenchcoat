@@ -272,6 +272,12 @@ async function cmdRouterServe(): Promise<void> {
     ...(process.env["DISCORD_WEBHOOK_URL"]
       ? { discordWebhookUrl: process.env["DISCORD_WEBHOOK_URL"] }
       : {}),
+    ...(process.env["INTAKE_WEBHOOK_URL"]
+      ? { grokWebhookUrl: process.env["INTAKE_WEBHOOK_URL"] }
+      : {}),
+    ...(process.env["INTAKE_SENDER_KEY"]
+      ? { grokSenderKey: process.env["INTAKE_SENDER_KEY"] }
+      : {}),
   })
   const addr = await server.start()
   log.info("router listening", { addr })

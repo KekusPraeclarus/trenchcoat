@@ -354,4 +354,98 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
       { kind: "discord", text: "SHORT DISCORD LINE" },
     ]))
   })
+
+  it("fans out a grok intake twin and isolates webhook failure", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-grok-fanout-"))
+    const seen: Array<{ kind: string; status?: number; id?: string; auth?: string }> = []
+    const server = createRouterServer({
+      dbPath: join(dir, "router.sqlite3"),
+      hmacKey,
+      host: "127.0.0.1",
+      port: 0,
+      telegramBotToken: "tg-token",
+      telegramChatId: "42",
+      grokWebhookUrl: "https://grok.test/intake",
+      grokSenderKey: "intake-key",
+      workerIntervalMs: 50,
+      fetcher: async (input, init) => {
+        const url = String(input)
+        if (url.includes("api.telegram.org")) {
+          seen.push({ kind: "telegram", status: 200 })
+          return new Response("{}", { status: 200 })
+        }
+        if (url.includes("grok.test")) {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { id?: string; text?: string }
+          const auth = new Headers(init?.headers).get("authorization") ?? ""
+          seen.push({
+            kind: "grok",
+            status: 503,
+            ...(body.id ? { id: body.id } : {}),
+            auth,
+          })
+          expect(body.text).toBe("FULL TELEGRAM REPORT")
+          expect(auth).toBe("Bearer intake-key")
+          return new Response("busy", { status: 503 })
+        }
+        return new Response("{}", { status: 200 })
+      },
+    })
+    servers.push(server)
+    const addr = await server.start()
+    const base = buildBroadcastRouterEvent(
+      "run-deliver-grok",
+      "2026-07-16T18:00:00.000Z",
+      item,
+    )
+    const event: RouterEvent = {
+      ...base,
+      channels: {
+        telegram: { text: "FULL TELEGRAM REPORT" },
+        grok: {
+          id: "55555555-5555-4555-8555-555555555555",
+          ts: "2026-07-16T18:00:00.000Z",
+          source: "narrative-agent",
+          channel: "telegram",
+          text: "FULL TELEGRAM REPORT",
+          urgency: "low",
+          trade_intent: "watch",
+        },
+      },
+    }
+    await deliverRouterEvent(fetch, `${addr}/v1/events`, hmacKey, event, 5_000, true)
+    const deadline = Date.now() + 4_000
+    while (
+      (!seen.some((row) => row.kind === "telegram") || !seen.some((row) => row.kind === "grok"))
+      && Date.now() < deadline
+    ) {
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(seen.some((row) => row.kind === "telegram")).toBe(true)
+    const grok = seen.find((row) => row.kind === "grok")
+    expect(grok?.id).toBe("55555555-5555-4555-8555-555555555555")
+    expect(grok?.auth).toBe("Bearer intake-key")
+    const dests = server.db.prepare(`SELECT kind, status FROM deliveries JOIN destinations ON destinations.id = deliveries.destination_id`).all() as Array<{
+      kind: string
+      status: string
+    }>
+    expect(dests.some((row) => row.kind === "telegram" && row.status === "delivered")).toBe(true)
+    expect(dests.some((row) => row.kind === "grok" && (row.status === "retry" || row.status === "dead"))).toBe(true)
+  })
+
+  it("does not register grok when only one intake env var is set", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-grok-partial-"))
+    const server = createRouterServer({
+      dbPath: join(dir, "router.sqlite3"),
+      hmacKey,
+      host: "127.0.0.1",
+      port: 0,
+      grokWebhookUrl: "https://grok.test/intake",
+      workerIntervalMs: 60_000,
+      fetcher: async () => new Response("{}", { status: 200 }),
+    })
+    servers.push(server)
+    await server.start()
+    const rows = server.db.prepare(`SELECT kind FROM destinations`).all() as Array<{ kind: string }>
+    expect(rows.some((row) => row.kind === "grok")).toBe(false)
+  })
 })

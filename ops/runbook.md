@@ -213,7 +213,8 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   `launchctl kickstart -k gui/$(id -u)/com.trenchcoat.router`. Telegram fanout
   needs both `TELEGRAM_ROUTER_BOT_TOKEN` and `TELEGRAM_ROUTER_CHAT_ID` in
   `~/.trenchcoat/env` (Discord broadcast needs `DISCORD_WEBHOOK_URL`; Discord
-  research needs `DISCORD_RESEARCH_BOT_TOKEN` when `chat.discord.enabled`). If err logs show
+  research needs `DISCORD_RESEARCH_BOT_TOKEN` when `chat.discord.enabled`; Grok
+  intake needs both `INTAKE_WEBHOOK_URL` and `INTAKE_SENDER_KEY`). If err logs show
   missing `better_sqlite3.node`, re-run `./ops/install-launchd.sh` (installer
   rebuilds the native addon after prod install).
 - X session hold: `tc status` prints `HELD challenge since <ts>` when

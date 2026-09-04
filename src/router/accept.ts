@@ -15,7 +15,11 @@ export type AcceptResult =
 
 export function ensureDefaultDestinations(
   db: Database.Database,
-  opts: Readonly<{ telegramChatId?: string; discordWebhookUrl?: string }>,
+  opts: Readonly<{
+    telegramChatId?: string
+    discordWebhookUrl?: string
+    grokWebhookUrl?: string
+  }>,
 ): void {
   const upsert = db.prepare(
     `INSERT INTO destinations(id, kind, target, enabled) VALUES (?, ?, ?, 1)
@@ -26,6 +30,11 @@ export function ensureDefaultDestinations(
   }
   if (opts.discordWebhookUrl) {
     upsert.run("discord:default", "discord", opts.discordWebhookUrl)
+  }
+  if (opts.grokWebhookUrl) {
+    upsert.run("grok:default", "grok", opts.grokWebhookUrl)
+  } else {
+    db.prepare(`UPDATE destinations SET enabled = 0 WHERE id = 'grok:default'`).run()
   }
 }
 

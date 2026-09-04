@@ -174,6 +174,8 @@ export const BroadcastClaimTypeSchema = z.enum([
   "token-upside",
   "wallet-lifecycle",
 ])
+export type BroadcastSeverity = z.infer<typeof BroadcastSeveritySchema>
+export type BroadcastClaimType = z.infer<typeof BroadcastClaimTypeSchema>
 export const BroadcastDirectionSchema = z.enum(["down", "rotation", "up", "lifecycle"])
 
 export const AuditClaimSchema = z.object({
@@ -218,6 +220,60 @@ export const RouterEventTypeSchema = z.enum([
  */
 export const ROUTER_EVENT_TEXT_MAX = 256_000
 
+export const GrokIntakeTickerStanceSchema = z.enum([
+  "flow",
+  "chop",
+  "peak",
+  "caution",
+  "neutral",
+])
+export const GrokIntakeClassHintSchema = z.enum([
+  "macro",
+  "sector_heat",
+  "flow",
+  "catalyst",
+  "noise",
+])
+export const GrokIntakeUrgencySchema = z.enum(["low", "med", "high"])
+export const GrokIntakeTradeIntentSchema = z.enum(["none", "watch", "consider"])
+export type GrokIntakeTickerStance = z.infer<typeof GrokIntakeTickerStanceSchema>
+export type GrokIntakeClassHint = z.infer<typeof GrokIntakeClassHintSchema>
+export type GrokIntakeUrgency = z.infer<typeof GrokIntakeUrgencySchema>
+export type GrokIntakeTradeIntent = z.infer<typeof GrokIntakeTradeIntentSchema>
+
+/** Structured twin of a Telegram leader. Schema trench.intake.v0. */
+export const GrokIntakePayloadSchema = z.object({
+  id: z.string().uuid(),
+  ts: IsoTimestampSchema,
+  source: z.literal("narrative-agent"),
+  channel: z.literal("telegram"),
+  telegram: z.object({
+    chat_id: z.string().min(1).max(64).optional(),
+    message_id: z.union([z.string().min(1).max(64), z.number().int()]).optional(),
+  }).strict().optional(),
+  text: z.string().min(1).max(ROUTER_EVENT_TEXT_MAX),
+  thesis: z.string().min(1).max(280).optional(),
+  class_hint: GrokIntakeClassHintSchema.optional(),
+  tickers: z.array(z.object({
+    symbol: z.string().regex(/^[A-Z][A-Z0-9]{1,20}$/u),
+    stance: GrokIntakeTickerStanceSchema,
+  }).strict()).max(8).optional(),
+  chain_hint: z.enum(["solana", "base", "eth"]).nullable().optional(),
+  catalysts: z.array(z.string().min(1).max(128)).max(8).optional(),
+  links: z.object({
+    chart: z.string().url().optional(),
+    twitter: z.string().url().optional(),
+    telegram: z.string().url().optional(),
+  }).strict().optional(),
+  hints: z.object({
+    liq_usd: z.number().nullable().optional(),
+    age_min: z.number().nullable().optional(),
+  }).strict().optional(),
+  urgency: GrokIntakeUrgencySchema,
+  trade_intent: GrokIntakeTradeIntentSchema,
+}).strict()
+export type GrokIntakePayload = z.infer<typeof GrokIntakePayloadSchema>
+
 /** Per-destination fanout text. Optional; excluded from eventId derivation. */
 export const RouterChannelPayloadsSchema = z.object({
   telegram: z.object({
@@ -226,6 +282,7 @@ export const RouterChannelPayloadsSchema = z.object({
   discord: z.object({
     text: z.string().min(1).max(ROUTER_EVENT_TEXT_MAX),
   }).optional(),
+  grok: GrokIntakePayloadSchema.optional(),
 }).strict()
 export type RouterChannelPayloads = z.infer<typeof RouterChannelPayloadsSchema>
 

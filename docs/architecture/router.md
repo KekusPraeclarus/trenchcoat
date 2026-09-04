@@ -1,8 +1,8 @@
 ---
-description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord at-least-once fanout, separate wallet-lifecycle lane.
+description: In-repo SQLite router — HMAC intake, durable event queue, Telegram/Discord/Grok at-least-once fanout, separate wallet-lifecycle lane.
 scope: project
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 read_when:
   - Editing src/router/**, src/lib/router-contract.ts, outbox staging, or broadcast delivery
 ---
@@ -40,6 +40,8 @@ The router is a **long-lived KeepAlive process** (`com.trenchcoat.router` via
 the router process, broadcasts never fan out. SQLite lives at
 `~/.trenchcoat/router.sqlite3`. Destinations come from env at process start:
 `TELEGRAM_ROUTER_BOT_TOKEN` + `TELEGRAM_ROUTER_CHAT_ID`, and/or `DISCORD_WEBHOOK_URL`.
+Optional Grok intake uses `INTAKE_WEBHOOK_URL` plus `INTAKE_SENDER_KEY`.
+The router skips Grok when either value is unset or the URL is not HTTPS.
 
 ## Guarantees
 
@@ -48,8 +50,8 @@ the router process, broadcasts never fan out. SQLite lives at
 | Ingress auth | HMAC-SHA256 over `METHOD\nPATH\nTIMESTAMP\nNONCE\nsha256(body)` with constant-time compare, ±5m skew, nonce replay table |
 | Durability | SQLite WAL: events, destination snapshots, deliveries, attempts, nonces, idempotency tombstones |
 | Ingress codes | `202` new event, `200` exact duplicate (same eventId + payload hash), `409` eventId/payload conflict (incident log) |
-| Fanout | At-least-once to Telegram and Discord. Providers have no idempotency primitive; ambiguous timeouts record duplicate risk |
-| Lanes | `finding.broadcast` fanout uses the same rendered text on Telegram and Discord (ADR 041); `telegram_overview.daily_cap` = LLM sessions only; `wallet.lifecycle` and `finding.correction` skip channel render |
+| Fanout | At-least-once to Telegram, Discord, and optional Grok. Providers have no idempotency primitive; ambiguous timeouts record duplicate risk. A Grok failure stays on its own delivery row |
+| Lanes | `finding.broadcast` fanout uses the same rendered text on Telegram and Discord (ADR 041). Grok gets a structured JSON twin of Telegram leaders only. `telegram_overview.daily_cap` = LLM sessions only; `wallet.lifecycle`, `narrative.digest`, and `finding.correction` skip Grok |
 | Text ownership | Lifecycle one-liners are host-rendered from trusted reason codes/metrics. LLM prose is never forwarded. Correction copy is host-rendered from sealed revalidation artifacts (INV-S28) |
 
 ## Event shapes
@@ -81,11 +83,15 @@ internal-only narrative/decision invalidations). Host `renderChannelPayloads`
 | Telegram (intraday) | One fail-closed **short topic paragraph** per normalized `auditClaim.subject` per run when `broadcast.telegram_overview.enabled` (bounded topic packet only — never the global chat report; ≤800 chars; no section headers / bullet briefings; no other-narrative inventory; no host plumbing / workspace paths / provenance or bare @handles); on miss uses packet fallback. Same-subject followers omit `channels.telegram` (`topic-merged`). No daily message-count limit |
 | Telegram (daily) | Host-only `narrative.digest` at 04:00 Europe/London (`broadcast.telegram_digest.enabled`): retention-active narratives with a host-approved Telegram development in the window, in one or more messages (one paragraph per section; section-aware split, no page labels). A raw `.md` file goes only to the operator interface bot, never the public channel (ADR 049). Quiet actives omitted; immutable `archive/telegram-digests/<date>.json`, day-keyed `eventId`. Distiller aims for ~8000 characters. Longer maps still send. |
 | Discord | Same text as Telegram when `channels.telegram` is set (`forwarded`); topic-merged followers omit both destinations |
+| Grok | Same leader text as Telegram in a `trench.intake.v0` JSON body (`channels.grok`). Topic-merged followers omit Grok. Digest, lifecycle, and correction events skip Grok |
 
 The router never runs models. Fanout picks `event.channels.<kind>.text ?? event.text`.
-When `channels` is present and a destination payload is absent, that destination is
-skipped (`skipped-no-channel-payload`). Intraday Telegram is one message per subject;
-Discord mirrors Telegram leaders only (ADR 041).
+Grok posts `channels.grok` as JSON with `Authorization: Bearer` and does not wait
+for a Telegram message id. When `channels` is present and a destination payload is
+absent, that destination is skipped (`skipped-no-channel-payload`). Intraday
+Telegram is one message per subject. Discord and Grok mirror Telegram leaders only
+(ADR 041). Grok retries three times on 408, 429, 5xx, and network errors. It does
+not retry 400, 401, or 403.
 
 ## Delivery workers
 
@@ -129,6 +135,10 @@ Discord mirrors Telegram leaders only (ADR 041).
   reaction back to one broadcast (ADR 043). The router backfills the index for
   recent deliveries at startup, so messages sent before the table existed still
   resolve.
+- Grok: HTTPS POST of `channels.grok` to `INTAKE_WEBHOOK_URL` with
+  `Authorization: Bearer`. Timeout is 30s. Redirects are blocked. The sender
+  key is never logged. Chat id is added at send time when Telegram fanout is
+  configured. Grok uses three durable attempts. 400, 401, and 403 are terminal.
 - Graceful shutdown drains in-flight leases, then exits
 
 ## Security surface

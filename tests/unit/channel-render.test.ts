@@ -97,6 +97,15 @@ describe("renderChannelPayloads", () => {
     const event = outbox.list()[0]
     expect(event?.channels?.telegram?.text).toBe(ITEM.text)
     expect(event?.channels?.discord?.text).toBe(ITEM.text)
+    expect(event?.channels?.grok?.text).toBe(ITEM.text)
+    expect(event?.channels?.grok?.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
+    )
+    expect(event?.channels?.grok?.source).toBe("narrative-agent")
+    expect(event?.channels?.grok?.ts).toBe(NOW)
+    expect(event?.channels?.grok?.class_hint).toBe("flow")
+    expect(event?.channels?.grok?.trade_intent).toBe("watch")
+    expect(report.receipts[0]?.grok).toBe("forwarded")
   })
 
   it("annotates single-platform rotation broadcasts as X-only", async () => {
@@ -196,8 +205,10 @@ describe("renderChannelPayloads", () => {
     expect(event?.channels?.telegram?.text).not.toContain("Chat recall")
     expect(event?.channels?.telegram?.text).not.toContain("Receipt paths")
     expect(event?.channels?.discord?.text).toBe(overviewText)
+    expect(event?.channels?.grok?.text).toBe(overviewText)
     expect(report.receipts[0]?.telegram).toBe("topic-deep-dive")
     expect(report.receipts[0]?.discord).toBe("forwarded")
+    expect(report.receipts[0]?.grok).toBe("forwarded")
     expect(existsSync(join(runArchiveDir(layout, RUN_ID), "channel-render-receipts.json"))).toBe(true)
   })
 
@@ -328,6 +339,8 @@ describe("renderChannelPayloads", () => {
     expect(rhLeader?.channels?.discord?.text).toBe(rhLeader?.channels?.telegram?.text)
     expect(rhFollower?.channels?.telegram).toBeUndefined()
     expect(rhFollower?.channels?.discord).toBeUndefined()
+    expect(rhFollower?.channels?.grok).toBeUndefined()
+    expect(rhLeader?.channels?.grok?.text).toBe(rhLeader?.channels?.telegram?.text)
     expect(bySubject.get("base-trust-collapse")?.channels?.telegram?.text).toContain("delist chatter")
     expect(report.receipts.filter((receipt) => receipt.telegram === "topic-merged")).toHaveLength(1)
     expect(report.receipts.filter((receipt) => receipt.telegram === "topic-deep-dive")).toHaveLength(2)
@@ -448,7 +461,64 @@ describe("renderChannelPayloads", () => {
     expect(withDiscord).toHaveLength(3)
     for (const event of withDiscord) {
       expect(event.channels?.discord?.text).toBe(event.channels?.telegram?.text)
+      expect(event.channels?.grok?.text).toBe(event.channels?.telegram?.text)
     }
     expect(report.receipts.every((receipt) => receipt.discord === "forwarded")).toBe(true)
+    expect(report.receipts.every((receipt) => receipt.grok === "forwarded")).toBe(true)
+  })
+
+  it("copies narrative tickers into the grok payload and keeps the same id on resume", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-render-grok-tickers-"))
+    const agentRoot = join(root, "agent")
+    mkdirSync(agentRoot, { recursive: true })
+    const layout = await ensureArchive(join(root, "archive"))
+    const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
+    await outbox.stage(buildBroadcastRouterEvent(RUN_ID, NOW, {
+      ...ITEM,
+      severity: "urgent",
+      text: "STAX flow is the live tell on the tape",
+      auditClaim: {
+        type: "token-upside",
+        subject: "stax-flow",
+        direction: "up",
+        horizonHours: 72,
+        verificationRule: "token.up.72h",
+      },
+    }))
+
+    const first = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      telegramOverview: TG_OFF,
+      activeNarratives: [{
+        slug: "stax-flow",
+        title: "STAX flow",
+        firstSeen: NOW,
+        lastSeen: NOW,
+        evidence: ["twitter:@a:1"],
+        stage: "emerging",
+        tickers: ["$stax"],
+      }],
+    })
+    const event = outbox.list()[0]
+    expect(first.rendered).toBe(1)
+    expect(event?.channels?.grok?.tickers).toEqual([{ symbol: "STAX", stance: "neutral" }])
+    expect(event?.channels?.grok?.trade_intent).toBe("consider")
+    expect(event?.channels?.grok?.urgency).toBe("high")
+    expect(event?.channels?.grok?.class_hint).toBe("catalyst")
+    const id = event?.channels?.grok?.id
+    expect(id).toBeTruthy()
+
+    const second = await renderChannelPayloads({
+      agentRoot,
+      layout,
+      runId: RUN_ID,
+      nowIso: NOW,
+      telegramOverview: TG_OFF,
+    })
+    expect(second.skipped).toBe(1)
+    expect(outbox.list()[0]?.channels?.grok?.id).toBe(id)
   })
 })

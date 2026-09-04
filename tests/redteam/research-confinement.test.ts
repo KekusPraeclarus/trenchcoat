@@ -55,6 +55,8 @@ describe("research confinement redteam", () => {
 
   it("scrubs Tavily key from Cursor child env", () => {
     expect(SCRUBBED_CHILD_ENV_KEYS).toContain("TAVILY_API_KEY")
+    expect(SCRUBBED_CHILD_ENV_KEYS).toContain("INTAKE_WEBHOOK_URL")
+    expect(SCRUBBED_CHILD_ENV_KEYS).toContain("INTAKE_SENDER_KEY")
   })
 
   it("research twitter search URLs are host-built and never from tweet text", () => {
