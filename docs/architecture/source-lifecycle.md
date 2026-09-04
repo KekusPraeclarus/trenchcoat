@@ -54,8 +54,8 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 - Classification agent output never mutates lists or follows. Shiller and
   narrative tracks graduate independently (`both` must pass both).
 - When `narrative_source_probation.enabled` is on, host scan and review
-  backfill classified `narrative`/`both` handles. Those handles need an
-  explicit FOMO profile X link. The 14-day clock starts at first sync.
+  backfill classified `narrative`/`both` handles. The 14-day clock starts
+  at first sync. New pending still needs an explicit FOMO profile X link.
 - Historical posts are never reused as live narrative evidence.
 
 ## Pump.fun follow graph (feed training)

@@ -91,7 +91,7 @@ describe("x-source nominations", () => {
     expect(file.nominations[0]?.classification).toBe("shiller")
   })
 
-  it("selects classified narrative and both handles with a profile X link", () => {
+  it("selects classified narrative and both handles", () => {
     const handles = classifiedNarrativeXHandles({
       schema: 1,
       nominations: [
@@ -151,6 +151,6 @@ describe("x-source nominations", () => {
         },
       ],
     })
-    expect(handles).toEqual(["narrativeone", "bothone"])
+    expect(handles).toEqual(["narrativeone", "bothone", "samenarr"])
   })
 })

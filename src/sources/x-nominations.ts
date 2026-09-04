@@ -140,7 +140,6 @@ export function classifiedNarrativeXHandles(
   for (const item of file.nominations) {
     if (item.status !== "classified") continue
     if (item.classification !== "narrative" && item.classification !== "both") continue
-    if (item.matchBasis !== "fomo-profile-link") continue
     const handle = normalizeXHandle(item.xHandle)
     if (!handle || seen.has(handle)) continue
     seen.add(handle)
