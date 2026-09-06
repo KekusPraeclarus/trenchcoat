@@ -128,6 +128,8 @@ describe("grok retry policy", () => {
     expect(grokBackoffSeconds(1)).toBe(1)
     expect(grokBackoffSeconds(2)).toBe(2)
     expect(grokBackoffSeconds(3, 12)).toBe(12)
+    expect(grokBackoffSeconds(1, undefined, true)).toBe(15 * 60)
+    expect(grokBackoffSeconds(1, 12, true)).toBe(15 * 60)
   })
 
   it("marks 401 as a terminal delivery error", async () => {
@@ -135,6 +137,16 @@ describe("grok retry policy", () => {
     await expect(deliverGrok(fetcher, WEBHOOK, "wrong-key", grokPayload())).rejects.toMatchObject({
       message: "grok HTTP 401",
       retryable: false,
+    })
+  })
+
+  it("backs off 15 minutes on quota-class 429", async () => {
+    const fetcher: FetchLike = async () => new Response("resource_exhausted", { status: 429 })
+    await expect(deliverGrok(fetcher, WEBHOOK, KEY, grokPayload())).rejects.toMatchObject({
+      message: "grok HTTP 429 quota",
+      retryable: true,
+      quotaExhausted: true,
+      retryAfterSeconds: 15 * 60,
     })
   })
 

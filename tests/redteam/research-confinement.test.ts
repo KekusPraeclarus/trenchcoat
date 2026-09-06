@@ -57,6 +57,7 @@ describe("research confinement redteam", () => {
     expect(SCRUBBED_CHILD_ENV_KEYS).toContain("TAVILY_API_KEY")
     expect(SCRUBBED_CHILD_ENV_KEYS).toContain("INTAKE_WEBHOOK_URL")
     expect(SCRUBBED_CHILD_ENV_KEYS).toContain("INTAKE_SENDER_KEY")
+    expect(SCRUBBED_CHILD_ENV_KEYS).toContain("DESK_PULL_TOKEN")
   })
 
   it("research twitter search URLs are host-built and never from tweet text", () => {

@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-06
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -22,7 +22,9 @@ read_when:
 | `TELEGRAM_OPERATOR_ID` | chat service | the allowlist (INV-B3) — single numeric user id |
 | `TELEGRAM_ROUTER_BOT_TOKEN` / `TELEGRAM_ROUTER_CHAT_ID` | router fanout | dedicated broadcast bot + destination chat/channel id |
 | `DISCORD_WEBHOOK_URL` | router fanout | Discord webhook for broadcast/lifecycle fanout |
-| `INTAKE_WEBHOOK_URL` / `INTAKE_SENDER_KEY` | router fanout | optional Grok Bot narrative intake. Both keys must be set. HTTPS webhook only. Restart the router after you rotate the sender key |
+| `INTAKE_WEBHOOK_URL` / `INTAKE_SENDER_KEY` | router fanout | optional Grok Bot webhook. Both keys must be set. HTTPS only. Best-effort after the pull-queue. Restart the router after you rotate the sender key |
+| `DESK_PULL_TOKEN` | router desk pull | Bearer secret for `GET /desk/intake/pending`. Required to listen on `:8788`. Never commit. Restart the router after a write |
+| `DESK_PULL_HOST` / `DESK_PULL_PORT` / `DESK_PULL_LOG` | router desk pull | default loopback `127.0.0.1:8788` and `~/.trenchcoat/desk-intake/desk_tickets.jsonl`. Off-loopback bind is refused |
 | `DISCORD_RESEARCH_BOT_TOKEN` | discord listener | Gateway bot token for private-guild research (never logged or stored in config) |
 | `DISCORD_OPERATOR_USER_ID` | discord listener | sole user whose broadcast reactions count as feedback (ADR 043, INV-B6); needs View Channel, Read Message History, Add Reactions in the feedback channel |
 | `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` | collectors | security gate, EVM chains |
@@ -37,10 +39,11 @@ read_when:
 | `TAVILY_API_KEY` | research collectors | optional host-mediated web search (never under `agent/`) |
 | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | GramJS listener | MTProto fallback (session file under `~/.trenchcoat/telegram-session/`) |
 
-Loaded from the process env (launchd plists set them from a mode-600 env file,
-see ops/runbook.md). Files under `agent/` never receive secrets (INV-I3); the
-Cursor child env is scrubbed of router/Telegram/provider keys via
-`scrubChildEnv` (`prop_inv_i3_scrub_*`).
+Loaded from the process env (launchd and systemd set them from a mode-600
+`~/.trenchcoat/env` file, see ops/runbook.md). A git checkout `.env` does not
+enable live fanout unless an install `--sync-env` copied it. Files under
+`agent/` never receive secrets (INV-I3); the Cursor child env is scrubbed of
+router/Telegram/provider keys via `scrubChildEnv` (`prop_inv_i3_scrub_*`).
 
 ## Config file — `~/.trenchcoat/config.json`
 

@@ -26,5 +26,7 @@ The router provides durable at-least-once fanout:
 - Tests assert one ingress event and ≤N destination attempts, not zero duplicates
 - Dead letters are visible and never dropped
 - Wallet lifecycle and market findings share durability, not Discord market budget
-  (Discord message budget removed in ADR 041; Telegram topic render forwards to Discord)
-  Telegram stays uncapped after schema validation)
+  (Discord message budget removed in ADR 041; Telegram topic render forwards to
+  Discord). Optional Grok webhook uses the same per-destination rows (ADR 050).
+  The desk pull-queue is the required machine path (ADR 051).
+  Telegram stays uncapped after schema validation.

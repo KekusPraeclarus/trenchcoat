@@ -13,6 +13,7 @@ import {
 } from "../../src/orchestrator/router.js"
 import { signRouterRequest } from "../../src/lib/router-contract.js"
 import type { RouterEvent } from "../../src/contracts/schemas.js"
+import { buildGrokIntakePayload } from "../../src/orchestrator/grok-intake.js"
 
 const servers: Array<{ stop: () => Promise<void> }> = []
 const hmacKey = "test-hmac-key-for-delivery"
@@ -401,15 +402,13 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
       ...base,
       channels: {
         telegram: { text: "FULL TELEGRAM REPORT" },
-        grok: {
+        grok: buildGrokIntakePayload({
           id: "55555555-5555-4555-8555-555555555555",
           ts: "2026-07-16T18:00:00.000Z",
-          source: "narrative-agent",
-          channel: "telegram",
           text: "FULL TELEGRAM REPORT",
-          urgency: "low",
-          trade_intent: "watch",
-        },
+          severity: "watch",
+          auditClaim: item.auditClaim,
+        }),
       },
     }
     await deliverRouterEvent(fetch, `${addr}/v1/events`, hmacKey, event, 5_000, true)
@@ -447,5 +446,68 @@ describe("prop_inv_b5_hmac_orchestrator_delivery", () => {
     await server.start()
     const rows = server.db.prepare(`SELECT kind FROM destinations`).all() as Array<{ kind: string }>
     expect(rows.some((row) => row.kind === "grok")).toBe(false)
+  })
+
+  it("enqueues a desk-ready ticket when the grok webhook dest is off", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tc-desk-enqueue-"))
+    const logPath = join(dir, "desk_tickets.jsonl")
+    const server = createRouterServer({
+      dbPath: join(dir, "router.sqlite3"),
+      hmacKey,
+      host: "127.0.0.1",
+      port: 0,
+      telegramBotToken: "tg-token",
+      telegramChatId: "42",
+      deskPullToken: "desk-pull-token-for-tests-ok",
+      deskPullLogPath: logPath,
+      deskPullPort: 0,
+      workerIntervalMs: 50,
+      fetcher: async (input) => {
+        if (String(input).includes("api.telegram.org")) {
+          return new Response("{}", { status: 200 })
+        }
+        throw new Error(`unexpected fetch ${String(input)}`)
+      },
+    })
+    servers.push(server)
+    const addr = await server.start()
+    expect(server.deskApp).toBeTruthy()
+    const base = buildBroadcastRouterEvent(
+      "run-desk-queue",
+      "2026-07-16T18:00:00.000Z",
+      item,
+    )
+    const event: RouterEvent = {
+      ...base,
+      channels: {
+        telegram: { text: "FULL TELEGRAM REPORT" },
+        grok: buildGrokIntakePayload({
+          id: "55555555-5555-4555-8555-555555555555",
+          ts: "2026-07-16T18:00:00.000Z",
+          text: "FULL TELEGRAM REPORT",
+          severity: "watch",
+          auditClaim: item.auditClaim,
+        }),
+      },
+    }
+    await deliverRouterEvent(fetch, `${addr}/v1/events`, hmacKey, event, 5_000, true)
+    const pending = await server.deskApp!.inject({
+      method: "GET",
+      url: "/desk/intake/pending",
+      headers: { authorization: "Bearer desk-pull-token-for-tests-ok" },
+    })
+    expect(pending.statusCode).toBe(200)
+    const body = pending.json() as {
+      tickets: Array<{ id: string; class: string; next: string; schema: string }>
+    }
+    expect(body.tickets).toHaveLength(1)
+    expect(body.tickets[0]?.id).toBe("55555555-5555-4555-8555-555555555555")
+    expect(body.tickets[0]?.schema).toBe("trench.intake.v1")
+    expect(body.tickets[0]?.class).toBe("catalyst")
+    expect(body.tickets[0]?.next).toBe("desk_log")
+    const dests = server.db.prepare(
+      `SELECT kind FROM destinations WHERE enabled = 1`,
+    ).all() as Array<{ kind: string }>
+    expect(dests.some((row) => row.kind === "grok")).toBe(false)
   })
 })

@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -54,8 +54,8 @@ to `agent/outbox/`
 → orchestrator runs post-run integrity checks, writes as-of bundles for new
 decisions, creates entry-pending paper positions, validates outbox items (schema,
 length, narrative dedupe, worthiness review per ADR 014/023/024/036), attaches
-per-channel payloads (unified Telegram/Discord render per ADR 041; topic-merged
-followers omit both), and stages deliveries → seals the
+per-channel payloads (unified Telegram/Discord/Grok render per ADR 041 / 050;
+topic-merged followers omit all three), and stages deliveries → seals the
 archive journal (ADR 006; Git is backup-only via `tc backup`) → purges durably
 digested alpha items → sends staged broadcasts with idempotency keys → marks the
 run complete. The archive journal resumes any incomplete phase after a crash.
@@ -78,7 +78,9 @@ in orchestrator.md.
 
 The **in-repo router** (`src/router/**`, ADR 001) is a KeepAlive process
 (`com.trenchcoat.router` / `tc router serve`) that takes HMAC-signed events and
-fans them out durably to Telegram/Discord. Market broadcasts and wallet
+fans them out durably to Telegram/Discord. Each Telegram leader also appends a
+`trench.intake.v1` ticket to the desk pull-queue (ADR 051). An optional Grok
+webhook (ADR 050) is best-effort. Market broadcasts and wallet
 `lifecycle` events share intake; lifecycle skips channel render. Jobs only stage + POST — without the router process, nothing fans out.
 
 The **chat service** bridges an operator-only Telegram bot to a *minimal
@@ -106,7 +108,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–049 (no 008)
+│   ├── adr/                  # binding decisions 001–051 (no 008)
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,

@@ -179,6 +179,7 @@ describe("prop_inv_i3_scrub_child_env", () => {
       TAVILY_API_KEY: "tavily",
       INTAKE_WEBHOOK_URL: "https://grok.example/intake",
       INTAKE_SENDER_KEY: "sender",
+      DESK_PULL_TOKEN: "desk-token",
     }
     const scrubbed = scrubChildEnv(polluted)
     for (const key of SCRUBBED_CHILD_ENV_KEYS) {

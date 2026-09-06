@@ -32,6 +32,9 @@ remote_tc() {
 cmd_health() {
   remote_sh 'echo "=== healthz ==="; curl -sS --max-time 3 http://127.0.0.1:8787/healthz || echo FAIL
 echo
+echo "=== desk pull ==="
+curl -sS --max-time 3 http://127.0.0.1:8788/healthz || echo down-or-unconfigured
+echo
 echo "=== keepalive ==="
 systemctl --user is-active trenchcoat-router trenchcoat-listener trenchcoat-channels trenchcoat-x-scan
 echo

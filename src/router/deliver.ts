@@ -283,14 +283,18 @@ export async function processDelivery(
       messageIds.length > 0 ? `ok:${messageIds[0]}` : "ok",
     )
   } catch (error) {
-    const err = error as Error & { retryable?: boolean; retryAfterSeconds?: number }
+    const err = error as Error & {
+      retryable?: boolean
+      retryAfterSeconds?: number
+      quotaExhausted?: boolean
+    }
     const attempts = delivery.attempt_count + 1
     const maxAttempts = dest.kind === "grok" ? GROK_MAX_ATTEMPTS : MAX_ATTEMPTS
     const ambiguous = err.message.includes("abort") || err.message.includes("Timeout")
     const retryable = err.retryable !== false && attempts < maxAttempts
     const status = retryable ? "retry" : "dead"
     const retryAfterSeconds = dest.kind === "grok" && retryable
-      ? grokBackoffSeconds(attempts, err.retryAfterSeconds)
+      ? grokBackoffSeconds(attempts, err.retryAfterSeconds, Boolean(err.quotaExhausted))
       : err.retryAfterSeconds
     db.prepare(
       `UPDATE deliveries

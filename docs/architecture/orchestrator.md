@@ -609,7 +609,7 @@ agent notes do not prove prior fanout. From the desktop, prefer
 - `src/orchestrator/outbox-ingest.ts` — validate agent broadcast proposals, worthiness gate, and stage (no count limit)
 - `src/orchestrator/broadcast-worthiness.ts` — host approve/reject session before stage (INV-B2)
 - `src/orchestrator/telegram-alpha-research.ts` — host CA/ticker → research enqueue (ADR 015)
-- `src/orchestrator/channel-render.ts` — attach Telegram/Discord payloads; Discord copies Telegram leader text (ADR 041)
+- `src/orchestrator/channel-render.ts` — attach Telegram/Discord/Grok payloads; Discord and Grok copy Telegram leader text (ADR 041 / 050)
 - `src/orchestrator/chat-report.ts` — host-render `reports/chat/<run-id>.md` from trusted run facts after `ingestOutbox` (`list-scan`, `narrative-scan`, `farcaster-scan`, `review`, `research`); optional `chat-summary.json`/`.md` context appended when valid
 - `src/orchestrator/narrative-log.ts` — `pruneNarrativeLog`: drop malformed lines + purge `lastSeen` older than `narratives.retention_days` (default 14)
 - `src/orchestrator/router.ts` — BroadcastItem validation + HMAC `deliverRouterEvent`

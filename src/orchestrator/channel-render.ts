@@ -30,7 +30,7 @@ import {
   platformCoverageLabel,
   resolveSocialPlatformsForClaim,
 } from "./platform-coverage.js"
-import { buildGrokIntakePayload } from "./grok-intake.js"
+import { buildGrokIntakePayload, grokTicketId } from "./grok-intake.js"
 
 const TERMINAL: ReadonlySet<DeliveryReceipt["status"]> = new Set([
   "accepted",
@@ -324,6 +324,7 @@ export async function renderChannelPayloads(args: Readonly<{
         })
         : []
       channels.grok = buildGrokIntakePayload({
+        id: grokTicketId(event.eventId),
         text: channels.telegram.text,
         ts: event.occurredAt,
         severity: event.severity as BroadcastSeverity,

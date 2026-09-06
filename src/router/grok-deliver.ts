@@ -9,9 +9,14 @@ export const GROK_CONNECT_TIMEOUT_MS = 10_000
 export const GROK_TOTAL_TIMEOUT_MS = 30_000
 export const GROK_RETRY_AFTER_CAP_SECONDS = 30
 
+export const GROK_QUOTA_BACKOFF_SECONDS = 15 * 60
+export const GROK_QUOTA_BACKOFF_CAP_SECONDS = 60 * 60
+export const GROK_QUOTA_BODY_RE = /usage_limit|resource_exhausted|quota/iu
+
 export type GrokDeliveryError = Error & {
   retryable: boolean
   retryAfterSeconds?: number
+  quotaExhausted?: boolean
 }
 
 export function validateGrokIntakeUrl(raw: string): URL {
@@ -54,10 +59,27 @@ export function grokHttpRetryable(status: number): boolean {
   return status === 408 || status === 429 || status >= 500
 }
 
+export function grokQuotaHint(body: string, status: number): boolean {
+  if (status === 429) return true
+  return GROK_QUOTA_BODY_RE.test(body)
+}
+
 export function grokBackoffSeconds(
   attempt: number,
   retryAfterSeconds?: number,
+  quotaExhausted = false,
 ): number {
+  if (quotaExhausted) {
+    const raw = retryAfterSeconds !== undefined
+      && Number.isFinite(retryAfterSeconds)
+      && retryAfterSeconds >= 0
+      ? retryAfterSeconds
+      : GROK_QUOTA_BACKOFF_SECONDS
+    return Math.min(
+      Math.max(raw, GROK_QUOTA_BACKOFF_SECONDS),
+      GROK_QUOTA_BACKOFF_CAP_SECONDS,
+    )
+  }
   if (
     retryAfterSeconds !== undefined
     && Number.isFinite(retryAfterSeconds)
@@ -118,14 +140,19 @@ export async function deliverGrok(
     throw toGrokError(error)
   })
   if (response.ok) return
-  const retryable = grokHttpRetryable(response.status)
+  const snippet = await response.text().catch(() => "")
+  const terminal = response.status === 400 || response.status === 401 || response.status === 403
+  const quotaExhausted = !terminal && grokQuotaHint(snippet, response.status)
+  const retryable = !terminal && (quotaExhausted || grokHttpRetryable(response.status))
   const retryAfter = Number(response.headers.get("retry-after") ?? NaN)
   const err: GrokDeliveryError = Object.assign(
-    new Error(`grok HTTP ${response.status}`),
-    { retryable },
+    new Error(quotaExhausted ? `grok HTTP ${response.status} quota` : `grok HTTP ${response.status}`),
+    { retryable, quotaExhausted },
   )
   if (retryable && Number.isFinite(retryAfter) && retryAfter >= 0) {
-    err.retryAfterSeconds = grokBackoffSeconds(1, retryAfter)
+    err.retryAfterSeconds = grokBackoffSeconds(1, retryAfter, quotaExhausted)
+  } else if (quotaExhausted) {
+    err.retryAfterSeconds = GROK_QUOTA_BACKOFF_SECONDS
   }
   throw err
 }

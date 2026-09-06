@@ -278,6 +278,17 @@ async function cmdRouterServe(): Promise<void> {
     ...(process.env["INTAKE_SENDER_KEY"]
       ? { grokSenderKey: process.env["INTAKE_SENDER_KEY"] }
       : {}),
+    deskPullLogPath: process.env["DESK_PULL_LOG"]
+      ?? join(home, "desk-intake", "desk_tickets.jsonl"),
+    ...(process.env["DESK_PULL_TOKEN"]
+      ? { deskPullToken: process.env["DESK_PULL_TOKEN"] }
+      : {}),
+    ...(process.env["DESK_PULL_HOST"]
+      ? { deskPullHost: process.env["DESK_PULL_HOST"] }
+      : {}),
+    ...(process.env["DESK_PULL_PORT"]
+      ? { deskPullPort: Number(process.env["DESK_PULL_PORT"]) }
+      : {}),
   })
   const addr = await server.start()
   log.info("router listening", { addr })

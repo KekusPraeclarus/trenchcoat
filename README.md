@@ -101,22 +101,27 @@ Required key names for `ops/install-launchd.sh` and `ops/install-systemd.sh`:
 
 Also set `TRENCHCOAT_REPO_ROOT`. Set `GOPLUS_APP_SECRET` for the EVM gate.
 
-Optional: `TAVILY_API_KEY`, `SOLANATRACKER_API_KEY`, `BIRDEYE_API_KEY`. Optional Telegram fanout: `TELEGRAM_ROUTER_BOT_TOKEN` and `TELEGRAM_ROUTER_CHAT_ID`. Optional Discord: `DISCORD_WEBHOOK_URL`, `DISCORD_RESEARCH_BOT_TOKEN`, `DISCORD_OPERATOR_USER_ID`. Optional Grok intake: `INTAKE_WEBHOOK_URL` and `INTAKE_SENDER_KEY` (both required). Optional GramJS: `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`. Optional Farcaster create: `NEYNAR_WALLET_ID`, `FARCASTER_APP_FID`, `FARCASTER_APP_MNEMONIC`.
+Optional: `TAVILY_API_KEY`, `SOLANATRACKER_API_KEY`, `BIRDEYE_API_KEY`. Optional Telegram fanout: `TELEGRAM_ROUTER_BOT_TOKEN` and `TELEGRAM_ROUTER_CHAT_ID`. Optional Discord: `DISCORD_WEBHOOK_URL`, `DISCORD_RESEARCH_BOT_TOKEN`, `DISCORD_OPERATOR_USER_ID`. Desk pull-queue: `DESK_PULL_TOKEN` (required to serve `:8788`). Optional Grok webhook: `INTAKE_WEBHOOK_URL` and `INTAKE_SENDER_KEY` (both required). Optional GramJS: `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`. Optional Farcaster create: `NEYNAR_WALLET_ID`, `FARCASTER_APP_FID`, `FARCASTER_APP_MNEMONIC`.
 
-Grok gets a JSON twin of each intraday Telegram leader. The router skips Grok when either intake var is unset. A Grok failure does not fail Telegram or Discord. Rotate `INTAKE_SENDER_KEY` in the Grok Bot Intake panel, then write the new key to `~/.trenchcoat/env` and restart the router.
+Each intraday Telegram leader becomes one `trench.intake.v1` ticket. The router appends it to the pull-queue on accept. Telegram stays the human feed. Set `DESK_PULL_TOKEN` in `~/.trenchcoat/env` and restart the router. Public HTTPS is a reverse proxy that exposes only `/desk/intake/*`. See [ops/desk-pull.md](ops/desk-pull.md). The Cursor webhook is optional. A webhook failure does not fail Telegram, Discord, or the queue.
 
-Dry-run Grok intake with env vars only. Do not put a real sender key in the command history.
+Dry-run the pull-queue with env vars only. Do not put a real token in command history.
+
+```bash
+curl -sS "$DESK_PULL_BASE_URL/desk/intake/pending?limit=50" \
+  -H "Authorization: Bearer $DESK_PULL_TOKEN"
+
+curl -sS "$DESK_PULL_BASE_URL/desk/intake/pending?since_id=$LAST_ID&limit=50" \
+  -H "Authorization: Bearer $DESK_PULL_TOKEN"
+```
+
+Optional webhook ping. Never send this through `/v1/events`.
 
 ```bash
 curl -sS -X POST "$INTAKE_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $INTAKE_SENDER_KEY" \
   -d '{"ping":true}'
-
-curl -sS -X POST "$INTAKE_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $INTAKE_SENDER_KEY" \
-  -d '{"id":"11111111-1111-4111-8111-111111111111","ts":"2026-09-04T12:00:00.000Z","source":"narrative-agent","channel":"telegram","text":"sample macro narrative","urgency":"low","trade_intent":"none"}'
 ```
 
 Generate an HMAC key:

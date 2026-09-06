@@ -5,6 +5,8 @@ import { openRouterDb } from "./db.js"
 import { acceptEvent, ensureDefaultDestinations } from "./accept.js"
 import { leaseNextDelivery, processDelivery } from "./deliver.js"
 import { resolveGrokIntakeConfig } from "./grok-deliver.js"
+import { appendDeskTicket } from "./desk-queue.js"
+import { assertDeskPullBind, createDeskPullApp } from "./desk-pull.js"
 import type { FetchLike } from "../collectors/market/geckoterminal.js"
 import { log } from "../lib/log.js"
 import { backfillDiscordProviderMessages } from "./message-index.js"
@@ -24,10 +26,15 @@ export type RouterServerOptions = Readonly<{
   grokSenderKey?: string
   fetcher?: FetchLike
   workerIntervalMs?: number
+  deskPullToken?: string
+  deskPullLogPath?: string
+  deskPullHost?: string
+  deskPullPort?: number
 }>
 
 export type RouterServer = Readonly<{
   app: FastifyInstance
+  deskApp?: FastifyInstance
   db: Database.Database
   start: () => Promise<string>
   stop: () => Promise<void>
@@ -60,6 +67,15 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
     ...(grok ? { grokWebhookUrl: grok.webhookUrl } : {}),
   })
 
+  const deskLogPath = opts.deskPullLogPath?.trim()
+  const deskToken = opts.deskPullToken?.trim()
+  const deskApp = deskToken && deskLogPath
+    ? createDeskPullApp({ token: deskToken, logPath: deskLogPath })
+    : undefined
+  if (deskToken && !deskLogPath) {
+    throw new Error("DESK_PULL_TOKEN requires a desk pull log path")
+  }
+
   const app = Fastify({
     logger: false,
     bodyLimit: 64 * 1024,
@@ -89,7 +105,13 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
         timestamp,
         nonce,
         signatureHex: signature,
-      })
+      }, deskLogPath
+        ? {
+          onDeskTicket: (payload) => {
+            appendDeskTicket(deskLogPath, payload)
+          },
+        }
+        : undefined)
       if (result.status === "conflict") {
         return reply.code(409).send({
           status: "conflict",
@@ -112,6 +134,10 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
       const message = error instanceof Error ? error.message : "error"
       if (message.startsWith("Unauthorized")) {
         return reply.code(401).send({ error: message })
+      }
+      if (message.startsWith("desk-queue")) {
+        log.error("router desk queue failed", { detail: message.slice(0, 80) })
+        return reply.code(500).send({ error: "desk-queue-failed" })
       }
       log.error("router accept failed", { detail: message })
       return reply.code(400).send({ error: "bad-request" })
@@ -136,11 +162,19 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
 
   return {
     app,
+    ...(deskApp ? { deskApp } : {}),
     db,
     start: async () => {
       const host = opts.host ?? "127.0.0.1"
       const port = opts.port ?? 8787
       const addr = await app.listen({ host, port })
+      if (deskApp) {
+        const deskHost = opts.deskPullHost ?? "127.0.0.1"
+        assertDeskPullBind(deskHost, false)
+        const deskPort = opts.deskPullPort ?? 8788
+        const deskAddr = await deskApp.listen({ host: deskHost, port: deskPort })
+        log.info("router desk pull listening", { addr: deskAddr })
+      }
       timer = setInterval(() => {
         void tick()
       }, opts.workerIntervalMs ?? 500)
@@ -149,6 +183,7 @@ export function createRouterServer(opts: RouterServerOptions): RouterServer {
     stop: async () => {
       stopping = true
       if (timer) clearInterval(timer)
+      if (deskApp) await deskApp.close()
       await app.close()
       db.close()
     },

@@ -227,22 +227,33 @@ export const GrokIntakeTickerStanceSchema = z.enum([
   "caution",
   "neutral",
 ])
-export const GrokIntakeClassHintSchema = z.enum([
+export const GrokIntakeClassSchema = z.enum([
   "macro",
   "sector_heat",
   "flow",
   "catalyst",
   "noise",
 ])
+export const GrokIntakeClassHintSchema = GrokIntakeClassSchema
+export const GrokIntakeNextSchema = z.enum(["resolver", "desk_log", "ignore"])
 export const GrokIntakeUrgencySchema = z.enum(["low", "med", "high"])
 export const GrokIntakeTradeIntentSchema = z.enum(["none", "watch", "consider"])
+export const GrokIntakeChainHintSchema = z.enum(["solana", "base", "robinhood", "eth"])
 export type GrokIntakeTickerStance = z.infer<typeof GrokIntakeTickerStanceSchema>
-export type GrokIntakeClassHint = z.infer<typeof GrokIntakeClassHintSchema>
+export type GrokIntakeClass = z.infer<typeof GrokIntakeClassSchema>
+export type GrokIntakeClassHint = GrokIntakeClass
+export type GrokIntakeNext = z.infer<typeof GrokIntakeNextSchema>
 export type GrokIntakeUrgency = z.infer<typeof GrokIntakeUrgencySchema>
 export type GrokIntakeTradeIntent = z.infer<typeof GrokIntakeTradeIntentSchema>
+export type GrokIntakeChainHint = z.infer<typeof GrokIntakeChainHintSchema>
 
-/** Structured twin of a Telegram leader. Schema trench.intake.v0. */
-export const GrokIntakePayloadSchema = z.object({
+const GrokIntakeTickerRowSchema = z.object({
+  symbol: z.string().regex(/^[A-Z][A-Z0-9]{1,20}$/u),
+  stance: GrokIntakeTickerStanceSchema,
+}).strict()
+
+const GrokIntakePayloadV1Object = z.object({
+  schema: z.literal("trench.intake.v1"),
   id: z.string().uuid(),
   ts: IsoTimestampSchema,
   source: z.literal("narrative-agent"),
@@ -252,27 +263,144 @@ export const GrokIntakePayloadSchema = z.object({
     message_id: z.union([z.string().min(1).max(64), z.number().int()]).optional(),
   }).strict().optional(),
   text: z.string().min(1).max(ROUTER_EVENT_TEXT_MAX),
-  thesis: z.string().min(1).max(280).optional(),
-  class_hint: GrokIntakeClassHintSchema.optional(),
-  tickers: z.array(z.object({
-    symbol: z.string().regex(/^[A-Z][A-Z0-9]{1,20}$/u),
-    stance: GrokIntakeTickerStanceSchema,
-  }).strict()).max(8).optional(),
-  chain_hint: z.enum(["solana", "base", "eth"]).nullable().optional(),
-  catalysts: z.array(z.string().min(1).max(128)).max(8).optional(),
+  desk_ready: z.literal(true),
+  class: GrokIntakeClassSchema,
+  class_hint: GrokIntakeClassSchema,
+  tickers: z.array(GrokIntakeTickerRowSchema).max(8),
+  thesis: z.string().min(1).max(280),
+  chain_hint: GrokIntakeChainHintSchema.nullable(),
+  catalysts: z.array(z.string().min(1).max(128)).max(8),
+  next: GrokIntakeNextSchema,
+  drop_reason: z.string().min(1).max(128).nullable(),
   links: z.object({
-    chart: z.string().url().optional(),
-    twitter: z.string().url().optional(),
-    telegram: z.string().url().optional(),
-  }).strict().optional(),
+    chart: z.string().url().nullable(),
+    twitter: z.string().url().nullable(),
+    telegram: z.string().url().nullable(),
+  }).strict(),
   hints: z.object({
-    liq_usd: z.number().nullable().optional(),
-    age_min: z.number().nullable().optional(),
-  }).strict().optional(),
+    liq_usd: z.number().nullable(),
+    age_min: z.number().nullable(),
+    mint: z.string().min(1).max(128).nullable(),
+  }).strict(),
   urgency: GrokIntakeUrgencySchema,
   trade_intent: GrokIntakeTradeIntentSchema,
 }).strict()
-export type GrokIntakePayload = z.infer<typeof GrokIntakePayloadSchema>
+
+export function grokNextForClass(
+  klass: GrokIntakeClass,
+  hasTickers: boolean,
+): GrokIntakeNext {
+  if (klass === "noise") return "ignore"
+  if (klass === "macro") return "desk_log"
+  if (klass === "flow" || klass === "sector_heat" || klass === "catalyst") {
+    return hasTickers ? "resolver" : "desk_log"
+  }
+  return "desk_log"
+}
+
+export function grokThesisFromText(text: string): string {
+  const compact = text.trim().replace(/\s+/gu, " ")
+  const sentence = compact.split(/(?<=[.!?])\s/u)[0] ?? compact
+  const thesis = sentence.slice(0, 280).trim()
+  return thesis.length > 0 ? thesis : "narrative"
+}
+
+function grokClassFromUnknown(raw: unknown, hasTickers: boolean): GrokIntakeClass {
+  const parsed = GrokIntakeClassSchema.safeParse(raw)
+  if (parsed.success) return parsed.data
+  return hasTickers ? "sector_heat" : "macro"
+}
+
+type LooseIntake = {
+  id?: unknown
+  ts?: unknown
+  source?: unknown
+  channel?: unknown
+  telegram?: unknown
+  text?: unknown
+  class?: unknown
+  class_hint?: unknown
+  tickers?: unknown
+  thesis?: unknown
+  chain_hint?: unknown
+  catalysts?: unknown
+  next?: unknown
+  drop_reason?: unknown
+  links?: unknown
+  hints?: unknown
+  urgency?: unknown
+  trade_intent?: unknown
+}
+
+type LooseMap = {
+  chart?: unknown
+  twitter?: unknown
+  telegram?: unknown
+  liq_usd?: unknown
+  age_min?: unknown
+  mint?: unknown
+}
+
+function asLooseMap(raw: unknown): LooseMap {
+  if (!raw || typeof raw !== "object") return {}
+  return raw as LooseMap
+}
+
+function upgradeGrokIntakePayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw
+  const o = raw as LooseIntake
+  const text = typeof o.text === "string" ? o.text : ""
+  const tickers = Array.isArray(o.tickers) ? o.tickers : []
+  const klass = grokClassFromUnknown(o.class ?? o.class_hint, tickers.length > 0)
+  const nextParsed = GrokIntakeNextSchema.safeParse(o.next)
+  const next = nextParsed.success ? nextParsed.data : grokNextForClass(klass, tickers.length > 0)
+  const chainParsed = GrokIntakeChainHintSchema.nullable().safeParse(o.chain_hint ?? null)
+  const links = asLooseMap(o.links)
+  const hints = asLooseMap(o.hints)
+  return {
+    schema: "trench.intake.v1",
+    id: o.id,
+    ts: o.ts,
+    source: o.source,
+    channel: o.channel ?? "telegram",
+    ...(o.telegram ? { telegram: o.telegram } : {}),
+    text: o.text,
+    desk_ready: true,
+    class: klass,
+    class_hint: klass,
+    tickers,
+    thesis: typeof o.thesis === "string" && o.thesis.trim().length > 0
+      ? o.thesis.trim().slice(0, 280)
+      : grokThesisFromText(text),
+    chain_hint: chainParsed.success ? chainParsed.data : null,
+    catalysts: Array.isArray(o.catalysts) ? o.catalysts : [],
+    next,
+    drop_reason: next === "ignore"
+      ? (typeof o.drop_reason === "string" && o.drop_reason.trim().length > 0
+        ? o.drop_reason.trim().slice(0, 128)
+        : "noise-class")
+      : null,
+    links: {
+      chart: links.chart ?? null,
+      twitter: links.twitter ?? null,
+      telegram: links.telegram ?? null,
+    },
+    hints: {
+      liq_usd: hints.liq_usd ?? null,
+      age_min: hints.age_min ?? null,
+      mint: hints.mint ?? null,
+    },
+    urgency: o.urgency,
+    trade_intent: o.trade_intent,
+  }
+}
+
+/** Structured twin of a Telegram leader. Schema trench.intake.v1. v0 rows upgrade on parse. */
+export const GrokIntakePayloadSchema = z.preprocess(
+  upgradeGrokIntakePayload,
+  GrokIntakePayloadV1Object,
+)
+export type GrokIntakePayload = z.infer<typeof GrokIntakePayloadV1Object>
 
 /** Per-destination fanout text. Optional; excluded from eventId derivation. */
 export const RouterChannelPayloadsSchema = z.object({

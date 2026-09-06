@@ -5,7 +5,7 @@ import {
   eventPayloadHash,
   verifyRouterHmac,
 } from "../lib/router-contract.js"
-import type { RouterEvent } from "../contracts/schemas.js"
+import type { GrokIntakePayload, RouterEvent } from "../contracts/schemas.js"
 import { purgeOldNonces } from "./db.js"
 
 export type AcceptResult =
@@ -49,6 +49,9 @@ export function acceptEvent(
     nonce: string
     signatureHex: string
     nowMs?: number
+  }>,
+  hooks?: Readonly<{
+    onDeskTicket?: (payload: GrokIntakePayload) => void
   }>,
 ): AcceptResult {
   const verified = verifyRouterHmac({
@@ -103,6 +106,10 @@ export function acceptEvent(
       `INSERT INTO incidents(created_at, kind, detail) VALUES (?, ?, ?)`,
     ).run(now, "event-conflict", event.eventId)
     return { status: "conflict", eventId: event.eventId }
+  }
+
+  if (event.type === "finding.broadcast" && event.channels?.grok) {
+    hooks?.onDeskTicket?.(event.channels.grok)
   }
 
   const insertEvent = db.prepare(

@@ -504,10 +504,13 @@ describe("renderChannelPayloads", () => {
     })
     const event = outbox.list()[0]
     expect(first.rendered).toBe(1)
-    expect(event?.channels?.grok?.tickers).toEqual([{ symbol: "STAX", stance: "neutral" }])
+    expect(event?.channels?.grok?.tickers).toEqual([{ symbol: "STAX", stance: "flow" }])
     expect(event?.channels?.grok?.trade_intent).toBe("consider")
     expect(event?.channels?.grok?.urgency).toBe("high")
     expect(event?.channels?.grok?.class_hint).toBe("catalyst")
+    expect(event?.channels?.grok?.class).toBe("catalyst")
+    expect(event?.channels?.grok?.next).toBe("resolver")
+    expect(event?.channels?.grok?.desk_ready).toBe(true)
     const id = event?.channels?.grok?.id
     expect(id).toBeTruthy()
 

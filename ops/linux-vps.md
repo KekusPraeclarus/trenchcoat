@@ -243,6 +243,7 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
 ## Security reminders
 
 - Router stays on loopback (`127.0.0.1:8787`) — do not UFW-allow it
+- Desk pull stays on loopback (`127.0.0.1:8788`) — TLS proxy may bind 443 for `/desk/intake/*` only
 - Never commit `~/.trenchcoat/env` or browser profiles
 - Separate desktop SSH key, Actions SSH key, and GitHub deploy key
 - Desktop initiates only (SSH out, `git push`); VPS never SSHs to the Mac

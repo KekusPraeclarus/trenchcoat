@@ -19,8 +19,8 @@ per run.
 1. **Intraday `finding.broadcast`:** keep the Telegram topic render path only.
    When `channels.telegram` is set, copy the same string to `channels.discord`
    and build a structured `channels.grok` twin. Topic-merged followers omit
-   Telegram, Discord, and Grok. Grok is optional and needs both intake env
-   vars. A Grok failure does not fail Telegram or Discord.
+   Telegram, Discord, and Grok. Optional Grok destination rules live in
+   [ADR 050](050-optional-grok-intake-fanout.md).
 2. **Remove** Discord message budget (`daily_budget` / `urgent_ceiling`), Discord
    distiller LLM, run-scoped Discord dedupe, and `broadcast-ledger` reservation.
 3. **Config schema 22** drops the removed keys. `DEPLOYMENT_CONFIG_SCHEMA` bumps
@@ -38,11 +38,12 @@ per run.
 - ADR 033 Discord message-lane sections are historical; LLM cap guidance for
   `telegram_overview` remains.
 - Operators must refresh VPS systemd after deploy for the new digest timer.
-- Grok intake stays off unless `INTAKE_WEBHOOK_URL` and `INTAKE_SENDER_KEY`
-  are both set. Rotate the sender key in the Grok Bot panel, then restart
-  the router.
+- Optional Grok webhook is [ADR 050](050-optional-grok-intake-fanout.md).
+  Desk pull-queue is [ADR 051](051-desk-ready-pull-queue.md).
 
 ## Related
 
 - Supersedes Discord-lane fanout in [ADR 033](033-hot-day-broadcast-lane-budgets.md)
 - Amends digest schedule in [ADR 026](026-telegram-digest-and-topic-fanout.md)
+- Extended by [ADR 050](050-optional-grok-intake-fanout.md)
+- Extended by [ADR 051](051-desk-ready-pull-queue.md)
