@@ -9,7 +9,9 @@ alwaysApply: true
 browse `src/`, `docs/`, or other repo files.
 
 SSH is only for live runtime data and logs on the VPS. Desktop initiates only.
-Do not open router `:8787` publicly.
+Do not open router `:8787` or desk pull `:8788` publicly.
+UFW 80/443 is Caddy TLS for `/desk/intake/*` only. Do not bind any other
+process to 80 or 443. Do not proxy `:8787`. See `ops/desk-pull.md`.
 
 Use `ops/remote.sh` for health, status, CLI, and log tails. Host alias comes
 from `TRENCHCOAT_SSH_HOST` or gitignored `.trenchcoat-local/ssh-host`. Prefer

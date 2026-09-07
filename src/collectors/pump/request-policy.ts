@@ -43,7 +43,7 @@ const DEFAULT_AUTH_REFRESH_POSTS: readonly PumpAllowedPost[] = [
   { host: "auth.privy.io", path: "/api/v1/sessions" },
 ]
 
-/** Read-only SPA queries from probe-2026-08-13. Never register, swap, or RPC. */
+/** Read-only SPA queries. Confirmed on probe-2026-08-13 and probe-2026-09-04. Never register, swap, or RPC. */
 const DEFAULT_PUMP_READ_POSTS: readonly PumpAllowedPost[] = [
   { host: "frontend-api-v3.pump.fun", path: "/profiles/verified" },
   { host: "frontend-api-v3.pump.fun", path: "/users/batch" },

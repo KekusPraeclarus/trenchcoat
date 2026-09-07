@@ -544,6 +544,8 @@ be tracked and purged per message id.
 - `src/collectors/pump/web-client.ts` — pump.fun SPA scrape (ADR 047)
 - `src/collectors/discord-wallet/parse.ts` — Cielo/relay wallet-alert parse (ADR 035)
 - `src/collectors/fomo/web-client.ts` — Fomo.family SPA scrape (ADR 009)
+- `src/collectors/fomo/request-policy.ts` — read POSTs, alerts `/feed/tradingActivity`, follow `/follows`
+- `src/collectors/fomo/engagement.ts` — host FOMO-platform follow (ADR 048)
 - `src/collectors/market/security.ts` — GoPlus/RugCheck mapping (LP + mint caution-only)
 - `src/collectors/market/aggregate.ts` — 15m → higher-TF closed candle aggregation
 

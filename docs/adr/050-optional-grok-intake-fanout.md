@@ -2,7 +2,7 @@
 title: "050 — Optional Grok intake fanout"
 status: accepted
 date: 2026-09-04
-last_verified: 2026-09-06
+last_verified: 2026-09-07
 ---
 
 # ADR 050: Optional Grok intake fanout
@@ -40,8 +40,9 @@ are not desk intake.
 ## Consequences
 
 - Operators can enable the desk without a second Telegram bot.
-- Live fanout stays off until both keys land in `~/.trenchcoat/env` and the
-  router restarts.
+- Live webhook fanout stays off until both `INTAKE_*` keys land in
+  `~/.trenchcoat/env` and the router restarts. The pull-queue still
+  appends without those keys (ADR 051).
 - Ambiguous timeouts can duplicate a Grok ticket. The desk must treat `id`
   as the idempotency key.
 - The send path enforces a 30s total abort. It does not enforce a separate

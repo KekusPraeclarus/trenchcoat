@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "probeRunId": "probe-2026-09-04",
+  "evaluatedAt": "2026-09-04T12:37:00.000Z",
+  "fixtureHashes": {
+    "discover.json": "vps-probe-2026-09-04",
+    "shadow-collects": "2026-08-26/2026-09-04"
+  },
+  "gates": {
+    "provider": {
+      "verdict": "pass",
+      "sampleSize": 171,
+      "successRate": 1,
+      "longestOutageHours": 0,
+      "p95LatencyMs": 12000,
+      "sessionValidRate": 1,
+      "challengeRate": 0
+    },
+    "feed": {
+      "verdict": "pass",
+      "sampleSize": 171,
+      "parseSuccessRate": 1
+    },
+    "leaderboard": {
+      "verdict": "pass",
+      "sampleSize": 171,
+      "parseSuccessRate": 0.9942
+    },
+    "following": {
+      "verdict": "insufficient-sample",
+      "sampleSize": 0
+    }
+  }
+}

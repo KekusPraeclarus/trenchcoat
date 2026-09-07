@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-06
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -13,7 +13,9 @@ read_when:
 macOS production path remains `ops/install-launchd.sh`. On Linux use this doc +
 `ops/install-systemd.sh` + `ops/trenchcoat-deploy.sh`.
 
-Assume: SSH hardened, user `trenchcoat`, key-only login, UFW allowing SSH only,
+Assume: SSH hardened, user `trenchcoat`, key-only login, UFW allowing SSH only
+at bootstrap. Later, 80/443 may open for Caddy desk-pull TLS only
+([desk-pull.md](desk-pull.md)). Do not bind any other process to 80 or 443.
 GitHub secrets `VPS_HOST` / `VPS_USER` / `VPS_SSH_KEY` already set. **No repo and
 no `~/bin/trenchcoat-deploy` on the VPS yet** — do the steps below in order.
 
@@ -217,6 +219,7 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
 | Live health (from Mac) | `./ops/remote.sh health` |
 | Manual deploy (on VPS) | `~/bin/trenchcoat-deploy` |
 | Logs | `/tmp/trenchcoat.*.log` |
+| Query router SQLite | `ops/remote.sh --` plus `node` and `better-sqlite3`. The VPS has no `sqlite3` CLI |
 | Restart KeepAlive | `systemctl --user restart trenchcoat-router` (etc.) |
 | Timers | `systemctl --user list-timers 'trenchcoat-*'` |
 | Recover stuck deploy pause | `rm -f ~/.trenchcoat/deploy-pause.json` then `systemctl --user daemon-reload && systemctl --user start trenchcoat-job-*.timer` (or re-run `~/bin/trenchcoat-deploy`). Pause files >45m auto-clear. |
@@ -243,7 +246,10 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
 ## Security reminders
 
 - Router stays on loopback (`127.0.0.1:8787`) — do not UFW-allow it
-- Desk pull stays on loopback (`127.0.0.1:8788`) — TLS proxy may bind 443 for `/desk/intake/*` only
+- Desk pull stays on loopback (`127.0.0.1:8788`) — do not UFW-allow it
+- UFW 80/443 is Caddy only. Caddy may proxy `/desk/intake/*` to `:8788` only.
+  Do not bind any other process to 80 or 443. Do not proxy `:8787`
+  ([desk-pull.md](desk-pull.md))
 - Never commit `~/.trenchcoat/env` or browser profiles
 - Separate desktop SSH key, Actions SSH key, and GitHub deploy key
 - Desktop initiates only (SSH out, `git push`); VPS never SSHs to the Mac

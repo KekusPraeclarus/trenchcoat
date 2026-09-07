@@ -158,6 +158,9 @@ not retry 400, 401, or 403. Quota-class 429 backs off 15–60 minutes.
 - Body/connection limits on Fastify
 - No credentials under `agent/`
 - Orchestrator holds HMAC key and router URL in host env only (INV-B1)
+- Public 80/443 is Caddy for `/desk/intake/*` only. Do not bind the router
+  or any other process there. Do not UFW-allow 8787 or 8788. Details:
+  [ops/desk-pull.md](../../ops/desk-pull.md)
 
 ## Ops
 

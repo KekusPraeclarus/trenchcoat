@@ -2,7 +2,7 @@
 title: "051 — Desk-ready pull-queue as primary Grok intake"
 status: accepted
 date: 2026-09-06
-last_verified: 2026-09-06
+last_verified: 2026-09-07
 ---
 
 # ADR 051: Desk-ready pull-queue as primary Grok intake
@@ -20,12 +20,14 @@ The desk needs a machine path that a box script can poll with no LLM.
 1. **Primary path.** Each Telegram leader becomes one `trench.intake.v1`
    ticket. The router appends that ticket to
    `~/.trenchcoat/desk-intake/desk_tickets.jsonl` on HMAC accept. Duplicate
-   ticket ids are no-ops.
+   ticket ids are no-ops. This append does not need `INTAKE_WEBHOOK_URL`
+   or `INTAKE_SENDER_KEY`.
 2. **Pull API.** A second loopback listener (`127.0.0.1:8788`) serves
    `GET /desk/intake/pending` and `POST /desk/intake/ack`. Auth is
    `Authorization: Bearer <DESK_PULL_TOKEN>`. The HMAC router on `:8787`
    stays private. Off-loopback bind requires TLS. Production TLS is a reverse
-   proxy that exposes only `/desk/intake/*`.
+   proxy that exposes only `/desk/intake/*`. UFW 80/443 is that proxy only.
+   No other process may bind 80 or 443. Do not proxy `:8787`.
 3. **Watermark.** `since_id` returns tickets after that id. ACK is optional
    bookkeeping. The desk treats `id` as the idempotency key.
 4. **Desk-ready class.** The host sets `class` and `next` from the broadcast
@@ -41,6 +43,7 @@ The desk needs a machine path that a box script can poll with no LLM.
 
 - The desk can ingest while Grok Bot quota is dead.
 - Operators must set `DESK_PULL_TOKEN` and a public HTTPS front for the box.
+  Only Caddy may bind public 80/443. See [ops/desk-pull.md](../../ops/desk-pull.md).
 - JSONL append failure returns HTTP 500 so ingress retries.
 - Ambiguous webhook timeouts can still duplicate a POST. The desk keys on `id`.
 
@@ -49,6 +52,11 @@ The desk needs a machine path that a box script can poll with no LLM.
 - Keep the webhook as the only machine path. Rejected. Quota kills Intake.
 - Scrape Telegram for intake. Rejected. Fragile and out of scope.
 - Expose HMAC `:8787` publicly. Rejected. INV-B5 intake stays loopback.
+
+## Follow-ups
+
+- JSONL has no retention yet.
+- In-process TLS is unused. Caddy is the public front.
 
 ## Related
 

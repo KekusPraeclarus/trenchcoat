@@ -2,7 +2,7 @@
 description: Developer workflow notes — parallel worktrees, shared-file merge ownership, and how to keep docs honest while coding.
 scope: project
 status: active
-last_verified: 2026-08-18
+last_verified: 2026-09-04
 read_when:
   - Merging parallel feature worktrees or coordinating multi-agent integration.
   - You need the exclusive-ownership list for shared integration files.
@@ -67,7 +67,9 @@ pnpm fomo:shadow-metrics --day $(date -u +%F)
 ```
 
 `pnpm probe:fomo` is discover/status/sanitize only (no `evaluate`). Prefer the
-live smoke script before installing gates. Shadow/canary:
+live smoke script before installing gates. Extra live probes:
+`pnpm tsx scripts/probe-fomo-follow.ts` and
+`pnpm tsx scripts/probe-fomo-alerts.ts`. Shadow/canary:
 [../ops/fafo-fomo/SHADOW-CANARY.md](../ops/fafo-fomo/SHADOW-CANARY.md).
 Mutation of wallets / research queue / X nominations requires gates `pass`,
 `fomo.enabled=true`, and `shadow_mode=false` (shadow first when graduating).

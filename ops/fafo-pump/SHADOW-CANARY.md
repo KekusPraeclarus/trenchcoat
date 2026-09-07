@@ -4,10 +4,11 @@ Operator playbook for the pump.fun feed scan lane (ADR 047). Code lives in
 this repo. Production runs on the Linux VPS only. Mac launchd stays unloaded
 while the VPS is production.
 
-**Status (2026-08-13):** shadow live on VPS — `pump.enabled=true`,
-`pump.shadow_mode=true`, burner session synced, smoke pass, provider gate
-`pass` from `gates.shadow-live.json`. Full FAFO discover and 14-day shadow
-graduation are still open.
+**Status (2026-09-04):** shadow live on VPS — `pump.enabled=true`,
+`pump.shadow_mode=true`. FAFO discover `probe-2026-09-04` is on disk.
+Gates are `gates.evaluated-2026-09-04.json` (provider/feed/leaderboard
+`pass`). The clean collect stretch started 2026-08-26. Wait until
+2026-09-09 UTC before flipping `shadow_mode`.
 
 Related: [REPORT.md](REPORT.md) (API shapes), [docs/knowledge/pump-fun.md](../../docs/knowledge/pump-fun.md),
 [ADR 047](../../docs/adr/047-pump-feed-scan.md).
@@ -103,6 +104,12 @@ Shadow go-live minimum (provider pass from Mac smoke — replace after FAFO):
 
 ```bash
 pnpm pump:install-gates ops/fafo-pump/gates.shadow-live.json
+```
+
+Current evaluated gates (VPS collect sample + `probe-2026-09-04`):
+
+```bash
+pnpm pump:install-gates ops/fafo-pump/gates.evaluated-2026-09-04.json
 ```
 
 Gates file: `~/.trenchcoat/archive/provider-evaluations/pump/gates.json`.

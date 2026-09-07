@@ -24,7 +24,7 @@ read_when:
 | `DISCORD_WEBHOOK_URL` | router fanout | Discord webhook for broadcast/lifecycle fanout |
 | `INTAKE_WEBHOOK_URL` / `INTAKE_SENDER_KEY` | router fanout | optional Grok Bot webhook. Both keys must be set. HTTPS only. Best-effort after the pull-queue. Restart the router after you rotate the sender key |
 | `DESK_PULL_TOKEN` | router desk pull | Bearer secret for `GET /desk/intake/pending`. Required to listen on `:8788`. Never commit. Restart the router after a write |
-| `DESK_PULL_HOST` / `DESK_PULL_PORT` / `DESK_PULL_LOG` | router desk pull | default loopback `127.0.0.1:8788` and `~/.trenchcoat/desk-intake/desk_tickets.jsonl`. Off-loopback bind is refused |
+| `DESK_PULL_HOST` / `DESK_PULL_PORT` / `DESK_PULL_LOG` | router desk pull | default loopback `127.0.0.1:8788` and `~/.trenchcoat/desk-intake/desk_tickets.jsonl`. Off-loopback bind is refused. Do not bind this listener to 80 or 443. Public TLS is Caddy only ([desk-pull.md](../ops/desk-pull.md)) |
 | `DISCORD_RESEARCH_BOT_TOKEN` | discord listener | Gateway bot token for private-guild research (never logged or stored in config) |
 | `DISCORD_OPERATOR_USER_ID` | discord listener | sole user whose broadcast reactions count as feedback (ADR 043, INV-B6); needs View Channel, Read Message History, Add Reactions in the feedback channel |
 | `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` | collectors | security gate, EVM chains |

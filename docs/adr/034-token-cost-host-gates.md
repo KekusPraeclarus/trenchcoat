@@ -3,6 +3,7 @@ description: Host gates that cut Cursor session volume — batched x-scan, host 
 scope: project
 status: accepted
 date: 2026-07-23
+last_verified: 2026-09-04
 supersedes: []
 ---
 
@@ -35,7 +36,9 @@ acks, duplicate broadcasts, report bullets) does not need a model.
    a name cluster with a 48h same-subject accepted broadcast.
 5. **Distill:** `llm_budget_fraction` 0.5 always; when staged events this run ≥
    `hot_day_min_staged_events` (20), use `hot_day_llm_budget_fraction` 0.25.
-   Message budgets (ADR 033) unchanged. Receipt reason `llm-budget-fraction`.
+   Telegram `telegram_overview.daily_cap` still caps LLM sessions.
+   Discord message budgets from ADR 033 are gone (ADR 041). Receipt reason
+   `llm-budget-fraction`.
 6. **Review:** host writes `review-reports-summary` ≤280-char bullets; agent
    opens full `agent.md` only when relevant.
 7. **Research hint:** host writes `research-candidates-hint.json` (path-only);
@@ -50,8 +53,8 @@ Config schema **19**.
 ## Consequences
 
 - Fewer composer sessions per x-scan round (~3–4× fewer).
-- Worthiness/distill spend drops on hot days without lowering Discord message
-  caps.
+- Worthiness/distill spend drops on hot days. Discord has no separate
+  message cap after ADR 041.
 - INV-B2 still requires worthiness approval (or cache hit of a prior approval);
   host never invents broadcast text.
 - INV-Q1/Q2 satisfied by host tombstones with byte-verified hashes.
@@ -59,4 +62,10 @@ Config schema **19**.
 ## See also
 
 - [014-broadcast-worthiness.md](014-broadcast-worthiness.md)
-- [033-hot-day-broadcast-lane-budgets.md](033-hot-day-broadcast-lane-budgets.md)
+- [033-hot-day-broadcast-lane-budgets.md](033-hot-day-broadcast-lane-budgets.md) (deprecated)
+- [041-unified-broadcast-fanout.md](041-unified-broadcast-fanout.md)
+
+## Amendment (2026-09-04)
+
+ADR 041 removed Discord `daily_budget`, `discord_distiller`, and run-dedupe.
+Point 5 now covers Telegram LLM-session caps only.

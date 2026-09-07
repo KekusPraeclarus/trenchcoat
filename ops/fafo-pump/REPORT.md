@@ -1,15 +1,25 @@
 # Pump.fun FAFO report
 
-Live `pnpm probe:pump discover` on 2026-08-13 with the burner session.
+Live `pnpm probe:pump discover` on the VPS as `probe-2026-09-04`.
+Earlier Mac discover on 2026-08-13 still matches the allowlist.
 
 ## Status
 
-- Session import works. Privy `/api/v1/sessions` returns 200.
-- Smoke was empty before read POSTs were allowlisted.
-- Request policy now allows these read POSTs on `frontend-api-v3.pump.fun`:
-  `/profiles/verified`, `/users/batch`, `/coins-v2/mints`
-- Cloudflare `/cdn-cgi/challenge-platform/` POST is allowed on pump.fun and
-  Privy. Exact oneshot URLs change every run. Do not pin them.
+- Installed gates: `ops/fafo-pump/gates.evaluated-2026-09-04.json`
+  (`probe-2026-09-04`). Provider, feed, and leaderboard are `pass`.
+  Following stays `insufficient-sample` (0 follows in shadow).
+- Shadow collect sample 2026-08-26 through 2026-09-04: 171 collects,
+  171 non-zero FYP/Top/News, 170 non-zero leaderboard. Budget skips
+  after the daily cap are not provider failures.
+- Privy `/api/v1/sessions` returned 200 on the 2026-09-04 discover.
+- Request policy still allows these read POSTs on
+  `frontend-api-v3.pump.fun`: `/profiles/verified`, `/users/batch`,
+  `/coins-v2/mints`. Discover confirmed the same paths. No new read
+  POST was added.
+- Discover still blocks `/users/register`, `swap-api.pump.fun`,
+  `solana-mainnet.pump.fun`, and analytics hosts.
+- Cloudflare `/cdn-cgi/challenge-platform/` POST is allowed on pump.fun
+  and Privy. Exact oneshot URLs change every run. Do not pin them.
 - Live smoke maps FYP from `/`. Top, News, and Following are homepage
   feed tabs. Do not use `/board` or `/news` for those tabs. The PnL
   leaderboard JSON is `/pnl-leaderboard` on `/`.
@@ -21,6 +31,5 @@ Live `pnpm probe:pump discover` on 2026-08-13 with the burner session.
 
 Shadow rollout steps: [SHADOW-CANARY.md](SHADOW-CANARY.md).
 
-1. Run FAFO discover on VPS and replace `gates.shadow-live.json` when sample size is enough
-2. Complete 14 UTC-day shadow window per SHADOW-CANARY § Phase 2
-3. Flip `pump.shadow_mode` to `false` for canary
+1. Keep shadow until 2026-09-09 UTC (14 days after the 2026-08-26 clean stretch).
+2. Flip `pump.shadow_mode` to `false` for canary after that window.

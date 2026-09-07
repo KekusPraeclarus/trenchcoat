@@ -49,7 +49,8 @@ retries after that window.
   `KEY_HEALTH_JOBS` — verify via archive run / `fomo-leaderboard` inbox, not
   `tc status` job lines.
   - `fomo-signal-scan` — feed `/feed/token` and alerts
-  `/feed/tradingActivity` (followed-trader buys and sells). Derived
+  `/feed/tradingActivity` (followed-trader buys and sells). Alerts need
+  FAFO gate `alerts` plus `follows.enabled` and stored follows. Derived
   convergence and pressure stay behind their flags. Trending/hot may
   enqueue research when gates and config allow. Native/wrap gas
   mints and reserved chain symbols never burn the daily enqueue cap
@@ -107,11 +108,14 @@ Leaderboard `twitter` is null on the 2026-08-26 sample of 150 rows.
 pnpm probe:fomo discover --run-id probe-YYYY-MM-DD
 pnpm probe:fomo status --run-id probe-YYYY-MM-DD
 pnpm probe:fomo sanitize --run-id probe-YYYY-MM-DD
+pnpm tsx scripts/probe-fomo-follow.ts
+pnpm tsx scripts/probe-fomo-alerts.ts
 pnpm tsx scripts/smoke-fomo-live.ts
 pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-09-04.json
 ```
 
 `probe:fomo` has no `evaluate` command yet. Live smoke confirms parsers against
 the authenticated SPA; install an operator override or FAFO gates JSON after.
+`probe-fomo-follow.ts` and `probe-fomo-alerts.ts` are extra live probes.
 
 Details: [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md).

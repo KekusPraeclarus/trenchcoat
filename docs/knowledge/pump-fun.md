@@ -2,7 +2,7 @@
 description: pump.fun authenticated SPA scrape for FYP/Top/News/Following feed curation, leaderboard, and call-chart evidence. Burner-only. No wallets.
 scope: knowledge
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-04
 source: https://pump.fun
 read_when:
   - Implementing or debugging the pump.fun collector, pump-scan, or pump engagement.

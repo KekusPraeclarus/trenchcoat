@@ -218,6 +218,8 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   keys). If err logs show
   missing `better_sqlite3.node`, re-run `./ops/install-launchd.sh` (installer
   rebuilds the native addon after prod install).
+- Public 80/443 is Caddy for `/desk/intake/*` only. Do not bind other apps
+  there. Do not UFW-allow 8787 or 8788. See `ops/desk-pull.md`.
 - X session hold: `tc status` prints `HELD challenge since <ts>` when
   `~/.trenchcoat/x-scan/session-hold.json` exists. All X Playwright opens stay
   parked. Recover with headed `tc auth twitter`, then start `trenchcoat-x-scan`.

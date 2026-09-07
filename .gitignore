@@ -68,6 +68,7 @@ config/operator-candidates*.json
 ops/**/gates.operator-override*.json
 ops/**/gates.shadow-live.json
 ops/NOTES.md
+ops/seed-*.md
 
 # Logs and local databases
 *.log
