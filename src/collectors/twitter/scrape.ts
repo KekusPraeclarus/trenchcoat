@@ -1,6 +1,6 @@
 import { chmodSync, existsSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { type Browser, type BrowserContext, type Locator, type Page } from "playwright"
+import { type Browser, type BrowserContext, type Page } from "playwright"
 import type { TrenchcoatConfig } from "../../lib/config.js"
 import type { CanonicalIdentity } from "../../contracts/schemas.js"
 import { launchChromium } from "../../lib/playwright-chromium.js"
@@ -127,62 +127,19 @@ export function shouldRetryEmptyTimeline(args: Readonly<{
     || args.kind === "managed-list"
 }
 
-const HOME_PRIMARY_COLUMN_TIMEOUT_MS = 12_000
-const HOME_FOR_YOU_TAB_ATTEMPTS = 8
-const HOME_FOR_YOU_TAB_POLL_MS = 750
-
-async function waitForHomePrimaryColumn(page: Page): Promise<void> {
-  await page.locator('[data-testid="primaryColumn"]').first().waitFor({
-    state: "attached",
-    timeout: HOME_PRIMARY_COLUMN_TIMEOUT_MS,
-  })
-}
-
-/** Role/link/hasText fallbacks: X sometimes renders For you as a link */
-export function homeForYouTabCandidates(column: Locator): Locator[] {
-  return [
-    column.getByRole("tab", { name: /for you/iu }),
-    column.getByRole("link", { name: /^for you$/iu }),
-    column.locator("[role=tab]").filter({ hasText: /^for you$/iu }),
-  ]
-}
-
-export async function findHomeForYouTab(page: Page): Promise<Locator | null> {
-  const column = page.locator('[data-testid="primaryColumn"]')
-  for (const candidate of homeForYouTabCandidates(column)) {
-    if ((await candidate.count().catch(() => 0)) > 0) return candidate.first()
-  }
-  return null
-}
-
 /**
  * Prefer the For you tab on /home. Burner Following feeds are often empty while
  * FYP is full — a missed/failed tab click looks like "idle FYP" in x-scan logs.
- * Wait for primaryColumn, then poll tab candidates — slow hydrations leave
- * Following selected if we count too early. Skip the click when already
- * selected so we do not remount a live timeline.
+ * Skip the click when already selected so we do not remount a live timeline.
  */
-export async function ensureHomeForYouTab(page: Page): Promise<void> {
-  try {
-    await waitForHomePrimaryColumn(page)
-  } catch {
+async function ensureHomeForYouTab(page: Page): Promise<void> {
+  const column = page.locator('[data-testid="primaryColumn"]')
+  const forYou = column.getByRole("tab", { name: /for you/iu })
+  if ((await forYou.count().catch(() => 0)) === 0) {
     log.warn("twitter home: For you tab not found — scraping whatever is selected")
     return
   }
-
-  let tab: Locator | null = null
-  for (let attempt = 0; attempt < HOME_FOR_YOU_TAB_ATTEMPTS; attempt += 1) {
-    tab = await findHomeForYouTab(page)
-    if (tab) break
-    if (attempt + 1 < HOME_FOR_YOU_TAB_ATTEMPTS) {
-      await page.waitForTimeout(HOME_FOR_YOU_TAB_POLL_MS)
-    }
-  }
-  if (!tab) {
-    log.warn("twitter home: For you tab not found — scraping whatever is selected")
-    return
-  }
-
+  const tab = forYou.first()
   const selected = await tab.getAttribute("aria-selected").catch(() => null)
   if (selected === "true") return
   try {
