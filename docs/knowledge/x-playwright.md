@@ -55,9 +55,13 @@ last_verified: 2026-08-31
 - Home/list timelines also wait for tweet articles and soft-retry when empty
   **without** hitting the scroll cursor (`shouldRetryEmptyTimeline`). Empty +
   `hitCursor=false` is a scrape fault (hydration / missed For you tab), not a
-  caught-up feed — x-scan logs it as `empty without cursor`. On `/home`, prefer
-  the For you tab and skip the click when already `aria-selected` (burner
-  Following feeds are often empty while FYP is full).
+  caught-up feed — x-scan logs it as `empty without cursor`. On `/home`,
+  `ensureHomeForYouTab` waits up to 12s for `primaryColumn`, then polls For you
+  tab candidates (`role=tab`, `role=link`, `hasText` fallback) for ~6s before
+  warn + scrape the default tab. Skip the click when already `aria-selected`
+  (burner Following feeds are often empty while FYP is full). The `x-bot-health`
+  block is independent of this path — clear it via verified engagement or
+  `recoverXBotHealth`, not a scrape-side bypass (INV-S22).
 
 ## list-scan / x-scan cadence
 
