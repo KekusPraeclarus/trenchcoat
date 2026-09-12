@@ -222,7 +222,8 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   there. Do not UFW-allow 8787 or 8788. See `ops/desk-pull.md`.
 - X session hold: `tc status` prints `HELD challenge since <ts>` when
   `~/.trenchcoat/x-scan/session-hold.json` exists. All X Playwright opens stay
-  parked. Recover with headed `tc auth twitter`, then start `trenchcoat-x-scan`.
+  parked. The host DMs the operator on the first challenge (INV-R6). Recover
+  with headed `tc auth twitter`, then start `trenchcoat-x-scan`.
   A hold that lasts hours makes the social archive stale. `narrative-scan` can
   then finish with an empty outbox while router `healthz` stays ok.
 - Listener health: the listener touches a heartbeat file every poll cycle;
@@ -282,6 +283,8 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   `approve remediation rem-<id>` (or `tc remediations approve rem-<id>` on the
   VPS). Post-approve build is kicked as a detached `remediations run` child.
   `tc remediations fail rem-<id>` also releases a leftover integrity hold.
+  `tc remediations unhalt` clears `automationHalted` after a failed install
+  (dash `!find` on Linux is one such halt).
   See docs/architecture/incident-remediation.md.
 - Knowledge rollup: `~/.trenchcoat/agent/state/INDEX.md` must exist (empty
   skeleton is fine). Chat and scan skills read it first; older homes that

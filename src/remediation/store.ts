@@ -219,6 +219,32 @@ export function createRemediationStore(
   }
 }
 
+export async function clearRemediationAutomationHalt(
+  store: RemediationStore,
+): Promise<Readonly<{
+  ok: true
+  already: boolean
+  automationHalted: false
+  clearedReason?: string
+}>> {
+  const file = store.load()
+  if (!file.automationHalted) {
+    return { ok: true, already: true, automationHalted: false }
+  }
+  const clearedReason = file.automationHaltReason
+  await store.save({
+    ...file,
+    automationHalted: false,
+    automationHaltReason: undefined,
+  })
+  return {
+    ok: true,
+    already: false,
+    automationHalted: false,
+    ...(clearedReason ? { clearedReason } : {}),
+  }
+}
+
 export async function appendRemediationJournal(
   layout: RemediationLayout,
   incidentId: string,

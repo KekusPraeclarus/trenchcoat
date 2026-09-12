@@ -24,6 +24,7 @@ import { xBotHealthEscalation } from "./x-bot-health.js"
 import { loadXSessionHold, xSessionHoldPath } from "../collectors/twitter/session-hold.js"
 import {
   AUTH_ISSUE_ALERT_THRESHOLD,
+  AUTH_ISSUE_CONCURRENT_THRESHOLD,
   authIssuesPath,
   loadAuthIssueFile,
   openAuthSources,
@@ -943,7 +944,7 @@ function buildFindings(snapshot: Omit<HealthSnapshot, "warnings" | "findings">):
       component: "x",
     })
   }
-  if (snapshot.authIssues.open.length >= AUTH_ISSUE_ALERT_THRESHOLD) {
+  if (snapshot.authIssues.open.length >= AUTH_ISSUE_CONCURRENT_THRESHOLD) {
     push({
       code: "auth-issues-concurrent",
       severity: "warn",
@@ -1306,7 +1307,7 @@ export function formatHealthText(snapshot: HealthSnapshot): string {
   lines.push(
     snapshot.authIssues.open.length > 0
       ? `auth: open=${snapshot.authIssues.open.join(",")}`
-        + (snapshot.authIssues.open.length >= AUTH_ISSUE_ALERT_THRESHOLD
+        + (snapshot.authIssues.open.length >= AUTH_ISSUE_CONCURRENT_THRESHOLD
           ? " CONCURRENT"
           : "")
       : "auth: open=none",

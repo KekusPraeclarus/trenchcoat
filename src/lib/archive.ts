@@ -7,7 +7,7 @@ import {
   readFileSync,
   unlinkSync,
 } from "node:fs"
-import { mkdir, readFile, readdir, rename } from "node:fs/promises"
+import { lstat, mkdir, readFile, readdir, rename } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { createGzip, createGunzip } from "node:zlib"
 import { pipeline } from "node:stream/promises"
@@ -159,15 +159,26 @@ export async function copyDirectoryManifest(
   sourceDir: string,
   destDir: string,
 ): Promise<Record<string, `sha256:${string}`>> {
-  await mkdir(destDir, { recursive: true, mode: 0o700 })
-  const files = await readdir(sourceDir)
   const manifest: Record<string, `sha256:${string}`> = {}
-  for (const file of files) {
-    const source = join(sourceDir, file)
-    const dest = join(destDir, file)
-    const body = await readFile(source)
-    await writeAtomicFile(dest, body)
-    manifest[file] = sha256Bytes(body)
+  const walk = async (src: string, dest: string, prefix: string): Promise<void> => {
+    await mkdir(dest, { recursive: true, mode: 0o700 })
+    for (const file of await readdir(src)) {
+      const source = join(src, file)
+      const destPath = join(dest, file)
+      const st = await lstat(source)
+      // Skip links so a planted inbox symlink cannot pull files from outside
+      if (st.isSymbolicLink()) continue
+      const rel = prefix === "" ? file : `${prefix}/${file}`
+      if (st.isDirectory()) {
+        await walk(source, destPath, rel)
+        continue
+      }
+      if (!st.isFile()) continue
+      const body = await readFile(source)
+      await writeAtomicFile(destPath, body)
+      manifest[rel] = sha256Bytes(body)
+    }
   }
+  await walk(sourceDir, destDir, "")
   return manifest
 }

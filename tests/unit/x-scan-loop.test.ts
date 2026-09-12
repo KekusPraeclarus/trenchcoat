@@ -308,6 +308,7 @@ describe("x-scan loop", () => {
       signal: ac.signal,
       resolveTargets: () => [targets[0]!],
       holdPollMs: 1,
+      notifyAuth: async () => undefined,
       sleep: async () => {
         ac.abort()
       },
@@ -325,6 +326,43 @@ describe("x-scan loop", () => {
     expect(opened).toBe(0)
   })
 
+  it("sends an operator DM when parking on an existing hold", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-xhold-dm-"))
+    await saveXSessionHold({
+      path: xSessionHoldPath(root),
+      heldAt: "2026-08-28T13:37:06.707Z",
+      target: "home/fyp",
+    })
+    const ac = new AbortController()
+    const sends: string[] = []
+    await runXScanLoop({
+      paths: { agentRoot: root, archiveRoot: join(root, "archive") },
+      home: root,
+      signal: ac.signal,
+      resolveTargets: () => [targets[0]!],
+      holdPollMs: 1,
+      notifyAuth: async (text) => {
+        sends.push(text)
+      },
+      sleep: async () => {
+        ac.abort()
+      },
+      openSession: async () => {
+        throw new Error("must not open while held")
+      },
+      scrape: async () => {
+        throw new Error("must not scrape while held")
+      },
+      runTarget: async () => {
+        throw new Error("must not run list-scan while held")
+      },
+    })
+    expect(sends).toHaveLength(1)
+    expect(sends[0]).toContain("Auth warning: 1 session needs a new login.")
+    expect(sends[0]).toContain("x: challenge (home/fyp).")
+    expect(sends[0]).toContain("Run tc auth twitter.")
+  })
+
   it("writes a session hold on challenge and skips list-scan", async () => {
     const root = mkdtempSync(join(tmpdir(), "tc-xchal-"))
     const ac = new AbortController()
@@ -336,6 +374,7 @@ describe("x-scan loop", () => {
       signal: ac.signal,
       resolveTargets: () => [targets[0]!],
       holdPollMs: 1,
+      notifyAuth: async () => undefined,
       sleep: async () => {
         ac.abort()
       },

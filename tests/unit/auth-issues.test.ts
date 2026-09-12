@@ -7,12 +7,13 @@ import { StateStore } from "../../src/lib/state.js"
 import {
   authIssuesPath,
   clearAuthIssue,
+  loadAuthIssueFile,
   recordAuthIssue,
   renderAuthIssueOperatorNotice,
   shouldAlertAuthIssues,
 } from "../../src/lib/auth-issues.js"
 import {
-  notifyConcurrentAuthIssues,
+  notifyOpenAuthIssues,
   reportSessionAuthFailureCode,
   reportSessionAuthIssue,
 } from "../../src/orchestrator/auth-issue-notify.js"
@@ -29,27 +30,52 @@ function tempHome(): string {
 }
 
 describe("auth issues", () => {
-  it("does not alert on one open session", async () => {
+  it("alerts on one open session", async () => {
     const home = tempHome()
     const sends: string[] = []
     const result = await reportSessionAuthIssue({
       source: "x",
       kind: "challenge",
       at: AT,
+      detail: "home/fyp",
       home,
       send: async (text) => {
         sends.push(text)
       },
     })
-    expect(result).toBe("recorded")
-    expect(sends).toHaveLength(0)
+    expect(result).toBe("alerted")
+    expect(sends).toHaveLength(1)
+    expect(sends[0]).toContain("Auth warning: 1 session needs a new login.")
+    expect(sends[0]).toContain("x: challenge (home/fyp).")
+    expect(sends[0]).toContain("Run tc auth twitter.")
+    expect(sends[0]).toContain("This message is an operator notice.")
+    expect(sends[0]).not.toContain("broadcast")
+    expect(sends[0]).not.toContain(".trenchcoat")
     expect(shouldAlertAuthIssues({
       schema: 1,
       issues: { x: { kind: "challenge", since: AT } },
-    })).toBe(false)
+    })).toBe(true)
   })
 
-  it("alerts once when two sessions are open", async () => {
+  it("does not resend for the same open set", async () => {
+    const home = tempHome()
+    const sends: string[] = []
+    const send = async (text: string) => {
+      sends.push(text)
+    }
+    await reportSessionAuthIssue({
+      source: "x",
+      kind: "challenge",
+      at: AT,
+      home,
+      send,
+    })
+    const repeat = await notifyOpenAuthIssues({ home, send, nowIso: AT })
+    expect(repeat).toBe("skipped")
+    expect(sends).toHaveLength(1)
+  })
+
+  it("alerts again when a second source opens", async () => {
     const home = tempHome()
     const sends: string[] = []
     const send = async (text: string) => {
@@ -71,22 +97,15 @@ describe("auth issues", () => {
       send,
     })
     expect(second).toBe("alerted")
-    expect(sends).toHaveLength(1)
-    expect(sends[0]).toContain("Auth warning: 2 sessions need a new login.")
-    expect(sends[0]).toContain("x: challenge (home/fyp).")
-    expect(sends[0]).toContain("fomo: session_expired.")
-    expect(sends[0]).toContain("Run tc auth twitter.")
-    expect(sends[0]).toContain("Run tc auth fomo.")
-    expect(sends[0]).toContain("This message is an operator notice.")
-    expect(sends[0]).not.toContain("broadcast")
-    expect(sends[0]).not.toContain(".trenchcoat")
-
-    const repeat = await notifyConcurrentAuthIssues({ home, send, nowIso: AT })
-    expect(repeat).toBe("skipped")
-    expect(sends).toHaveLength(1)
+    expect(sends).toHaveLength(2)
+    expect(sends[1]).toContain("Auth warning: 2 sessions need a new login.")
+    expect(sends[1]).toContain("x: challenge (home/fyp).")
+    expect(sends[1]).toContain("fomo: session_expired.")
+    expect(sends[1]).toContain("Run tc auth twitter.")
+    expect(sends[1]).toContain("Run tc auth fomo.")
   })
 
-  it("alerts again after the open set changes and returns to two", async () => {
+  it("does not re-alert when the open set shrinks", async () => {
     const home = tempHome()
     const sends: string[] = []
     const send = async (text: string) => {
@@ -106,10 +125,38 @@ describe("auth issues", () => {
       home,
       send,
     })
-    expect(sends).toHaveLength(1)
+    expect(sends).toHaveLength(2)
 
     await clearAuthIssue({ path: authIssuesPath(home), source: "fomo" })
-    const afterClear = await notifyConcurrentAuthIssues({ home, send, nowIso: AT })
+    const afterClear = await notifyOpenAuthIssues({ home, send, nowIso: AT })
+    expect(afterClear).toBe("skipped")
+    expect(sends).toHaveLength(2)
+  })
+
+  it("alerts again after the open set shrinks and a new source opens", async () => {
+    const home = tempHome()
+    const sends: string[] = []
+    const send = async (text: string) => {
+      sends.push(text)
+    }
+    await reportSessionAuthIssue({
+      source: "x",
+      kind: "challenge",
+      at: AT,
+      home,
+      send,
+    })
+    await reportSessionAuthIssue({
+      source: "fomo",
+      kind: "challenge",
+      at: AT,
+      home,
+      send,
+    })
+    expect(sends).toHaveLength(2)
+
+    await clearAuthIssue({ path: authIssuesPath(home), source: "fomo" })
+    const afterClear = await notifyOpenAuthIssues({ home, send, nowIso: AT })
     expect(afterClear).toBe("skipped")
 
     const again = await reportSessionAuthIssue({
@@ -120,8 +167,32 @@ describe("auth issues", () => {
       send,
     })
     expect(again).toBe("alerted")
-    expect(sends).toHaveLength(2)
-    expect(sends[1]).toContain("pump: session_expired.")
+    expect(sends).toHaveLength(3)
+    expect(sends[2]).toContain("pump: session_expired.")
+  })
+
+  it("does not mark lastAlert when operator telegram env is missing", async () => {
+    const home = tempHome()
+    await recordAuthIssue({
+      path: authIssuesPath(home),
+      source: "x",
+      kind: "challenge",
+      at: AT,
+    })
+    const prevToken = process.env["TELEGRAM_BOT_TOKEN"]
+    const prevOperator = process.env["TELEGRAM_OPERATOR_ID"]
+    delete process.env["TELEGRAM_BOT_TOKEN"]
+    delete process.env["TELEGRAM_OPERATOR_ID"]
+    try {
+      const result = await notifyOpenAuthIssues({ home, nowIso: AT })
+      expect(result).toBe("skipped")
+      expect(loadAuthIssueFile(authIssuesPath(home)).lastAlert).toBeUndefined()
+    } finally {
+      if (prevToken === undefined) delete process.env["TELEGRAM_BOT_TOKEN"]
+      else process.env["TELEGRAM_BOT_TOKEN"] = prevToken
+      if (prevOperator === undefined) delete process.env["TELEGRAM_OPERATOR_ID"]
+      else process.env["TELEGRAM_OPERATOR_ID"] = prevOperator
+    }
   })
 
   it("ignores non-auth failure codes", async () => {

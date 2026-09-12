@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   archiveLayout,
   broadcastBudgetPath,
+  copyDirectoryManifest,
   ensureArchive,
   quarantineDir,
   runArchiveDir,
@@ -14,6 +15,7 @@ import {
 import { writeAtomicFileFsync, sha256Bytes } from "../../src/lib/fs-atomic.js"
 import { RunManifestSchema, AlphaDigestFileSchema, GateReceiptSchema } from "../../src/contracts/schemas.js"
 import { GOLDEN_ALPHA_DIGEST, GOLDEN_RUN_ID } from "../../src/contracts/fixtures.js"
+import { preArchiveRun } from "../../src/orchestrator/pre-archive.js"
 
 describe("wave0 archive contracts", () => {
   it("exposes authoritative archive paths", async () => {
@@ -72,5 +74,47 @@ describe("wave0 archive contracts", () => {
       source: "archived-dossier",
       evaluatedAt: "2026-07-17T12:00:00.000Z",
     }).status).toBe("pass")
+  })
+
+  it("copies nested inbox charts without EISDIR", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-archive-nested-"))
+    try {
+      const src = join(root, "inbox")
+      const dest = join(root, "dest")
+      mkdirSync(join(src, "charts"), { recursive: true })
+      writeFileSync(join(src, "status.json"), "{}\n")
+      writeFileSync(join(src, "charts", "token.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      const manifest = await copyDirectoryManifest(src, dest)
+      expect(manifest["status.json"]).toMatch(/^sha256:/u)
+      expect(manifest["charts/token.png"]).toMatch(/^sha256:/u)
+      expect(existsSync(join(dest, "charts", "token.png"))).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("pre-archives nested chart PNGs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-prearch-charts-"))
+    try {
+      const agentRoot = join(root, "agent")
+      const archiveRoot = join(root, "archive")
+      const layout = await ensureArchive(archiveRoot)
+      mkdirSync(join(agentRoot, "inbox", GOLDEN_RUN_ID, "charts"), { recursive: true })
+      writeFileSync(join(agentRoot, "inbox", GOLDEN_RUN_ID, "status.json"), "{}\n")
+      writeFileSync(
+        join(agentRoot, "inbox", GOLDEN_RUN_ID, "charts", "tok.png"),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      )
+      const result = await preArchiveRun({
+        layout,
+        agentRoot,
+        runId: GOLDEN_RUN_ID,
+        job: "chart-sweep",
+        nowIso: "2026-07-17T12:00:00.000Z",
+      })
+      expect(result.manifest.inboxManifest["charts/tok.png"]).toMatch(/^sha256:/u)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

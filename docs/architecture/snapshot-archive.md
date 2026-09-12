@@ -2,7 +2,7 @@
 description: Host-side snapshot archive and decision-time as-of bundles - the immutable record that source attribution and audits read from, and the leakage firewall that makes calibration valid.
 scope: module
 status: draft
-last_verified: 2026-07-24
+last_verified: 2026-09-12
 read_when:
   - Editing the run loop's archiving, source attribution inputs, audit outcome computation, or retention.
   - Consuming settled decision outcomes for harness mining / keep summaries.
@@ -30,6 +30,7 @@ Outside the repo and outside `agent/`, owned by the orchestrator:
 ├── runs/<run-id>/
 │   ├── inbox/           # byte-identical copy of agent/inbox/<run-id>/,
 │   │                    #   written BEFORE the agent session starts
+│   │                    #   nested files (charts/*.png) keep relative keys
 │   ├── sources-start.json # byte-identical source scores used by this run
 │   ├── config.json       # redacted non-secret config + schema/hash
 │   ├── alpha-digest.json  # copied after the run (what the agent claimed digested)
@@ -61,6 +62,9 @@ policy hypothesis dirs, `prior-attempts.jsonl`, and `meta/<candidateId>/`
 
 - The pre-session copy is the **only** input to attribution string-matching —
   never the workspace copy (INV-S12)
+- Inbox copy walks nested dirs (chart PNGs under `inbox/<run-id>/charts/`).
+  Manifest keys use relative paths such as `charts/token.png`. A flat
+  `readFile` on the `charts` dir throws EISDIR.
 - **Run journal authority:** `transactions/<run-id>.json` is the fsynced
   authoritative journal (`status: running | complete | failed`, ADR 006). A copy
   under `runs/<run-id>/journal.json` is written once at archive seal

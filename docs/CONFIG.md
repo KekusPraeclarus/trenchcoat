@@ -2,7 +2,7 @@
 description: Operator configuration contract - env vars, the config file, seed formats, tunable thresholds, and the CLI surface. Everything the operator provides or invokes.
 scope: project
 status: active
-last_verified: 2026-09-06
+last_verified: 2026-09-12
 read_when:
   - Implementing src/cli.ts or config loading, or setting up a deployment.
 ---
@@ -140,7 +140,8 @@ Use `tc config validate` (in-memory) or `tc config migrate --write` (persist);
     "engagement": {
       "enabled": true,
       "likes_per_window": 2,
-      "like_window_minutes": 10
+      "like_window_minutes": 10,
+      "follow_after_likes": 25
     }
   },
   "research": {
@@ -605,6 +606,7 @@ application is not wired yet — only wallets are applied today.
 | `tc harness meta propose\|trial\|status\|promote\|reject` | shadow improver-config lane (ADR 039); promote is operator-only |
 | `tc run harness-meta-improve` | scheduled shadow meta propose/trial step |
 | `tc x-engagement status` | like throttle window usage, follow/like counts, `x-bot-health.json` |
+| `tc x-engagement recover` | clear the bot-health escalation counter; does not invent a verified like |
 | `tc x-engagement dry-run <run-id>` | show which bot choices would apply using live inbox or sealed archive `x-fyp-eligible.json`; no X mutations |
 | `tc research <subject>` | operator-priority enqueue + locked research run (`chain:address` preferred); `--skip-agent` / `--dry-collect` supported |
 | `tc undock <id>` / `tc confirm <id>` | terminal exoneration decisions (INV-S13) |
@@ -618,7 +620,7 @@ application is not wired yet — only wallets are applied today.
 | `tc auth telegram-channels` | Scaffold GramJS session path under `~/.trenchcoat/telegram-session/` |
 | `tc backup` | archive file-list backup + sampled hashes → `~/.trenchcoat/backups/` (weekly via `ops/backup.sh`) |
 | `tc status` | shared health snapshot (lock/runs/jobs/findings/skips/queues/X/FC/router/deploy); Discord section when enabled; `--json` bounded payload; health warnings non-fatal |
-| `tc remediations scan\|run\|status\|suggestions\|approve\|…` | incident remediation lane (ADR 017/025) |
+| `tc remediations scan\|run\|status\|suggestions\|approve\|defer\|reject\|retry\|fail\|unhalt` | incident remediation lane (ADR 017/025). `unhalt` clears `automationHalted` after a failed deploy |
 | `tc broadcast feedback status\|ledger\|reconcile` | operator feedback counts, recent records, reaction re-read after listener downtime (ADR 043) |
 | `tc broadcast feedback seal` | seal one dataset from the ledger and write the active preference set |
 | `tc broadcast feedback candidate\|apply\|dismiss` | propose, write, or drop one bounded tuning candidate; apply needs a clean repo and never commits or deploys |

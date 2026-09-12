@@ -48,6 +48,7 @@ Commands:
   wallets add-candidates <path> [--dry-run]
   x-engagement dry-run <run-id>
   x-engagement status
+  x-engagement recover
   fc-engagement dry-run <run-id>
   fc-engagement status
   pump-engagement dry-run <run-id>
@@ -77,7 +78,7 @@ Commands:
   listen [telegram|discord|channels|x-scan]
   discord watchlist scan
   discord chains run|status|retry|fail|continue
-  remediations scan|run|status|suggestions|approve|defer|reject|retry|fail
+  remediations scan|run|status|suggestions|approve|defer|reject|retry|fail|unhalt
   backup
   research <subject>
   auth twitter [--create-managed-list] [--headed]
@@ -411,7 +412,11 @@ async function cmdRemediations(rest: string[]): Promise<void> {
     handleRemediationChatCommand,
     remediationStatusSummary,
   } = await import("./remediation/orchestrate.js")
-  const { createRemediationStore, upsertIncident } = await import("./remediation/store.js")
+  const {
+    createRemediationStore,
+    upsertIncident,
+    clearRemediationAutomationHalt,
+  } = await import("./remediation/store.js")
   const { remediationLayout } = await import("./remediation/paths.js")
   const { systemClock } = await import("./lib/clock.js")
 
@@ -504,6 +509,12 @@ async function cmdRemediations(rest: string[]): Promise<void> {
     const { clearIntegrityHoldForIncident } = await import("./remediation/integrity-hold.js")
     await clearIntegrityHoldForIncident(id)
     console.log(JSON.stringify({ ok: true, incidentId: id, phase: "failed" }, null, 2))
+    return
+  }
+  if (sub === "unhalt") {
+    const store = createRemediationStore(remediationLayout())
+    const result = await clearRemediationAutomationHalt(store)
+    console.log(JSON.stringify(result, null, 2))
     return
   }
   usage()
@@ -1204,7 +1215,7 @@ async function main(): Promise<void> {
             if (rem["automationHalted"]) {
               console.log(`  HALTED: ${rem["automationHaltReason"] ?? "unknown"}`)
             }
-            console.log("  recovery: tc remediations status|approve|defer|reject")
+            console.log("  recovery: tc remediations status|unhalt|approve|defer|reject")
           }
         } catch {
           // best-effort
@@ -1429,7 +1440,16 @@ async function main(): Promise<void> {
           const { loadConfig } = await import("./lib/config.js")
           const { probeEngagementSummary } = await import("./orchestrator/x-engagement.js")
           console.log(JSON.stringify(probeEngagementSummary(agentRoot, loadConfig()), null, 2))
-        } else if (sub === "dry-run") {
+        } else if (sub === "recover") {
+          const { StateStore } = await import("./lib/state.js")
+          const { recoverXBotHealth } = await import("./orchestrator/x-bot-health.js")
+          const { systemClock } = await import("./lib/clock.js")
+          const { withAgentWorkspaceLock } = await import("./lib/lock.js")
+          const next = await withAgentWorkspaceLock(agentRoot, async () => {
+            const state = new StateStore(join(agentRoot, "state"))
+            return recoverXBotHealth({ state, nowIso: systemClock.nowIso() })
+          })
+          console.log(JSON.stringify({ ok: true, recovered: true, ...next }, null, 2))
           const runId = rest[1]
           if (!runId) usage()
           const { processListScanEngagement } = await import("./orchestrator/x-engagement.js")

@@ -106,6 +106,8 @@ const emptyState = {
     likedPostIds: [],
     lastLikedAt: {},
     lastFollowedAt: {},
+    likedPostAuthors: {},
+    followDueHandles: [],
     pendingActionIds: [],
     decisions: [],
     receipts: [],

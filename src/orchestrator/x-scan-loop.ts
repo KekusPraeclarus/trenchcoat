@@ -39,7 +39,10 @@ import {
 } from "../remediation/store.js"
 import { remediationLayout } from "../remediation/paths.js"
 import { listPendingAlphaPaths } from "./review-collect.js"
-import { reportSessionAuthIssue } from "./auth-issue-notify.js"
+import {
+  reportSessionAuthIssue,
+  type AuthIssueSend,
+} from "./auth-issue-notify.js"
 
 export type XScanLoopPaths = Readonly<{
   agentRoot: string
@@ -76,6 +79,8 @@ export type XScanLoopOptions = Readonly<{
   lockRetryMs?: number
   /** How long to wait between hold-file polls while parked (tests) */
   holdPollMs?: number
+  /** Injectable operator DM (tests) */
+  notifyAuth?: AuthIssueSend
 }>
 
 export const X_SCAN_HOLD_POLL_MS = 60_000
@@ -130,15 +135,28 @@ async function runListScanWithLockRetry(args: Readonly<{
 
 async function parkWhileHeld(args: Readonly<{
   holdPath: string
+  home: string
   sleep: (ms: number) => Promise<void>
   pollMs: number
   signal?: AbortSignal
+  send?: AuthIssueSend
 }>): Promise<void> {
   const hold = loadXSessionHold(args.holdPath)
   log.error("x-scan parked — X session held after challenge", {
     heldAt: hold?.heldAt,
     target: hold?.target,
   })
+  if (hold) {
+    // Park path covers a hold that already existed before this process started
+    await reportSessionAuthIssue({
+      source: "x",
+      kind: "challenge",
+      at: hold.heldAt,
+      home: args.home,
+      ...(hold.target ? { detail: hold.target } : {}),
+      ...(args.send ? { send: args.send } : {}),
+    }).catch(() => undefined)
+  }
   while (!args.signal?.aborted) {
     if (!loadXSessionHold(args.holdPath)) return
     await args.sleep(args.pollMs).catch(() => undefined)
@@ -192,9 +210,11 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
         }
         await parkWhileHeld({
           holdPath,
+          home,
           sleep,
           pollMs: holdPollMs,
           ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.notifyAuth ? { send: opts.notifyAuth } : {}),
         })
         continue
       }
@@ -206,9 +226,11 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
           if (error instanceof XSessionHeldError || loadXSessionHold(holdPath)) {
             await parkWhileHeld({
               holdPath,
+              home,
               sleep,
               pollMs: holdPollMs,
               ...(opts.signal ? { signal: opts.signal } : {}),
+              ...(opts.notifyAuth ? { send: opts.notifyAuth } : {}),
             })
             continue
           }
@@ -293,6 +315,7 @@ export async function runXScanLoop(opts: XScanLoopOptions): Promise<void> {
             at: systemClock.nowIso(),
             detail: target.label,
             home,
+            ...(opts.notifyAuth ? { send: opts.notifyAuth } : {}),
           }).catch(() => undefined)
           await active.close().catch(() => undefined)
           session = undefined

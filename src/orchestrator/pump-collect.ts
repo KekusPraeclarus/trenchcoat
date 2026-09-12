@@ -330,15 +330,15 @@ export async function collectPumpScan(args: Readonly<{
     }
   } catch (error) {
     if (ownedClient) await client.close().catch(() => undefined)
-    const reason = error instanceof PumpClientError ? error.code : "upstream"
+    if (!(error instanceof PumpClientError)) throw error
     await reportSessionAuthFailureCode({
       source: "pump",
-      code: reason,
+      code: error.code,
       at: args.fetchedAt,
     }).catch(() => undefined)
     return skipResult(
-      await writeSkip(args, `pump-upstream code=${reason}`),
-      "pump-upstream-unavailable",
+      await writeSkip(args, `pump-upstream code=${error.code}`),
+      `pump-${error.code}`,
     )
   }
 

@@ -43,6 +43,8 @@ function emptyState(): XEngagementFile {
     likedPostIds: [],
     lastLikedAt: {},
     lastFollowedAt: {},
+    likedPostAuthors: {},
+    followDueHandles: [],
     pendingActionIds: [],
     decisions: [],
     receipts: [],
@@ -102,6 +104,148 @@ describe("bot-controlled engagement", () => {
     })
     expect(result.accepted).toHaveLength(2)
     expect(result.rejected).toHaveLength(0)
+  })
+
+  it("host follows an FYP author after 25 unique liked posts", () => {
+    const state = emptyState()
+    for (let i = 0; i < 24; i += 1) {
+      const postId = `${1_000_000_000 + i}`
+      state.likedPostIds.push(postId)
+      state.likedPostAuthors[postId] = "alpha"
+    }
+    const proposal = parseEngagementProposal({
+      schema: 1,
+      runId: "list-scan-threshold",
+      proposedAt: "2026-07-16T00:00:00.000Z",
+      items: [{
+        action: "like",
+        postId: "1234567890",
+        authorHandle: "alpha",
+        reasonCode: "narrative_signal",
+        topics: [],
+        rationale: "useful framing",
+      }],
+    })
+    const result = applyEngagementChoices({
+      proposal,
+      state,
+      caps: { ...caps, follow_after_likes: 25 },
+      nowIso: "2026-07-16T00:00:00.000Z",
+      fypPostIds,
+      fypAuthors,
+    })
+    expect(result.accepted.map((d) => `${d.action}:${d.target}`)).toEqual([
+      "like:1234567890",
+      "follow:alpha",
+    ])
+    expect(result.accepted[1]?.reasonCode).toBe("like_threshold")
+    expect(result.nextState.followDueHandles).toEqual(["alpha"])
+  })
+
+  it("does not inject a threshold follow before 25 likes", () => {
+    const state = emptyState()
+    for (let i = 0; i < 23; i += 1) {
+      const postId = `${1_000_000_000 + i}`
+      state.likedPostIds.push(postId)
+      state.likedPostAuthors[postId] = "alpha"
+    }
+    const proposal = parseEngagementProposal({
+      schema: 1,
+      runId: "list-scan-under",
+      proposedAt: "2026-07-16T00:00:00.000Z",
+      items: [{
+        action: "like",
+        postId: "1234567890",
+        authorHandle: "alpha",
+        reasonCode: "narrative_signal",
+        topics: [],
+        rationale: "useful framing",
+      }],
+    })
+    const result = applyEngagementChoices({
+      proposal,
+      state,
+      caps: { ...caps, follow_after_likes: 25 },
+      nowIso: "2026-07-16T00:00:00.000Z",
+      fypPostIds,
+      fypAuthors,
+    })
+    expect(result.accepted).toHaveLength(1)
+    expect(result.accepted[0]?.action).toBe("like")
+    expect(result.nextState.followDueHandles).toEqual([])
+  })
+
+  it("parks a threshold follow until the author is on FYP", () => {
+    const state = emptyState()
+    for (let i = 0; i < 25; i += 1) {
+      const postId = `${1_000_000_000 + i}`
+      state.likedPostAuthors[postId] = "delta"
+    }
+    const proposal = parseEngagementProposal({
+      schema: 1,
+      runId: "list-scan-due",
+      proposedAt: "2026-07-16T00:00:00.000Z",
+      items: [],
+    })
+    const result = applyEngagementChoices({
+      proposal,
+      state,
+      caps: { ...caps, follow_after_likes: 25 },
+      nowIso: "2026-07-16T00:00:00.000Z",
+      fypPostIds,
+      fypAuthors,
+    })
+    expect(result.accepted).toHaveLength(0)
+    expect(result.nextState.followDueHandles).toEqual(["delta"])
+  })
+
+  it("does not inject a threshold follow when already following", () => {
+    const state = emptyState()
+    state.followedHandles = ["alpha"]
+    for (let i = 0; i < 25; i += 1) {
+      const postId = `${1_000_000_000 + i}`
+      state.likedPostAuthors[postId] = "alpha"
+    }
+    const proposal = parseEngagementProposal({
+      schema: 1,
+      runId: "list-scan-already",
+      proposedAt: "2026-07-16T00:00:00.000Z",
+      items: [],
+    })
+    const result = applyEngagementChoices({
+      proposal,
+      state,
+      caps: { ...caps, follow_after_likes: 25 },
+      nowIso: "2026-07-16T00:00:00.000Z",
+      fypPostIds,
+      fypAuthors,
+    })
+    expect(result.accepted).toHaveLength(0)
+    expect(result.nextState.followDueHandles).toEqual([])
+  })
+
+  it("skips threshold follows when follow_after_likes is 0", () => {
+    const state = emptyState()
+    for (let i = 0; i < 25; i += 1) {
+      const postId = `${1_000_000_000 + i}`
+      state.likedPostAuthors[postId] = "alpha"
+    }
+    const proposal = parseEngagementProposal({
+      schema: 1,
+      runId: "list-scan-off",
+      proposedAt: "2026-07-16T00:00:00.000Z",
+      items: [],
+    })
+    const result = applyEngagementChoices({
+      proposal,
+      state,
+      caps: { ...caps, follow_after_likes: 0 },
+      nowIso: "2026-07-16T00:00:00.000Z",
+      fypPostIds,
+      fypAuthors,
+    })
+    expect(result.accepted).toHaveLength(0)
+    expect(result.nextState.followDueHandles).toEqual([])
   })
 
   it("prop_inv_s22_accepts follow/unfollow only for same-run FYP authors", () => {

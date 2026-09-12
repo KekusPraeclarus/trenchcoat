@@ -153,7 +153,9 @@ Choose likes/follows to train the FYP toward better narrative, sentiment,
 discretionary-topic, and trenchant-market coverage — not shill call success.
 Managed-list scoring is separate and host-owned.
 
-Hard throttle (automatic): at most **2 likes every 10 minutes**. Follows and
+Hard throttle (automatic): at most **2 likes every 10 minutes**. Host also
+follows an FYP author after **25 unique liked posts** from that account
+(`follow_after_likes`). You may still follow earlier. Follows and
 unfollows are otherwise under your control. Never post, reply, DM, or retweet.
 
 Only propose likes for `postId` values and follow/unfollow for `handle` values

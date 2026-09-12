@@ -10,7 +10,9 @@ export type AuthIssueSource = (typeof AUTH_ISSUE_SOURCES)[number]
 export const AUTH_ISSUE_KINDS = ["challenge", "session_expired"] as const
 export type AuthIssueKind = (typeof AUTH_ISSUE_KINDS)[number]
 
-export const AUTH_ISSUE_ALERT_THRESHOLD = 2
+export const AUTH_ISSUE_ALERT_THRESHOLD = 1
+/** Health CONCURRENT label only. Telegram already fired at one open source */
+export const AUTH_ISSUE_CONCURRENT_THRESHOLD = 2
 
 const AuthIssueEntrySchema = z.object({
   kind: z.enum(AUTH_ISSUE_KINDS),
@@ -73,9 +75,35 @@ export function shouldAlertAuthIssues(file: AuthIssueFile): boolean {
   return file.lastAlert?.fingerprint !== fingerprint
 }
 
+function isSourceSubset(
+  inner: readonly AuthIssueSource[],
+  outer: readonly AuthIssueSource[],
+): boolean {
+  const set = new Set(outer)
+  return inner.every((source) => set.has(source))
+}
+
 function dropStaleAlert(file: AuthIssueFile): AuthIssueFile {
-  const fingerprint = authIssueFingerprint(openAuthSources(file))
+  const sources = openAuthSources(file)
+  if (sources.length === 0) {
+    if (!file.lastAlert) return file
+    const next = { ...file }
+    delete next.lastAlert
+    return next
+  }
+  const fingerprint = authIssueFingerprint(sources)
   if (!file.lastAlert || file.lastAlert.fingerprint === fingerprint) return file
+  // Shrink keeps lastAlert so a remaining source does not DM again
+  if (isSourceSubset(sources, file.lastAlert.sources)) {
+    return {
+      ...file,
+      lastAlert: {
+        fingerprint,
+        sentAt: file.lastAlert.sentAt,
+        sources,
+      },
+    }
+  }
   const next = { ...file }
   delete next.lastAlert
   return next
@@ -142,8 +170,11 @@ export async function markAuthIssuesAlerted(args: Readonly<{
 
 export function renderAuthIssueOperatorNotice(file: AuthIssueFile): string {
   const sources = openAuthSources(file)
+  const countLine = sources.length === 1
+    ? "Auth warning: 1 session needs a new login."
+    : `Auth warning: ${sources.length} sessions need a new login.`
   const lines = [
-    `Auth warning: ${sources.length} sessions need a new login.`,
+    countLine,
     "",
   ]
   for (const source of sources) {

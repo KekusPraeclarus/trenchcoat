@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-12
 ---
 
 # Incident remediation
@@ -147,7 +147,10 @@ When every affected source kind is missing, the audit goes to
 
 - Telegram: `approve|defer|reject remediation rem-<id>` (hyphen required; host
   also accepts `Rem <hex>` typos), `/remediations`, `remediation <id>`
-- CLI: `tc remediations scan|run|status|approve|defer|reject|retry|fail`
+- CLI: `tc remediations scan|run|status|approve|defer|reject|retry|fail|unhalt`
+- A failed Linux deploy can set `automationHalted`. Dash treats `!find` as a
+  missing command. The installer uses `if ! find` with a space.
+  `tc remediations unhalt` clears the flag. Fix the install bug first.
 - Config: `incident_remediation.enabled` + `schedule_enabled` (both default false);
   post-fix audit via nested `revalidation` (schema 14, INV-S28);
   `max_pre_review_revises` (default 5)

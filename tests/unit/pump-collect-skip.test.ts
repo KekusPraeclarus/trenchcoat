@@ -6,7 +6,7 @@ import { SnapshotWriter } from "../../src/lib/snapshot.js"
 import { ConfigSchema, type TrenchcoatConfig } from "../../src/lib/config.js"
 import { collectPumpScan } from "../../src/orchestrator/pump-collect.js"
 import { savePumpGates } from "../../src/collectors/pump/gates.js"
-import type { PumpDataSource, PumpGatesFile } from "../../src/collectors/pump/types.js"
+import { PumpClientError, type PumpDataSource, type PumpGatesFile } from "../../src/collectors/pump/types.js"
 
 const NOW = "2026-08-13T12:00:00.000Z"
 const seed = JSON.parse(
@@ -22,7 +22,7 @@ function passGates(): PumpGatesFile {
   return {
     schema: 1,
     probeRunId: "test",
-    evaluatedAt: NOW,
+    evaluatedAt: new Date().toISOString(),
     fixtureHashes: {},
     gates: {
       provider: { verdict: "pass", sampleSize: 30, successRate: 0.99 },
@@ -66,5 +66,62 @@ describe("pump-scan collect skip statuses", () => {
       readFileSync(join(agentRoot, "inbox", "pump-scan-skip-1", "pump-scan-collection-status.json"), "utf8"),
     ) as { items: ReadonlyArray<{ text: string }> }
     expect(status.items[0]?.text).toMatch(/following-skipped-below-min/u)
+  })
+
+  it("maps a PumpClientError code into collectionStatus", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pump-skip-code-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    await savePumpGates(archiveRoot, passGates())
+    const client: PumpDataSource = {
+      ...emptyClient(),
+      readFeed: async () => {
+        throw new PumpClientError("unauthorized", "pump.fun session rejected")
+      },
+    }
+    const result = await collectPumpScan({
+      runId: "pump-scan-skip-auth",
+      writer: new SnapshotWriter(agentRoot),
+      fetchedAt: NOW,
+      agentRoot,
+      archiveRoot,
+      config: pumpConfig(),
+      sessionExists: true,
+      client,
+      cursorsPath: join(root, "cursors.json"),
+    })
+    expect(result.collectionStatus).toBe("pump-unauthorized")
+    const status = JSON.parse(
+      readFileSync(join(agentRoot, "inbox", "pump-scan-skip-auth", "pump-scan-collection-status.json"), "utf8"),
+    ) as { items: ReadonlyArray<{ text: string }> }
+    expect(status.items[0]?.text).toMatch(/code=unauthorized/u)
+  })
+
+  it("rethrows host errors instead of mapping them to an upstream skip", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pump-skip-host-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    mkdirSync(join(agentRoot, "inbox"), { recursive: true })
+    mkdirSync(join(agentRoot, "state"), { recursive: true })
+    await savePumpGates(archiveRoot, passGates())
+    const client: PumpDataSource = {
+      ...emptyClient(),
+      readFeed: async () => {
+        throw new Error("EISDIR: illegal operation on a directory")
+      },
+    }
+    await expect(collectPumpScan({
+      runId: "pump-scan-skip-host",
+      writer: new SnapshotWriter(agentRoot),
+      fetchedAt: NOW,
+      agentRoot,
+      archiveRoot,
+      config: pumpConfig(),
+      sessionExists: true,
+      client,
+      cursorsPath: join(root, "cursors.json"),
+    })).rejects.toThrow(/EISDIR/u)
   })
 })

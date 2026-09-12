@@ -138,6 +138,8 @@ describe("buildHealthSnapshot", () => {
       followedHandles: [],
       lastLikedAt: {},
       lastFollowedAt: {},
+      likedPostAuthors: {},
+      followDueHandles: [],
       pendingActionIds: [
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       ],

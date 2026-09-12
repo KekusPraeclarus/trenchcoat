@@ -58,6 +58,7 @@ export const ConfigSchema = z.object({
       // per window, window no shorter than 10 minutes
       likes_per_window: z.number().int().min(0).max(2).default(2),
       like_window_minutes: z.number().int().min(10).max(1_440).default(10),
+      follow_after_likes: z.number().int().min(0).max(500).default(25),
     }),
   }),
   farcaster: z.object({

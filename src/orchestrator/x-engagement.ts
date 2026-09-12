@@ -7,6 +7,7 @@ import {
   parseEngagementProposal,
   applyEngagementChoices,
   likesInWindow,
+  followDueHandlesAfter,
   type EngagementCaps,
 } from "../social/x-engagement.js"
 import {
@@ -248,6 +249,7 @@ export async function reconcilePendingEngagement(args: Readonly<{
     likedPostIds: [...liked].sort(),
     lastLikedAt,
     lastFollowedAt,
+    followDueHandles: followDueHandlesAfter(followed, args.state.followDueHandles),
     receipts: [...args.state.receipts, ...receipts],
     pendingActionIds: args.state.pendingActionIds.filter((id) => !removed.has(id)),
   }
@@ -525,6 +527,7 @@ export async function processListScanEngagement(args: Readonly<{
           likedPostIds: [...liked].sort(),
           lastLikedAt,
           lastFollowedAt,
+          followDueHandles: followDueHandlesAfter(followed, after.followDueHandles),
           receipts: [...after.receipts, ...executed.receipts],
           pendingActionIds: after.pendingActionIds.filter((id) => (
             !verifiedSet.has(id as `sha256:${string}`)

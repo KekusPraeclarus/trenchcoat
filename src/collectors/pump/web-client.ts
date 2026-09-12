@@ -27,6 +27,19 @@ import {
   type PumpLeaderboardEntry,
 } from "./types.js"
 
+/** Playwright and HTTP failures must be PumpClientError so collect can skip by code */
+export function classifyPumpClientFailure(error: unknown): PumpClientError {
+  if (error instanceof PumpClientError) return error
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 180)
+  if (/challenge|cloudflare/iu.test(message)) {
+    return new PumpClientError("challenged", message)
+  }
+  if (/\b401\b|\b403\b|unauthorized|session rejected/iu.test(message)) {
+    return new PumpClientError("unauthorized", message)
+  }
+  return new PumpClientError("unavailable", message)
+}
+
 /** Feed tabs live on the homepage. They are not /board or /news. */
 export const PUMP_HOME_PATH = "/"
 
@@ -345,6 +358,8 @@ export class PumpWebClient implements PumpDataSource {
           await page.waitForTimeout(2_000)
         }
         await Promise.all(pending)
+      } catch (error) {
+        throw classifyPumpClientFailure(error)
       } finally {
         await page.close().catch(() => undefined)
       }

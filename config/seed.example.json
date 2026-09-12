@@ -173,7 +173,8 @@
     "engagement": {
       "enabled": true,
       "likes_per_window": 2,
-      "like_window_minutes": 10
+      "like_window_minutes": 10,
+      "follow_after_likes": 25
     }
   },
   "research": {

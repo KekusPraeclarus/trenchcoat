@@ -2,7 +2,7 @@
 description: Smart-wallet discovery, deterministic scoring, bounded LLM vote, promotion/drop hysteresis, and mandatory lifecycle router events.
 scope: project
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-12
 read_when:
   - Editing wallet collectors, scoring, lifecycle transitions, or wallet router events
 ---
@@ -88,7 +88,8 @@ archive settlement run unlocked; `wallets.json` / ledger RMW uses a brief
 `withAgentWorkspaceLock`. If that lock stays held, settle records `lockDeferred`
 and completes; the next cycle retries the pending write. Scans own
 `wallets.json` on the host. They may still run an advisory `wallet-evidence`
-Cursor session (ADR 002 / ADR 031). That session never writes scores or
+Cursor session (ADR 002 / ADR 031). The snapshot is a compact summary
+(counts and capped ids). It never dumps full wallet records. That session never writes scores or
 lifecycle. Round-robin
 prefers wallets with the oldest cursors so backfill progresses under the
 per-run cap.

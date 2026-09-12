@@ -202,7 +202,8 @@ structured state, markdown for prose knowledge, one index for retrieval.
 - **`x-engagement.json`** — ledger of the bot's X like/follow choices and
   receipts. Bot writes choices via `reports/<run-id>/x-engagement.json`; likes
   hard-throttled to 2 / 10 minutes. Host binds likes/follows to
-  `inbox/<run-id>/x-fyp-eligible.json` (same-run FYP manifest).
+  `inbox/<run-id>/x-fyp-eligible.json` (same-run FYP manifest). Host also
+  follows an FYP author after 25 unique liked posts.
 - **`x-bot-health.json`** — host-only execution health for X mutators: last
   verified action, last failure, consecutive failures, `updatedAt`. Updated only
   after live execution attempts (not dry-run, canary blocks, or policy rejects).

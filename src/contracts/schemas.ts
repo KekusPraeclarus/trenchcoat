@@ -629,6 +629,8 @@ export const XEngagementFileSchema = z.object({
   likedPostIds: z.array(z.string().regex(/^\d{5,25}$/u)).max(50_000),
   lastLikedAt: z.record(z.string(), IsoTimestampSchema).default({}),
   lastFollowedAt: z.record(z.string(), IsoTimestampSchema).default({}),
+  likedPostAuthors: z.record(z.string().regex(/^\d{5,25}$/u), XHandleSchema).default({}),
+  followDueHandles: z.array(XHandleSchema).max(5_000).default([]),
   pendingActionIds: z.array(Sha256Schema).max(10_000),
   decisions: z.array(XEngagementDecisionSchema).max(100_000),
   receipts: z.array(XEngagementReceiptSchema).max(100_000),

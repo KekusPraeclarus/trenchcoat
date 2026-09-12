@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-08
 source: https://fomo.family
 ---
 
@@ -31,7 +31,7 @@ retries after that window.
   as a parallel-only section — it never clears FC corroboration or legacy
   research/wallet warnings
 - `FomoClientError` codes `challenged` and `session_expired` record a fomo
-  auth issue. Two open Playwright sources send one operator DM (INV-R6).
+  auth issue. One open Playwright source sends one operator DM (INV-R6).
   `tc auth fomo` clears that record.
 
 ## Jobs

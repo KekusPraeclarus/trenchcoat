@@ -273,6 +273,56 @@ export async function collectForJob(args: Readonly<{
   }
 }
 
+const SNAPSHOT_ITEM_TEXT_MAX = 20_000
+
+function countByStatus(values: readonly string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const status of values) {
+    counts[status] = (counts[status] ?? 0) + 1
+  }
+  return counts
+}
+
+function compactWalletEvidenceText(args: Readonly<{
+  job: string
+  capturedAt: string
+  trackingSubjects: readonly Readonly<{
+    chain: string
+    tokenAddress: string
+    status: string
+  }>[]
+  walletStatuses: readonly string[]
+  cursorCount: number
+  eligibleWalletIds: readonly string[]
+  recentOutcomeCount: number
+}>): string {
+  const compact = {
+    schema: 1,
+    job: args.job,
+    capturedAt: args.capturedAt,
+    watchlist: args.trackingSubjects.slice(0, 40),
+    walletTotal: args.walletStatuses.length,
+    walletCounts: countByStatus(args.walletStatuses),
+    cursorCount: args.cursorCount,
+    eligibleCount: args.eligibleWalletIds.length,
+    eligibleWalletIds: args.eligibleWalletIds.slice(0, 80),
+    recentOutcomeCount: args.recentOutcomeCount,
+  }
+  const text = JSON.stringify(compact)
+  if (text.length <= SNAPSHOT_ITEM_TEXT_MAX) return text
+  return JSON.stringify({
+    schema: 1,
+    job: args.job,
+    capturedAt: args.capturedAt,
+    truncated: true,
+    walletTotal: compact.walletTotal,
+    walletCounts: compact.walletCounts,
+    eligibleCount: compact.eligibleCount,
+    cursorCount: compact.cursorCount,
+    recentOutcomeCount: args.recentOutcomeCount,
+  }).slice(0, SNAPSHOT_ITEM_TEXT_MAX)
+}
+
 async function collectWalletEvidence(
   args: Readonly<{
     runId: string
@@ -329,36 +379,26 @@ async function collectWalletEvidence(
     }
   }
 
-  const evidence = {
-    schema: 1,
+  const text = compactWalletEvidenceText({
     job,
     capturedAt: args.fetchedAt,
-    watchlist: trackingSubjects.map((entry) => ({
+    trackingSubjects: trackingSubjects.map((entry) => ({
       chain: entry.identity.chain,
       tokenAddress: entry.identity.tokenAddress,
       status: entry.status,
     })),
-    wallets: wallets.wallets,
-    cursors: wallets.cursors,
+    walletStatuses: wallets.wallets.map((wallet) => wallet.status),
+    cursorCount: wallets.cursors.length,
     eligibleWalletIds: eligibleWallets.map((wallet) => wallet.walletId),
-    recentOutcomes: readRecentWalletOutcomes(args.archiveRoot),
-  }
-  const text = JSON.stringify(evidence)
+    recentOutcomeCount: readRecentWalletOutcomes(args.archiveRoot).length,
+  })
   await args.writer.writeInbox(args.runId, `wallet-evidence-${job}`, {
     source: "host.wallet-evidence",
     fetchedAt: args.fetchedAt,
     trust: "untrusted-external",
     items: [{
       provenance: `${args.runId}:wallet-evidence-state`,
-      text: text.length <= 20_000
-        ? text
-        : JSON.stringify({
-          ...evidence,
-          wallets: wallets.wallets.slice(0, 3),
-          cursors: wallets.cursors.slice(0, 3),
-          recentOutcomes: evidence.recentOutcomes.slice(0, 3),
-          truncated: true,
-        }),
+      text,
       ts: args.fetchedAt,
       ageSec: 0,
       freshnessTier: "live",

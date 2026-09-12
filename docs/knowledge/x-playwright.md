@@ -2,7 +2,7 @@
 description: Playwright burner-profile scraping and host-only managed-list mutations for X/Twitter.
 scope: knowledge
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-12
 ---
 
 # X / Twitter (Playwright)
@@ -99,6 +99,10 @@ last_verified: 2026-08-31
 - Applied after the agent session; default throttle is **2 likes / 10 minutes**
   (`twitter.engagement.likes_per_window` / `like_window_minutes`; schema allows
   higher — INV-S22 PARTIAL until capped in code)
+- Host also follows an FYP author after **25 unique liked posts**
+  (`twitter.engagement.follow_after_likes`, default 25, `0` disables). The
+  author must still be on this run's FYP. Pending due handles wait until they
+  appear.
 - Allowed ops: `FavoriteTweet`, `UnfavoriteTweet`, `CreateFriendships`,
   `DestroyFriendships` (and friendship aliases). The guard also allows the REST
   fallback `/1.1/friendships/(create|destroy).json` (`isAllowedEngagementRestUrl`)
@@ -142,7 +146,8 @@ last_verified: 2026-08-31
   Playwright's `evaluateAll` realm (that previously crashed live scrapes).
 - FYP confinement: host writes `inbox/<run-id>/x-fyp-eligible.json`; dry-run
   loads that manifest from live inbox or sealed archive.
-- CLI: `pnpm dev:cli x-engagement status`, `pnpm dev:cli x-engagement dry-run <run-id>`
+- CLI: `pnpm dev:cli x-engagement status`, `pnpm dev:cli x-engagement recover`,
+  `pnpm dev:cli x-engagement dry-run <run-id>`
 
 ## Session hold
 
@@ -150,9 +155,10 @@ last_verified: 2026-08-31
 - x-scan writes it on the first challenge and parks. Other X Playwright opens
   throw `XSessionHeldError` until `tc auth twitter` succeeds
 - `tc status` prints `x: … HELD challenge since <ts>` and finding `x-session-held`
-- A challenge also records `~/.trenchcoat/auth-issues.json`. Two open
-  Playwright auth issues send one operator DM. One issue does not send
-  (INV-R6)
+- A challenge also records `~/.trenchcoat/auth-issues.json`. One open
+  Playwright auth issue sends one operator DM. The same open set does not
+  send again (INV-R6). x-scan park also records the hold so a process restart
+  can still send the DM.
 - Do not start `trenchcoat-x-scan` or X review timers while the hold exists
   unless you just completed auth
 

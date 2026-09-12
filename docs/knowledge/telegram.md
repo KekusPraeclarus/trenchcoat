@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-08-31
+last_verified: 2026-09-08
 ---
 
 # Telegram
@@ -13,8 +13,8 @@ last_verified: 2026-08-31
 - FLOOD_WAIT backoff; atomic finalized message writes; heartbeat + cursor
 - Operator chat bot is separate from router fanout bot
 - Chat replies allowlist-checked before any handling (INV-B3)
-- Concurrent Playwright auth issues (two or more of x, fomo, pump) send one
-  host-authored operator DM. One open issue does not send. The router does
+- Playwright auth issues (one or more of x, fomo, pump) send one
+  host-authored operator DM. The same open set does not send again. The router does
   not send this notice (INV-R6)
 - Operator DM directives (ADR 040): leading `/model-high|mid|low`, `/plan`,
   `/agent` are stripped before the LLM; default remains durable composer-2.5

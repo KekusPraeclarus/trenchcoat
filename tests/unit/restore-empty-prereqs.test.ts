@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
-import { existsSync, mkdtempSync, mkdirSync, realpathSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SnapshotWriter } from "../../src/lib/snapshot.js"
@@ -10,6 +10,7 @@ import { runWalletDiscovery } from "../../src/orchestrator/wallet-discovery.js"
 import { runWalletScan } from "../../src/orchestrator/wallet-scan.js"
 import { runJob } from "../../src/orchestrator/run.js"
 import { collectForJob } from "../../src/orchestrator/collect.js"
+import { SnapshotEnvelopeSchema } from "../../src/contracts/schemas.js"
 
 const NOW = "2026-07-18T12:00:00.000Z"
 
@@ -269,6 +270,74 @@ describe("empty collector prerequisites", () => {
       "wallet-scan-solana-2026-07-18T12-00-00-000Z",
       "wallet-evidence-wallet-scan-solana.json",
     ))).toBe(true)
+  })
+
+  it("keeps large wallet-discovery evidence under the 20k item cap", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-wallet-evidence-cap-"))
+    const agentRoot = join(root, "agent")
+    const archiveRoot = join(root, "archive")
+    const state = new StateStore(join(agentRoot, "state"))
+    await state.saveWatchlist({
+      schema: 1,
+      entries: [{
+        schema: 1,
+        identity: {
+          chain: "solana",
+          tokenAddress: "So11111111111111111111111111111111111111112",
+          pairAddress: "So11111111111111111111111111111111111111112",
+          symbolDisplay: "SOL",
+          resolution: "resolved",
+        },
+        status: "tracking",
+        addedAt: NOW,
+        updatedAt: NOW,
+      }],
+    })
+    const wallets = Array.from({ length: 300 }, (_, index) => {
+      const address = `1${String(index).padStart(31, "1")}`
+      return {
+        schema: 1 as const,
+        walletId: `solana:${address}`,
+        chain: "solana" as const,
+        address,
+        status: "candidate" as const,
+        addedAt: NOW,
+        updatedAt: NOW,
+        hardExcluded: false,
+        operatorReason: "x".repeat(280),
+      }
+    })
+    await state.saveWallets({
+      schema: 1,
+      wallets,
+      transitions: [],
+      pendingTransitionIds: [],
+      cursors: [],
+      exclusions: [],
+    })
+    const runId = "wallet-discovery-2026-07-18T12-00-00-000Z"
+    const collection = await collectForJob({
+      job: "wallet-discovery",
+      runId,
+      writer: new SnapshotWriter(agentRoot),
+      fetchedAt: NOW,
+      agentRoot,
+      archiveRoot,
+    })
+    expect(collection.collectionStatus).toBe("completed")
+    const envelope = SnapshotEnvelopeSchema.parse(JSON.parse(readFileSync(join(
+      agentRoot,
+      "inbox",
+      runId,
+      "wallet-evidence-wallet-discovery.json",
+    ), "utf8")))
+    expect(envelope.items[0]!.text.length).toBeLessThanOrEqual(20_000)
+    const evidence = JSON.parse(envelope.items[0]!.text) as {
+      walletTotal: number
+      eligibleCount: number
+    }
+    expect(evidence.walletTotal).toBe(300)
+    expect(evidence.eligibleCount).toBe(300)
   })
 
   it("keeps empty health in review scope at precheck", async () => {

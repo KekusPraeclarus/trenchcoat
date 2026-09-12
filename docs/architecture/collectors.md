@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-12
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -60,6 +60,9 @@ Leaderboard rows keep handles only. The agent proposes like/follow/unfollow.
 The host applies those choices after the scrape. Calls archive to
 `archive/outcomes/pump-call-*.json`. They never enter `source-call-log.jsonl`.
 Profile ids never enter `wallets.json`. Shadow mode is the default.
+A `PumpClientError` skip uses `collectionStatus=pump-<code>`
+(for example `pump-unavailable`). Host bugs rethrow. They do not map to
+`pump-upstream-unavailable`.
 The Mac can refresh the burner session and push `storage-state.json` with
 `ops/install-pump-session-sync.sh`. That agent is not a collector.
 Knowledge: [pump-fun.md](../knowledge/pump-fun.md).
@@ -113,8 +116,8 @@ ADR: [035-discord-wallet-signal-confluence.md](../adr/035-discord-wallet-signal-
   writes `~/.trenchcoat/x-scan/session-hold.json` and parks every X Playwright
   open except `tc auth twitter`. The loop does not retry the challenge page.
   Challenge and `session_expired` on x, fomo, or pump also record
-  `~/.trenchcoat/auth-issues.json`. Two open sources send one operator DM.
-  One open source does not send. The router does not send this notice
+  `~/.trenchcoat/auth-issues.json`. One open source sends one operator DM.
+  The same open set does not send again. The router does not send this notice
   (INV-R6). `tc auth` for that source clears the record. Collectors clear a
   source through `src/lib/auth-issues.ts` only. They do not import
   `auth-issue-notify`. Record and operator send live in
@@ -145,8 +148,9 @@ list use only lagged, settled outcomes from direct bullish raw-CA call events
 
 Separately, `list-scan` lets the bot choose FYP likes/follows for narrative and
 sentiment feed training. Choices are applied after the session with a default
-like throttle of 2 per 10 minutes (config-bounded; INV-S22 PARTIAL); posts,
-replies, DMs, and retweets stay blocked (INV-R2).
+like throttle of 2 per 10 minutes (config-bounded; INV-S22 PARTIAL). Host also
+follows an FYP author after 25 unique liked posts. Posts, replies, DMs, and
+retweets stay blocked (INV-R2).
 
 ### Farcaster (Neynar)
 

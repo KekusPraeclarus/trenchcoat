@@ -157,6 +157,8 @@ export class StateStore {
         likedPostIds: [],
         lastLikedAt: {},
         lastFollowedAt: {},
+        likedPostAuthors: {},
+        followDueHandles: [],
         pendingActionIds: [],
         decisions: [],
         receipts: [],

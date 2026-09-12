@@ -10,10 +10,14 @@ import {
   XEngagementProposalFileSchema,
 } from "../contracts/schemas.js"
 
+export const DEFAULT_FOLLOW_AFTER_LIKES = 25
+export const FOLLOW_THRESHOLD_REASON = "like_threshold"
+
 export type EngagementCaps = Readonly<{
   enabled: boolean
   likes_per_window: number
   like_window_minutes: number
+  follow_after_likes?: number
 }>
 
 export type EngagementApplyResult = Readonly<{
@@ -87,13 +91,42 @@ function normalizedFypHandle(raw: string): string | undefined {
   return normalizeHandle(raw)?.toLowerCase()
 }
 
+function likesByAuthor(likedPostAuthors: Readonly<Record<string, string>>): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const author of Object.values(likedPostAuthors)) {
+    const handle = author.toLowerCase()
+    counts.set(handle, (counts.get(handle) ?? 0) + 1)
+  }
+  return counts
+}
+
+function clearFollowedFromDue(
+  followed: ReadonlySet<string>,
+  due: readonly string[],
+): string[] {
+  return [...new Set(
+    due
+      .map((handle) => handle.toLowerCase())
+      .filter((handle) => !followed.has(handle)),
+  )].sort()
+}
+
+export function followDueHandlesAfter(
+  followed: Iterable<string>,
+  due: readonly string[] | undefined,
+): string[] {
+  const set = new Set([...followed].map((handle) => handle.toLowerCase()))
+  return clearFollowedFromDue(set, due ?? [])
+}
+
 /**
  * Apply bot engagement choices. Bot owns the decisions; the only throttle is
  * likes_per_window within like_window_minutes (default 2 / 10m).
- * Likes must target post ids collected from the same-run FYP snapshot, and
- * follow/unfollow must target authors seen in that same snapshot (INV-S22).
- * Subscription-state dedupe rejects choices already reflected in persisted
- * state (liked posts, followed handles) or still pending execution, so a
+ * Host also follows an FYP author after follow_after_likes unique liked posts
+ * (default 25). Likes must target post ids collected from the same-run FYP
+ * snapshot, and follow/unfollow must target authors seen in that same snapshot
+ * (INV-S22). Subscription-state dedupe rejects choices already reflected in
+ * persisted state (liked posts, followed handles) or still pending execution, so a
  * replayed proposal never re-attempts a settled action. Schema + idempotency
  * keys remain for crash safety.
  */
@@ -162,6 +195,7 @@ export function applyEngagementChoices(args: Readonly<{
   const accepted: XEngagementDecision[] = []
   const rejected: XEngagementDecision[] = []
   const pending = [...state.pendingActionIds]
+  const likedPostAuthors: Record<string, string> = { ...(state.likedPostAuthors ?? {}) }
 
   for (const item of args.proposal.items) {
     const actionId = engagementActionId(item, args.proposal.runId)
@@ -215,6 +249,8 @@ export function applyEngagementChoices(args: Readonly<{
       }
       likesInWin += 1
       likesDay += 1
+      const author = normalizedFypHandle(item.authorHandle)
+      if (author) likedPostAuthors[item.postId] = author
     } else if (item.action === "follow") {
       const handle = normalizeHandle(item.handle)
       if (!handle) {
@@ -259,6 +295,55 @@ export function applyEngagementChoices(args: Readonly<{
     decisions.push(decision)
     accepted.push(decision)
     pending.push(actionId)
+    if (item.action === "follow") {
+      pendingTargets.add(`follow\u0000${normalizeHandle(item.handle)!.toLowerCase()}`)
+    }
+  }
+
+  const threshold = args.caps.follow_after_likes ?? DEFAULT_FOLLOW_AFTER_LIKES
+  const followDue = new Set(
+    clearFollowedFromDue(followedHandles, state.followDueHandles ?? []),
+  )
+  if (threshold > 0) {
+    const counts = likesByAuthor(likedPostAuthors)
+    for (const [handle, count] of counts) {
+      if (count >= threshold && !followedHandles.has(handle)) followDue.add(handle)
+    }
+    for (const handle of [...followDue]) {
+      if (followedHandles.has(handle)) {
+        followDue.delete(handle)
+        continue
+      }
+      if (pendingTargets.has(`follow\u0000${handle}`)) continue
+      if (!fypAuthorSet.has(handle)) continue
+
+      const item: XEngagementProposalItem = {
+        action: "follow",
+        handle,
+        reasonCode: FOLLOW_THRESHOLD_REASON,
+        topics: [],
+        rationale: "host follow after liked-post threshold",
+      }
+      const actionId = engagementActionId(item, args.proposal.runId)
+      if (knownActionIds.has(actionId)) continue
+      knownActionIds.add(actionId)
+      const decision: XEngagementDecision = {
+        schema: 1,
+        actionId,
+        action: "follow",
+        target: handle,
+        reasonCode: FOLLOW_THRESHOLD_REASON,
+        topics: [],
+        accepted: true,
+        runId: args.proposal.runId,
+        decidedAt: args.nowIso,
+      }
+      decisions.push(decision)
+      accepted.push(decision)
+      pending.push(actionId)
+      pendingTargets.add(`follow\u0000${handle}`)
+      followsDay += 1
+    }
   }
 
   return {
@@ -267,6 +352,8 @@ export function applyEngagementChoices(args: Readonly<{
     rejected,
     nextState: {
       ...state,
+      likedPostAuthors,
+      followDueHandles: [...followDue].sort(),
       pendingActionIds: [...new Set(pending)],
       decisions: [...state.decisions, ...decisions],
       daily: {

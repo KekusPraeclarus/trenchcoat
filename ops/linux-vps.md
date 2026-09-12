@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-09-06
+last_verified: 2026-09-12
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -151,6 +151,9 @@ systemctl --user status trenchcoat-router trenchcoat-listener trenchcoat-channel
 If router crash-loops with `Could not locate the bindings file` / `better_sqlite3.node`,
 pnpm ignored the native build (need `pnpm.onlyBuiltDependencies` + redeploy). Emergency:
 `cd ~/.trenchcoat/runtime/node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3 && npx node-gyp rebuild && systemctl --user restart trenchcoat-router`.
+The Linux installer uses `if ! find` with a space. Dash treats `!find` as a
+missing command and then remediations halt. Use `tc remediations unhalt` after
+you fix that check.
 
 If x-scan err log shows `browserType.launch: Executable doesn't exist`, install the
 matching Chromium binary and restart:

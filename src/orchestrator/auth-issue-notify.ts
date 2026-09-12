@@ -23,13 +23,12 @@ async function defaultOperatorSend(text: string): Promise<void> {
   const token = process.env["TELEGRAM_BOT_TOKEN"]
   const operatorId = process.env["TELEGRAM_OPERATOR_ID"]
   if (!token || !operatorId) {
-    log.warn("auth-issue notify skipped — operator telegram env missing")
-    return
+    throw new Error("operator telegram env missing")
   }
   await telegramSendOperatorMessageChunks(fetch, token, operatorId, text)
 }
 
-export async function notifyConcurrentAuthIssues(args: Readonly<{
+export async function notifyOpenAuthIssues(args: Readonly<{
   home?: string
   send?: AuthIssueSend
   nowIso?: string
@@ -71,7 +70,7 @@ export async function reportSessionAuthIssue(args: Readonly<{
     at: args.at,
     ...(args.detail ? { detail: args.detail } : {}),
   })
-  const notified = await notifyConcurrentAuthIssues({
+  const notified = await notifyOpenAuthIssues({
     home,
     ...(args.send ? { send: args.send } : {}),
     nowIso: args.at,

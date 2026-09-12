@@ -24,7 +24,7 @@ function passGates(): PumpGatesFile {
   return {
     schema: 1,
     probeRunId: "test",
-    evaluatedAt: NOW,
+    evaluatedAt: new Date().toISOString(),
     fixtureHashes: {},
     gates: {
       provider: { verdict: "pass", sampleSize: 30, successRate: 0.99 },

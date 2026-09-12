@@ -35,6 +35,7 @@ import {
   emptyRemediationsFile,
   attemptsToday,
   bumpAttempts,
+  clearRemediationAutomationHalt,
 } from "../../src/remediation/store.js"
 import { remediationLayout } from "../../src/remediation/paths.js"
 import type { PatchProposal, RemediationIncident } from "../../src/remediation/schemas.js"
@@ -367,6 +368,29 @@ describe("remediation store", () => {
     file = bumpAttempts(file, "2026-07-21T13:00:00.000Z")
     await store.save(file)
     expect(attemptsToday(store.load(), "2026-07-21T14:00:00.000Z")).toBe(2)
+  })
+
+  it("clears automationHalted and the halt reason", async () => {
+    const root = mkdtempSync(join(tmpdir(), "rem-unhalt-"))
+    mkdirSync(join(root, "remediations"), { recursive: true })
+    const layout = remediationLayout(root)
+    const store = createRemediationStore(layout)
+    await store.save({
+      ...emptyRemediationsFile(),
+      automationHalted: true,
+      automationHaltReason: "install-systemd.sh: 209: !find: not found",
+    })
+    const first = await clearRemediationAutomationHalt(store)
+    expect(first).toEqual({
+      ok: true,
+      already: false,
+      automationHalted: false,
+      clearedReason: "install-systemd.sh: 209: !find: not found",
+    })
+    expect(store.load().automationHalted).toBe(false)
+    expect(store.load().automationHaltReason).toBeUndefined()
+    const second = await clearRemediationAutomationHalt(store)
+    expect(second.already).toBe(true)
   })
 })
 

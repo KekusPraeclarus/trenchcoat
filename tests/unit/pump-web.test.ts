@@ -7,7 +7,13 @@ import {
   mapFeedItem,
   mapLeaderboardEntry,
 } from "../../src/collectors/pump/mappers.js"
-import { redactPumpCapturePath, PUMP_FEED_TAB_LABEL, PUMP_HOME_PATH } from "../../src/collectors/pump/web-client.js"
+import {
+  redactPumpCapturePath,
+  PUMP_FEED_TAB_LABEL,
+  PUMP_HOME_PATH,
+  classifyPumpClientFailure,
+} from "../../src/collectors/pump/web-client.js"
+import { PumpClientError } from "../../src/collectors/pump/types.js"
 import {
   emptyUsageDay,
   remainingBudget,
@@ -147,6 +153,19 @@ describe("pump mappers", () => {
 describe("pump capture path redaction", () => {
   it("replaces address-shaped path segments", () => {
     expect(redactPumpCapturePath(`/users/${MINT}/coins`)).toBe("/users/:id/coins")
+  })
+})
+
+describe("pump client failure classification", () => {
+  it("keeps a typed PumpClientError", () => {
+    const err = new PumpClientError("challenged", "pump.fun challenge page detected")
+    expect(classifyPumpClientFailure(err)).toBe(err)
+  })
+
+  it("maps a Playwright timeout to unavailable", () => {
+    const mapped = classifyPumpClientFailure(new Error("Timeout 30000ms exceeded"))
+    expect(mapped).toBeInstanceOf(PumpClientError)
+    expect(mapped.code).toBe("unavailable")
   })
 })
 
