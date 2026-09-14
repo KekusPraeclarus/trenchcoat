@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-09-08
+last_verified: 2026-09-14
 ---
 
 # Telegram
@@ -41,9 +41,12 @@ last_verified: 2026-09-08
   "nothing happened". Discord receives the same rendered text as Telegram
   leaders (ADR 041); daily digest stays Telegram-only
 - **Incident remediation operator alerts** (ADR 025/028/030): daily suggestion digest,
-  remediation failure lines, and high-risk approval cards are host-composed
-  (plain-language what/why + sanitized summaries), optionally polished by
-  `composer-2.5` in an assistant voice. Approval cards always end with exact
+  health findings, remediation failure notes, and high-risk approval cards are
+  host-composed. Findings and failures state what happened, what it means, and
+  next `ops/remote.sh` commands. They skip polish by default. Telegram format
+  parks `rem-` ids, `trenchcoat-` units, and code spans so kebab deslug cannot
+  title-case them. Approval cards may still be polished by `composer-2.5`.
+  Approval cards always end with exact
   `approve|defer|reject remediation rem-…` lines (hyphen required). Host
   normalizes common typos (`Rem 92da…` → `rem-92da…`) and applies approvals
   before chat (ADR 030). Raw Discord text never enters these messages.
@@ -51,7 +54,8 @@ last_verified: 2026-09-08
   labels (`rh-chain-meme-rotation` → `RH Chain Meme Rotation`), and scrub watch
   prose: leaked hour tokens (`72h` → `the next few days`) and weekly timeframes
   (`this week`, `over the coming weeks` → `if it holds`) — other natural prose
-  (`this month`) is left alone. Distill injects host-derived `watchWindow` from
+  (`this month`) is left alone. Deslug parks URLs, markdown code spans, `rem-`
+  ids, and `trenchcoat-` unit names so operator alerts stay machine-readable. Distill injects host-derived `watchWindow` from
   claim type + `horizonHours` (audit settlement stays 24/72/168) — ADR 013
 - See [ADR 013](../adr/013-watch-window-decoupled.md) for the watchWindow vs
   horizonHours split

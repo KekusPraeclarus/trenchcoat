@@ -2,7 +2,7 @@
 description: Host-owned hourly/weekly incident remediation lane — detection, triage, gated mutation, Telegram approval, publish/deploy.
 scope: project
 status: active
-last_verified: 2026-09-12
+last_verified: 2026-09-14
 ---
 
 # Incident remediation
@@ -21,9 +21,15 @@ claim-index writes take a brief agent lock only for that mutation.
 
 1. **Scan** — bounded deltas: health snapshot **findings** (cadence/heartbeat/stuck-run/systemd), skip journals, structured `/tmp/trenchcoat.*.{out,err}.log` lines (inode/size cursors), and passive Discord suggestion threads when `discord_suggestions.enabled`.
    The host drops log/health/skip candidates when every mapped job is healthy (`already-recovered`).
+   systemd and discord findings use origin `health`. A named systemd unit
+   recovers when that unit is gone from the current snapshot, including
+   leftover origin `other` rows.
+   systemd probes skip `activating` / `deactivating` / `reloading`.
+   Those states are start/stop races. `failed` and `inactive` still create findings.
    It also ignores in-SLA `outcomes-settle` incomplete-run findings (age under 24h)
    and bare `incomplete runs=N` count warnings.
-   A terminal fingerprint reopens only when a mapped job is degraded.
+   A terminal fingerprint reopens only when a mapped job is degraded, or
+   when a named systemd unit is down again.
    Log prompts use a bounded `evidence-log.txt` snapshot.
 2. **Fingerprint** — stable id from job/error-class/component/target (not raw
    timestamps/text). Log lines without a JSON `job` inherit the log stem
@@ -103,9 +109,11 @@ and secrets stripped, capped at 280 characters. Text without a question mark
 gets a fixed fallback question. `followupMessageId` / `followupAskedAt` in the
 ledger keep it to one question per entry, and a send failure writes no field, so
 the next scan retries. Set `followup_enabled: false` to stay silent on Discord.
-Telegram digests / failure alerts /
-high-risk approval cards use host-composed plain-language copy (optionally
-polished by `composer-2.5` in an assistant voice); approval cards always end
+Telegram digests / failure alerts / health findings /
+high-risk approval cards use host-composed plain-language copy.
+Failure and finding alerts include what happened, what it means, and next
+steps. They skip optional polish by default so kebab ids stay readable.
+Approval cards may still be polished. They always end
 with exact `approve|defer|reject remediation rem-…` lines. Host normalizes
 Telegram typos (`Rem 92da…` → `rem-92da…`) so approvals apply before chat
 ([ADR 030](../adr/030-host-authoritative-remediation-approvals.md)).
@@ -147,6 +155,8 @@ When every affected source kind is missing, the audit goes to
 
 - Telegram: `approve|defer|reject remediation rem-<id>` (hyphen required; host
   also accepts `Rem <hex>` typos), `/remediations`, `remediation <id>`
+- Finding and failure DMs name the unit or job in plain language, keep the
+  `rem-` id, and list `ops/remote.sh` commands. They do not dump stage tokens.
 - CLI: `tc remediations scan|run|status|approve|defer|reject|retry|fail|unhalt`
 - A failed Linux deploy can set `automationHalted`. Dash treats `!find` as a
   missing command. The installer uses `if ! find` with a space.

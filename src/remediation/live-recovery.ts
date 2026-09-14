@@ -90,6 +90,11 @@ export function jobsForIncident(incident: Readonly<{
   return [...new Set(fromLogs)]
 }
 
+export function systemdUnitFromFinding(summary: string): string | undefined {
+  const match = /systemd unit (trenchcoat(?:-[a-z0-9]+)+)(?:\.service)? state=/u.exec(summary)
+  return match?.[1]
+}
+
 function parseIso(value: string | undefined): number | undefined {
   if (!value) return undefined
   const ms = Date.parse(value)
@@ -150,20 +155,47 @@ function anyMappedJobDegraded(jobs: readonly string[], health: LiveHealthView): 
   return jobs.some((job) => jobIsDegraded(health, job))
 }
 
+/** True/false when the host can name the finding. Undefined when it cannot. */
+function namedHealthFindingOpen(args: Readonly<{
+  origin?: RemediationIncident["origin"]
+  health: LiveHealthView
+  title?: string
+  errorClass?: string
+}>): boolean | undefined {
+  const unit = args.title ? systemdUnitFromFinding(args.title) : undefined
+  if (unit) {
+    return args.health.findings.some((finding) =>
+      finding.code === "systemd-unit-inactive"
+      && systemdUnitFromFinding(finding.summary) === unit,
+    )
+  }
+  if (args.origin === "health" && args.errorClass) {
+    return args.health.findings.some((finding) => finding.code === args.errorClass)
+  }
+  return undefined
+}
+
 /**
  * Host floor: do not diagnose or enqueue a log/health/skip incident when
  * every mapped job is healthy in the current snapshot.
  * Discord suggestions are product intake and skip this floor.
+ * A named systemd or health finding recovers when it is gone.
  */
 export function decideLiveRecovery(args: Readonly<{
   origin?: RemediationIncident["origin"]
   jobs: readonly string[]
   health: LiveHealthView
+  title?: string
+  errorClass?: string
 }>): LiveRecoveryDecision {
   if (args.origin === "discord-suggestion") return { kind: "proceed" }
+  if (namedHealthFindingOpen(args) === false) {
+    return { kind: "ignore", reason: "already-recovered" }
+  }
   if (args.origin !== "log" && args.origin !== "health" && args.origin !== "skip") {
     return { kind: "proceed" }
   }
+  if (args.jobs.length === 0) return { kind: "proceed" }
   if (allMappedJobsHealthy(args.jobs, args.health)) {
     return { kind: "ignore", reason: "already-recovered" }
   }
@@ -172,16 +204,21 @@ export function decideLiveRecovery(args: Readonly<{
 
 /**
  * Reopen a terminal fingerprint only when a mapped job is degraded now.
- * Unknown / unmapped jobs stay closed. Operator retry still sets triaged.
+ * Unknown / unmapped jobs stay closed unless a named health finding is open.
+ * Operator retry still sets triaged.
  */
 export function shouldReopenTerminal(args: Readonly<{
   origin?: RemediationIncident["origin"]
   phase: RemediationPhase
   jobs: readonly string[]
   health: LiveHealthView
+  title?: string
+  errorClass?: string
 }>): boolean {
   if (!TERMINAL_REMEDIATION_PHASES.has(args.phase)) return false
   if (args.origin === "discord-suggestion") return false
+  if (namedHealthFindingOpen(args) === true) return true
+  if (args.jobs.length === 0) return false
   return anyMappedJobDegraded(args.jobs, args.health)
 }
 

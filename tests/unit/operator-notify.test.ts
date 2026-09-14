@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   renderRemediationApprovalHost,
   renderRemediationFailureHost,
+  renderRemediationFindingHost,
   renderSuggestionDigestHost,
 } from "../../src/remediation/operator-notify.js"
 import type { RemediationIncident, SuggestionLedgerEntry } from "../../src/remediation/schemas.js"
@@ -82,11 +83,73 @@ describe("operator-notify", () => {
       incident,
       detail: "propose:session failed",
     })
-    expect(text).toContain("Remediation failed rem-4b6d9126a855")
+    expect(text).toContain("rem-4b6d9126a855")
     expect(text).toContain("When comparing Robinhood tokens")
     expect(text).toContain("Propose")
     expect(text).toMatch(/no usable output|session failed/iu)
     expect(text).toContain("not rejected")
+    expect(text).toContain("What to do now:")
+    expect(text).toContain("ops/remote.sh remediations retry rem-4b6d9126a855")
+    expect(text).not.toMatch(/Raw:/u)
+  })
+
+  it("explains systemd diagnose-without-files as a runtime issue with next steps", () => {
+    const incident: RemediationIncident = {
+      schema: 1,
+      incidentId: "rem-c68d2c157197",
+      fingerprint: "fp-test-systemd-01",
+      phase: "failed",
+      createdAt: "2026-09-14T17:06:00.000Z",
+      updatedAt: "2026-09-14T17:07:00.000Z",
+      title: "systemd unit trenchcoat-listener state=activating",
+      severity: "error",
+      attemptCount: 0,
+      originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
+      evidencePaths: [],
+      origin: "health",
+      component: "systemd",
+      errorClass: "systemd-unit-inactive",
+    }
+    const text = renderRemediationFailureHost({
+      incident,
+      detail: "diagnose:viable-without-affected-files",
+    })
+    expect(text).toContain("Diagnose named no files")
+    expect(text).toContain("trenchcoat-listener")
+    expect(text).toContain("runtime issue")
+    expect(text).toContain("What to do now:")
+    expect(text).toContain("systemctl --user status trenchcoat-listener")
+    expect(text).toContain("ops/remote.sh remediations fail rem-c68d2c157197")
+    expect(text).toContain("`rem-c68d2c157197`")
+    expect(text).not.toMatch(/Viable Without Affected Files/u)
+    expect(text).not.toMatch(/Raw:/u)
+  })
+
+  it("renders health findings with unit context and commands", () => {
+    const incident: RemediationIncident = {
+      schema: 1,
+      incidentId: "rem-c68d2c157197",
+      fingerprint: "fp-test-systemd-01",
+      phase: "detected",
+      createdAt: "2026-09-14T17:06:00.000Z",
+      updatedAt: "2026-09-14T17:06:00.000Z",
+      title: "systemd unit trenchcoat-listener state=failed",
+      severity: "error",
+      attemptCount: 0,
+      originMoveRebuilds: 0,
+      preReviewReviseCount: 0,
+      evidencePaths: [],
+      origin: "health",
+      component: "systemd",
+    }
+    const text = renderRemediationFindingHost({ incident })
+    expect(text).toContain("Discord and Telegram listener is not healthy")
+    expect(text).toContain("trenchcoat-listener")
+    expect(text).toContain("What to do now:")
+    expect(text).toContain("ops/remote.sh health")
+    expect(text).toContain("`rem-c68d2c157197`")
+    expect(text).not.toMatch(/remediation finding rem-/u)
   })
 
   it("renders approval cards with plain-language sections and exact commands", () => {

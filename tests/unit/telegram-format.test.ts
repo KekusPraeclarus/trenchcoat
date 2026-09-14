@@ -50,6 +50,17 @@ describe("deslugNarrativeLabelsInText", () => {
       "- **rh-chain-meme-rotation — peaking**\nsee https://example.com/foo-bar",
     )).toBe("- **RH Chain Meme Rotation — peaking**\nsee https://example.com/foo-bar")
   })
+
+  it("keeps rem ids, keepalive units, and code spans", () => {
+    expect(deslugNarrativeLabelsInText(
+      "remediation finding rem-c68d2c157197: systemd unit trenchcoat-listener state=activating",
+    )).toBe(
+      "remediation finding rem-c68d2c157197: systemd unit trenchcoat-listener state=activating",
+    )
+    expect(deslugNarrativeLabelsInText(
+      "Diagnose named no files. Run `ops/remote.sh remediations fail rem-c68d2c157197`.",
+    )).toContain("`ops/remote.sh remediations fail rem-c68d2c157197`")
+  })
 })
 
 describe("markdownToTelegramHtml", () => {
@@ -83,6 +94,16 @@ describe("formatTelegramOperatorText", () => {
     expect(html).toBe(
       "- <b>RH Chain Meme Rotation — peaking</b> the next few days",
     )
+  })
+
+  it("does not rewrite rem ids when formatting operator text", () => {
+    const html = formatTelegramOperatorText(
+      "Discord listener is not healthy.\nId: `rem-c68d2c157197`\nUnit: `trenchcoat-listener`",
+    )
+    expect(html).toContain("rem-c68d2c157197")
+    expect(html).toContain("trenchcoat-listener")
+    expect(html).not.toContain("Rem C68d2c157197")
+    expect(html).not.toContain("Trenchcoat Listener")
   })
 
   it("does not rewrite natural watch prose", () => {

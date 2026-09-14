@@ -465,17 +465,27 @@ export async function collectRemediationIntake(args: Readonly<{
   }
 }
 
+export function originFromComponent(
+  component: string | undefined,
+): NonNullable<RemediationIncident["origin"]> {
+  if (component === "log") return "log"
+  if (component === "skip") return "skip"
+  if (
+    component === "health"
+    || component === "runs"
+    || component === "systemd"
+    || component === "discord"
+  ) {
+    return "health"
+  }
+  return "other"
+}
+
 export function candidateToIncident(
   candidate: IntakeCandidate,
   nowIso: string,
 ): RemediationIncident {
-  const origin = candidate.component === "health" || candidate.component === "runs"
-    ? "health" as const
-    : candidate.component === "log"
-      ? "log" as const
-      : candidate.component === "skip"
-        ? "skip" as const
-        : "other" as const
+  const origin = originFromComponent(candidate.component)
   return {
     schema: 1,
     incidentId: candidate.incidentId,

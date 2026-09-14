@@ -45,18 +45,27 @@ export function deslugNarrativeLabel(slug: string): string {
   }).join(" ")
 }
 
-/** Replace kebab narrative slugs with title-case labels; leave URLs alone */
+const CODE_SPAN_IN_TEXT = /`[^`\n]+`/gu
+const REMEDIATION_ID_IN_TEXT = /\brem-[a-z0-9]{3,64}\b/gu
+const TRENCHCOAT_UNIT_IN_TEXT = /\btrenchcoat(?:-[a-z0-9]+)+\b/gu
+
+/** Replace kebab narrative slugs with title-case labels. Keep URLs, code, rem ids, and units. */
 export function deslugNarrativeLabelsInText(text: string): string {
-  const urls: string[] = []
-  const withUrlSlots = text.replace(URL_IN_TEXT, (url) => {
-    const i = urls.length
-    urls.push(url)
+  const slots: string[] = []
+  const park = (value: string): string => {
+    const i = slots.length
+    slots.push(value)
     return `\u0001${i}\u0001`
-  })
-  const deslugged = withUrlSlots.replace(NARRATIVE_SLUG_IN_TEXT, (match) =>
+  }
+  const parked = text
+    .replace(URL_IN_TEXT, park)
+    .replace(CODE_SPAN_IN_TEXT, park)
+    .replace(REMEDIATION_ID_IN_TEXT, park)
+    .replace(TRENCHCOAT_UNIT_IN_TEXT, park)
+  const deslugged = parked.replace(NARRATIVE_SLUG_IN_TEXT, (match) =>
     deslugNarrativeLabel(match),
   )
-  return deslugged.replace(/\u0001(\d+)\u0001/gu, (_m, i: string) => urls[Number(i)] ?? "")
+  return deslugged.replace(/\u0001(\d+)\u0001/gu, (_m, i: string) => slots[Number(i)] ?? "")
 }
 
 export type NarrativeLabelSource = Readonly<{

@@ -29,6 +29,7 @@ import { decidePreReviewLoop } from "./pre-review-loop.js"
 import {
   candidateToIncident,
   collectRemediationIntake,
+  originFromComponent,
 } from "./intake.js"
 import {
   incidentArtifactDir,
@@ -163,18 +164,14 @@ export async function scanRemediationIncidents(args: Readonly<{
       ...candidate.evidence.flatMap((item) => item.path ? jobsForLogPath(item.path) : []),
     ]
     const uniqueJobs = [...new Set(candidateJobs)]
-    const origin = candidate.component === "health"
-      ? "health" as const
-      : candidate.component === "log"
-        ? "log" as const
-        : candidate.component === "skip"
-          ? "skip" as const
-          : "other" as const
+    const origin = originFromComponent(candidate.component)
     if (existingAny && !shouldReopenTerminal({
       origin,
       phase: existingAny.phase,
       jobs: uniqueJobs.length > 0 ? uniqueJobs : jobsForIncident(existingAny),
       health: intake.liveHealth,
+      title: existingAny.title,
+      ...(existingAny.errorClass ? { errorClass: existingAny.errorClass } : {}),
     })) {
       continue
     }
@@ -183,6 +180,8 @@ export async function scanRemediationIncidents(args: Readonly<{
       origin,
       jobs: uniqueJobs,
       health: intake.liveHealth,
+      title: candidate.title,
+      errorClass: candidate.errorClass,
     })
     if (recovered.kind === "ignore") continue
 
@@ -238,9 +237,8 @@ export async function scanRemediationIncidents(args: Readonly<{
       candidate.severity === "error"
       && (candidate.component === "health" || candidate.component === "systemd" || candidate.component === "discord")
     ) {
-      await notifyOperator(
-        `remediation finding ${incident.incidentId}: ${incident.title.slice(0, 200)}`,
-      )
+      const { renderRemediationFindingHost } = await import("./operator-notify.js")
+      await notifyOperator(renderRemediationFindingHost({ incident }))
     }
 
     const triage = await runTriageAgent({
@@ -562,6 +560,8 @@ async function runRemediationPhases(args: Readonly<{
         origin: record.origin,
         jobs: jobsForIncident(record),
         health: liveHealthFromSnapshot(snapshot),
+        title: record.title,
+        ...(record.errorClass ? { errorClass: record.errorClass } : {}),
       })
       if (recovered.kind === "ignore") {
         await setPhase("ignored", {
@@ -846,10 +846,11 @@ async function runRemediationPhases(args: Readonly<{
           proposedPaths: confinement.changed,
           riskLevel: "high",
         })
-        await notifyOperator(
-          `remediation ${record.incidentId} path drift — new approval required\n`
-          + `files: ${confinement.changed.join(", ")}`,
-        )
+        const { renderRemediationPathDriftHost } = await import("./operator-notify.js")
+        await notifyOperator(renderRemediationPathDriftHost({
+          incidentId: record.incidentId,
+          files: confinement.changed,
+        }))
         return
       }
       throw new Error("path-drift")
@@ -962,17 +963,20 @@ async function runRemediationPhases(args: Readonly<{
         await setPhase("failed", {
           terminalError: `rollback-failed:${rb.detail ?? ""}`.slice(0, 500),
         })
-        await notifyOperator(
-          `URGENT: remediation rollback failed for ${record.incidentId}. Automation halted.`,
-        )
+        const { renderRemediationHaltedHost } = await import("./operator-notify.js")
+        await notifyOperator(renderRemediationHaltedHost({
+          incidentId: record.incidentId,
+          reason: "rollback",
+        }))
         throw new Error(`rollback-failed:${rb.detail ?? ""}`)
       }
       await setPhase("rolled-back", {
         terminalError: deploy.detail?.slice(0, 500),
       })
-      await notifyOperator(
-        `remediation ${record.incidentId} rolled back after deploy failure`,
-      )
+      const { renderRemediationRolledBackHost } = await import("./operator-notify.js")
+      await notifyOperator(renderRemediationRolledBackHost({
+        incidentId: record.incidentId,
+      }))
       return
     }
 
@@ -995,9 +999,11 @@ async function runRemediationPhases(args: Readonly<{
           automationHaltReason: rb.detail ?? "health-rollback-failed",
           activeIncidentId: null,
         })
-        await notifyOperator(
-          `URGENT: remediation health rollback failed for ${record.incidentId}. Automation halted.`,
-        )
+        const { renderRemediationHaltedHost } = await import("./operator-notify.js")
+        await notifyOperator(renderRemediationHaltedHost({
+          incidentId: record.incidentId,
+          reason: "health-rollback",
+        }))
         throw new Error(`health-rollback-failed:${rb.detail ?? ""}`)
       }
       await setPhase("rolled-back", { terminalError: health.detail })
@@ -1104,9 +1110,11 @@ async function runRemediationPhases(args: Readonly<{
           ? { revalidationRound: audit.revalidationRound }
           : {}),
       })
-      await notifyOperator(
-        `remediation ${record.incidentId} needs attention: ${audit.detail ?? "post-fix-audit"}`,
-      )
+      const { renderRemediationAttentionHost } = await import("./operator-notify.js")
+      await notifyOperator(renderRemediationAttentionHost({
+        incidentId: record.incidentId,
+        detail: audit.detail ?? "post-fix audit needs a decision",
+      }))
       return
     }
 
@@ -1136,12 +1144,14 @@ async function runRemediationPhases(args: Readonly<{
       schema: 1,
       incidentIds: deferred.incidentIds.filter((id) => id !== record.incidentId),
     })
-    await notifyOperator(
-      `remediation completed ${record.incidentId} @ ${candidateSha}`
-        + (audit.correctionEventIds?.length
-          ? ` corrections=${audit.correctionEventIds.length}`
-          : ""),
-    )
+    const { renderRemediationCompletedHost } = await import("./operator-notify.js")
+    await notifyOperator(renderRemediationCompletedHost({
+      incidentId: record.incidentId,
+      commit: candidateSha,
+      ...(audit.correctionEventIds?.length
+        ? { correctionCount: audit.correctionEventIds.length }
+        : {}),
+    }))
   }
 }
 

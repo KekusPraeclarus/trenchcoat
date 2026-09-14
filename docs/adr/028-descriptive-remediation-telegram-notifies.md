@@ -49,3 +49,11 @@ Cursor session glitch.
 - Persist admitted `queued-waiting` incidents even when the scan finds no new
   Discord threads (empty `pendingThreads` early-return must still
   `store.save(incidentsFile)`).
+
+## Amendment (2026-09-14)
+
+Finding and failure DMs are host-only templates. They state what happened,
+what it means, and the next `ops/remote.sh` commands. They skip polish by
+default. Telegram format parks `rem-` ids, `trenchcoat-` units, and code
+spans so kebab deslug cannot title-case them. Approval cards and suggestion
+digests may still polish.

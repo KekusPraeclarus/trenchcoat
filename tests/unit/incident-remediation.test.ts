@@ -44,6 +44,7 @@ import { decidePreReviewLoop } from "../../src/remediation/pre-review-loop.js"
 import {
   candidateToIncident,
   isDeterministicIgnore,
+  originFromComponent,
 } from "../../src/remediation/intake.js"
 import {
   clearPostBuildArtifacts,
@@ -507,7 +508,7 @@ describe("live recovery floors", () => {
       findings: [{
         code: "systemd-unit-inactive",
         component: "systemd",
-        summary: "systemd unit trenchcoat-x-scan state=deactivating",
+        summary: "systemd unit trenchcoat-x-scan state=failed",
       }],
     }), "list-scan")).toBe(false)
   })
@@ -543,6 +544,49 @@ describe("live recovery floors", () => {
       jobs: [],
       health: healthyListScan(),
     })).toBe(false)
+  })
+
+  it("ignores a recovered systemd unit even with origin other", () => {
+    expect(decideLiveRecovery({
+      origin: "other",
+      jobs: [],
+      health: healthyListScan(),
+      title: "systemd unit trenchcoat-listener state=activating",
+      errorClass: "systemd-unit-inactive",
+    })).toEqual({ kind: "ignore", reason: "already-recovered" })
+  })
+
+  it("proceeds while the named systemd unit is still down", () => {
+    expect(decideLiveRecovery({
+      origin: "health",
+      jobs: [],
+      health: healthyListScan({
+        findings: [{
+          code: "systemd-unit-inactive",
+          component: "systemd",
+          summary: "systemd unit trenchcoat-listener state=failed",
+        }],
+      }),
+      title: "systemd unit trenchcoat-listener state=failed",
+      errorClass: "systemd-unit-inactive",
+    })).toEqual({ kind: "proceed" })
+  })
+
+  it("reopens a failed systemd fingerprint when that unit is down again", () => {
+    expect(shouldReopenTerminal({
+      origin: "other",
+      phase: "failed",
+      jobs: [],
+      health: healthyListScan({
+        findings: [{
+          code: "systemd-unit-inactive",
+          component: "systemd",
+          summary: "systemd unit trenchcoat-listener state=failed",
+        }],
+      }),
+      title: "systemd unit trenchcoat-listener state=failed",
+      errorClass: "systemd-unit-inactive",
+    })).toBe(true)
   })
 
   it("removes leftover post-build artifacts", () => {
@@ -585,6 +629,21 @@ describe("outcomes-settle catch-up intake", () => {
       severity: "error",
       evidence: [],
     }, "2026-08-15T08:47:00.000Z")
+    expect(incident.origin).toBe("health")
+  })
+
+  it("maps systemd and discord components to health origin", () => {
+    expect(originFromComponent("systemd")).toBe("health")
+    expect(originFromComponent("discord")).toBe("health")
+    const incident = candidateToIncident({
+      fingerprint: "abc123def456abc123def457",
+      incidentId: "rem-abc123def457",
+      component: "systemd",
+      errorClass: "systemd-unit-inactive",
+      title: "systemd unit trenchcoat-listener state=failed",
+      severity: "error",
+      evidence: [],
+    }, "2026-09-14T17:06:00.000Z")
     expect(incident.origin).toBe("health")
   })
 })

@@ -2,7 +2,7 @@
 description: Chat agent module - Telegram bridge to a minimal orchestrator session that proposes confirmation-gated research, keeping the conversational context window small.
 scope: module
 status: active
-last_verified: 2026-09-08
+last_verified: 2026-09-14
 read_when:
   - Editing src/chat/ or the agent's chat / deep-research skills.
   - Changing how conversations trigger research or how replies leave the machine.
@@ -122,6 +122,7 @@ little as possible itself:
   paths / artifact filenames (`reports/…`, `decision-proposals.json`, …), maps a
   safe markdown subset (`**bold**`, `#` headers, `` `code` ``) to Telegram HTML
   (`parse_mode=HTML`), and falls back to plain stripped text on Bot API reject.
+  Deslug parks `rem-` ids, `trenchcoat-` units, and code spans.
   Router/broadcast delivery stays plain. Final `sendMessage` never truncates:
   `splitTelegramText` chunks at ~3800 chars (`1/n` …). Overlong replies also land
   under `reports/chat/` with a summary that does **not** cite the path in chat.

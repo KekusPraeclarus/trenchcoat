@@ -39,6 +39,19 @@ import {
 
 export const HEALTH_SNAPSHOT_SCHEMA = 1 as const
 
+const SYSTEMD_OK_OR_TRANSIENT = new Set([
+  "active",
+  "activating",
+  "deactivating",
+  "reloading",
+])
+
+/** True for failed/inactive/unknown. Start and stop races are not findings. */
+export function systemdActiveStateIsDegraded(state: string): boolean {
+  if (!state) return false
+  return !SYSTEMD_OK_OR_TRANSIENT.has(state)
+}
+
 /** Skip ledger pairs that are expected in normal operation — excluded from recurring-skip warnings */
 export const EXPECTED_RECURRING_SKIPS: ReadonlySet<string> = Object.freeze(new Set([
   "research/daily-cap",
@@ -1235,7 +1248,7 @@ export async function buildHealthSnapshot(args: Readonly<{
         { encoding: "utf8", timeout: 2_000 },
       )
       const state = (result.stdout ?? "").trim()
-      if (state && state !== "active") {
+      if (systemdActiveStateIsDegraded(state)) {
         findings.push({
           code: "systemd-unit-inactive",
           severity: "error",

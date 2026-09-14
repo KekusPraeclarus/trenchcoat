@@ -13,6 +13,7 @@ import {
   healthSnapshotLines,
   skipLedgerLines,
   toHealthJsonPayload,
+  systemdActiveStateIsDegraded,
 } from "../../src/orchestrator/health.js"
 import { recordJobSkip } from "../../src/orchestrator/preconditions.js"
 
@@ -582,5 +583,21 @@ describe("buildHealthSnapshot", () => {
     expect(health.findings.some((f) => f.code === "x-session-held")).toBe(true)
     expect(formatHealthText(health)).toContain("HELD challenge since 2026-08-28T13:37:06.707Z")
     expect(healthCreatesReviewScope(health)).toBe(true)
+  })
+})
+
+describe("systemdActiveStateIsDegraded", () => {
+  it("ignores active and start/stop races", () => {
+    expect(systemdActiveStateIsDegraded("")).toBe(false)
+    expect(systemdActiveStateIsDegraded("active")).toBe(false)
+    expect(systemdActiveStateIsDegraded("activating")).toBe(false)
+    expect(systemdActiveStateIsDegraded("deactivating")).toBe(false)
+    expect(systemdActiveStateIsDegraded("reloading")).toBe(false)
+  })
+
+  it("flags failed and inactive units", () => {
+    expect(systemdActiveStateIsDegraded("failed")).toBe(true)
+    expect(systemdActiveStateIsDegraded("inactive")).toBe(true)
+    expect(systemdActiveStateIsDegraded("unknown")).toBe(true)
   })
 })
