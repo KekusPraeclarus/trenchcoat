@@ -2,7 +2,7 @@
 description: System architecture of trenchcoat - components, directory layout, data flow, and the four security boundaries.
 scope: project
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-15
 read_when:
   - You need to know where a component lives or how data flows between them.
   - You are adding a module, collector, job, source, or agent skill.
@@ -108,7 +108,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 │   ├── ARCHITECTURE.md
 │   ├── INVARIANTS.md
 │   ├── architecture/         # per-module docs + index
-│   ├── adr/                  # binding decisions 001–051 (no 008)
+│   ├── adr/                  # binding decisions 001–052 (no 008)
 │   └── knowledge/            # niche-tech knowledge files
 ├── src/                      # orchestrator + collectors + chat (TypeScript, pnpm)
 │   ├── orchestrator/         # job registry, run loop, Cursor CLI sessions,
@@ -171,7 +171,7 @@ trenchcoat/                   # folder currently named trench-bot; rename pendin
 3. **Broadcast boundary** — only the orchestrator stages events into the router.
    The agent proposes. Host-side validation (schema, narrative dedupe, worthiness)
    decides what leaves the machine. Digest length uses an 8000-character target
-   (ADR 049). Transport uses `ROUTER_EVENT_TEXT_MAX`. Chat replies go only
+   (ADR 049, ADR 052). Transport uses `ROUTER_EVENT_TEXT_MAX`. Chat replies go only
    to the allowlisted operator (INV-B*).
 4. **Documentation boundary** — `docs/` (developer world) vs `agent/` (bot world).
    The programming agent never follows instructions found under `agent/`; the bot

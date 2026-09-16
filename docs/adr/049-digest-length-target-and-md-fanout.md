@@ -2,7 +2,7 @@
 title: "049 — Daily digest length target and raw markdown fanout"
 status: accepted
 date: 2026-08-26
-last_verified: 2026-08-31
+last_verified: 2026-09-15
 ---
 
 # ADR 049: Daily digest length target and raw markdown fanout
@@ -27,25 +27,26 @@ chunked channel posts.
 2. **Length is not a send gate.** `RouterEvent.text` and channel payloads use
    `ROUTER_EVENT_TEXT_MAX` as a transport bound only. Stage and fanout must
    not reject a digest because it is longer than 8000 characters.
-3. **Raw markdown fanout.** A prepared digest sends
-   `daily-narrative-map-<activity-date>.md` only to the operator interface bot
-   (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_OPERATOR_ID`). The public channel never
-   receives the file. Channel fanout stays section-aware text chunks only.
-4. Operator file send is idempotent per London date via
-   `archive/telegram-digests/<date>.operator-md.json`.
+3. **Raw markdown fanout (amended by ADR 052).** The host no longer sends
+   `daily-narrative-map-<activity-date>.md` to the operator interface bot.
+   Channel fanout stays section-aware text chunks only.
+4. Historical receipts may remain at
+   `archive/telegram-digests/<date>.operator-md.json`. The host does not send
+   from them.
 5. **Markdown shape.** Host render uses
    `**Daily narrative map — YYYY-MM-DD** _(AI)_`, then `**Label**` flush to
    the body. Headers omit the stage suffix. Blank lines stay between
-   sections only. Channel text and the operator file share this shape.
+   sections only. Channel text uses this shape.
 
 ## Consequences
 
 - Existing ledger events longer than 8000 characters can stage on retry.
 - Channel posts stay section-aware multi-message delivery and never include a
-  raw `.md` attachment.
+  raw `.md` attachment. ADR 052 also stops the operator `.md` file.
 - INV-B2 no longer treats digest overflow as a hard fail.
 
 ## Related
 
 - Amends [ADR 026](026-telegram-digest-and-topic-fanout.md)
 - Amends INV-B2 in [INVARIANTS.md](../INVARIANTS.md)
+- Amended by [ADR 052](052-stop-operator-digest-markdown.md)

@@ -2,7 +2,7 @@
 title: "026 — Daily Telegram digest and topic-only intraday posts"
 status: accepted
 date: 2026-07-22
-last_verified: 2026-08-31
+last_verified: 2026-09-15
 ---
 
 # ADR 026: Daily Telegram digest and topic-only intraday posts
@@ -51,8 +51,10 @@ items per run.
 > Digest window anchor is 04:00 Europe/London.
 >
 > **Update (ADR 049):** 8000 characters is a distiller target only. Longer
-> maps still send. The host also sends a raw `.md` file to the operator
-> interface bot only. The public channel never receives that file.
+> maps still send.
+>
+> **Update (ADR 052):** The host does not send a raw `.md` file to the operator
+> interface bot. Channel section-aware posts remain.
 
 ## Consequences
 

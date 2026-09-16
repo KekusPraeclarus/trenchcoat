@@ -2,7 +2,7 @@
 description: Provider knowledge — Telegram preview and GramJS listener.
 scope: project
 status: active
-last_verified: 2026-09-14
+last_verified: 2026-09-15
 ---
 
 # Telegram
@@ -31,12 +31,11 @@ last_verified: 2026-09-14
   narratives that had a host-approved Telegram development in the prior
   04:00→04:00 London window (title uses the activity day, not the delivery
   day; one paragraph per section; host may send multiple Telegram messages
-  without page labels but never splits a section). The same text also lands
-  as `daily-narrative-map-<activity-date>.md` on the operator interface bot
-  only. The public channel never receives that file. File shape: title
-  `**Daily narrative map — YYYY-MM-DD** _(AI)_`, then `**Label**` flush to
-  one paragraph with no stage suffix. Distiller aims for ~8000
-  characters. Longer maps still send.
+  without page labels but never splits a section). Channel title is
+  `**Daily narrative map — YYYY-MM-DD** _(AI)_`. Labels omit the stage suffix.
+  Distiller aims for ~8000
+  characters. Longer maps still send. The host does not send a `.md` file to
+  the operator interface bot (ADR 052).
   Quiet actives are omitted rather than padded with
   "nothing happened". Discord receives the same rendered text as Telegram
   leaders (ADR 041); daily digest stays Telegram-only

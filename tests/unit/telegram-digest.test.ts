@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { describe, expect, it } from "vitest"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RouterEventSchema } from "../../src/contracts/schemas.js"
@@ -15,7 +15,6 @@ import {
   prepareTelegramDigest,
   previousLondonDate,
   resolveDigestLondonDate,
-  sendDigestOperatorMarkdown,
   stageTelegramDigestEvent,
 } from "../../src/orchestrator/telegram-digest.js"
 
@@ -465,41 +464,6 @@ describe("buildNarrativeDigestRouterEvent", () => {
     const outbox = new Outbox(join(layout.routerOutbox, RUN_ID))
     expect(outbox.list()).toHaveLength(1)
     expect(outbox.list()[0]?.text.length).toBeGreaterThan(8_000)
-  })
-})
-
-describe("sendDigestOperatorMarkdown", () => {
-  it("sends a raw markdown file once per London date", async () => {
-    const layout = await ensureArchive(mkdtempSync(join(tmpdir(), "tc-digest-op-")))
-    const text = "**Daily narrative map — 2026-07-17**\n\n**RH — peaking**\n\nStill live."
-    const urls: string[] = []
-    const fetcher = vi.fn(async (url: string) => {
-      urls.push(url)
-      return new Response(JSON.stringify({ result: { message_id: 9 } }), { status: 200 })
-    })
-    const first = await sendDigestOperatorMarkdown({
-      layout,
-      londonDate: "2026-07-18",
-      text,
-      nowIso: "2026-07-18T03:00:00.000Z",
-      fetcher,
-      token: "op-token",
-      chatId: "42",
-    })
-    const second = await sendDigestOperatorMarkdown({
-      layout,
-      londonDate: "2026-07-18",
-      text,
-      nowIso: "2026-07-18T03:05:00.000Z",
-      fetcher,
-      token: "op-token",
-      chatId: "42",
-    })
-    expect(first).toBe("sent")
-    expect(second).toBe("reused")
-    expect(urls).toHaveLength(1)
-    expect(urls[0]).toContain("/sendDocument")
-    expect(existsSync(join(layout.telegramDigests, "2026-07-18.operator-md.json"))).toBe(true)
   })
 })
 

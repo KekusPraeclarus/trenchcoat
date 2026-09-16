@@ -444,7 +444,7 @@ describe("daily digest rendering", () => {
     ])
   })
 
-  it("renders the operator markdown shape: AI title, no stage, flush body", () => {
+  it("renders the digest markdown shape: AI title, no stage, flush body", () => {
     const rendered = renderDailyDigestCompactFallback({
       londonDate: "2026-08-25",
       narratives: [{
