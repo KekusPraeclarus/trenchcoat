@@ -48,8 +48,8 @@ plus keepalive plists for the GramJS listener and the broadcast router. Cadences
 | `pump-scan` | every 30m (host-only; skips unless `pump.enabled` + session + gates) |
 | `discord-wallet-signal-scan` | every 5m (host-only REST poll; skips unless `chat.discord.wallet_signals.enabled`; requires `DISCORD_RESEARCH_BOT_TOKEN` + Read Message History on configured channels; never Send; ship with `shadow_mode: true`, flip to `false` after parse verification on VPS) |
 | `fomo-x-source-review` | every 2h (one nomination; requires `fomo.x_source_review.enabled`) |
-| `fomo-narrative-source-scan` | every 6h (probation live posts; `narrative_source_probation`) |
-| `narrative-source-review` | daily (promote/demote + gated follow) |
+| `fomo-narrative-source-scan` | 00/06/12/18 UTC (probation live posts; `narrative_source_probation`) |
+| `narrative-source-review` | daily 19:00 UTC (promote/demote + gated follow) |
 | `delivery-retry` | every 15m (host-only; retries staged router ingress without a terminal receipt; skips when router env missing or backlog empty) |
 | `telegram-digest` | **VPS systemd only** — `*-*-* 04:00:00 Europe/London` (host-only daily narrative map; requires `broadcast.telegram_digest.enabled`; no Mac launchd timer) |
 

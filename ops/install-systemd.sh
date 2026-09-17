@@ -444,6 +444,10 @@ EOF
 )
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would write $out ($calendar)"
+    if [ "${TRENCHCOAT_INSTALL_MATERIALIZE:-0}" = "1" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '%s\n' "$body" >"$out"
+    fi
     return
   fi
   printf '%s\n' "$body" >"$out"
@@ -829,8 +833,10 @@ write_interval_job fomo-signal-scan 1200 1
 write_interval_job pump-scan 1800 1
 write_interval_job discord-wallet-signal-scan 300 1
 write_interval_job fomo-x-source-review 7200 1
-write_interval_job fomo-narrative-source-scan 21600 1
-write_interval_job narrative-source-review 86400 1
+write_oneshot_service trenchcoat-job-fomo-narrative-source-scan fomo-narrative-source-scan "$BIN_DIR/run-precheck fomo-narrative-source-scan"
+write_calendar_timer trenchcoat-job-fomo-narrative-source-scan "*-*-* 00,06,12,18:00:00"
+write_oneshot_service trenchcoat-job-narrative-source-review narrative-source-review "$BIN_DIR/run-precheck narrative-source-review"
+write_calendar_timer trenchcoat-job-narrative-source-review "*-*-* 19:00:00"
 write_interval_job delivery-retry 900 1
 write_oneshot_service trenchcoat-job-telegram-digest telegram-digest "$BIN_DIR/run-precheck telegram-digest"
 write_calendar_timer trenchcoat-job-telegram-digest "*-*-* 04:00:00 Europe/London"

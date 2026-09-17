@@ -312,6 +312,18 @@ export async function evaluateJobPreconditions(args: Readonly<{
     }
   }
 
+  if (args.job === "fomo-narrative-source-scan" || args.job === "narrative-source-review") {
+    let cfg
+    try {
+      cfg = loadConfig()
+    } catch {
+      return { skip: true, reason: "fomo-disabled" }
+    }
+    if (!cfg.fomo.enabled || !cfg.fomo.narrative_source_probation.enabled) {
+      return { skip: true, reason: "fomo-disabled" }
+    }
+  }
+
   if (args.job === "pump-scan") {
     let cfg
     try {

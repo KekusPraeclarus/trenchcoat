@@ -107,6 +107,8 @@ export const KEY_HEALTH_JOBS: readonly JobName[] = Object.freeze([
   "wallet-review",
   "outcomes-settle",
   "source-list-review",
+  "fomo-narrative-source-scan",
+  "narrative-source-review",
   "fc-source-review",
   "harness-improve",
   "harness-meta-improve",
