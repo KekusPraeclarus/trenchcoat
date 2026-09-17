@@ -31,7 +31,7 @@ no LLM calls, no decisions — so a run is reproducible from its inputs.
 
 Authenticated SPA scrape under `src/collectors/fomo/`. Host jobs:
 
-- `fomo-trader-sync` (6h) — FOMO-platform follows plus linked-X nominations (no wallets). Follow boots the token route, then the profile. Failed follows cool for 24 hours.
+- `fomo-trader-sync` (6h) — FOMO-platform follows plus linked-X nominations (no wallets). Leaderboard opens `/leaderboard` and clicks the window tab. Follow boots the token route, then the profile. Failed follows cool for 24 hours.
 - `fomo-signal-scan` (20m) — feed/trending/alerts → dated signals + bounded research enqueue
 - `fomo-x-source-review` (6h) — one pending linked-X nomination → bounded X history + isolated classifier
 - `fomo-narrative-source-scan` (00/06/12/18 UTC) — live (≤6h) posts from narrative-probation handles. Backfills classified narrative/both handles first.

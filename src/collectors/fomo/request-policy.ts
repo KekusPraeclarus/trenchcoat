@@ -5,6 +5,9 @@ export type FomoRequestDecision =
 /** Stable boot route. Direct /profile stays on a spinner until this loads */
 export const FOMO_BOOT_PATH = "/tokens/solana/2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
 
+/** Trader leaderboard UI. The token boot route no longer fetches this API */
+export const FOMO_LEADERBOARD_PATH = "/leaderboard"
+
 const FOMO_HOSTS = new Set([
   "fomo.family",
   "www.fomo.family",
@@ -65,6 +68,21 @@ export function isFomoFeedCaptureUrl(url: string): boolean {
     const parsed = new URL(url)
     if (parsed.hostname !== "prod-api.fomo.family") return false
     return parsed.pathname === "/feed/token"
+  } catch {
+    return false
+  }
+}
+
+/** Trader list only. Skip clans and per-user `/v2/users/{id}/leaderboard`. */
+export function isFomoLeaderboardCaptureUrl(
+  url: string,
+  timeframe: "24h" | "7d" | "30d" | "all" = "7d",
+): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== "prod-api.fomo.family") return false
+    if (timeframe === "all") return parsed.pathname === "/v2/leaderboard"
+    return parsed.pathname === `/v2/leaderboard/${timeframe}`
   } catch {
     return false
   }

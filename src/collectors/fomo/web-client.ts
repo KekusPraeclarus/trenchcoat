@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { type Browser, type BrowserContext, type Page, type Response } from "playwright"
 import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertFomoProfileReady, fomoProfileDir } from "../social/fomo-auth.js"
-import { classifyFomoRequest, FOMO_BOOT_PATH, isFomoAlertsCaptureUrl, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
+import { classifyFomoRequest, FOMO_BOOT_PATH, FOMO_LEADERBOARD_PATH, isFomoAlertsCaptureUrl, isFomoFeedCaptureUrl, isFomoLeaderboardCaptureUrl, isFomoProfileUserHandleUrl, type FomoAllowedPost } from "./request-policy.js"
 import {
   completeAttempt,
   loadUsageDay,
@@ -49,9 +49,11 @@ async function defaultSleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function timeframePath(timeframe: "24h" | "7d" | "30d" | "all"): string {
-  if (timeframe === "all") return "/v2/leaderboard"
-  return `/v2/leaderboard/${timeframe}`
+function leaderboardWindowLabel(timeframe: "24h" | "7d" | "30d" | "all"): RegExp {
+  if (timeframe === "24h") return /^24h$/iu
+  if (timeframe === "30d") return /^30d$/iu
+  if (timeframe === "all") return /^all$/iu
+  return /^7d$/iu
 }
 
 export class FomoWebClient {
@@ -261,19 +263,22 @@ export class FomoWebClient {
   }> = {}): Promise<FomoLeaderboardEntry[]> {
     const observedAt = this.nowIso()
     const timeframe = args.timeframe ?? "7d"
-    const apiPath = timeframePath(timeframe)
     const hits = await this.navigateAndCapture(
       "leaderboard",
-      this.opts.bootPath ?? FOMO_BOOT_PATH,
-      (url) => {
+      FOMO_LEADERBOARD_PATH,
+      (url) => isFomoLeaderboardCaptureUrl(url, timeframe),
+      6_000,
+      async (page) => {
+        await page.evaluate(`(() => {
+          const nodes = Array.from(document.querySelectorAll(".mobile-blocker"))
+          for (const el of nodes) el.setAttribute("style", "display:none")
+        })()`)
         try {
-          const parsed = new URL(url)
-          if (parsed.hostname !== "prod-api.fomo.family") return false
-          return timeframe === "all"
-            ? parsed.pathname === "/v2/leaderboard"
-            : parsed.pathname === apiPath
+          await page.getByRole("button", { name: leaderboardWindowLabel(timeframe) }).first()
+            .click({ timeout: 10_000 })
+          await page.waitForTimeout(6_000)
         } catch {
-          return false
+          // Keep hits if the window tab is missing
         }
       },
     )

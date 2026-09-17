@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { classifyFomoRequest, isFomoAlertsCaptureUrl, isFomoFeedCaptureUrl, isFomoProfileUserHandleUrl } from "../../src/collectors/fomo/request-policy.js"
+import { classifyFomoRequest, isFomoAlertsCaptureUrl, isFomoFeedCaptureUrl, isFomoLeaderboardCaptureUrl, isFomoProfileUserHandleUrl } from "../../src/collectors/fomo/request-policy.js"
 
 describe("fomo request policy", () => {
   it("allows read traffic on fomo and privy", () => {
@@ -28,6 +28,19 @@ describe("fomo request policy", () => {
     expect(isFomoAlertsCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity")).toBe(true)
     expect(isFomoAlertsCaptureUrl("https://prod-api.fomo.family/feed/tradingActivity?limit=50")).toBe(true)
     expect(isFomoAlertsCaptureUrl("https://prod-api.fomo.family/feed/token")).toBe(false)
+  })
+
+  it("captures trader leaderboard windows and skips clans and user ranks", () => {
+    expect(isFomoLeaderboardCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/7d")).toBe(true)
+    expect(isFomoLeaderboardCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/7d?limit=50", "7d")).toBe(true)
+    expect(isFomoLeaderboardCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/24h", "24h")).toBe(true)
+    expect(isFomoLeaderboardCaptureUrl("https://prod-api.fomo.family/v2/leaderboard", "all")).toBe(true)
+    expect(isFomoLeaderboardCaptureUrl("https://prod-api.fomo.family/v2/leaderboard/24h", "7d")).toBe(false)
+    expect(isFomoLeaderboardCaptureUrl("https://prod-api.fomo.family/v2/clans/leaderboard", "7d")).toBe(false)
+    expect(isFomoLeaderboardCaptureUrl(
+      "https://prod-api.fomo.family/v2/users/8143a7d0-26a2-5d89-a807-23771ded0e78/leaderboard",
+      "7d",
+    )).toBe(false)
   })
 
   it("captures /v2/users/userHandle/{handle} and skips session /v2/users", () => {

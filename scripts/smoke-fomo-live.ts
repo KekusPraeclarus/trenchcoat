@@ -5,6 +5,7 @@
  */
 import { join } from "node:path"
 import { homedir } from "node:os"
+import { loadConfig } from "../src/lib/config.js"
 import { FomoWebClient } from "../src/collectors/fomo/web-client.js"
 import { fomoSessionExists } from "../src/collectors/social/fomo-auth.js"
 
@@ -38,9 +39,10 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
+  const config = loadConfig()
   const client = new FomoWebClient({
     archiveRoot,
-    dailyNavigationBudget: 200,
+    dailyNavigationBudget: config.fomo.daily_navigation_budget,
     minDelayMs: 800,
     maxDelayMs: 1_200,
     headless: true,

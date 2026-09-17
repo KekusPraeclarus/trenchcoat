@@ -2,7 +2,7 @@
 description: Fomo.family authenticated SPA scrape used as the social-graph bridge for trader nomination and signals. Burner-only; nomination/evidence only.
 scope: knowledge
 status: active
-last_verified: 2026-09-08
+last_verified: 2026-09-17
 source: https://fomo.family
 ---
 
@@ -80,15 +80,21 @@ retries after that window.
   sources (never reuses historical review posts). Backfills classified
   narrative handles when the flag is on.
 - `narrative-source-review` — promote/demote narrative sources; capped follow
-  via existing X engagement executor
+  via existing X engagement executor. Daily 19:00 UTC after deploy pause
+  clears (ADR 053). A run before `probationEndsAt` only stamps
+  `lastEvaluatedAt`.
 - Research dossiers may attach live `fomo-context` from the observation cache
   when `fomo.enabled`
 - `narrative-scan` copies sealed fomo narrative posts into
   `narrative-social-fomo-x` (excludes `purpose=historical-source-evaluation`)
 
-## Live API (2026-08-26)
+## Live API (2026-09-17)
 
-The leaderboard path is still `/v2/leaderboard/7d`.
+The trader leaderboard UI is `/leaderboard`.
+The token boot route no longer fetches this API.
+The page loads `/v2/leaderboard/24h` first.
+A 7D tab click loads `/v2/leaderboard/7d`.
+The capture skips `/v2/clans/leaderboard` and `/v2/users/{id}/leaderboard`.
 The envelope is `{ responseObject: { leaderboard: array } }`.
 The `twitter` field is a string, an object, or null.
 The mapper keeps the row when `userHandle` is present.
@@ -110,12 +116,14 @@ pnpm probe:fomo status --run-id probe-YYYY-MM-DD
 pnpm probe:fomo sanitize --run-id probe-YYYY-MM-DD
 pnpm tsx scripts/probe-fomo-follow.ts
 pnpm tsx scripts/probe-fomo-alerts.ts
+pnpm tsx scripts/probe-fomo-leaderboard.ts
 pnpm tsx scripts/smoke-fomo-live.ts
-pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-09-04.json
+pnpm fomo:install-gates ops/fafo-fomo/gates.operator-override-2026-09-17.json
 ```
 
 `probe:fomo` has no `evaluate` command yet. Live smoke confirms parsers against
 the authenticated SPA; install an operator override or FAFO gates JSON after.
-`probe-fomo-follow.ts` and `probe-fomo-alerts.ts` are extra live probes.
+`probe-fomo-follow.ts`, `probe-fomo-alerts.ts`, and
+`probe-fomo-leaderboard.ts` are extra live probes.
 
 Details: [ops/fafo-fomo/REPORT.md](../../ops/fafo-fomo/REPORT.md).
