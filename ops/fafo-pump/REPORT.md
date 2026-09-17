@@ -29,7 +29,11 @@ Earlier Mac discover on 2026-08-13 still matches the allowlist.
 
 ## Next
 
-Shadow rollout steps: [SHADOW-CANARY.md](SHADOW-CANARY.md).
+Canary rollout steps: [SHADOW-CANARY.md](SHADOW-CANARY.md) § Phase 3.
 
-1. Keep shadow until 2026-09-09 UTC (14 days after the 2026-08-26 clean stretch).
-2. Flip `pump.shadow_mode` to `false` for canary after that window.
+1. Watch the first canary `pump-scan` after 00:00 UTC for engagement
+   receipts and session errors. Remaining 2026-09-17 runs skip on
+   `budget_exhausted`.
+2. Keep likes at 2 / 10 minutes and follows at 3 per run. Keep research
+   enqueue at 3 per UTC day.
+3. Following tab stays skipped until `followedHandles.length` reaches 10.

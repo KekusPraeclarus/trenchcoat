@@ -4,11 +4,12 @@ Operator playbook for the pump.fun feed scan lane (ADR 047). Code lives in
 this repo. Production runs on the Linux VPS only. Mac launchd stays unloaded
 while the VPS is production.
 
-**Status (2026-09-04):** shadow live on VPS — `pump.enabled=true`,
-`pump.shadow_mode=true`. FAFO discover `probe-2026-09-04` is on disk.
+**Status (2026-09-17):** canary live on VPS — `pump.enabled=true`,
+`pump.shadow_mode=false`. FAFO discover `probe-2026-09-04` is on disk.
 Gates are `gates.evaluated-2026-09-04.json` (provider/feed/leaderboard
-`pass`). The clean collect stretch started 2026-08-26. Wait until
-2026-09-09 UTC before flipping `shadow_mode`.
+`pass`). Shadow ran from 2026-08-26 through 2026-09-17. First canary
+collect is after the next UTC day rollover (daily 200-nav budget is
+already spent today).
 
 Related: [REPORT.md](REPORT.md) (API shapes), [docs/knowledge/pump-fun.md](../../docs/knowledge/pump-fun.md),
 [ADR 047](../../docs/adr/047-pump-feed-scan.md).
