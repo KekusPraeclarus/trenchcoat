@@ -2,7 +2,7 @@
 description: Host-owned harness improvement — policy lane (ADR 005) and shadow improver-config meta lane (ADR 039), sealed-only inputs, mining/manifesto/keep/prior-attempts, operator promote.
 scope: module
 status: active
-last_verified: 2026-08-10
+last_verified: 2026-09-17
 read_when:
   - Editing src/harness/**, decision proposals, or canary assignment.
   - Changing how sealed audits feed policy experiments or improver-config trials.
@@ -232,10 +232,13 @@ block idle. `wait-idle` first fails orphaned incomplete journals (pre-seal + no
 lock + ≥30m, or any running ≥6h).
 
 `ops/install-launchd.sh` / `ops/install-systemd.sh` set a deploy pause, stop
-scheduled jobs, wait for idle (default 30m), reload, then clear pause and
-kickstart deferred jobs. Abort restores schedulers; pause files older than 45m
-auto-clear. While paused, `runJob` exits 3. Escape hatch: `--skip-agent-wait`.
-Operator probe: `tc harness wait-idle`.
+scheduled jobs, wait for idle (default 30m), and reload. systemd enables timer
+units during pause, then clears pause and starts timers. Persistent calendar
+catch-up starts only after the pause file is gone. Deferred oneshots use
+`--no-block` so a long scan does not hold the installer. Abort restores
+schedulers; pause files older than 45m auto-clear. While paused, `runJob`
+exits 3. Escape hatch: `--skip-agent-wait`. Operator probe:
+`tc harness wait-idle`.
 
 ## Drain gate (agent activation)
 

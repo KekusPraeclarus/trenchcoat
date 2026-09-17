@@ -707,7 +707,7 @@ clear_deploy_pause_and_kick() {
       continue
     fi
     echo "starting deferred $job → $unit.service"
-    systemctl --user start "$unit.service" 2>/dev/null || true
+    systemctl --user --no-block start "$unit.service" 2>/dev/null || true
   done
 }
 
@@ -740,11 +740,29 @@ enable_unit() {
   systemctl --user daemon-reload
   systemctl --user enable "$unit.$kind"
   if [ "$kind" = "timer" ]; then
-    systemctl --user restart "$unit.timer"
-  else
-    systemctl --user restart "$unit.service"
+    echo "enabled $unit.timer (start after deploy pause clears)"
+    return
   fi
+  systemctl --user restart "$unit.service"
   echo "loaded $unit.$kind"
+}
+
+# Persistent calendar catch-up must not start jobs while deploy-pause.json exists
+start_scheduled_timers() {
+  if [ "$NO_LOAD" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
+    return 0
+  fi
+  extras="trenchcoat-backup"
+  if [ "$WITH_HARNESS" -eq 1 ]; then
+    extras="$extras trenchcoat-job-harness-improve"
+  fi
+  for unit in $SCHEDULED_UNITS $extras; do
+    if [ -f "$X_HOLD_FILE" ] && echo "$X_HOLD_TIMERS" | grep -F -q "$unit"; then
+      continue
+    fi
+    systemctl --user start "$unit.timer" 2>/dev/null || true
+  done
+  echo "started scheduled timers"
 }
 
 # --- host prep ---
@@ -906,6 +924,7 @@ if [ "$WITH_HARNESS" -eq 1 ]; then
 fi
 
 clear_deploy_pause_and_kick
+start_scheduled_timers
 
 echo "done. trenchcoat=$TC (runtime under $RUNTIME_ROOT)"
 echo "deploy: $DEPLOY_LINK"
