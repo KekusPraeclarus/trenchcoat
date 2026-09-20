@@ -23,8 +23,27 @@ export type PumpEngagementApplyResult = Readonly<{
   nextState: PumpEngagementFile
 }>
 
+const RATIONALE_MAX = 280
+
+function clampProposalRationales(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw
+  const rec = raw as Record<string, unknown>
+  const items = rec["items"]
+  if (!Array.isArray(items)) return raw
+  return {
+    ...rec,
+    items: items.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item
+      const row = item as Record<string, unknown>
+      const rationale = row["rationale"]
+      if (typeof rationale !== "string" || rationale.length <= RATIONALE_MAX) return item
+      return { ...row, rationale: rationale.slice(0, RATIONALE_MAX) }
+    }),
+  }
+}
+
 export function parsePumpEngagementProposal(raw: unknown): PumpEngagementProposalFile {
-  return PumpEngagementProposalFileSchema.parse(raw)
+  return PumpEngagementProposalFileSchema.parse(clampProposalRationales(raw))
 }
 
 export function pumpEngagementActionId(

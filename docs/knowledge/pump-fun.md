@@ -155,6 +155,10 @@ session still needs a fresh browser export and `auth pump --import-*`.
 - Inbox item text must not use the word call (X `extractCallEvents` would
   treat a mint plus that word as a source-call)
 - Following items are evidence. They are not like/follow targets
+- Like and follow verify on the same page as the click. A second `goto`
+  drops the mutation. A 2xx like/follow POST counts as verified
+- Agent `rationale` is ≤280 characters. The host clamps overlong strings
+  so the rest of the proposal still applies
 - `chart-sweep` stays watchlist-only. Pump charts are captured on pump-scan
   and on pump-origin research
 

@@ -57,7 +57,8 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
 Authenticated SPA scrape under `src/collectors/pump/`. Host job `pump-scan`
 (30m) scrapes FYP, Top, and News. It scrapes Following after 10 follows.
 Leaderboard rows keep handles only. The agent proposes like/follow/unfollow.
-The host applies those choices after the scrape. Calls archive to
+The host applies those choices after the scrape. Like and follow verify
+on the same page. A 2xx mutation POST counts as verified. Calls archive to
 `archive/outcomes/pump-call-*.json`. They never enter `source-call-log.jsonl`.
 Profile ids never enter `wallets.json`. Shadow mode is the default.
 A `PumpClientError` skip uses `collectionStatus=pump-<code>`

@@ -33,6 +33,10 @@ not like/follow targets.
 Hard throttle (automatic): at most **2 likes every 10 minutes**. At most **3
 follows per run**. Unfollow is allowed when a caller chart is poor.
 
+Each `rationale` must be ≤280 characters. Put long notes in `agent.md`.
+When a call chart supports it, propose at least one `follow` of an author
+in `pump-fyp-eligible`. Likes alone do not fill the Following tab.
+
 Never swap, trade, DM, or create a coin.
 
 ## Rules

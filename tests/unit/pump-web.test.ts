@@ -14,6 +14,7 @@ import {
   classifyPumpClientFailure,
 } from "../../src/collectors/pump/web-client.js"
 import { PumpClientError } from "../../src/collectors/pump/types.js"
+import { pumpItemCardSelectors } from "../../src/collectors/pump/engagement.js"
 import {
   emptyUsageDay,
   remainingBudget,
@@ -153,6 +154,14 @@ describe("pump mappers", () => {
 describe("pump capture path redaction", () => {
   it("replaces address-shaped path segments", () => {
     expect(redactPumpCapturePath(`/users/${MINT}/coins`)).toBe("/users/:id/coins")
+  })
+})
+
+describe("pump engagement card selectors", () => {
+  it("matches callout ids by href and drops unsafe ids", () => {
+    const id = "7be8fa6f-55a6-4802-8246-be197dbc9515"
+    expect(pumpItemCardSelectors(id)).toContain(`a[href*="${id}"]`)
+    expect(pumpItemCardSelectors(`bad"id`)).toEqual([])
   })
 })
 

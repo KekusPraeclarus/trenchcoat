@@ -116,6 +116,22 @@ describe("applyPumpEngagementChoices", () => {
     expect(applied.rejected.some((d) => d.rejectReason === "follow_rate_limit")).toBe(true)
   })
 
+  it("clamps overlong rationale so the rest of the proposal still parses", () => {
+    const parsed = parsePumpEngagementProposal({
+      schema: 1,
+      runId: RUN,
+      proposedAt: NOW,
+      items: [{
+        action: "like",
+        itemId: "coin-1",
+        authorHandle: "alice.calls",
+        reasonCode: "chart-quality",
+        rationale: `${"x".repeat(300)} extra`,
+      }],
+    })
+    expect(parsed.items[0]?.rationale.length).toBe(280)
+  })
+
   it("counts current follows for the Following tab gate", () => {
     const state = emptyState()
     expect(currentFollowCount(state)).toBe(0)

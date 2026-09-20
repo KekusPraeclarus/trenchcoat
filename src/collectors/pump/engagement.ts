@@ -1,8 +1,12 @@
-import { type Browser, type BrowserContext, type Page } from "playwright"
+import { type Browser, type BrowserContext, type Locator, type Page, type Response } from "playwright"
 import { launchChromium } from "../../lib/playwright-chromium.js"
 import { assertPumpProfileReady, pumpProfileDir } from "../social/pump-auth.js"
 import { classifyPumpRequest } from "./request-policy.js"
 import { PumpClientError } from "./types.js"
+
+const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/u
+const LIKE_POST_RE = /\/(like|unlike)(\/|$)/iu
+const FOLLOW_POST_RE = /\/(follow|unfollow)(\/|$)/iu
 
 export type PumpEngagementDriver = {
   like(itemId: string): Promise<{ verified: boolean, ambiguous: boolean }>
@@ -17,6 +21,16 @@ export type PumpEngagementSessionOptions = Readonly<{
   headless?: boolean
   navigationTimeoutMs?: number
 }>
+
+export function pumpItemCardSelectors(itemId: string): readonly string[] {
+  if (!SAFE_ID_RE.test(itemId)) return []
+  return [
+    `[data-item-id="${itemId}"]`,
+    `[data-callout-id="${itemId}"]`,
+    `[data-coin-id="${itemId}"]`,
+    `a[href*="${itemId}"]`,
+  ]
+}
 
 /**
  * Separate mutation session. Collect scrape never uses this.
@@ -82,15 +96,85 @@ export class PumpEngagementSession implements PumpEngagementDriver {
     }
   }
 
+  private waitForPost(page: Page, pathRe: RegExp): Promise<Response | undefined> {
+    return page.waitForResponse((response) => {
+      if (response.request().method() !== "POST") return false
+      try {
+        return pathRe.test(new URL(response.url()).pathname)
+      } catch {
+        return false
+      }
+    }, { timeout: 8_000 }).catch(() => undefined)
+  }
+
+  private async findItemCard(page: Page, itemId: string): Promise<Locator | undefined> {
+    const selectors = pumpItemCardSelectors(itemId)
+    for (let i = 0; i < 8; i += 1) {
+      for (const selector of selectors) {
+        const loc = page.locator(selector).first()
+        if (await loc.count().catch(() => 0) > 0) return loc
+      }
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2))
+      await page.waitForTimeout(800)
+    }
+    return undefined
+  }
+
+  private likeButton(card: Locator): Locator {
+    return card.locator("xpath=ancestor-or-self::*[.//button or .//*[@role='button']][1]")
+      .getByRole("button", { name: /like|unlike|heart/iu })
+      .or(card.locator("xpath=ancestor-or-self::*[.//button][1]").locator("button").first())
+      .first()
+  }
+
+  private async controlLooksLiked(card: Locator, page: Page, itemId: string): Promise<boolean> {
+    const pressed = await card.locator("xpath=ancestor-or-self::*[.//button][1]")
+      .getByRole("button", { pressed: true })
+      .count()
+      .catch(() => 0)
+    if (pressed > 0) return true
+    const unlike = await card.locator("xpath=ancestor-or-self::*[.//button][1]")
+      .getByRole("button", { name: /unlike|liked/iu })
+      .count()
+      .catch(() => 0)
+    if (unlike > 0) return true
+    return page.locator(`[data-item-id="${itemId}"][data-liked="true"]`).count()
+      .then((n) => n > 0)
+      .catch(() => false)
+  }
+
+  private async cardLooksLiked(page: Page, itemId: string): Promise<boolean> {
+    const card = await this.findItemCard(page, itemId)
+    if (!card) {
+      return page.locator(`[data-item-id="${itemId}"][data-liked="true"]`).count()
+        .then((n) => n > 0)
+        .catch(() => false)
+    }
+    return this.controlLooksLiked(card, page, itemId)
+  }
+
+  private async profileFollowState(page: Page): Promise<"following" | "not-following" | "unknown"> {
+    const following = await page.getByRole("button", { name: /^(Following|Unfollow)$/u }).count()
+      .catch(() => 0)
+    if (following > 0) return "following"
+    const follow = await page.getByRole("button", { name: /^Follow$/u }).count().catch(() => 0)
+    if (follow > 0) return "not-following"
+    return "unknown"
+  }
+
   async like(itemId: string): Promise<{ verified: boolean, ambiguous: boolean }> {
     return this.withPage(async (page) => {
-      const clicked = await page.locator(`[data-item-id="${itemId}"], [data-coin-id="${itemId}"]`).first()
-        .locator("button, [role=button]").first()
+      const card = await this.findItemCard(page, itemId)
+      if (!card) return { verified: false, ambiguous: true }
+      const posted = this.waitForPost(page, LIKE_POST_RE)
+      const clicked = await this.likeButton(card)
         .click({ timeout: 8_000 })
         .then(() => true)
         .catch(() => false)
       if (!clicked) return { verified: false, ambiguous: true }
-      const present = await this.verifyLiked(itemId)
+      const response = await posted
+      if (response?.ok()) return { verified: true, ambiguous: false }
+      const present = await this.controlLooksLiked(card, page, itemId)
       return { verified: present, ambiguous: !present }
     })
   }
@@ -102,13 +186,17 @@ export class PumpEngagementSession implements PumpEngagementDriver {
         timeout: this.opts.navigationTimeoutMs ?? 30_000,
       })
       this.detectChallenge(page)
-      const clicked = await page.getByRole("button", { name: /follow/iu }).first()
+      const posted = this.waitForPost(page, FOLLOW_POST_RE)
+      const clicked = await page.getByRole("button", { name: /^Follow$/u }).first()
         .click({ timeout: 8_000 })
         .then(() => true)
         .catch(() => false)
       if (!clicked) return { verified: false, ambiguous: true }
-      const present = await this.verifyFollowing(handle)
-      return { verified: present, ambiguous: !present }
+      const response = await posted
+      if (response?.ok()) return { verified: true, ambiguous: false }
+      const state = await this.profileFollowState(page)
+      if (state === "unknown") return { verified: false, ambiguous: true }
+      return { verified: state === "following", ambiguous: state !== "following" }
     })
   }
 
@@ -119,21 +207,22 @@ export class PumpEngagementSession implements PumpEngagementDriver {
         timeout: this.opts.navigationTimeoutMs ?? 30_000,
       })
       this.detectChallenge(page)
-      const clicked = await page.getByRole("button", { name: /unfollow|following/iu }).first()
+      const posted = this.waitForPost(page, FOLLOW_POST_RE)
+      const clicked = await page.getByRole("button", { name: /^(Following|Unfollow)$/u }).first()
         .click({ timeout: 8_000 })
         .then(() => true)
         .catch(() => false)
       if (!clicked) return { verified: false, ambiguous: true }
-      const present = await this.verifyFollowing(handle)
-      return { verified: !present, ambiguous: present }
+      const response = await posted
+      if (response?.ok()) return { verified: true, ambiguous: false }
+      const state = await this.profileFollowState(page)
+      if (state === "unknown") return { verified: false, ambiguous: true }
+      return { verified: state === "not-following", ambiguous: state !== "not-following" }
     })
   }
 
   async verifyLiked(itemId: string): Promise<boolean> {
-    return this.withPage(async (page) => {
-      const liked = page.locator(`[data-item-id="${itemId}"][data-liked="true"]`)
-      return liked.count().then((n) => n > 0).catch(() => false)
-    })
+    return this.withPage(async (page) => this.cardLooksLiked(page, itemId))
   }
 
   async verifyFollowing(handle: string): Promise<boolean> {
@@ -142,8 +231,7 @@ export class PumpEngagementSession implements PumpEngagementDriver {
         waitUntil: "domcontentloaded",
         timeout: this.opts.navigationTimeoutMs ?? 30_000,
       })
-      const unfollowed = await page.getByRole("button", { name: /^follow$/iu }).count()
-      return unfollowed === 0
+      return (await this.profileFollowState(page)) === "following"
     })
   }
 }
