@@ -61,7 +61,8 @@ The host applies those choices after the scrape. The like control is
 data-testid=callout-action-like on the callout card
 (`/callouts/:mint/:uuid`). Like POST is `/callout/{id}/like`. Unlike is
 DELETE on that path. If the card leaves For you, the host opens the
-callout permalink. Like and follow verify on the same page. A 2xx
+callout permalink. The host closes the Welcome to Pump.fun dialog
+with Continue before the like click. Like and follow verify on the same page. A 2xx
 mutation POST or DELETE counts as verified. Calls archive to
 `archive/outcomes/pump-call-*.json`. They never enter `source-call-log.jsonl`.
 Profile ids never enter `wallets.json`. Shadow mode is the default.

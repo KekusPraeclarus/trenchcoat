@@ -121,6 +121,9 @@ export class PumpEngagementSession implements PumpEngagementDriver {
   }
 
   private async dismissBlockingUi(page: Page): Promise<void> {
+    const dialog = page.getByRole("dialog")
+    await dialog.getByRole("button", { name: "Continue" }).click({ timeout: 3_000 }).catch(() => undefined)
+    await dialog.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => undefined)
     await page.getByRole("button", { name: "Dismiss" }).click({ timeout: 2_000 }).catch(() => undefined)
   }
 

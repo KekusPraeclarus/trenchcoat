@@ -161,7 +161,8 @@ session still needs a fresh browser export and `auth pump --import-*`.
   Unlike is DELETE on the same path. Mutation mode must allow both
 - When the card is gone from For you, the host opens
   /callouts/:mint/:uuid after GET /callout/{id}
-- Dismiss the homepage overlay before the like click
+- Close the Welcome to Pump.fun dialog with Continue before a like
+  click. Dismiss leaves the dialog on the page
 - Like and follow verify on the same page as the click. A second `goto`
   drops the mutation. A 2xx like POST or unlike DELETE counts as verified
 - Agent `rationale` is ≤280 characters. The host clamps overlong strings
