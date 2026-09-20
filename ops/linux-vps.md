@@ -2,7 +2,7 @@
 description: Blank Linux VPS bootstrap for trenchcoat — SSH, packages, migrate, systemd install, Actions deploy.
 scope: ops
 status: active
-last_verified: 2026-09-12
+last_verified: 2026-09-17
 read_when:
   - Standing up a Linux host (not macOS launchd)
   - Wiring GitHub Actions auto-deploy
@@ -224,7 +224,7 @@ a `status.txt` snapshot. It never copies `env`, browser profiles, or sessions.
 | Logs | `/tmp/trenchcoat.*.log` |
 | Query router SQLite | `ops/remote.sh --` plus `node` and `better-sqlite3`. The VPS has no `sqlite3` CLI |
 | Restart KeepAlive | `systemctl --user restart trenchcoat-router` (etc.) |
-| Timers | `systemctl --user list-timers 'trenchcoat-*'` |
+| Timers | `systemctl --user list-timers 'trenchcoat-*'`. Use `--all` to see inactive units. `NEXT -` means the timer is dead. |
 | Recover stuck deploy pause | `rm -f ~/.trenchcoat/deploy-pause.json` then `systemctl --user daemon-reload && systemctl --user start trenchcoat-job-*.timer` (or re-run `~/bin/trenchcoat-deploy`). Pause files >45m auto-clear. |
 | Incident remediation (post-deploy enable) | After schema 17 deploy: set `incident_remediation.enabled` + `schedule_enabled` (+ optional `discord_suggestions.enabled` / `channel_ids`), then `tc config migrate --write`, `tc remediations status`, `tc remediations suggestions` |
 | Remediations CLI (cwd) | From `~/src/trenchcoat` (or set `TRENCHCOAT_REPO_ROOT` there). Never run `trenchcoat remediations` with cwd set to a rem worktree — publish then fails `wrong-branch` |

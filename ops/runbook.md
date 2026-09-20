@@ -163,7 +163,7 @@ reloading launchd/systemd units the installer sets deploy-pause (stops scheduled
 jobs), runs `tc harness wait-idle` (default 30m; auto-fails orphaned incomplete
 journals and running journals older than 30m while deploy pause is active),
 enables timer units, then clears the pause, starts timers, and kickstarts
-deferred jobs with `--no-block`;
+deferred jobs with `--no-block` (ADR 053);
 `--skip-agent-wait` bypasses the idle wait (unsafe). If the install aborts, the
 EXIT trap clears the pause **and restores schedulers** so a killed deploy cannot
 leave the host permanently quiet. Pause files older than 45m also auto-clear
@@ -227,6 +227,10 @@ To omit the weekly harness job: `./ops/install-launchd.sh --without-harness`.
   with headed `tc auth twitter`, then start `trenchcoat-x-scan`.
   A hold that lasts hours makes the social archive stale. `narrative-scan` can
   then finish with an empty outbox while router `healthz` stays ok.
+  Install also disables `X_HOLD_TIMERS` (`fomo-x-source-review`,
+  `fomo-narrative-source-scan`, `narrative-source-review`,
+  `source-list-review`). They stay disabled until the next install with no
+  hold file.
 - Listener health: the listener touches a heartbeat file every poll cycle;
   `tc status` flags a stale heartbeat (> 15 min). launchd restarts crashes;
   a silently wedged process is caught by the heartbeat and killed by

@@ -3,7 +3,7 @@ title: Fomo leaderboard X-source nomination
 description: ADR — Fomo may nominate X accounts only; host merge + probation gate membership and follows.
 status: accepted
 date: 2026-07-19
-last_verified: 2026-09-04
+last_verified: 2026-09-17
 ---
 
 # ADR 009 — Fomo X-source nomination

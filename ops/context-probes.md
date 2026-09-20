@@ -78,7 +78,7 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P71 | recall | Can a failed x-scan log rem re-diagnose weeks later while list-scan is healthy? | No. Host `decideLiveRecovery` ignores log/health/skip incidents when mapped jobs are healthy (`already-recovered`) and does not reopen a terminal fingerprint until a mapped job is degraded. Diagnose also clears leftover `diff-summary.json`. Discord suggestions skip this floor → incident-remediation.md, ADR 017, `src/remediation/live-recovery.ts`, INV-S27 | pass | 2026-08-13 |
 | P72 | recall | Why do remediations fire for a 4h incomplete `outcomes-settle`, and may abandon use 30m when the mutex pid is dead? | Health used a flat 2h `stuck-incomplete-run`; settle catch-up may run 24h (ADR 031). Intake now ignores in-SLA settle incompletes and `incomplete runs=N`. Journal stays `integrity-checked` during host pricing. Do not apply 30m no-lock abandon to this job. A `lock-held` journal with a real runId after hours was brief RMW, now `lockDeferred`. → orchestrator.md, incident-remediation.md, INV-S15, ADR 031 | pass | 2026-08-18 |
 | P73 | recall | Does INV-S6 still claim every `decisions.md` entry cites provenance ids, and is that ENFORCED? | PARTIAL. Snapshots/proposals/`checkS6` cover receipt citations. `formatDecisionMarkdown` omits `provenanceIds` from `decisions.md`. → INVARIANTS.md INV-S6, `src/orchestrator/proposals.ts` | pass | 2026-09-04 |
-| P74 | artifact | Which files change when you add a pump.fun collector behaviour (engagement bind, call settle, or scrape)? | `src/collectors/pump/`, `src/social/pump-engagement.ts`, `src/orchestrator/jobs.ts` `pump-scan`, ADR 047, INV-S30, `docs/knowledge/pump-fun.md`, `docs/architecture/collectors.md` | pass | 2026-09-04 |
+| P74 | artifact | Which files change when you add a pump.fun collector behaviour (engagement bind, call settle, or scrape)? | `src/collectors/pump/` (`engagement.ts` like control, `request-policy.ts` POST/DELETE), `src/social/pump-engagement.ts`, `src/orchestrator/jobs.ts` `pump-scan`, ADR 047, INV-S30, `docs/knowledge/pump-fun.md`, `docs/architecture/collectors.md` | pass | 2026-09-20 |
 | P75 | continuation | What is the next step of the planned trading pipeline? | Design settled. Status NOT STARTED. No `src/trading/`, no `trade-*` jobs. Read `docs/trading/README.md` before assuming any trading code exists. | pass | 2026-09-04 |
 | P76 | recall | Does following a FOMO trader write wallets.json or the X managed list? | No. Host follows on fomo.family only. State is `state/fomo-follows.json`. X nominations need an explicit FOMO profile X link. Same-handle does not enter pending. Shiller 10/5 is X-post CAs only. Do not skip the X agent only because CAs are under 10 → ADR 048, INV-S31, fomo-family.md | pass | 2026-09-04 |
 | P77 | recall | Where does a human or agent start for setup, deploy, and the rest of the docs? | Root `README.md` for setup/deploy. Then `docs/README.md` for the map. `AGENTS.md` line 3. Agent section in root README. | pass | 2026-09-04 |
@@ -88,6 +88,9 @@ See `~/.cursor/skills/context-engineering/refs/context-probes.md`.
 | P81 | recall | Which FOMO Playwright mutations are allowed besides X review? | Host `mutationMode` follow only: POST `/follows` plus Statsig `featureassets.org/v1/initialize`. Trades/transfers/profile edits stay blocked. → INV-R2 exception 3, fomo-family.md, `src/collectors/fomo/engagement.ts` | pass | 2026-09-04 |
 | P82 | recall | Where must Grok intake keys live, and how does the desk poll without Telegram? | Pull-queue: `DESK_PULL_TOKEN` in `~/.trenchcoat/env`, loopback `:8788`, public HTTPS only `/desk/intake/*`. Queue append does not need `INTAKE_*`. Optional webhook: both `INTAKE_*` keys in the same env file. Restart the router after a write. Webhook ping is `POST {"ping":true}` to the webhook only — never `/v1/events`. A missing `INTAKE_*` key skips webhook only → ADR 051, ADR 050, router.md, ops/desk-pull.md | pass | 2026-09-07 |
 | P83 | recall | May anything bind public 80/443 besides Caddy desk-pull TLS? | No. UFW 80/443 is Caddy only. Caddy proxies `/desk/intake/*` to `127.0.0.1:8788` only. Do not bind other apps. Do not proxy `:8787`. Do not UFW-allow 8787/8788. Open 80/443 only when Caddy is loaded → ops/desk-pull.md, linux-vps.md, live-vps.mdc | pass | 2026-09-06 |
+| P84 | recall | Why did narrative-source-review stay dead after a VPS deploy, and what keeps it alive? | `OnUnitActiveSec` timers show `Trigger: n/a` after deploy pause stop. Review and scan use `OnCalendar` + `Persistent`. Install starts timers only after pause clears. Deferred oneshots use `--no-block`. `list-timers` without `--all` hides inactive units. An X hold disables those timers until the next hold-free install → ADR 053, orchestrator.md, runbook.md, linux-vps.md | pass | 2026-09-17 |
+| P85 | recall | How does the host apply a pump.fun like, and what must happen before the click? | Click `data-testid=callout-action-like` on `/callouts/:mint/:uuid`. Close Welcome with Continue; Dismiss leaves the dialog. POST `frontend-api-v3.pump.fun/callout/{id}/like`. Unlike is DELETE. Missing card: GET `/callout/{id}` then permalink. `pnpm pump:like` does not write `likedItemIds`. Remaining 0 navs skip `budget_exhausted`. → pump-fun.md, collectors.md, CONFIG.md, `engagement.ts` | pass | 2026-09-20 |
+| P86 | recall | How must `ops/remote.sh --` receive a remote command? | Pass words as separate argv, or wrap a script in `bash -lc`. One quoted string becomes one command name (`printf %q`) and bash exits 127. → `ops/remote.sh`, linux-vps.md | pass | 2026-09-20 |
 
 ## Failure log
 
@@ -348,3 +351,19 @@ patterns become visible.
 - 2026-09-04 session-learning: added ADR 050 for optional Grok intake.
   Live keys must be in `~/.trenchcoat/env`. Desk ping is webhook-only.
   Updated P1/P19/P20. Added P82. Gotchas empty.
+- 2026-09-17 session-learning: added ADR 053. Interval timers die after
+  deploy stop. Review/scan use calendar timers. Install starts timers
+  after pause. X hold disable stays until the next hold-free install.
+  Review before `probationEndsAt` only stamps `lastEvaluatedAt`. Added
+  P84. Gotchas empty.
+- 2026-09-20 session-learning: live pump like is `callout-action-like`
+  plus POST `/callout/{id}/like`. Welcome Continue unblocks the click.
+  Dismiss does not. Permalink uses GET `/callout/{id}`. Remaining 0
+  navs skip `budget_exhausted`. `pnpm pump:like` does not write
+  `likedItemIds`. Follow POST still unbound. Added P85.
+  Gotchas empty.
+- 2026-09-20 session-learning (pump shadow ops): `remote.sh --` must
+  receive separate argv or `bash -lc`. One quoted string exits 127.
+  Pump shadow clock starts on the first sustained clean stretch.
+  `budget_exhausted` is not a provider failure. One-shot session sync
+  must run the script, not kickstart. Added P86. Gotchas empty.

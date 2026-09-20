@@ -4,12 +4,14 @@ Operator playbook for the pump.fun feed scan lane (ADR 047). Code lives in
 this repo. Production runs on the Linux VPS only. Mac launchd stays unloaded
 while the VPS is production.
 
-**Status (2026-09-17):** canary live on VPS — `pump.enabled=true`,
-`pump.shadow_mode=false`. FAFO discover `probe-2026-09-04` is on disk.
-Gates are `gates.evaluated-2026-09-04.json` (provider/feed/leaderboard
-`pass`). Shadow ran from 2026-08-26 through 2026-09-17. First canary
-collect is after the next UTC day rollover (daily 200-nav budget is
-already spent today).
+**Status (2026-09-20):** canary live on VPS — `pump.enabled=true`,
+`pump.shadow_mode=false`. Like control is bound (`callout-action-like`,
+POST `/callout/{id}/like`). Live `pnpm pump:like` verified. That smoke
+does not write `likedItemIds`. Live `daily_navigation_budget` is 500 so
+the 150-used morning ledger can still collect. Remaining 0 is exhausted.
+Follows are still 0. Following tab stays skipped.
+FAFO discover `probe-2026-09-04` is on disk. Gates are
+`gates.evaluated-2026-09-04.json` (provider/feed/leaderboard `pass`).
 
 Related: [REPORT.md](REPORT.md) (API shapes), [docs/knowledge/pump-fun.md](../../docs/knowledge/pump-fun.md),
 [ADR 047](../../docs/adr/047-pump-feed-scan.md).
@@ -43,7 +45,7 @@ Push `main`, then on the VPS:
 ~/bin/trenchcoat-deploy
 ```
 
-Confirm `trenchcoat status` shows `configSchema=28`, `runtime=28`, and
+Confirm `trenchcoat status` shows `configSchema=29`, `runtime=29`, and
 `pump: enabled=… shadow=…`.
 
 ### 2. Copy burner session
@@ -127,7 +129,7 @@ Want non-zero `fyp`, `top`, `news`, and `leaderboard`, plus `error: null`.
 From the Mac:
 
 ```bash
-./ops/remote.sh -- 'cd ~/src/trenchcoat && TRENCHCOAT_LIVE_PUMP=1 pnpm pump:smoke'
+./ops/remote.sh -- bash -lc 'cd ~/src/trenchcoat && TRENCHCOAT_LIVE_PUMP=1 pnpm pump:smoke'
 ```
 
 ## Phase 1 — Prove shadow (first few days)
@@ -147,7 +149,7 @@ Verify from the Mac:
 
 ```bash
 ./ops/remote.sh status | grep pump
-./ops/remote.sh -- 'ls -d ~/.trenchcoat/agent/inbox/pump-scan-* 2>/dev/null | tail -3'
+./ops/remote.sh -- bash -lc 'ls -d ~/.trenchcoat/agent/inbox/pump-scan-* 2>/dev/null | tail -3'
 ```
 
 Optional operator broadcast (fanout via router — not a narrative update):
@@ -186,12 +188,16 @@ dumps as pump.fun truth.
 
 ## Phase 2 — Shadow graduation (14 UTC days)
 
-Keep shadow config unchanged for **exactly 14 UTC days** after the first clean
-`pump-scan` run.
+Keep shadow config unchanged for **exactly 14 UTC days** after the first
+sustained clean stretch. A single early non-zero run does not start the
+clock if later days return empty feeds. The 2026 canary clock started
+2026-08-26, not the first-ever run on 2026-08-13.
 
 Graduate only when all are true:
 
-- Provider success ≥ 95% over the window (review job receipts / skip reasons)
+- Provider success ≥ 95% over the window. Count collect attempts only.
+  Skip `budget_exhausted`. That skip is the daily nav cap, not a
+  provider failure.
 - No secret leak or invariant breach (INV-I3, INV-S19, INV-S30)
 - Operator reviewed snapshot quality and skip rates
 - Gates backed by FAFO sample, not `gates.shadow-live.json` alone
@@ -263,7 +269,7 @@ Session re-import flow: [docs/knowledge/pump-fun.md](../../docs/knowledge/pump-f
 | `pump-provider-gate` | Install fresh gates with `provider: pass` |
 | `pump-missing-session` | Rsync `storage-state.json` or re-import |
 | `pump-upstream` / `challenged` | Re-auth burner; check request policy |
-| `pump-budget_exhausted` | Wait for UTC day rollover or raise budget in config |
+| `pump-budget_exhausted` | Remaining 0 is exhausted. Wait for UTC day rollover or raise budget |
 
 ## Mac vs VPS
 

@@ -47,6 +47,7 @@ only. Pump uses `pump-fyp-eligible` and `state/pump-engagement.json`.
 ```bash
 pnpm dev:cli auth pump
 TRENCHCOAT_LIVE_PUMP=1 pnpm tsx scripts/smoke-pump-live.ts
+TRENCHCOAT_LIVE_PUMP=1 pnpm pump:like
 # Smoke does not debit archive/provider-usage/pump/
 TRENCHCOAT_LIVE_PUMP=1 pnpm probe:pump discover --run-id probe-YYYY-MM-DD
 pnpm probe:pump status --run-id probe-YYYY-MM-DD
@@ -123,7 +124,8 @@ That loads `com.trenchcoat.pump-session-sync` only. It does not load
 production Mac collectors. The agent uses `RunAtLoad` plus a 24h interval.
 If the Mac is off, the job runs at the next login. A late run is fine.
 
-Manual one-shot:
+Manual one-shot. Run the script. Do not `launchctl kickstart` the
+agent. Kickstart resets the 24h interval.
 
 ```bash
 ~/.trenchcoat/bin/sync-pump-session
@@ -165,6 +167,13 @@ session still needs a fresh browser export and `auth pump --import-*`.
   click. Dismiss leaves the dialog on the page
 - Like and follow verify on the same page as the click. A second `goto`
   drops the mutation. A 2xx like POST or unlike DELETE counts as verified
+- `pnpm pump:like` does not write `likedItemIds`. Job receipts come from
+  pump-scan apply only
+- Remaining 0 navigations is exhausted. The like session does not
+  debit this ledger, so a leftover 50-nav floor is not required
+- Follow POST path is unbound until the first live follow
+- Do not declare a named function inside `page.evaluate`. tsx injects
+  `__name` and the eval fails.
 - Agent `rationale` is ≤280 characters. The host clamps overlong strings
   so the rest of the proposal still applies
 - `chart-sweep` stays watchlist-only. Pump charts are captured on pump-scan

@@ -61,11 +61,13 @@ X collector job. `chart-sweep` and `narrative-scan` collectors are live
 | `fomo-trader-sync` | every 6h | Fomo leaderboard handles | **no agent** — optional X nominations (no wallets) |
 | `fomo-signal-scan` | every 20m | Fomo feed / trending / alerts | **no agent** — dated signals + bounded research enqueue |
 | `fomo-x-source-review` | every 6h | one pending Fomo X nomination + bounded history | isolated classifier; host merge fail-closes (ADR 009) |
-| `fomo-narrative-source-scan` | 00/06/12/18 UTC | live posts from narrative-probation handles. Backfills classified narrative/both first. | **no agent** — sealed historical-purpose tags stay out of narrative-scan |
-| `narrative-source-review` | daily 19:00 UTC | lagged narrative-source utility. Backfills classified narrative/both first. Install starts this timer after deploy pause clears so Persistent catch-up cannot run under pause. | **no agent** — promote/demote + gated X follow |
+| `fomo-narrative-source-scan` | 00/06/12/18 UTC (ADR 053) | live posts from narrative-probation handles. Backfills classified narrative/both first. | **no agent** — sealed historical-purpose tags stay out of narrative-scan |
+| `narrative-source-review` | daily 19:00 UTC (ADR 053) | lagged narrative-source utility. Backfills classified narrative/both first. Install starts this timer after deploy pause clears so Persistent catch-up cannot run under pause. | **no agent** — promote/demote + gated X follow |
 | `recover` | on demand | incomplete journal / quarantine | recovery assist (ADR 006) |
 
-Cadences live in `ops/` templates, not code; tune freely. Host-gated jobs
+Cadences live in `ops/` templates, not code; tune freely. Do not use
+`OnUnitActiveSec` for a wall-clock job. A deploy stop leaves `Trigger: n/a`
+until the service starts (ADR 053). Host-gated jobs
 (`chart-sweep`, `watchlist-scan`, `research`, wallet evidence jobs, and
 calendar `review`) run through `ops/run-precheck.sh` before the lock: a
 read-only `tc precheck <job>` exits 10 on empty prerequisites so launchd

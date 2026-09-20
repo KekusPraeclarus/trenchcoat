@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  canReserve,
   completeAttempt,
   emptyUsageDay,
   loadUsageDay,
@@ -31,6 +32,12 @@ describe("pump usage crash resume", () => {
     const again = loadUsageDay(root, "2026-08-13", 10)
     expect(again.reserved).toBe(1)
     expect(again.completedCounted).toBe(1)
+  })
+
+  it("still collects when 50 navigations remain on a 200 budget", () => {
+    const day = { ...emptyUsageDay("2026-09-20", 200), reserved: 150 }
+    expect(canReserve(day)).toBe(true)
+    expect(canReserve({ ...day, reserved: 200 })).toBe(false)
   })
 
   it("uses the caller budget so a smoke cap cannot pin the collect day", async () => {

@@ -7,7 +7,10 @@
 #   ops/remote.sh health
 #   ops/remote.sh status
 #   ops/remote.sh run narrative-scan
-#   ops/remote.sh -- 'tail -50 /tmp/trenchcoat.x-scan.err.log'
+#   ops/remote.sh -- tail -50 /tmp/trenchcoat.x-scan.err.log
+#   ops/remote.sh -- bash -lc 'cd ~/src/trenchcoat && pnpm pump:smoke'
+# Do not pass one quoted string after --. printf %q then makes that
+# string one command name and bash exits 127.
 #   ops/remote.sh sync
 #
 # Host: TRENCHCOAT_SSH_HOST, else gitignored .trenchcoat-local/ssh-host.
@@ -76,7 +79,8 @@ ops/remote.sh — live VPS access (desktop SSH out only)
 
   ops/remote.sh health              keepalive + healthz + status
   ops/remote.sh status|…            trenchcoat <args> on VPS
-  ops/remote.sh -- <shell>          arbitrary remote command (env sourced)
+  ops/remote.sh -- <shell>          remote command; pass words separately
+                                    or wrap a script in bash -lc
   ops/remote.sh sync                pull non-secret state into .trenchcoat-remote/
 
 Host: TRENCHCOAT_SSH_HOST, or gitignored .trenchcoat-local/ssh-host.
@@ -111,7 +115,7 @@ if [ "${1:-}" = "--" ]; then
     echo "usage: ops/remote.sh -- <remote command>" >&2
     exit 2
   fi
-  # Join remaining args as a remote script fragment
+  # Each argv is %q-escaped. One quoted string with spaces becomes one name.
   remote_sh "$(printf '%q ' "$@")"
   exit 0
 fi

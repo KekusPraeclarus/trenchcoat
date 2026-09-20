@@ -56,7 +56,8 @@ export function remainingBudget(day: PumpNavigationDay): number {
   return Math.max(0, day.budget - day.reserved)
 }
 
-export function canReserve(day: PumpNavigationDay, reserveFloor = 50): boolean {
+export function canReserve(day: PumpNavigationDay, reserveFloor = 0): boolean {
+  // Like/follow uses a later session that does not debit this ledger
   return remainingBudget(day) > reserveFloor || day.budget <= reserveFloor
 }
 

@@ -2,7 +2,7 @@
 description: Host-owned FYP/X source candidacy and managed private list (ADR 004), Fomo dual-track X curation (ADR 009 / ADR 048), plus Farcaster follow-graph lifecycle (ADR 007).
 scope: module
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-17
 read_when:
   - Editing src/sources/, src/collectors/twitter/managed-list.ts, src/collectors/farcaster/, or source-list / fc-source-list orchestration.
   - Changing promotion/demotion thresholds or X list / FC follow-graph membership behaviour.
@@ -56,6 +56,9 @@ Binding decision: [ADR 009](../adr/009-fomo-x-source-nomination.md).
 - When `narrative_source_probation.enabled` is on, host scan and review
   backfill classified `narrative`/`both` handles. The 14-day clock starts
   at first sync. New pending still needs an explicit FOMO profile X link.
+- `narrative-source-review` stamps `lastEvaluatedAt` on every run. Promote
+  and demote wait until `now >= probationEndsAt`. Floors are 3 accepted,
+  2 distinct, and 3 contribution days. Schedule is ADR 053.
 - Historical posts are never reused as live narrative evidence.
 
 ## Pump.fun follow graph (feed training)

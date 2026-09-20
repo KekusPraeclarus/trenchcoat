@@ -3,7 +3,7 @@ title: FOMO platform follows stay separate from X review
 description: ADR — follow FOMO traders on fomo.family to see buys. Review X only when a linked account has enough posts to classify as shill or narrative.
 status: accepted
 date: 2026-08-17
-last_verified: 2026-09-04
+last_verified: 2026-09-17
 ---
 
 # ADR 048 — FOMO follows vs X review

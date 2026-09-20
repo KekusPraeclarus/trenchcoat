@@ -233,9 +233,9 @@ lock + ≥30m, or any running ≥6h).
 
 `ops/install-launchd.sh` / `ops/install-systemd.sh` set a deploy pause, stop
 scheduled jobs, wait for idle (default 30m), and reload. systemd enables timer
-units during pause, then clears pause and starts timers. Persistent calendar
-catch-up starts only after the pause file is gone. Deferred oneshots use
-`--no-block` so a long scan does not hold the installer. Abort restores
+units during pause, then clears pause and starts timers (ADR 053). Persistent
+calendar catch-up starts only after the pause file is gone. Deferred oneshots
+use `--no-block` so a long scan does not hold the installer. Abort restores
 schedulers; pause files older than 45m auto-clear. While paused, `runJob`
 exits 3. Escape hatch: `--skip-agent-wait`. Operator probe:
 `tc harness wait-idle`.

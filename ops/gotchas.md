@@ -2,7 +2,7 @@
 description: Capture-on-surprise scratchpad. Write one bullet the moment a session surprises you; drain into proper homes during context maintenance.
 scope: ops
 status: active
-last_verified: 2026-09-04
+last_verified: 2026-09-20
 ---
 
 # Gotchas

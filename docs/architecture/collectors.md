@@ -71,6 +71,10 @@ A `PumpClientError` skip uses `collectionStatus=pump-<code>`
 `pump-upstream-unavailable`.
 The Mac can refresh the burner session and push `storage-state.json` with
 `ops/install-pump-session-sync.sh`. That agent is not a collector.
+Live like check: `TRENCHCOAT_LIVE_PUMP=1 pnpm pump:like`. It does not write
+agent state. Observe-only dump: `scripts/observe-pump-like.ts`.
+Do not declare a named function inside `page.evaluate`. tsx injects `__name`
+and the eval fails.
 Knowledge: [pump-fun.md](../knowledge/pump-fun.md).
 FAFO status: [ops/fafo-pump/REPORT.md](../../ops/fafo-pump/REPORT.md).
 Rollout: [ops/fafo-pump/SHADOW-CANARY.md](../../ops/fafo-pump/SHADOW-CANARY.md).

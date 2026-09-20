@@ -33,11 +33,11 @@ Earlier Mac discover on 2026-08-13 still matches the allowlist.
 
 ## Next
 
-Canary rollout steps: [SHADOW-CANARY.md](SHADOW-CANARY.md) § Phase 3.
+Canary watch: [SHADOW-CANARY.md](SHADOW-CANARY.md) § Phase 3.
 
-1. Watch the first canary `pump-scan` after 00:00 UTC for engagement
-   receipts and session errors. Remaining 2026-09-17 runs skip on
-   `budget_exhausted`.
+1. Watch one `pump-scan` like receipt after the live budget bump.
+   Confirm `likedItemIds` grows. `pnpm pump:like` is not that proof
 2. Keep likes at 2 / 10 minutes and follows at 3 per run. Keep research
-   enqueue at 3 per UTC day.
-3. Following tab stays skipped until `followedHandles.length` reaches 10.
+   enqueue at 3 per UTC day
+3. Bind the follow POST when the agent first proposes a follow
+4. Following tab stays skipped until `followedHandles.length` reaches 10
