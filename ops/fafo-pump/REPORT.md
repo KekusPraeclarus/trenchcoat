@@ -26,6 +26,10 @@ Earlier Mac discover on 2026-08-13 still matches the allowlist.
 - Live smoke must set `debitAttempts: false`. A 40-nav smoke cap must
   not rewrite `archive/provider-usage/pump/<day>.json`.
 - Ranked feed cursors skip a prior id. They do not abort the page.
+- Live like control (2026-09-20 homepage): data-testid=callout-action-like,
+  aria-label Like this callout, card href /callouts/:mint/:uuid.
+  Contract path POST/DELETE `/callout/{calloutId}/like` on
+  frontend-api-v3.pump.fun. Mutation mode must allow DELETE unlike.
 
 ## Next
 

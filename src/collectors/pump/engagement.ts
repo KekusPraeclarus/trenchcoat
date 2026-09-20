@@ -8,6 +8,8 @@ const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/u
 const LIKE_POST_RE = /\/(like|unlike)(\/|$)/iu
 const FOLLOW_POST_RE = /\/(follow|unfollow)(\/|$)/iu
 
+export const PUMP_LIKE_TEST_ID = "callout-action-like"
+
 export type PumpEngagementDriver = {
   like(itemId: string): Promise<{ verified: boolean, ambiguous: boolean }>
   follow(handle: string): Promise<{ verified: boolean, ambiguous: boolean }>
@@ -25,6 +27,7 @@ export type PumpEngagementSessionOptions = Readonly<{
 export function pumpItemCardSelectors(itemId: string): readonly string[] {
   if (!SAFE_ID_RE.test(itemId)) return []
   return [
+    `a[href*="/callouts/"][href*="${itemId}"]`,
     `[data-item-id="${itemId}"]`,
     `[data-callout-id="${itemId}"]`,
     `[data-coin-id="${itemId}"]`,
@@ -90,10 +93,15 @@ export class PumpEngagementSession implements PumpEngagementDriver {
       const timeout = this.opts.navigationTimeoutMs ?? 30_000
       await page.goto("https://pump.fun/", { waitUntil: "domcontentloaded", timeout })
       this.detectChallenge(page)
+      await this.dismissBlockingUi(page)
       return await run(page)
     } finally {
       await page.close().catch(() => undefined)
     }
+  }
+
+  private async dismissBlockingUi(page: Page): Promise<void> {
+    await page.getByRole("button", { name: "Dismiss" }).click({ timeout: 2_000 }).catch(() => undefined)
   }
 
   private waitForPost(page: Page, pathRe: RegExp): Promise<Response | undefined> {
@@ -120,24 +128,22 @@ export class PumpEngagementSession implements PumpEngagementDriver {
     return undefined
   }
 
+  private likeRoot(card: Locator): Locator {
+    return card.locator(`xpath=ancestor-or-self::*[.//*[@data-testid='${PUMP_LIKE_TEST_ID}']][1]`)
+  }
+
   private likeButton(card: Locator): Locator {
-    return card.locator("xpath=ancestor-or-self::*[.//button or .//*[@role='button']][1]")
-      .getByRole("button", { name: /like|unlike|heart/iu })
-      .or(card.locator("xpath=ancestor-or-self::*[.//button][1]").locator("button").first())
-      .first()
+    return this.likeRoot(card).locator(`[data-testid="${PUMP_LIKE_TEST_ID}"]`).first()
   }
 
   private async controlLooksLiked(card: Locator, page: Page, itemId: string): Promise<boolean> {
-    const pressed = await card.locator("xpath=ancestor-or-self::*[.//button][1]")
-      .getByRole("button", { pressed: true })
-      .count()
-      .catch(() => 0)
-    if (pressed > 0) return true
-    const unlike = await card.locator("xpath=ancestor-or-self::*[.//button][1]")
-      .getByRole("button", { name: /unlike|liked/iu })
-      .count()
+    const root = this.likeRoot(card)
+    const unlike = await root.getByRole("button", { name: /unlike this callout/iu }).count()
       .catch(() => 0)
     if (unlike > 0) return true
+    const pressed = await root.locator(`[data-testid="${PUMP_LIKE_TEST_ID}"][aria-pressed="true"]`).count()
+      .catch(() => 0)
+    if (pressed > 0) return true
     return page.locator(`[data-item-id="${itemId}"][data-liked="true"]`).count()
       .then((n) => n > 0)
       .catch(() => false)
@@ -166,8 +172,13 @@ export class PumpEngagementSession implements PumpEngagementDriver {
     return this.withPage(async (page) => {
       const card = await this.findItemCard(page, itemId)
       if (!card) return { verified: false, ambiguous: true }
+      if (await this.controlLooksLiked(card, page, itemId)) {
+        return { verified: true, ambiguous: false }
+      }
       const posted = this.waitForPost(page, LIKE_POST_RE)
-      const clicked = await this.likeButton(card)
+      const button = this.likeButton(card)
+      await button.scrollIntoViewIfNeeded().catch(() => undefined)
+      const clicked = await button
         .click({ timeout: 8_000 })
         .then(() => true)
         .catch(() => false)

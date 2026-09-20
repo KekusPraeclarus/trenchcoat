@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-09-17
+last_verified: 2026-09-20
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -57,8 +57,11 @@ checkpoints land at `archive/fomo-x-source-review/<nominationId>/progress.json`.
 Authenticated SPA scrape under `src/collectors/pump/`. Host job `pump-scan`
 (30m) scrapes FYP, Top, and News. It scrapes Following after 10 follows.
 Leaderboard rows keep handles only. The agent proposes like/follow/unfollow.
-The host applies those choices after the scrape. Like and follow verify
-on the same page. A 2xx mutation POST counts as verified. Calls archive to
+The host applies those choices after the scrape. The like control is
+data-testid=callout-action-like on the callout card
+(`/callouts/:mint/:uuid`). Like POST is `/callout/{id}/like`. Unlike is
+DELETE on that path. Like and follow verify on the same page. A 2xx
+mutation POST or DELETE counts as verified. Calls archive to
 `archive/outcomes/pump-call-*.json`. They never enter `source-call-log.jsonl`.
 Profile ids never enter `wallets.json`. Shadow mode is the default.
 A `PumpClientError` skip uses `collectionStatus=pump-<code>`

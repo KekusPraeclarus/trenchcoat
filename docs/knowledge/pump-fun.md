@@ -2,7 +2,7 @@
 description: pump.fun authenticated SPA scrape for FYP/Top/News/Following feed curation, leaderboard, and call-chart evidence. Burner-only. No wallets.
 scope: knowledge
 status: active
-last_verified: 2026-09-12
+last_verified: 2026-09-20
 source: https://pump.fun
 read_when:
   - Implementing or debugging the pump.fun collector, pump-scan, or pump engagement.
@@ -155,8 +155,13 @@ session still needs a fresh browser export and `auth pump --import-*`.
 - Inbox item text must not use the word call (X `extractCallEvents` would
   treat a mint plus that word as a source-call)
 - Following items are evidence. They are not like/follow targets
+- The like control is data-testid=callout-action-like. The card href is
+  /callouts/:mint/:uuid. Click that control only
+- Live like is POST frontend-api-v3.pump.fun/callout/{calloutId}/like.
+  Unlike is DELETE on the same path. Mutation mode must allow both
+- Dismiss the homepage overlay before the like click
 - Like and follow verify on the same page as the click. A second `goto`
-  drops the mutation. A 2xx like/follow POST counts as verified
+  drops the mutation. A 2xx like POST or unlike DELETE counts as verified
 - Agent `rationale` is ≤280 characters. The host clamps overlong strings
   so the rest of the proposal still applies
 - `chart-sweep` stays watchlist-only. Pump charts are captured on pump-scan
@@ -170,7 +175,7 @@ session still needs a fresh browser export and `auth pump --import-*`.
 
 ## Sources
 
-- https://pump.fun, checked 2026-08-13
+- https://pump.fun, checked 2026-09-20
 - Session/mutation split: [x-playwright.md](x-playwright.md)
 - SPA policy pattern: [fomo-family.md](fomo-family.md)
 - Binding decision: [ADR 047](../adr/047-pump-feed-scan.md)

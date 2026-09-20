@@ -64,8 +64,8 @@ function isCloudflareChallenge(path: string): boolean {
 /**
  * Fail-closed SPA request gate. Read GET/HEAD on pump.fun, frontend-api, and
  * Privy. POST allowlist is Privy session refresh plus FAFO read queries.
- * Like/follow/unfollow POSTs need mutationMode. RPC and swap hosts stay
- * blocked.
+ * Like/follow POSTs and unlike DELETEs need mutationMode. RPC and swap
+ * hosts stay blocked.
  */
 export function classifyPumpRequest(
   method: string,
@@ -112,24 +112,26 @@ export function classifyPumpRequest(
     return { allow: false, reason: `unknown-host:${host}` }
   }
 
-  if (verb === "POST") {
-    if ((isPump || isPrivy) && isCloudflareChallenge(path)) {
+  if (verb === "POST" || verb === "DELETE") {
+    if (verb === "POST" && (isPump || isPrivy) && isCloudflareChallenge(path)) {
       return { allow: true, reason: "cloudflare-challenge" }
     }
     if (opts.mutationMode && isPump && ENGAGEMENT_PATH_RE.test(path)) {
-      return { allow: true, reason: `engagement-post:${host}${path}` }
+      return { allow: true, reason: `engagement-${verb.toLowerCase()}:${host}${path}` }
     }
-    const allowlist = [
-      ...DEFAULT_AUTH_REFRESH_POSTS,
-      ...DEFAULT_PUMP_READ_POSTS,
-      ...(opts.allowedPosts ?? []),
-    ]
-    const barePath = path.split("?")[0] ?? path
-    const match = allowlist.find((entry) => (
-      entry.host === host && barePath === entry.path
-    ))
-    if (match) return { allow: true, reason: `allowed-post:${match.host}${match.path}` }
-    return { allow: false, reason: `post-not-allowlisted:${host}${path}` }
+    if (verb === "POST") {
+      const allowlist = [
+        ...DEFAULT_AUTH_REFRESH_POSTS,
+        ...DEFAULT_PUMP_READ_POSTS,
+        ...(opts.allowedPosts ?? []),
+      ]
+      const barePath = path.split("?")[0] ?? path
+      const match = allowlist.find((entry) => (
+        entry.host === host && barePath === entry.path
+      ))
+      if (match) return { allow: true, reason: `allowed-post:${match.host}${match.path}` }
+      return { allow: false, reason: `post-not-allowlisted:${host}${path}` }
+    }
   }
 
   return { allow: false, reason: `mutation-verb:${verb}` }

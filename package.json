@@ -45,6 +45,7 @@
     "probe:pump": "tsx scripts/probe-pump.ts",
     "pump:install-gates": "tsx scripts/install-pump-gates.ts",
     "pump:smoke": "tsx scripts/smoke-pump-live.ts",
+    "pump:like": "tsx scripts/smoke-pump-like.ts",
     "check": "pnpm typecheck && pnpm test",
     "prepare:agent": "tsx scripts/scaffold-agent.ts"
   },

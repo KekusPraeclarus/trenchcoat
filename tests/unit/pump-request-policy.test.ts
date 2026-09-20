@@ -49,6 +49,11 @@ describe("pump request policy", () => {
     expect(classifyPumpRequest("POST", "https://pump.fun/api/follow", { mutationMode: true }).allow).toBe(true)
     expect(classifyPumpRequest("POST", "https://pump.fun/api/like", { mutationMode: true }).allow).toBe(true)
     expect(classifyPumpRequest("POST", "https://pump.fun/api/swap", { mutationMode: true }).allow).toBe(false)
+    const calloutLike = "https://frontend-api-v3.pump.fun/callout/7be8fa6f-55a6-4802-8246-be197dbc9515/like"
+    expect(classifyPumpRequest("POST", calloutLike, { mutationMode: true }).allow).toBe(true)
+    expect(classifyPumpRequest("DELETE", calloutLike, { mutationMode: true }).allow).toBe(true)
+    expect(classifyPumpRequest("DELETE", calloutLike).allow).toBe(false)
+    expect(classifyPumpRequest("DELETE", "https://pump.fun/api/swap", { mutationMode: true }).allow).toBe(false)
   })
 
   it("rejects invalid urls", () => {
