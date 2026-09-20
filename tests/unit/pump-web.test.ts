@@ -14,7 +14,7 @@ import {
   classifyPumpClientFailure,
 } from "../../src/collectors/pump/web-client.js"
 import { PumpClientError } from "../../src/collectors/pump/types.js"
-import { PUMP_LIKE_TEST_ID, pumpItemCardSelectors } from "../../src/collectors/pump/engagement.js"
+import { PUMP_LIKE_TEST_ID, mintFromCalloutJson, pumpCalloutPermalink, pumpItemCardSelectors } from "../../src/collectors/pump/engagement.js"
 import {
   emptyUsageDay,
   remainingBudget,
@@ -164,6 +164,16 @@ describe("pump engagement card selectors", () => {
     expect(pumpItemCardSelectors(id)).toContain(`a[href*="/callouts/"][href*="${id}"]`)
     expect(pumpItemCardSelectors(id)).toContain(`a[href*="${id}"]`)
     expect(pumpItemCardSelectors(`bad"id`)).toEqual([])
+  })
+
+  it("builds a callout permalink only from a mint and a safe id", () => {
+    const id = "7be8fa6f-55a6-4802-8246-be197dbc9515"
+    const mint = MINT
+    expect(pumpCalloutPermalink(mint, id)).toBe(`https://pump.fun/callouts/${mint}/${id}`)
+    expect(pumpCalloutPermalink("https://evil.example", id)).toBeUndefined()
+    expect(mintFromCalloutJson({ coinMint: mint, calloutId: id })).toBe(mint)
+    expect(mintFromCalloutJson({ callout: { mint, id } })).toBe(mint)
+    expect(mintFromCalloutJson({ coinMint: "nope" })).toBeUndefined()
   })
 })
 

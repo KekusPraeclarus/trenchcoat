@@ -5,8 +5,10 @@ import { classifyPumpRequest } from "./request-policy.js"
 import { PumpClientError } from "./types.js"
 
 const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/u
+const MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/u
 const LIKE_POST_RE = /\/(like|unlike)(\/|$)/iu
 const FOLLOW_POST_RE = /\/(follow|unfollow)(\/|$)/iu
+const CALLOUT_ID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu
 
 export const PUMP_LIKE_TEST_ID = "callout-action-like"
 
@@ -33,6 +35,24 @@ export function pumpItemCardSelectors(itemId: string): readonly string[] {
     `[data-coin-id="${itemId}"]`,
     `a[href*="${itemId}"]`,
   ]
+}
+
+export function pumpCalloutPermalink(mint: string, itemId: string): string | undefined {
+  if (!MINT_RE.test(mint) || !SAFE_ID_RE.test(itemId)) return undefined
+  return `https://pump.fun/callouts/${mint}/${itemId}`
+}
+
+export function mintFromCalloutJson(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined
+  const raw = body as Record<string, unknown>
+  const nested = raw["callout"]
+  const row = (
+    typeof nested === "object" && nested !== null && !Array.isArray(nested)
+      ? nested as Record<string, unknown>
+      : raw
+  )
+  const mint = row["coinMint"] ?? row["mint"] ?? row["tokenAddress"]
+  return typeof mint === "string" && MINT_RE.test(mint) ? mint : undefined
 }
 
 /**
@@ -128,6 +148,51 @@ export class PumpEngagementSession implements PumpEngagementDriver {
     return undefined
   }
 
+  private async resolveCalloutMint(page: Page, itemId: string): Promise<string | undefined> {
+    const url = `https://frontend-api-v3.pump.fun/callout/${encodeURIComponent(itemId)}`
+    const response = await page.request.get(url).catch(() => undefined)
+    if (!response?.ok()) return undefined
+    const body: unknown = await response.json().catch(() => undefined)
+    return mintFromCalloutJson(body)
+  }
+
+  private async locateLikeCard(page: Page, itemId: string): Promise<Locator | undefined> {
+    const onFeed = await this.findItemCard(page, itemId)
+    if (onFeed) return onFeed
+    const mint = await this.resolveCalloutMint(page, itemId)
+    const permalink = mint ? pumpCalloutPermalink(mint, itemId) : undefined
+    if (!permalink) return undefined
+    await page.goto(permalink, {
+      waitUntil: "domcontentloaded",
+      timeout: this.opts.navigationTimeoutMs ?? 30_000,
+    })
+    this.detectChallenge(page)
+    await this.dismissBlockingUi(page)
+    return this.findItemCard(page, itemId)
+  }
+
+  private async likeOnCard(
+    page: Page,
+    itemId: string,
+    card: Locator,
+  ): Promise<{ verified: boolean, ambiguous: boolean }> {
+    if (await this.controlLooksLiked(card, page, itemId)) {
+      return { verified: true, ambiguous: false }
+    }
+    const posted = this.waitForPost(page, LIKE_POST_RE)
+    const button = this.likeButton(card)
+    await button.scrollIntoViewIfNeeded().catch(() => undefined)
+    const clicked = await button
+      .click({ timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (!clicked) return { verified: false, ambiguous: true }
+    const response = await posted
+    if (response?.ok()) return { verified: true, ambiguous: false }
+    const present = await this.controlLooksLiked(card, page, itemId)
+    return { verified: present, ambiguous: !present }
+  }
+
   private likeRoot(card: Locator): Locator {
     return card.locator(`xpath=ancestor-or-self::*[.//*[@data-testid='${PUMP_LIKE_TEST_ID}']][1]`)
   }
@@ -170,23 +235,22 @@ export class PumpEngagementSession implements PumpEngagementDriver {
 
   async like(itemId: string): Promise<{ verified: boolean, ambiguous: boolean }> {
     return this.withPage(async (page) => {
-      const card = await this.findItemCard(page, itemId)
+      const card = await this.locateLikeCard(page, itemId)
       if (!card) return { verified: false, ambiguous: true }
-      if (await this.controlLooksLiked(card, page, itemId)) {
-        return { verified: true, ambiguous: false }
-      }
-      const posted = this.waitForPost(page, LIKE_POST_RE)
-      const button = this.likeButton(card)
-      await button.scrollIntoViewIfNeeded().catch(() => undefined)
-      const clicked = await button
-        .click({ timeout: 8_000 })
-        .then(() => true)
-        .catch(() => false)
-      if (!clicked) return { verified: false, ambiguous: true }
-      const response = await posted
-      if (response?.ok()) return { verified: true, ambiguous: false }
-      const present = await this.controlLooksLiked(card, page, itemId)
-      return { verified: present, ambiguous: !present }
+      return this.likeOnCard(page, itemId, card)
+    })
+  }
+
+  async likeFirstVisible(): Promise<{ found: boolean, verified: boolean, ambiguous: boolean }> {
+    return this.withPage(async (page) => {
+      await page.locator("a[href*='/callouts/']").first().waitFor({ timeout: 15_000 }).catch(() => undefined)
+      const href = await page.locator("a[href*='/callouts/']").first().getAttribute("href")
+      const itemId = href?.match(CALLOUT_ID_RE)?.[0]
+      if (!itemId) return { found: false, verified: false, ambiguous: true }
+      const card = await this.locateLikeCard(page, itemId)
+      if (!card) return { found: true, verified: false, ambiguous: true }
+      const result = await this.likeOnCard(page, itemId, card)
+      return { found: true, ...result }
     })
   }
 

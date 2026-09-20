@@ -159,6 +159,8 @@ session still needs a fresh browser export and `auth pump --import-*`.
   /callouts/:mint/:uuid. Click that control only
 - Live like is POST frontend-api-v3.pump.fun/callout/{calloutId}/like.
   Unlike is DELETE on the same path. Mutation mode must allow both
+- When the card is gone from For you, the host opens
+  /callouts/:mint/:uuid after GET /callout/{id}
 - Dismiss the homepage overlay before the like click
 - Like and follow verify on the same page as the click. A second `goto`
   drops the mutation. A 2xx like POST or unlike DELETE counts as verified
