@@ -2,7 +2,7 @@
 description: Collectors module - Playwright Twitter, Neynar Farcaster, Telegram alpha listener, market-data clients (GeckoTerminal, DexScreener, CoinGecko trending, Fear & Greed), wallets/web, indicators incl. RSI, rate-limit gate, snapshot and provenance format.
 scope: module
 status: active
-last_verified: 2026-09-20
+last_verified: 2026-09-23
 read_when:
   - Editing src/collectors/ or src/lib/.
   - Adding a data source or changing the snapshot, provenance, or alpha-queue format.
@@ -14,6 +14,8 @@ read_when:
 
 Deterministic code that turns the outside world into timestamped files. Upstream
 market/social fetches for jobs go through collectors and the shared rate gate.
+A stalled response body aborts after 10 seconds. The header timeout does not
+cover that read.
 Other host components (router delivery, Telegram chat bridge) also use the
 network, but not for collector-shaped ingestion. Collectors never interpret —
 no LLM calls, no decisions — so a run is reproducible from its inputs.
@@ -254,7 +256,8 @@ message, and keeps GramJS sessions under `~/.trenchcoat/telegram-session/`
   `hardFail` alone (security-gate.md). Host still blocks `track` for mintable
   memecoins via model classification. Remaining hard-fail fields are unchanged.
 - Scanner selection per chain via the chain registry (chains.md); no scanner
-  coverage → fail-closed, candidate untrackable
+  coverage → fail-closed, candidate untrackable. A stalled scanner body aborts
+  after 10 seconds. The header timeout does not cover that read.
 - Runs at research dequeue **and** as the new-pool stream filter; scheduled
   discovery hard-fails short-circuit to `ignore`. Confirmed operator research
   still produces an evidence report but cannot track/broadcast the token.

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { archiveLayout } from "../lib/archive.js"
@@ -10,7 +10,10 @@ import {
 import {
   agentLockPath,
   jobMutexPath,
+  jobRequiresAgentWorkspaceLock,
+  jobRequiresJobMutex,
   JOB_MUTEX_JOBS,
+  signalJobMutexHolder,
   signalWorkspaceLockHolder,
 } from "../lib/lock.js"
 import { log } from "../lib/log.js"
@@ -19,6 +22,7 @@ import { createJournalStore } from "./journal-store.js"
 import {
   ABANDONED_CREATED_MS,
   findIncompleteRunRefs,
+  runIdStartedMs,
   type IncompleteRunRef,
 } from "./resume.js"
 
@@ -40,6 +44,44 @@ export const ORPHAN_PRESEAL_NO_LOCK_MS = 30 * 60_000
 
 /** Minimum interval between automatic orphan-abandon scans from runJob */
 export const ORPHAN_ABANDON_THROTTLE_MS = 15 * 60_000
+
+// A newer job that holds the lock is left alone
+export const HOLDER_MATCH_SLACK_MS = 5 * 60_000
+
+export function lockMtimeMatchesRun(
+  lockPath: string,
+  runId: string,
+  slackMs = HOLDER_MATCH_SLACK_MS,
+): boolean {
+  if (!existsSync(lockPath)) return false
+  const started = runIdStartedMs(runId)
+  if (started === undefined) return false
+  const mtime = statSync(lockPath).mtimeMs
+  return Math.abs(mtime - started) <= slackMs
+}
+
+export function signalAbandonedRunHolder(args: Readonly<{
+  runId: string
+  agentRoot: string
+  home: string
+}>): boolean {
+  const job = jobNameFromRunId(args.runId)
+  if (!job) return false
+  let signaled = false
+  if (jobRequiresAgentWorkspaceLock(job)) {
+    const lockPath = agentLockPath(args.agentRoot)
+    if (lockMtimeMatchesRun(lockPath, args.runId)) {
+      signaled = signalWorkspaceLockHolder(args.agentRoot) || signaled
+    }
+  }
+  if (jobRequiresJobMutex(job)) {
+    const lockPath = jobMutexPath(args.home, job)
+    if (lockMtimeMatchesRun(lockPath, args.runId)) {
+      signaled = signalJobMutexHolder(args.home, job) || signaled
+    }
+  }
+  return signaled
+}
 
 const ORPHAN_ABANDON_THROTTLE_FILE = "last-orphan-abandon.json"
 
@@ -219,6 +261,16 @@ export async function abandonOrphanedRuns(args: Readonly<{
       })
       if (failureCode === "deploy-wait-timeout" && lockHeld) {
         signalWorkspaceLockHolder(args.agentRoot)
+      }
+      if (failureCode === "orphan-stale" || failureCode === "deploy-wait-timeout") {
+        const signaled = signalAbandonedRunHolder({
+          runId: ref.runId,
+          agentRoot: args.agentRoot,
+          home,
+        })
+        if (signaled) {
+          log.warn("signaled abandoned run holder", { runId: ref.runId })
+        }
       }
       failed.push(ref.runId)
       log.warn("abandoned orphaned run", {

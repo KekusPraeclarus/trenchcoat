@@ -109,12 +109,7 @@ export function clearStaleWorkspaceLock(agentRoot: string): boolean {
   return true
 }
 
-/** Best-effort nudge to a live lock holder (deploy pause abandon) */
-export function signalWorkspaceLockHolder(
-  agentRoot: string,
-  signal: NodeJS.Signals = "SIGTERM",
-): boolean {
-  const ownerPath = `${agentLockPath(agentRoot)}.owner`
+function signalOwnerFile(ownerPath: string, signal: NodeJS.Signals): boolean {
   if (!existsSync(ownerPath)) return false
   const pid = Number(readFileSync(ownerPath, "utf8").trim())
   if (!Number.isInteger(pid) || pid <= 0) return false
@@ -124,6 +119,23 @@ export function signalWorkspaceLockHolder(
   } catch {
     return false
   }
+}
+
+/** Best-effort nudge to a live lock holder (deploy pause abandon) */
+export function signalWorkspaceLockHolder(
+  agentRoot: string,
+  signal: NodeJS.Signals = "SIGTERM",
+): boolean {
+  return signalOwnerFile(`${agentLockPath(agentRoot)}.owner`, signal)
+}
+
+export function signalJobMutexHolder(
+  home: string,
+  job: string,
+  signal: NodeJS.Signals = "SIGTERM",
+): boolean {
+  if (!JOB_MUTEX_JOBS.has(job)) return false
+  return signalOwnerFile(`${jobMutexPath(home, job)}.owner`, signal)
 }
 
 function sleep(ms: number): Promise<void> {

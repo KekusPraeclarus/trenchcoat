@@ -3,6 +3,59 @@ import { getRateGate } from "./rate-gate.js"
 
 const MAX_DEFAULT_BYTES = 5 * 1024 * 1024
 
+// Header wait and stalled body read share this bound
+export const DEFAULT_HTTP_TIMEOUT_MS = 10_000
+
+function bodyTimeoutError(): Error {
+  const error = new Error("response body timed out")
+  error.name = "TimeoutError"
+  return error
+}
+
+// Header abort does not cancel a stalled body
+function raceBody<T>(
+  response: Response,
+  timeoutMs: number,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (timeoutMs <= 0) return read()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      response.body?.cancel().catch(() => undefined)
+      reject(bodyTimeoutError())
+    }, timeoutMs)
+  })
+  const pending = read()
+  pending.catch(() => undefined)
+  return Promise.race([pending, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
+function nativeText(response: Response): Promise<string> {
+  return Response.prototype.text.call(response)
+}
+
+export function responseWithBodyTimeout(response: Response, timeoutMs: number): Response {
+  if (timeoutMs <= 0 || response.body === null) return response
+  return new Proxy(response, {
+    get(target, prop, receiver) {
+      if (prop === "text") {
+        return () => raceBody(target, timeoutMs, () => nativeText(target))
+      }
+      if (prop === "json") {
+        return () => raceBody(target, timeoutMs, () => Response.prototype.json.call(target))
+      }
+      if (prop === "arrayBuffer") {
+        return () => raceBody(target, timeoutMs, () => Response.prototype.arrayBuffer.call(target))
+      }
+      const value = Reflect.get(target, prop, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+}
+
 export type GatedFetchOptions = Readonly<{
   host: string
   capacity: number
@@ -41,7 +94,7 @@ export async function gatedFetch(
       ...(init.headers ?? {}),
     },
     redirect: "error",
-    signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+    signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS),
   })
 
   if (response.status === 429) {
@@ -55,7 +108,7 @@ export async function gatedFetch(
     throw new RangeError(`Response from ${options.host} exceeds size limit`)
   }
 
-  return response
+  return responseWithBodyTimeout(response, options.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS)
 }
 
 export type GatedFetchRetryOptions = GatedFetchOptions & Readonly<{
@@ -133,8 +186,9 @@ export async function gatedFetchWithRetry(
 export async function readJsonBody(
   response: Response,
   maxBytes = MAX_DEFAULT_BYTES,
+  timeoutMs = DEFAULT_HTTP_TIMEOUT_MS,
 ): Promise<unknown> {
-  const text = await response.text()
+  const text = await raceBody(response, timeoutMs, () => nativeText(response))
   if (Buffer.byteLength(text) > maxBytes) {
     throw new RangeError("Response body exceeds size limit")
   }

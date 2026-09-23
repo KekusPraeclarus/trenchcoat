@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, mkdirSync, existsSync } from "node:fs"
+import { spawn, type ChildProcess } from "node:child_process"
+import { mkdtempSync, mkdirSync, existsSync, writeFileSync, utimesSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import {
   beginDeployPause,
   endDeployPause,
@@ -18,7 +19,9 @@ import {
   OUTCOMES_SETTLE_ABANDON_MS,
   failRunJournal,
   abandonOrphanedRuns,
+  signalAbandonedRunHolder,
 } from "../../src/orchestrator/abandon.js"
+import { agentLockPath, jobMutexPath } from "../../src/lib/lock.js"
 import { createRunJournal, advanceRunJournal } from "../../src/orchestrator/journal.js"
 import { createJournalStore } from "../../src/orchestrator/journal-store.js"
 import { archiveLayout, ensureArchive } from "../../src/lib/archive.js"
@@ -270,5 +273,112 @@ describe("failRunJournal / abandonOrphanedRuns", () => {
     expect(result.failed).not.toContain(runId)
     expect(result.skipped).toContain(runId)
     expect((await store.load(runId))?.status).toBe("running")
+  })
+})
+
+function sleepHolder(): ChildProcess {
+  return spawn("sleep", ["30"], { stdio: "ignore" })
+}
+
+function writeHolder(lockPath: string, pid: number, mtimeMs: number): void {
+  mkdirSync(dirname(lockPath), { recursive: true })
+  writeFileSync(`${lockPath}.owner`, `${pid}\n`, { mode: 0o600 })
+  writeFileSync(lockPath, `${pid}\n`, { mode: 0o600 })
+  const at = new Date(mtimeMs)
+  utimesSync(lockPath, at, at)
+}
+
+async function waitExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("holder still alive")), 2_000)
+    child.once("exit", () => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
+}
+
+describe("abandoned run holder signal", () => {
+  it("stops the holder when the workspace lock matches the run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-hold-match-"))
+    const agentRoot = join(root, "agent")
+    const home = join(root, "home")
+    mkdirSync(agentRoot, { recursive: true })
+    const runId = "audit-2026-09-21T06-00-02-825Z"
+    const child = sleepHolder()
+    try {
+      writeHolder(agentLockPath(agentRoot), child.pid!, Date.parse("2026-09-21T06:00:02.825Z"))
+      expect(signalAbandonedRunHolder({ runId, agentRoot, home })).toBe(true)
+      await waitExit(child)
+    } finally {
+      child.kill("SIGKILL")
+    }
+  })
+
+  it("leaves a newer workspace holder alive", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-hold-new-"))
+    const agentRoot = join(root, "agent")
+    const home = join(root, "home")
+    mkdirSync(agentRoot, { recursive: true })
+    const runId = "audit-2026-09-21T06-00-02-825Z"
+    const child = sleepHolder()
+    try {
+      writeHolder(agentLockPath(agentRoot), child.pid!, Date.parse("2026-09-23T14:00:00.000Z"))
+      expect(signalAbandonedRunHolder({ runId, agentRoot, home })).toBe(false)
+      expect(child.exitCode).toBeNull()
+    } finally {
+      child.kill("SIGKILL")
+    }
+  })
+
+  it("stops a matching outcomes-settle mutex holder", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-hold-mutex-"))
+    const agentRoot = join(root, "agent")
+    const home = join(root, "home")
+    mkdirSync(agentRoot, { recursive: true })
+    const runId = "outcomes-settle-2026-09-22T14-49-49-782Z"
+    const child = sleepHolder()
+    try {
+      writeHolder(
+        jobMutexPath(home, "outcomes-settle"),
+        child.pid!,
+        Date.parse("2026-09-22T14:49:49.782Z"),
+      )
+      expect(signalAbandonedRunHolder({ runId, agentRoot, home })).toBe(true)
+      await waitExit(child)
+    } finally {
+      child.kill("SIGKILL")
+    }
+  })
+
+  it("fails a hard-age journal and stops the matching holder", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tc-abandon-signal-"))
+    const archiveRoot = join(root, "archive")
+    const agentRoot = join(root, "agent")
+    const home = join(root, "home")
+    mkdirSync(agentRoot, { recursive: true })
+    mkdirSync(home, { recursive: true })
+    const layout = await ensureArchive(archiveRoot)
+    const store = createJournalStore(layout)
+    const runId = "list-scan-2026-07-20T10-00-00-000Z"
+    let journal = createRunJournal(runId)
+    journal = advanceRunJournal(journal, "collected", sha256Json({ ok: true }))
+    await store.save(journal)
+    const child = sleepHolder()
+    try {
+      writeHolder(agentLockPath(agentRoot), child.pid!, Date.parse("2026-07-20T10:00:00.000Z"))
+      const result = await abandonOrphanedRuns({
+        agentRoot,
+        archiveRoot,
+        home,
+        nowIso: "2026-07-20T17:00:00.000Z",
+      })
+      expect(result.failed).toContain(runId)
+      expect((await store.load(runId))?.failure?.code).toBe("orphan-stale")
+      await waitExit(child)
+    } finally {
+      child.kill("SIGKILL")
+    }
   })
 })

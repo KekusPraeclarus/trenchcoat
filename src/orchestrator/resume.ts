@@ -35,7 +35,8 @@ function runIdFromTransactionName(file: string): string | undefined {
   }
 }
 
-function ageFromRunId(runId: string, nowMs: number): number | undefined {
+/** Wall time encoded in a run id, or undefined when the stamp is absent */
+export function runIdStartedMs(runId: string): number | undefined {
   const match = runId.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)/u)
   if (!match?.[1]) return undefined
   const iso = match[1].replace(
@@ -44,6 +45,12 @@ function ageFromRunId(runId: string, nowMs: number): number | undefined {
   )
   const created = Date.parse(iso)
   if (!Number.isFinite(created)) return undefined
+  return created
+}
+
+function ageFromRunId(runId: string, nowMs: number): number | undefined {
+  const created = runIdStartedMs(runId)
+  if (created === undefined) return undefined
   return Math.max(0, nowMs - created)
 }
 

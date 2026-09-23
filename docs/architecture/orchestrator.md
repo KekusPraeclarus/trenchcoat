@@ -2,7 +2,7 @@
 description: Orchestrator module - job registry, cron cycles, Cursor CLI session management, outbox validation, alpha-queue lifecycle, performance-audit job.
 scope: module
 status: active
-last_verified: 2026-09-17
+last_verified: 2026-09-23
 read_when:
   - Editing src/orchestrator/, src/cli.ts, src/harness/, or ops/ schedules.
   - Changing how agent sessions are created, how outbox items are sent, how the alpha queue is purged, or how audits score decisions and sources.
@@ -187,7 +187,10 @@ a 4–6h run at that phase with a live mutex pid is catch-up, not a stuck orphan
 A `lock-held` failure with a real runId after hours was brief ledger/Fomo RMW
 (`classifyRunFailureCode` maps `workspace lock`); that path now fail-softs.
 `runJob` also calls `maybeAbandonOrphansThrottled` before lock acquire (≤1 scan
-per 15m) to fail orphans without operator action. Phases are fsynced
+per 15m) to fail orphans without operator action. A hard-age fail sends
+SIGTERM when the lock file time matches that run. The match window is 5
+minutes. A newer holder stays up. Deploy wait still signals the workspace
+holder when the times differ. The signal releases the lock. Phases are fsynced
 and atomically renamed. Recovery resumes post-seal incomplete phases only; it
 does not replay earlier side effects. Periodic Git (`tc backup`) is backup-only
 and never gates completion.

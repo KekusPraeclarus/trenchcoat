@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest"
-import { gatedFetch, gatedFetchWithRetry } from "../../src/lib/http.js"
+import { gatedFetch, gatedFetchWithRetry, readJsonBody } from "../../src/lib/http.js"
 import { RateGate, getRateGate, resetRateGatesForTests } from "../../src/lib/rate-gate.js"
 import type { FetchLike } from "../../src/collectors/market/geckoterminal.js"
 
@@ -118,5 +118,46 @@ describe("prop_inv_r3_observe429", () => {
     const start = Date.now()
     await gate.take(1)
     expect(Date.now() - start).toBeGreaterThanOrEqual(40)
+  })
+})
+
+function hangingJson(): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start() {
+      // stalled body
+    },
+  })
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })
+}
+
+describe("response body timeout", () => {
+  beforeEach(() => {
+    resetRateGatesForTests()
+  })
+
+  it("parses a finished JSON body", async () => {
+    const body = await readJsonBody(new Response("{\"ok\":true}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }))
+    expect(body).toEqual({ ok: true })
+  })
+
+  it("aborts a stalled body read", async () => {
+    await expect(readJsonBody(hangingJson(), 1024, 40)).rejects.toThrow(/timed out/u)
+  })
+
+  it("aborts a stalled body returned by gatedFetch", async () => {
+    const fetcher: FetchLike = async () => hangingJson()
+    const response = await gatedFetch(fetcher, "https://ex.test/hang", {
+      host: "ex.test-body-timeout",
+      capacity: 5,
+      refillPerSecond: 100,
+      timeoutMs: 40,
+    })
+    await expect(response.text()).rejects.toThrow(/timed out/u)
   })
 })
