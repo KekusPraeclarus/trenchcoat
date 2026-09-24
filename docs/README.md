@@ -2,7 +2,7 @@
 description: Context map for developer documentation. What to read, in what order, and what to skip.
 scope: project
 status: active
-last_verified: 2026-09-17
+last_verified: 2026-09-22
 ---
 
 # trenchcoat — developer docs
@@ -29,9 +29,8 @@ Setup, deploy, and CLI live in the root [README.md](../README.md). This file is 
 | Operator Discord reaction tuning | [architecture/broadcast-feedback.md](architecture/broadcast-feedback.md) (ADR 043) |
 | Daily digest length (no operator `.md`) | [adr/049-digest-length-target-and-md-fanout.md](adr/049-digest-length-target-and-md-fanout.md), [adr/052-stop-operator-digest-markdown.md](adr/052-stop-operator-digest-markdown.md) |
 | Provider / scrape details | [knowledge/](knowledge/) |
-| A settled decision | [adr/](adr/) (001–053, no 008). ADR 033 is deprecated |
+| A settled decision | [adr/](adr/) (001–054, no 008). ADR 033 is deprecated |
 | Parallel worktrees | [development.md](development.md) |
-| Planned trading pipeline | [trading/README.md](trading/README.md) — design only, no code yet |
 | Linux VPS / Actions | [../ops/linux-vps.md](../ops/linux-vps.md) |
 | Cadences and host layout | [../ops/runbook.md](../ops/runbook.md) |
 | Remaining live acceptance | [../ops/LIVE-E2E-BLOCKERS.md](../ops/LIVE-E2E-BLOCKERS.md) (Phase 0–3 done. No Phase 4.) |

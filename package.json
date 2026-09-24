@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "^12.11.1",
     "bs58": "^6.0.0",
     "discord.js": "^14.16.3",
     "fastify": "^5.10.0",

@@ -34,7 +34,8 @@ function raceBody<T>(
 }
 
 function nativeText(response: Response): Promise<string> {
-  return Response.prototype.text.call(response)
+  // .text() goes through the body-timeout proxy. prototype.text.call sets this to the proxy and Node 24 rejects #state
+  return response.text()
 }
 
 export function responseWithBodyTimeout(response: Response, timeoutMs: number): Response {
@@ -50,7 +51,8 @@ export function responseWithBodyTimeout(response: Response, timeoutMs: number): 
       if (prop === "arrayBuffer") {
         return () => raceBody(target, timeoutMs, () => Response.prototype.arrayBuffer.call(target))
       }
-      const value = Reflect.get(target, prop, receiver)
+      // Node 24 Response getters read #state on the receiver, and the proxy is not that object
+      const value = Reflect.get(target, prop, target)
       return typeof value === "function" ? value.bind(target) : value
     },
   })

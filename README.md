@@ -339,7 +339,6 @@ Live logs and health from a desktop checkout: `./ops/remote.sh` ([ops/linux-vps.
 7. Code lives in this git checkout. Do not SSH to read `src/` or `docs/`. Live logs and health: `./ops/remote.sh` ([ops/linux-vps.md](ops/linux-vps.md)).
 8. TypeScript, pnpm, no semicolons unless required. Update the matching `docs/` file in the same change when behaviour changes. Bump `last_verified`.
 9. No secrets in the repo. Run `pnpm secret-scan` when gitleaks is installed.
-10. [docs/trading/](docs/trading/README.md) is design only. No trading jobs or state exist yet.
 
 ## Status
 
